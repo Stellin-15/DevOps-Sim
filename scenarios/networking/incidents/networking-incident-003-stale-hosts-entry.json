@@ -1,0 +1,43 @@
+{
+  "id": "networking-incident-003",
+  "type": "incident",
+  "category": "networking",
+  "title": "One Server Still Talks to the Old Database",
+  "difficulty": "intermediate",
+  "tags": ["networking", "dns", "hosts"],
+  "intro": "The database was migrated to a new host last night and DNS was updated. Four of five app servers moved over fine. app-03 keeps writing to the OLD database.",
+  "steps": [
+    {
+      "prompt": "On app-03, check what DNS returns for db.internal.example.com.",
+      "expected_commands": ["dig db.internal.example.com +short", "dig +short db.internal.example.com"],
+      "fake_output": "10.0.4.51",
+      "hint": "10.0.4.51 is the NEW database's IP."
+    },
+    {
+      "prompt": "DNS is correct. Check what the system's resolver (the one the app actually uses) returns, which also honors /etc/hosts.",
+      "expected_commands": ["getent hosts db.internal.example.com"],
+      "fake_output": "10.0.4.30      db.internal.example.com",
+      "hint": "getent uses the same lookup path as applications — /etc/hosts first, then DNS."
+    },
+    {
+      "prompt": "The app's resolver returns the OLD IP. Check /etc/hosts.",
+      "expected_commands": ["cat /etc/hosts", "grep db /etc/hosts"],
+      "fake_output": "127.0.0.1   localhost\n10.0.4.30   db.internal.example.com   # pinned during 2025 DNS outage",
+      "hint": "/etc/hosts entries override DNS entirely."
+    },
+    {
+      "prompt": "A pinned entry from an old outage. Remove that line from /etc/hosts.",
+      "expected_commands": ["sudo sed -i '/db.internal.example.com/d' /etc/hosts"],
+      "fake_output": "(no output — line removed)",
+      "hint": "sed -i with a /pattern/d expression deletes matching lines in place."
+    },
+    {
+      "prompt": "Confirm the system now resolves to the new database, then restart the app so it opens fresh connections.",
+      "expected_commands": ["getent hosts db.internal.example.com"],
+      "fake_output": "10.0.4.51      db.internal.example.com",
+      "hint": "Many apps cache resolved addresses in their connection pools, so a restart is still needed."
+    }
+  ],
+  "resolution": "dig queries DNS servers directly, which is why it showed the correct new IP — but applications resolve names through the system's resolver (nsswitch), which checks /etc/hosts first. A temporary pin added during an old DNS outage had quietly outlived its purpose for a year and silently overrode the migration on just this one host. 'getent hosts' shows what applications actually see, so it's the right tool when dig and the app disagree. Beyond the fix: manage /etc/hosts with configuration management (Ansible, etc.) so hand edits get reverted or at least flagged, and treat 'temporary' hosts-file pins as tech debt with an expiry date.",
+  "real_commands_used": ["dig +short", "getent hosts", "cat /etc/hosts", "sed -i"]
+}

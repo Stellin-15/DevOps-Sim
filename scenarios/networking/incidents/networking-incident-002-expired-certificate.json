@@ -1,0 +1,43 @@
+{
+  "id": "networking-incident-002",
+  "type": "incident",
+  "category": "networking",
+  "title": "Every Client Suddenly Rejects the API's Certificate",
+  "difficulty": "intermediate",
+  "tags": ["networking", "tls", "certificates"],
+  "intro": "At 00:00 UTC, mobile apps and partner integrations all started failing with TLS errors against api.example.com. No deploys happened overnight.",
+  "steps": [
+    {
+      "prompt": "Reproduce it with curl to see the exact error.",
+      "expected_commands": ["curl -v https://api.example.com", "curl -vI https://api.example.com"],
+      "fake_output": "* SSL certificate problem: certificate has expired\ncurl: (60) SSL certificate problem: certificate has expired",
+      "hint": "curl's verbose output shows the TLS failure reason."
+    },
+    {
+      "prompt": "Confirm the certificate's validity dates.",
+      "expected_commands": ["echo | openssl s_client -connect api.example.com:443 -servername api.example.com | openssl x509 -noout -dates", "openssl s_client -connect api.example.com:443 -servername api.example.com < /dev/null | openssl x509 -noout -dates"],
+      "fake_output": "notBefore=Sep 28 00:00:00 2025 GMT\nnotAfter=Sep 28 00:00:00 2026 GMT",
+      "hint": "Pipe the presented certificate into openssl x509 -dates."
+    },
+    {
+      "prompt": "It expired at exactly midnight. Check whether automated renewal was even set up on the server.",
+      "expected_commands": ["systemctl list-timers | grep certbot", "systemctl list-timers", "sudo certbot certificates"],
+      "fake_output": "Found the following certs:\n  Certificate Name: api.example.com\n    Expiry Date: 2026-09-28 00:00:00+00:00 (INVALID: EXPIRED)\n  (certbot.timer: inactive)",
+      "hint": "certbot usually renews via a systemd timer or cron job."
+    },
+    {
+      "prompt": "The renewal timer was disabled. Renew the certificate now.",
+      "expected_commands": ["sudo certbot renew", "certbot renew"],
+      "fake_output": "Renewing an existing certificate for api.example.com\nCongratulations, all renewals succeeded.",
+      "hint": "Renew first to restore service; re-enabling automation comes right after."
+    },
+    {
+      "prompt": "Reload nginx so it serves the new certificate, then re-enable the renewal timer.",
+      "expected_commands": ["sudo systemctl reload nginx && sudo systemctl enable --now certbot.timer", "systemctl reload nginx && systemctl enable --now certbot.timer"],
+      "fake_output": "Created symlink /etc/systemd/system/timers.target.wants/certbot.timer → /lib/systemd/system/certbot.timer.",
+      "hint": "The web server keeps serving the old certificate from memory until it reloads."
+    }
+  ],
+  "resolution": "The certificate simply expired: its renewal timer had been disabled (likely during an earlier migration) and nobody noticed for months. Renewing the cert isn't enough on its own — nginx keeps the old certificate loaded in memory until reloaded, which is why 'I renewed it but it's still broken' is a common follow-up. Certificate expiry is the most predictable outage there is, so the real fix is monitoring: alert when any public certificate has fewer than ~14 days left (Prometheus blackbox_exporter's probe_ssl_earliest_cert_expiry, or any uptime service), independent of whether renewal automation says it's working. Automation that fails silently plus no expiry monitoring is exactly how this happens.",
+  "real_commands_used": ["curl -v", "openssl s_client", "openssl x509 -dates", "certbot certificates", "certbot renew", "systemctl reload"]
+}

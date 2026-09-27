@@ -1,0 +1,46 @@
+{
+  "id": "networking-tutorial-008",
+  "type": "tutorial",
+  "category": "networking",
+  "title": "HTTP Debugging with curl",
+  "difficulty": "intermediate",
+  "tags": ["networking", "http", "curl"],
+  "intro": "curl is the universal HTTP debugger. A handful of flags let you reproduce almost any request a browser or service makes — and see what's really happening underneath.",
+  "steps": [
+    {
+      "prompt": "Call an authenticated API endpoint using a bearer token.",
+      "expected_commands": ["curl -H \"Authorization: Bearer $TOKEN\" https://api.example.com/v1/me", "curl -H 'Authorization: Bearer $TOKEN' https://api.example.com/v1/me"],
+      "fake_output": "{\"id\": 42, \"email\": \"you@example.com\"}",
+      "explanation": "-H adds a request header; here, the Authorization header most APIs expect.",
+      "why": "Keeping the token in a variable ($TOKEN) rather than pasting it keeps it out of your shell history and out of screenshots — tokens in bash history are a surprisingly common leak."
+    },
+    {
+      "prompt": "Request http://example.com/docs and follow any redirects to the final page.",
+      "expected_commands": ["curl -L http://example.com/docs", "curl -sL http://example.com/docs", "curl -IL http://example.com/docs"],
+      "fake_output": "HTTP/1.1 301 Moved Permanently\nLocation: https://example.com/docs\n\nHTTP/2 301\nlocation: https://docs.example.com/\n\nHTTP/2 200",
+      "explanation": "Two redirects: http → https, then to a docs subdomain.",
+      "why": "Without -L, curl stops at the first 301 and shows you a redirect page, which looks like 'the endpoint is broken'. -IL (headers only, follow) is the fastest way to map a whole redirect chain."
+    },
+    {
+      "prompt": "Test one specific backend server (10.0.5.12) directly with the real hostname, bypassing DNS and the load balancer, to find which backend is misbehaving.",
+      "expected_commands": ["curl --resolve api.example.com:443:10.0.5.12 https://api.example.com/health"],
+      "fake_output": "{\"status\": \"degraded\", \"db\": \"timeout\"}",
+      "explanation": "--resolve forces curl to use 10.0.5.12 for api.example.com, while still sending the correct hostname for TLS (SNI) and the Host header.",
+      "why": "Just hitting https://10.0.5.12 directly would fail certificate validation (the cert is for the hostname, not the IP) and could route to the wrong virtual host. --resolve tests one backend exactly as real clients would reach it."
+    },
+    {
+      "prompt": "See the full verbose exchange — request headers, response headers, and TLS handshake — for a failing request.",
+      "expected_commands": ["curl -v https://api.example.com/orders", "curl -v -X GET https://api.example.com/orders"],
+      "fake_output": "* Connected to api.example.com (198.51.100.20) port 443\n* SSL connection using TLSv1.3\n> GET /orders HTTP/2\n> Host: api.example.com\n< HTTP/2 403\n< x-amzn-waf-action: block",
+      "explanation": "The response header reveals a WAF (web application firewall) blocked the request — not the application.",
+      "why": "Response headers often identify which layer produced an error: a CDN, a WAF, a load balancer, or the app itself. Without -v you'd only see '403' and likely go debugging the wrong system."
+    },
+    {
+      "prompt": "Break down where the time goes for a slow request: DNS, connect, TLS, and time to first byte.",
+      "expected_commands": ["curl -o /dev/null -s -w \"dns:%{time_namelookup} connect:%{time_connect} tls:%{time_appconnect} ttfb:%{time_starttransfer} total:%{time_total}\\n\" https://api.example.com"],
+      "fake_output": "dns:0.004 connect:0.021 tls:0.058 ttfb:2.814 total:2.830",
+      "explanation": "Network and TLS take 58ms combined; the server then takes ~2.75 seconds to produce the first byte.",
+      "why": "This pins slowness on the backend, not the network — so look at the app, its database queries, and its dependencies. Guessing 'the network is slow' without this breakdown wastes hours."
+    }
+  ]
+}

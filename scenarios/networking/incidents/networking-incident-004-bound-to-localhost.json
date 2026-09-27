@@ -1,0 +1,43 @@
+{
+  "id": "networking-incident-004",
+  "type": "incident",
+  "category": "networking",
+  "title": "Works on the Server, Refused From Everywhere Else",
+  "difficulty": "beginner",
+  "tags": ["networking", "ports", "binding"],
+  "intro": "A new Redis cache was installed on cache-01. The developer says 'it works fine, I tested it' — but every app server gets 'connection refused'.",
+  "steps": [
+    {
+      "prompt": "From an app server, test the Redis port on cache-01.",
+      "expected_commands": ["nc -zv cache-01 6379"],
+      "fake_output": "nc: connect to cache-01 port 6379 (tcp) failed: Connection refused",
+      "hint": "Refused, not timed out — what does that tell you about the network path?"
+    },
+    {
+      "prompt": "Refused means the host answered. On cache-01, check which address Redis is listening on.",
+      "expected_commands": ["ss -tulnp | grep 6379", "sudo ss -tulnp | grep 6379", "sudo ss -tlnp | grep 6379"],
+      "fake_output": "tcp  LISTEN  0  511  127.0.0.1:6379  0.0.0.0:*  users:((\"redis-server\",pid=1402))",
+      "hint": "Compare 127.0.0.1 against 0.0.0.0."
+    },
+    {
+      "prompt": "It's bound to 127.0.0.1 — reachable only from cache-01 itself. That's why the developer's local test passed. Find the bind setting in the config.",
+      "expected_commands": ["grep ^bind /etc/redis/redis.conf", "grep bind /etc/redis/redis.conf"],
+      "fake_output": "bind 127.0.0.1 -::1",
+      "hint": "grep for the bind directive."
+    },
+    {
+      "prompt": "After changing bind to the private interface IP (10.0.4.40) and enabling requirepass, restart Redis.",
+      "expected_commands": ["sudo systemctl restart redis", "sudo systemctl restart redis-server", "systemctl restart redis-server"],
+      "fake_output": "(no output — success)",
+      "hint": "Config changes only apply after a restart."
+    },
+    {
+      "prompt": "Retest from the app server.",
+      "expected_commands": ["nc -zv cache-01 6379"],
+      "fake_output": "Connection to cache-01 6379 port [tcp/redis] succeeded!",
+      "hint": "Same test as the first step."
+    }
+  ],
+  "resolution": "Redis (like Postgres, MySQL, and many others) binds to 127.0.0.1 by default precisely so a fresh install isn't exposed to the network. The developer's test ran ON cache-01, where localhost works — the classic 'works on my machine' at the network layer. 'Connection refused' was the key clue: the host was reachable, it just had nothing listening on the external interface. The fix binds to the specific private IP rather than 0.0.0.0, and requires a password — Redis exposed on 0.0.0.0 without auth is one of the most commonly exploited misconfigurations on the internet. Pair it with a firewall rule allowing 6379 only from the app servers' subnet.",
+  "real_commands_used": ["nc -zv", "ss -tulnp", "grep", "systemctl restart"]
+}

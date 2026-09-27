@@ -1,0 +1,43 @@
+{
+  "id": "networking-incident-005",
+  "type": "incident",
+  "category": "networking",
+  "title": "New Metrics Endpoint Unreachable From Prometheus",
+  "difficulty": "intermediate",
+  "tags": ["networking", "firewall", "monitoring"],
+  "intro": "node-exporter was installed on web01, listening on 9100. Prometheus shows the target as DOWN with 'context deadline exceeded'.",
+  "steps": [
+    {
+      "prompt": "From the Prometheus server, test the port on web01 with a 5 second limit.",
+      "expected_commands": ["nc -zv -w 5 web01 9100", "nc -zv web01 9100", "curl --max-time 5 http://web01:9100/metrics"],
+      "fake_output": "nc: connect to web01 port 9100 (tcp) timed out: Operation now in progress",
+      "hint": "Timed out, not refused."
+    },
+    {
+      "prompt": "A timeout points at something dropping packets. On web01, confirm node-exporter is actually listening on all interfaces.",
+      "expected_commands": ["ss -tulnp | grep 9100", "sudo ss -tulnp | grep 9100", "sudo ss -tlnp | grep 9100"],
+      "fake_output": "tcp  LISTEN  0  4096  *:9100  *:*  users:((\"node_exporter\",pid=2210))",
+      "hint": "Rule out the service side before blaming the network."
+    },
+    {
+      "prompt": "The service is fine. Check web01's host firewall.",
+      "expected_commands": ["sudo ufw status", "ufw status", "sudo ufw status verbose"],
+      "fake_output": "Status: active\n\nTo          Action   From\n22/tcp      ALLOW    Anywhere\n80,443/tcp  ALLOW    Anywhere",
+      "hint": "Is 9100 in the allow list?"
+    },
+    {
+      "prompt": "9100 isn't allowed, so the default policy drops it. Allow it only from the Prometheus server (10.0.9.5).",
+      "expected_commands": ["sudo ufw allow from 10.0.9.5 to any port 9100", "ufw allow from 10.0.9.5 to any port 9100", "sudo ufw allow from 10.0.9.5 to any port 9100 proto tcp"],
+      "fake_output": "Rule added",
+      "hint": "Scope the rule to the one source that needs it."
+    },
+    {
+      "prompt": "Retest from the Prometheus server.",
+      "expected_commands": ["nc -zv -w 5 web01 9100", "nc -zv web01 9100", "curl --max-time 5 http://web01:9100/metrics"],
+      "fake_output": "Connection to web01 9100 port [tcp/*] succeeded!",
+      "hint": "Same test as step 1."
+    }
+  ],
+  "resolution": "A classic timeout: the service was healthy and listening, but web01's host firewall had a default-deny inbound policy and nobody added a rule for the new port, so packets were silently dropped. Prometheus's 'context deadline exceeded' is just its way of saying 'timed out'. The refused-vs-timeout distinction pointed straight at network controls, and checking the service side first ruled out the app. In a cloud environment, remember there are often TWO layers to check — the host firewall (ufw/iptables) AND the cloud security group — and a timeout can come from either. Adding new ports to firewall rules should be part of the same change that deploys the new service, ideally in the same Terraform/Ansible code.",
+  "real_commands_used": ["nc -zv -w", "ss -tulnp", "ufw status", "ufw allow from"]
+}

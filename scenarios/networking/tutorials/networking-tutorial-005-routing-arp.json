@@ -1,0 +1,39 @@
+{
+  "id": "networking-tutorial-005",
+  "type": "tutorial",
+  "category": "networking",
+  "title": "Routing and ARP",
+  "difficulty": "intermediate",
+  "tags": ["networking", "routing", "layer3"],
+  "intro": "Before a packet can reach a service, the host has to decide which interface and which next hop to send it through. When that decision is wrong, nothing above it matters.",
+  "steps": [
+    {
+      "prompt": "Ask the kernel exactly which route it would use to reach 10.20.0.15.",
+      "expected_commands": ["ip route get 10.20.0.15"],
+      "fake_output": "10.20.0.15 via 10.0.4.1 dev eth0 src 10.0.4.15 uid 1001",
+      "explanation": "Traffic to 10.20.0.15 leaves through eth0, via gateway 10.0.4.1, with source address 10.0.4.15.",
+      "why": "Reading the whole routing table and working out which rule matches is error-prone. 'ip route get' asks the kernel directly for its actual decision — including which source IP it will use, which matters for firewall rules on the other end."
+    },
+    {
+      "prompt": "Show the routing table in numeric form (the older command, still common in docs and scripts).",
+      "expected_commands": ["route -n"],
+      "fake_output": "Destination   Gateway     Genmask         Iface\n0.0.0.0       10.0.4.1    0.0.0.0         eth0\n10.0.4.0      0.0.0.0     255.255.255.0   eth0\n172.17.0.0    0.0.0.0     255.255.0.0     docker0",
+      "explanation": "Same information as 'ip route', older format. 0.0.0.0 destination = the default route.",
+      "why": "Recognize both formats — 'route' and 'ifconfig' are deprecated but appear everywhere in older runbooks and still exist on many systems. -n skips slow reverse DNS lookups for each address."
+    },
+    {
+      "prompt": "Show the ARP table: which MAC addresses this host has learned for IPs on its local network.",
+      "expected_commands": ["arp -a", "ip neigh", "ip neighbor"],
+      "fake_output": "? (10.0.4.1) at 0a:1b:2c:3d:4e:5f [ether] on eth0\n? (10.0.4.30) at <incomplete> on eth0",
+      "explanation": "The gateway resolved fine; 10.0.4.30 is <incomplete> — this host tried to reach it and got no ARP reply at all.",
+      "why": "An <incomplete> entry for a same-subnet host means the problem is at layer 2: the other machine is down, on a different VLAN, or has the wrong IP configured. No firewall rule can explain it, because traffic never got that far."
+    },
+    {
+      "prompt": "Add a temporary static route sending 192.168.50.0/24 through a VPN gateway at 10.0.4.254.",
+      "expected_commands": ["sudo ip route add 192.168.50.0/24 via 10.0.4.254", "ip route add 192.168.50.0/24 via 10.0.4.254"],
+      "fake_output": "(no output — route added)",
+      "explanation": "Traffic for that subnet now goes to the VPN gateway instead of the default route.",
+      "why": "Routes added with 'ip route add' vanish on reboot — fine for testing, but a production route must be persisted in the OS's network config (netplan, NetworkManager) or, in the cloud, in the VPC route table instead."
+    }
+  ]
+}

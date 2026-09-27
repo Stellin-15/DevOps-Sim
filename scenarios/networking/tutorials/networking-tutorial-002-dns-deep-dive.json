@@ -1,0 +1,53 @@
+{
+  "id": "networking-tutorial-002",
+  "type": "tutorial",
+  "category": "networking",
+  "title": "DNS Deep Dive",
+  "difficulty": "intermediate",
+  "tags": ["networking", "dns", "dig"],
+  "intro": "'It's always DNS' is a joke because it's so often true. Knowing exactly which resolver answered, and from where, turns DNS from a mystery into a two-minute check.",
+  "steps": [
+    {
+      "prompt": "See which DNS servers this machine is configured to use.",
+      "expected_commands": ["cat /etc/resolv.conf"],
+      "fake_output": "nameserver 10.0.0.2\nsearch internal.example.com",
+      "explanation": "Lookups go to 10.0.0.2 (typically the cloud VPC's resolver). The 'search' line means a short name like 'db' is also tried as 'db.internal.example.com'.",
+      "why": "The search domain explains a lot of 'why does this short name resolve here but not on my laptop' confusion. In Kubernetes pods, this file is exactly how short service names like 'db' get resolved."
+    },
+    {
+      "prompt": "Check whether /etc/hosts overrides anything — it's consulted BEFORE DNS.",
+      "expected_commands": ["cat /etc/hosts"],
+      "fake_output": "127.0.0.1   localhost\n10.0.4.99   api.internal.example.com   # temp test - remove",
+      "explanation": "A hardcoded entry pins api.internal.example.com to 10.0.4.99, regardless of what DNS says.",
+      "why": "Forgotten /etc/hosts entries are a classic source of 'DNS looks right but this one server keeps going to the old IP' (see networking-incident-003). dig bypasses /etc/hosts; your application does not."
+    },
+    {
+      "prompt": "Query a specific public resolver (8.8.8.8) directly, bypassing your local configuration.",
+      "expected_commands": ["dig @8.8.8.8 api.example.com", "dig @8.8.8.8 api.example.com +short"],
+      "fake_output": ";; ANSWER SECTION:\napi.example.com.   300   IN   A   198.51.100.20\n;; SERVER: 8.8.8.8#53(8.8.8.8)",
+      "explanation": "The 300 is the TTL — resolvers may cache this answer for up to 5 minutes.",
+      "why": "Comparing your local resolver's answer against a public one isolates whether a problem is your resolver (stale cache, split-horizon config) or the actual DNS records."
+    },
+    {
+      "prompt": "Look up the mail servers (MX records) for example.com.",
+      "expected_commands": ["dig example.com MX", "dig example.com mx +short", "dig mx example.com"],
+      "fake_output": ";; ANSWER SECTION:\nexample.com.  3600  IN  MX  10 mx1.mailprovider.com.\nexample.com.  3600  IN  MX  20 mx2.mailprovider.com.",
+      "explanation": "Lower preference number (10) is tried first.",
+      "why": "dig queries A records by default. Specifying the record type (MX, TXT, CNAME, NS) is how you debug email delivery, domain-verification TXT records, and CNAME chains."
+    },
+    {
+      "prompt": "Reverse-lookup which hostname an unknown IP in your logs belongs to.",
+      "expected_commands": ["dig -x 198.51.100.20", "dig -x 198.51.100.20 +short", "host 198.51.100.20"],
+      "fake_output": ";; ANSWER SECTION:\n20.100.51.198.in-addr.arpa. 3600 IN PTR lb-prod-3.example.com.",
+      "explanation": "A PTR record maps an IP back to a name.",
+      "why": "Useful for identifying traffic sources in logs. Not every IP has a PTR record, and PTR records can say anything — treat them as a hint, not proof of identity."
+    },
+    {
+      "prompt": "Trace the full resolution path from the root servers down, to see where a lookup actually gets its answer.",
+      "expected_commands": ["dig +trace api.example.com", "dig api.example.com +trace"],
+      "fake_output": ".            518400 IN NS a.root-servers.net.\ncom.         172800 IN NS a.gtld-servers.net.\nexample.com. 172800 IN NS ns1.dnsprovider.com.\napi.example.com. 300 IN A  198.51.100.20",
+      "explanation": "Root → .com → the domain's authoritative nameservers → the final record, with no caching involved.",
+      "why": "+trace asks the authoritative servers directly, so it shows the TRUE current record. When a DNS change 'isn't working', this tells you whether the change is live at the source and you're just waiting on caches (TTL) to expire."
+    }
+  ]
+}

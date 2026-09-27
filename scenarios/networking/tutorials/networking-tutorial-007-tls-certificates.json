@@ -1,0 +1,46 @@
+{
+  "id": "networking-tutorial-007",
+  "type": "tutorial",
+  "category": "networking",
+  "title": "TLS and Certificates with openssl",
+  "difficulty": "advanced",
+  "tags": ["networking", "tls", "openssl", "certificates"],
+  "intro": "Expired certificates, missing intermediate certs, and the wrong certificate served for a hostname cause a startling number of outages. openssl lets you see exactly what a server presents.",
+  "steps": [
+    {
+      "prompt": "Connect to api.example.com on port 443 and see the certificate chain the server presents.",
+      "expected_commands": ["openssl s_client -connect api.example.com:443", "openssl s_client -connect api.example.com:443 -servername api.example.com"],
+      "fake_output": "Certificate chain\n 0 s:CN = api.example.com\n   i:C = US, O = Let's Encrypt, CN = R11\n 1 s:C = US, O = Let's Encrypt, CN = R11\n   i:C = US, O = Internet Security Research Group, CN = ISRG Root X1\nVerify return code: 0 (ok)",
+      "explanation": "The server sends its own cert (0) plus the intermediate (1). 'Verify return code: 0 (ok)' means the chain validates.",
+      "why": "Add -servername so the server knows which hostname you want (SNI) — servers hosting many sites pick the certificate based on it. Without it, you may be shown a different default cert and misdiagnose the problem."
+    },
+    {
+      "prompt": "Check just the validity dates of the certificate the server presents.",
+      "expected_commands": ["openssl s_client -connect api.example.com:443 -servername api.example.com < /dev/null | openssl x509 -noout -dates", "echo | openssl s_client -connect api.example.com:443 -servername api.example.com | openssl x509 -noout -dates"],
+      "fake_output": "notBefore=Aug 30 08:12:04 2026 GMT\nnotAfter=Nov 28 08:12:03 2026 GMT",
+      "explanation": "Valid until Nov 28 — about two months left.",
+      "why": "This one-liner is worth keeping in a monitoring script. Certificate expiry is completely predictable, which makes an expiry-caused outage one of the most avoidable incidents there is (see networking-incident-002)."
+    },
+    {
+      "prompt": "Inspect a certificate file on disk in full detail, including which hostnames it covers.",
+      "expected_commands": ["openssl x509 -in cert.pem -text -noout"],
+      "fake_output": "Subject: CN = api.example.com\nIssuer: C = US, O = Let's Encrypt, CN = R11\nValidity\n    Not After : Nov 28 08:12:03 2026 GMT\nX509v3 Subject Alternative Name:\n    DNS:api.example.com, DNS:www.api.example.com",
+      "explanation": "The Subject Alternative Name (SAN) list is what actually determines which hostnames the cert is valid for.",
+      "why": "Modern clients ignore the CN field and only check SANs. 'Certificate is valid but browsers say hostname mismatch' almost always means the hostname you're using isn't in this SAN list."
+    },
+    {
+      "prompt": "Generate a new private key and a certificate signing request (CSR) to send to a certificate authority.",
+      "expected_commands": ["openssl req -new -newkey rsa:2048 -nodes -keyout key.pem -out csr.pem"],
+      "fake_output": "Generating a RSA private key\n.....+++++\nwriting new private key to 'key.pem'\nCountry Name (2 letter code) [AU]:US\nCommon Name (e.g. server FQDN) []:api.example.com",
+      "explanation": "key.pem is the private key (never leaves your server); csr.pem is what you submit to the CA.",
+      "why": "-nodes means the key isn't passphrase-protected, which is required for a web server to start unattended — so protect key.pem with file permissions (chmod 600) instead. In practice, ACME clients like certbot automate this whole flow for free certificates."
+    },
+    {
+      "prompt": "A colleague suggests 'just use curl -k' to get past a certificate error. Run it to see what it does.",
+      "expected_commands": ["curl -k https://api.example.com", "curl --insecure https://api.example.com"],
+      "fake_output": "{\"status\": \"ok\"}",
+      "explanation": "-k skips ALL certificate verification — the request succeeds regardless of whether the cert is expired, self-signed, or belongs to someone else entirely.",
+      "why": "Fine for a one-off diagnostic ('is the app itself working, ignoring TLS?'), dangerous anywhere else. -k in a script or app config silently disables the protection against man-in-the-middle attacks — fix the certificate instead."
+    }
+  ]
+}

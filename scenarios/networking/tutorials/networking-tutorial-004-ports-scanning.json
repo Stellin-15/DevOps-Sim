@@ -1,0 +1,39 @@
+{
+  "id": "networking-tutorial-004",
+  "type": "tutorial",
+  "category": "networking",
+  "title": "Ports, Sockets, and Scanning Your Own Hosts",
+  "difficulty": "intermediate",
+  "tags": ["networking", "ports", "nmap", "security"],
+  "intro": "What's actually exposed on your servers is often different from what you think is exposed. Checking from the inside (what's listening) and the outside (what's reachable) catches both mistakes and leftovers.",
+  "steps": [
+    {
+      "prompt": "Find which process is using port 3000.",
+      "expected_commands": ["lsof -i :3000", "sudo lsof -i :3000", "lsof -i tcp:3000"],
+      "fake_output": "COMMAND  PID  USER   FD  TYPE  DEVICE  NODE NAME\nnode    4821 appsvc 21u IPv4 81234   TCP *:3000 (LISTEN)",
+      "explanation": "A node process, owned by appsvc, is listening on all interfaces.",
+      "why": "lsof and 'ss -tulnp' answer the same question from different angles. lsof also shows established connections and files, which helps when you need to know who is connected TO a port, not just who is listening on it."
+    },
+    {
+      "prompt": "From another machine, scan the first 1000 ports of web01 (a server you own) to see what's reachable from the network.",
+      "expected_commands": ["nmap -p 1-1000 web01", "nmap web01"],
+      "fake_output": "PORT     STATE    SERVICE\n22/tcp   open     ssh\n80/tcp   open     http\n443/tcp  open     https\n111/tcp  open     rpcbind\n\nNmap done: 1 IP address (1 host up)",
+      "explanation": "rpcbind on 111 is open to the network — almost certainly unintended on a web server.",
+      "why": "Only scan hosts you own or are authorized to test — scanning others' systems can violate policy or law. Scanning your own from outside catches services that are listening on 0.0.0.0 by default and should have been firewalled or disabled."
+    },
+    {
+      "prompt": "Identify exactly what software and version is behind each open port.",
+      "expected_commands": ["nmap -sV web01", "nmap -sV -p 22,80,443,111 web01"],
+      "fake_output": "PORT    STATE SERVICE VERSION\n22/tcp  open  ssh     OpenSSH 8.2p1 Ubuntu\n80/tcp  open  http    nginx 1.18.0\n111/tcp open  rpcbind 2-4 (RPC #100000)",
+      "explanation": "-sV probes each service to fingerprint its version.",
+      "why": "This is exactly what an attacker's first recon step looks like — outdated versions stand out immediately. It's also a good argument for hiding version banners (e.g. nginx's server_tokens off)."
+    },
+    {
+      "prompt": "Check the HTTP status code of the web service without printing the page body — a quick health check you can script.",
+      "expected_commands": ["curl -o /dev/null -s -w \"%{http_code}\\n\" http://web01", "curl -o /dev/null -s -w '%{http_code}\\n' http://web01"],
+      "fake_output": "200",
+      "explanation": "Just the status code, nothing else.",
+      "why": "Perfect for shell scripts and cron health checks: compare the output to 200 and alert otherwise, without parsing HTML or JSON."
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "id": "networking-tutorial-009",
+  "type": "tutorial",
+  "category": "networking",
+  "title": "Debugging Networking Inside Kubernetes",
+  "difficulty": "intermediate",
+  "tags": ["networking", "kubernetes", "dns", "services"],
+  "intro": "Inside a cluster, the same layered approach applies — DNS, then port, then application — but you have to run the checks from INSIDE a pod, because that's where the traffic actually originates.",
+  "steps": [
+    {
+      "prompt": "From inside the 'web' pod, check whether the 'orders' service name resolves.",
+      "expected_commands": ["kubectl exec -it web -- nslookup orders", "kubectl exec web -- nslookup orders"],
+      "fake_output": "Server:    10.96.0.10\nAddress:   10.96.0.10:53\n\nName:      orders.default.svc.cluster.local\nAddress:   10.96.44.120",
+      "explanation": "CoreDNS (10.96.0.10) resolved 'orders' to its ClusterIP via the pod's search domains.",
+      "why": "Running nslookup from your laptop tests the wrong resolver entirely. Cluster DNS only works from inside the cluster, which is why every in-cluster network check starts with kubectl exec."
+    },
+    {
+      "prompt": "DNS works. Now test the actual HTTP endpoint from inside the pod.",
+      "expected_commands": ["kubectl exec -it web -- curl orders:8080/health", "kubectl exec web -- curl orders:8080/health", "kubectl exec -it web -- curl http://orders:8080/health"],
+      "fake_output": "curl: (7) Failed to connect to orders port 8080: Connection refused",
+      "explanation": "Refused — the Service exists, but nothing is answering behind it on that port.",
+      "why": "Same refused-vs-timeout logic as anywhere else: refused points at the backends (no ready pods, or the wrong targetPort), a timeout would point at a NetworkPolicy dropping traffic."
+    },
+    {
+      "prompt": "Check whether the service actually has any backend pods behind it.",
+      "expected_commands": ["kubectl get endpoints orders", "kubectl get ep orders"],
+      "fake_output": "NAME     ENDPOINTS                        AGE\norders   10.244.1.8:3000,10.244.2.4:3000   3d",
+      "explanation": "Two backends exist — listening on port 3000, not 8080.",
+      "why": "The Service's targetPort (3000) routes correctly, but the client called port 8080, which the Service doesn't expose. Comparing the port you call against 'kubectl get svc orders' output resolves it."
+    },
+    {
+      "prompt": "Check for NetworkPolicies in the namespace that could restrict traffic.",
+      "expected_commands": ["kubectl get networkpolicies", "kubectl get netpol"],
+      "fake_output": "NAME             POD-SELECTOR   AGE\nallow-frontend   app=orders     10d",
+      "explanation": "A policy selects the orders pods — anything not explicitly allowed by it is dropped.",
+      "why": "Even after fixing the port, if 'web' isn't matched by allow-frontend's ingress rules, requests will time out instead of being refused. Rule out policies explicitly rather than assuming traffic is allowed."
+    },
+    {
+      "prompt": "Bypass all in-cluster routing and reach the orders service from your laptop on local port 9090.",
+      "expected_commands": ["kubectl port-forward svc/orders 9090:80", "kubectl port-forward service/orders 9090:80"],
+      "fake_output": "Forwarding from 127.0.0.1:9090 -> 3000\nForwarding from [::1]:9090 -> 3000",
+      "explanation": "localhost:9090 now tunnels straight to an orders pod through the Kubernetes API.",
+      "why": "port-forward skips Ingress, load balancers, and NetworkPolicies. If the app works through port-forward but not through the normal path, you've proven the app is fine and the problem is in the routing layers you just bypassed."
+    }
+  ]
+}

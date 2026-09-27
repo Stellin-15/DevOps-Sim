@@ -1,0 +1,39 @@
+{
+  "id": "networking-tutorial-010",
+  "type": "tutorial",
+  "category": "networking",
+  "title": "CIDR Notation and Subnetting",
+  "difficulty": "intermediate",
+  "tags": ["networking", "cidr", "subnets", "vpc"],
+  "intro": "Every VPC, subnet, security group rule, and Kubernetes pod network is defined in CIDR notation. Being able to reason about ranges quickly prevents overlapping networks — a mistake that's painful to undo later.",
+  "steps": [
+    {
+      "prompt": "Show the details of the 10.0.0.0/16 range your VPC will use.",
+      "expected_commands": ["ipcalc 10.0.0.0/16"],
+      "fake_output": "Address:   10.0.0.0\nNetmask:   255.255.0.0 = 16\nHostMin:   10.0.0.1\nHostMax:   10.0.255.254\nHosts/Net: 65534",
+      "explanation": "/16 means the first 16 bits are fixed; the remaining 16 give 65,534 usable addresses.",
+      "why": "Each step up in the prefix halves the size: /16 = 65k, /24 = 256, /28 = 16. Cloud providers also reserve a few addresses per subnet (AWS reserves 5), so a /28 only gives you 11 usable IPs."
+    },
+    {
+      "prompt": "Check what range 10.0.1.0/24 covers — one of the subnets you'll carve out of the VPC.",
+      "expected_commands": ["ipcalc 10.0.1.0/24"],
+      "fake_output": "Address:   10.0.1.0\nNetmask:   255.255.255.0 = 24\nHostMin:   10.0.1.1\nHostMax:   10.0.1.254\nHosts/Net: 254",
+      "explanation": "10.0.1.0 through 10.0.1.255 — fully inside the /16.",
+      "why": "Splitting a VPC into /24s gives 256 non-overlapping subnets, a common simple scheme (e.g. public subnets 10.0.0-2.0/24, private 10.0.10-12.0/24, one per availability zone)."
+    },
+    {
+      "prompt": "Check whether the office VPN range 10.0.128.0/17 would overlap with the VPC.",
+      "expected_commands": ["ipcalc 10.0.128.0/17"],
+      "fake_output": "Address:   10.0.128.0\nNetmask:   255.255.128.0 = 17\nHostMin:   10.0.128.1\nHostMax:   10.0.255.254",
+      "explanation": "10.0.128.0–10.0.255.255 falls entirely inside 10.0.0.0/16 — they overlap.",
+      "why": "Overlapping ranges can't be routed between: with a VPN or VPC peering, traffic for an overlapping address has no way to know which side to go to. This is why choosing non-overlapping ranges up front (across every VPC, office, and pod network) matters so much."
+    },
+    {
+      "prompt": "Check the default Kubernetes pod network range many clusters use, 10.244.0.0/16, against your VPC's 10.0.0.0/16.",
+      "expected_commands": ["ipcalc 10.244.0.0/16"],
+      "fake_output": "Address:   10.244.0.0\nNetmask:   255.255.0.0 = 16\nHostMin:   10.244.0.1\nHostMax:   10.244.255.254",
+      "explanation": "10.244.x.x doesn't overlap 10.0.x.x — safe to use alongside this VPC.",
+      "why": "Pod CIDR, Service CIDR, VPC CIDR, and any peered or VPN networks must ALL be mutually non-overlapping. The pod CIDR is set at cluster creation (see kubeadm init --pod-network-cidr) and is very hard to change afterwards."
+    }
+  ]
+}

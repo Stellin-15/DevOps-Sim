@@ -1,0 +1,46 @@
+{
+  "id": "networking-tutorial-006",
+  "type": "tutorial",
+  "category": "networking",
+  "title": "Host Firewalls: ufw, iptables, firewalld",
+  "difficulty": "intermediate",
+  "tags": ["networking", "firewall", "security"],
+  "intro": "Three different front-ends exist depending on the distro — ufw (Ubuntu), firewalld (RHEL/Fedora), and raw iptables underneath both. Recognizing all three matters, because you rarely get to pick the server.",
+  "steps": [
+    {
+      "prompt": "Check the status of ufw on this Ubuntu server.",
+      "expected_commands": ["sudo ufw status", "ufw status", "sudo ufw status verbose"],
+      "fake_output": "Status: active\n\nTo          Action   From\n--          ------   ----\n22/tcp      ALLOW    Anywhere\n80,443/tcp  ALLOW    Anywhere",
+      "explanation": "Only SSH and web traffic are allowed in; everything else inbound is denied by default.",
+      "why": "ufw is a friendly wrapper around iptables/nftables. On Ubuntu, 'ufw status' is the quickest honest answer to 'is the host firewall blocking this?'"
+    },
+    {
+      "prompt": "Allow inbound traffic on port 9100 (the node-exporter metrics port), only from the monitoring server 10.0.9.5.",
+      "expected_commands": ["sudo ufw allow from 10.0.9.5 to any port 9100", "ufw allow from 10.0.9.5 to any port 9100", "sudo ufw allow from 10.0.9.5 to any port 9100 proto tcp"],
+      "fake_output": "Rule added",
+      "explanation": "Only the monitoring server can reach the metrics port.",
+      "why": "'ufw allow 9100' would open it to the entire internet. Metrics endpoints leak a lot of internal detail — scoping rules to the specific source that needs access is the habit worth building."
+    },
+    {
+      "prompt": "Look at the raw iptables rules with packet counters, to see which rules are actually matching traffic.",
+      "expected_commands": ["sudo iptables -L -n -v", "iptables -L -n -v"],
+      "fake_output": "Chain INPUT (policy DROP 1840 packets)\n pkts bytes target  prot  source      destination\n 9823 1.2M  ACCEPT  tcp   0.0.0.0/0   0.0.0.0/0   tcp dpt:22\n  312  18K  ACCEPT  tcp   10.0.9.5    0.0.0.0/0   tcp dpt:9100",
+      "explanation": "'policy DROP 1840 packets' — 1840 packets were dropped by the default policy because no rule allowed them.",
+      "why": "The packet counters are the killer feature: run the failing request again and watch which counter increases. If only the DROP policy count grows, you've proven the firewall is what's blocking it."
+    },
+    {
+      "prompt": "On a RHEL-family server using firewalld, permanently open port 8443/tcp.",
+      "expected_commands": ["sudo firewall-cmd --add-port=8443/tcp --permanent", "firewall-cmd --add-port=8443/tcp --permanent", "sudo firewall-cmd --permanent --add-port=8443/tcp"],
+      "fake_output": "success",
+      "explanation": "--permanent writes the rule to the saved configuration.",
+      "why": "firewalld's trap: --permanent rules don't apply to the RUNNING firewall until you reload, while rules without --permanent apply now but vanish on reload/reboot. Hence the next step."
+    },
+    {
+      "prompt": "Apply the permanent configuration to the running firewall.",
+      "expected_commands": ["sudo firewall-cmd --reload", "firewall-cmd --reload"],
+      "fake_output": "success",
+      "explanation": "The saved rules are now active.",
+      "why": "Forgetting --reload after --permanent is the single most common firewalld mistake — the rule looks saved, but the port stays closed until the next reboot."
+    }
+  ]
+}

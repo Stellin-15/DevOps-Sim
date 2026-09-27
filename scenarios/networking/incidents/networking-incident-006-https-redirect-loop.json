@@ -1,0 +1,37 @@
+{
+  "id": "networking-incident-006",
+  "type": "incident",
+  "category": "networking",
+  "title": "Too Many Redirects After Adding a Load Balancer",
+  "difficulty": "advanced",
+  "tags": ["networking", "http", "load-balancer", "tls"],
+  "intro": "The app was moved behind a cloud load balancer that terminates HTTPS. Now browsers show 'ERR_TOO_MANY_REDIRECTS' for every page.",
+  "steps": [
+    {
+      "prompt": "Follow the redirects with curl, headers only, to see the loop.",
+      "expected_commands": ["curl -IL https://shop.example.com", "curl -IL --max-redirs 5 https://shop.example.com"],
+      "fake_output": "HTTP/2 301\nlocation: https://shop.example.com/\n\nHTTP/2 301\nlocation: https://shop.example.com/\n\nHTTP/2 301\nlocation: https://shop.example.com/\ncurl: (47) Maximum (50) redirects followed",
+      "hint": "Notice the redirect points to the exact same HTTPS URL it came from."
+    },
+    {
+      "prompt": "The app keeps redirecting HTTPS requests to HTTPS. Bypass the load balancer and hit one backend directly over plain HTTP, the way the load balancer does.",
+      "expected_commands": ["curl -I -H \"Host: shop.example.com\" http://10.0.5.12", "curl -I -H 'Host: shop.example.com' http://10.0.5.12"],
+      "fake_output": "HTTP/1.1 301 Moved Permanently\nLocation: https://shop.example.com/",
+      "hint": "What protocol does the backend actually receive traffic on?"
+    },
+    {
+      "prompt": "The load balancer talks to the backend over plain HTTP, so the app thinks every request is insecure and redirects it. Check whether the app would honor the load balancer's X-Forwarded-Proto header.",
+      "expected_commands": ["curl -I -H \"Host: shop.example.com\" -H \"X-Forwarded-Proto: https\" http://10.0.5.12", "curl -I -H 'Host: shop.example.com' -H 'X-Forwarded-Proto: https' http://10.0.5.12"],
+      "fake_output": "HTTP/1.1 301 Moved Permanently\nLocation: https://shop.example.com/",
+      "hint": "The load balancer sends this header; does the app believe it?"
+    },
+    {
+      "prompt": "Still redirecting — the app ignores the header. After configuring the app to trust X-Forwarded-Proto from the load balancer's subnet and redeploying, retest end to end.",
+      "expected_commands": ["curl -IL https://shop.example.com"],
+      "fake_output": "HTTP/2 200\ncontent-type: text/html",
+      "hint": "The full path through the load balancer should now return 200."
+    }
+  ],
+  "resolution": "TLS termination moved to the load balancer, so the backend now receives every request over plain HTTP. The app's 'force HTTPS' logic saw http, redirected to https, the browser followed through the load balancer, the backend again saw http — forever. Load balancers communicate the original protocol via the X-Forwarded-Proto header, but apps (and frameworks like Django, Rails, Express) deliberately ignore X-Forwarded-* headers unless told to trust the proxy, because clients could otherwise spoof them. The fix is configuring trusted proxies (e.g. Express's 'trust proxy', Django's SECURE_PROXY_SSL_HEADER) scoped to the load balancer's addresses — or moving the HTTP→HTTPS redirect onto the load balancer itself and removing it from the app. Testing a backend directly with --resolve or a Host header is what separates 'the app is broken' from 'the app misunderstands its environment'.",
+  "real_commands_used": ["curl -IL", "curl -H Host", "curl -H X-Forwarded-Proto"]
+}

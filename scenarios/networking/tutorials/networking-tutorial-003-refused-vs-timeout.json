@@ -1,0 +1,39 @@
+{
+  "id": "networking-tutorial-003",
+  "type": "tutorial",
+  "category": "networking",
+  "title": "Connection Refused vs. Timeout — The First Branch",
+  "difficulty": "beginner",
+  "tags": ["networking", "tcp", "debugging"],
+  "intro": "The single most useful networking distinction there is: 'connection refused' and 'connection timed out' point at completely different causes. Get this right and you skip half of any debugging session.",
+  "steps": [
+    {
+      "prompt": "Test port 8080 on 10.0.4.30, giving up after 5 seconds.",
+      "expected_commands": ["curl --max-time 5 http://10.0.4.30:8080", "curl -m 5 http://10.0.4.30:8080"],
+      "fake_output": "curl: (7) Failed to connect to 10.0.4.30 port 8080: Connection refused",
+      "explanation": "Refused came back instantly. The host is reachable and actively said 'nothing is listening on that port' (a TCP RST).",
+      "why": "Refused means the network path WORKS. The problem is on the target host: the service isn't running, crashed, or is listening on a different port or only on localhost. Don't touch firewalls — check the service."
+    },
+    {
+      "prompt": "Now test port 5432 on 10.0.4.31, again with a 5 second limit.",
+      "expected_commands": ["curl --max-time 5 telnet://10.0.4.31:5432", "nc -zv -w 5 10.0.4.31 5432", "nc -zv 10.0.4.31 5432"],
+      "fake_output": "nc: connect to 10.0.4.31 port 5432 (tcp) timed out: Operation now in progress",
+      "explanation": "Timed out: packets went out and nothing at all came back — no acceptance, no refusal.",
+      "why": "Silence almost always means something in the path is DROPPING packets: a firewall, a cloud security group, a Kubernetes NetworkPolicy, or a wrong route. Look at network controls, not the application."
+    },
+    {
+      "prompt": "Scan a small range of ports (20-30) on 10.0.4.31 to see what IS reachable.",
+      "expected_commands": ["nc -zv 10.0.4.31 20-30", "nc -zv -w 2 10.0.4.31 20-30"],
+      "fake_output": "Connection to 10.0.4.31 22 port [tcp/ssh] succeeded!\nnc: connect to 10.0.4.31 port 25 (tcp) timed out",
+      "explanation": "SSH on 22 works, so the host is up and routable — only specific ports are being filtered.",
+      "why": "This confirms it's port-specific filtering (a security group that allows 22 but not 5432) rather than the whole host being down or unreachable."
+    },
+    {
+      "prompt": "On the database host itself, confirm postgres is actually listening and on which address.",
+      "expected_commands": ["ss -tulnp | grep 5432", "sudo ss -tulnp | grep 5432", "ss -tlnp | grep 5432"],
+      "fake_output": "tcp  LISTEN  0  244  0.0.0.0:5432  0.0.0.0:*  users:((\"postgres\",pid=920))",
+      "explanation": "Listening on all interfaces (0.0.0.0). The service is fine — so the timeout is definitely something in the network path dropping traffic.",
+      "why": "Checking both ends is what turns a guess into a diagnosis: the service is up and listening, yet packets never arrive, which leaves exactly one category of cause — a firewall or security group between them."
+    }
+  ]
+}

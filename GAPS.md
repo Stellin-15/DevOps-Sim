@@ -277,3 +277,47 @@ set targets the mistakes that cause real outages and data loss. Pair it
 with actual HCL authoring on a free-tier cloud account and cloud
 fundamentals study (e.g. an AWS Solutions Architect Associate level) to
 be genuinely productive.
+
+---
+
+# Part 5 — Networking
+
+**Content:** 10 tutorials, 6 incidents.
+
+## Covered
+
+Every section of `commands/networking.md`: layered diagnosis (DNS → port
+→ application), the refused-vs-timeout branch point, DNS in depth
+(resolv.conf search domains, /etc/hosts precedence, querying specific
+resolvers, record types, reverse lookups, +trace to the authoritative
+source), ports and scanning (lsof, nmap -sV against hosts you own),
+routing and ARP (ip route get, `<incomplete>` ARP entries as a layer-2
+signal), host firewalls across all three front-ends (ufw, iptables
+counters, firewalld's --permanent/--reload trap), TLS (s_client with SNI,
+expiry checks, SANs, CSR generation, why `curl -k` is dangerous), HTTP
+debugging (auth headers, redirect chains, --resolve to test one backend,
+per-phase timing), in-cluster Kubernetes networking, and CIDR/subnet
+planning. Incidents cover the most common real network outages: expired
+certificates, stale /etc/hosts pins (dig vs getent), localhost-bound
+services, firewall-dropped ports, and HTTPS redirect loops behind TLS-
+terminating load balancers.
+
+## Still missing
+
+- **Packet capture** (`tcpdump`, reading a pcap in Wireshark) — the tool
+  of last resort for problems nothing else explains. Hard to simulate
+  meaningfully as text, but its absence is a real gap.
+- MTU/fragmentation problems (large requests hang, small ones work) —
+  common with VPNs and overlay networks.
+- Cloud networking specifics: security groups vs NACLs, NAT gateways,
+  VPC peering/Transit Gateway, private endpoints.
+- Load balancer internals (L4 vs L7, health checks, connection draining,
+  sticky sessions) and service meshes.
+- IPv6.
+
+## Readiness verdict
+
+Strong practical troubleshooting foundation — the refused/timeout
+distinction and layer-by-layer method taught here resolve the majority of
+real "can't connect" incidents. Cloud-provider networking and packet
+capture are the next things to learn on real infrastructure.
