@@ -1,0 +1,46 @@
+{
+  "id": "aws-tutorial-010",
+  "type": "tutorial",
+  "category": "aws",
+  "title": "Containers on AWS: ECR and EKS",
+  "difficulty": "intermediate",
+  "tags": ["aws", "eks", "ecr", "kubernetes"],
+  "intro": "Where the Docker and Kubernetes categories meet AWS: ECR is the private image registry, EKS is managed Kubernetes. The glue between them (logging in to the registry, getting a kubeconfig, and IAM permissions on both sides) is where AWS-specific problems show up.",
+  "steps": [
+    {
+      "prompt": "Log Docker in to the ECR registry 111122223333.dkr.ecr.us-east-1.amazonaws.com.",
+      "expected_commands": ["aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 111122223333.dkr.ecr.us-east-1.amazonaws.com", "aws ecr get-login-password | docker login --username AWS --password-stdin 111122223333.dkr.ecr.us-east-1.amazonaws.com"],
+      "fake_output": "Login Succeeded",
+      "explanation": "Docker can now push to and pull from this account's registry for 12 hours.",
+      "why": "The password is a temporary token generated from your IAM identity, piped straight in so it never appears in shell history or 'ps'. The 12-hour lifetime is why a long-running CI runner that logs in once eventually fails with 'no basic auth credentials'."
+    },
+    {
+      "prompt": "List the images in the checkout repository, with their tags and push dates.",
+      "expected_commands": ["aws ecr describe-images --repository-name checkout", "aws ecr describe-images --repository-name checkout --output table"],
+      "fake_output": "ImageTags          ImagePushedAt              ImageSizeInBytes  ImageScanStatus\n[\"1.9.0\"]          2026-09-27T16:40:11+00:00  187466812         COMPLETE (2 HIGH)\n[\"1.8.2\"]          2026-09-20T10:02:33+00:00  187112004         COMPLETE (0 HIGH)",
+      "explanation": "Two versions. The scan of 1.9.0 found 2 high-severity vulnerabilities.",
+      "why": "ECR can scan on push, which gives a cheap vulnerability gate (see cicd-tutorial-012 for the supply-chain side). Also turn on tag immutability, so '1.9.0' can never be overwritten with different content."
+    },
+    {
+      "prompt": "List the EKS clusters in this region.",
+      "expected_commands": ["aws eks list-clusters"],
+      "fake_output": "{\n    \"clusters\": [\"prod-eks\", \"staging-eks\"]\n}",
+      "explanation": "Two clusters.",
+      "why": "EKS clusters are regional, like everything else. If a cluster seems missing, check --region before assuming it's gone."
+    },
+    {
+      "prompt": "Add prod-eks to your kubeconfig so kubectl can reach it.",
+      "expected_commands": ["aws eks update-kubeconfig --name prod-eks", "aws eks update-kubeconfig --name prod-eks --region us-east-1"],
+      "fake_output": "Added new context arn:aws:eks:us-east-1:111122223333:cluster/prod-eks to /home/alice/.kube/config",
+      "explanation": "kubectl now has a context for prod-eks, and it switched to it.",
+      "why": "The kubeconfig doesn't store a password. It runs 'aws eks get-token' on every kubectl call, so your Kubernetes identity is your current AWS identity. If the wrong AWS_PROFILE is set, kubectl acts as the wrong person. update-kubeconfig also switches your current context, a classic way to run the next command against prod by accident (see tutorial-020 on contexts)."
+    },
+    {
+      "prompt": "Check which Kubernetes identity your AWS identity maps to, by asking kubectl.",
+      "expected_commands": ["kubectl auth whoami"],
+      "fake_output": "ATTRIBUTE   VALUE\nUsername    arn:aws:sts::111122223333:assumed-role/DeveloperAccess/alice@example.com\nGroups      [developers system:authenticated]",
+      "explanation": "Your assumed AWS role maps to the Kubernetes group 'developers'.",
+      "why": "In EKS, AWS IAM handles authentication and Kubernetes RBAC handles authorization. Access entries (or the older aws-auth ConfigMap) map IAM roles to Kubernetes users and groups. 'You must be logged in to the server (Unauthorized)' means that mapping is missing, not that your RBAC is wrong."
+    }
+  ]
+}

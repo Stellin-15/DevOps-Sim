@@ -2,8 +2,9 @@
 
 A terminal-based game for learning real DevOps command-line skills by
 typing them, not memorizing them. Started as Kubernetes-only; now spans
-**Kubernetes, Docker, Linux, Terraform, Networking, CI/CD, Monitoring, and
-MLOps**. Runs entirely locally — no real infrastructure, no network calls,
+**Kubernetes, Docker, Linux, Terraform, Networking, CI/CD, Monitoring,
+MLOps, and AWS**, with Azure, Google Cloud, Security, Server Fleet Ops,
+and big-tech SRE in progress. Runs entirely locally — no real infrastructure, no network calls,
 no backend. Every command output you see is a pre-written simulated
 string.
 
@@ -32,7 +33,7 @@ string.
   The game writes a real file to `workspace/`, tells you what to build or
   fix, and you edit it in your actual editor (vim, nano, VS Code —
   whatever you'd really use). Typing the apply command reads your real
-  file and checks it field by field. 21 labs across seven formats:
+  file and checks it field by field. 22 labs across seven formats:
   Kubernetes manifests, GitHub Actions workflows, Prometheus alert rules,
   Docker Compose files, Dockerfiles, Terraform (HCL), and bash scripts.
   Half are "write from scratch", half are "fix this broken or dangerous
@@ -45,8 +46,8 @@ string.
   remembered. The rest of the game is forgiving on purpose; this is the
   part that tells you whether it stuck.
 - **Mystery Incidents**: real on-call conditions. You get only a
-  symptom ("postgres just dies, nothing in its logs") and a live Linux
-  or Docker sandbox. There are no steps and no hints, and any command
+  symptom ("postgres just dies, nothing in its logs") and a live Linux,
+  Docker, or AWS sandbox. There are no steps and no hints, and any command
   works in any order.
   - **Solving it.** When you think you've fixed it, type `solve`. The
     game checks three things:
@@ -54,11 +55,12 @@ string.
     2. you actually *saw* the evidence, so you can't win by guessing;
     3. you can name the root cause.
   - **Scoring.** You're scored against an experienced engineer's command
-    count. Careless fixes cost points: `kill -9` on sshd locks you out.
+    count. Careless fixes cost points: `kill -9` on sshd locks you out,
+    and opening SSH to 0.0.0.0/0 on AWS gets flagged.
   - **Debrief.** Afterwards you get a debrief, plus one efficient path
     through the problem. Type `giveup` at any time to see the answer.
 - **Sandbox** — no scoring, no steps: a randomly generated broken
-  environment to explore with real commands. Three to pick from:
+  environment to explore with real commands. Four to pick from:
   - **Kubernetes** — a cluster of Deployments, Services, and pods (some
     `CrashLoopBackOff`/`OOMKilled`/`Pending`/`Error`), plus nodes, a
     ConfigMap, a Secret, and an event log, all consistent with each other.
@@ -69,6 +71,14 @@ string.
     full disk, a runaway process, a memory hog) that you must find **and
     fix**: `kill`, `systemctl restart`, `rm`, and `truncate` really change
     the state, so fixes only work if you've understood the cause.
+  - **AWS** — a VPC with two broken network layers. Explore it with real
+    `aws ec2 describe-*` commands. Traffic is evaluated layer by layer:
+    public IP, route table (IGW or NAT), stateless network ACLs, and
+    security groups. Every failure just times out, as it would for real,
+    so you have to read the configuration. Fix it with create-route,
+    security group rules, NACL entries or Elastic IPs, then test with
+    `curl`/`nc`/`ssh` from your laptop, or from inside an instance via
+    `aws ssm start-session`.
   Pipes work everywhere (`ps aux | grep python`, `docker ps -a | grep
   Exited`). On exit you can keep the state for next time or throw it away.
 
@@ -200,6 +210,7 @@ progress.py         reads/writes progress.json (completion + attempt
 sandbox.py          Kubernetes sandbox (random cluster)
 docker_sandbox.py   Docker sandbox (random broken host)
 linux_sandbox.py    Linux sandbox (random broken server; reacts to fixes)
+aws_sandbox.py      AWS sandbox (a VPC with real layer-by-layer reachability)
 sandbox_common.py   shared sandbox loop, pipes, tables, save/discard
 yaml_lab.py         Writing Labs runner: real file editing + validation
 lab_formats.py      parsers for YAML, Dockerfile, HCL, and bash lab files
@@ -316,7 +327,8 @@ the engine, loader, sandboxes, yaml_lab, career_path, mystery, or scenario conte
 | CI/CD | 13 | 6 | git workflows, revert vs reset, git bisect, tags/releases, GitHub Actions CLI, secrets/OIDC, local CI repro, rolling/blue-green/canary, GitOps (Argo CD), SBOMs/scanning/signing; plus 3 workflow Writing Labs |
 | Monitoring | 12 | 6 | PromQL, golden signals, tracing (OTel/Jaeger), SLOs and burn-rate alerts, Prometheus ops, alerting/Alertmanager, journald, Elasticsearch, Loki, Grafana API; plus 2 alert-rule Writing Labs |
 | MLOps | 12 | 7 | environments, GPUs, MLflow, DVC, serving, KServe/Kubeflow, profiling, model monitoring, model canaries, LLM serving (vLLM), feature stores (Feast) |
-| **Total** | **113** | **56** | + 22 Writing Labs |
+| AWS | 11 | 7 | profiles/identity, EC2, SSM vs SSH, VPC anatomy, security groups vs NACLs, IAM, S3, CloudWatch/CloudTrail, ALB/ASG, EKS/ECR, cost; plus a VPC Sandbox |
+| **Total** | **124** | **63** | + 22 Writing Labs |
 
 Plus **7 Career Paths** chaining scenarios across categories: ship a
 feature end to end, a production incident chain, ML model from laptop to
@@ -324,10 +336,15 @@ production, security hardening layer by layer, building a platform from
 zero, "The Worst On-Call Night" (seven incidents, seven layers), and
 shipping a self-hosted LLM safely (build → sign → GitOps → serve → SLO).
 
-Plus **6 Mystery Incidents**, symptom only: an API down after a deploy,
-a disk alert that won't clear, a database that keeps dying, a slow
-server that has two unrelated problems, a container that "disappears",
-and a worker the dashboard wrongly reports as "running".
+Plus **10 Mystery Incidents**, symptom only:
+- Linux: an API down after a deploy, a disk alert that won't clear, a
+  database that keeps dying, and a slow server with two unrelated
+  problems.
+- Docker: a container that "disappears", and a worker the dashboard
+  wrongly reports as "running".
+- AWS: a new web server that times out, private workers that can't pull
+  updates, SSH that works while the site doesn't, and a "network
+  hardening" change that broke everything.
 
 Every tutorial step explains not just what the command does but *why*
 it beats the alternatives. Every incident ends with a debrief of the real
@@ -337,12 +354,12 @@ root cause and how to prevent it.
 
 Honest answer — see **GAPS.md**, which assesses every category
 individually (covered / still missing / readiness verdict) plus an
-overall verdict in Part 9. In short: completing everything here makes
+overall verdict in its final part. In short: completing everything here makes
 you a strong DevOps *operator* — you'll know the commands, the failure
 modes, and the debugging method. To be fully proficient you also need to
 practice *authoring* (Dockerfiles, Terraform, pipeline YAML, scripts),
 time on real infrastructure where things break in unscripted ways, and
-cloud-provider fundamentals. GAPS.md Part 9 lays out a concrete path.
+cloud-provider fundamentals. GAPS.md's final part lays out a concrete path.
 For the CKA specifically, see GAPS.md Part 1.
 
 ## Status / roadmap
@@ -354,16 +371,21 @@ Career Paths → all 8 categories expanded to full depth → Dockerfile,
 Terraform, and bash Writing Labs → Exam Mode → Docker and Linux sandboxes →
 Mystery Incidents → new-topic content (tracing, SLOs, tcpdump/MTU, GitOps,
 supply chain, bisect, LLM serving, feature stores, strace, BuildKit,
-Terraform modules, and RBAC/PDB/storage incidents).
+Terraform modules, and RBAC/PDB/storage incidents) → AWS category, VPC
+sandbox, and AWS mysteries.
 
 Next, in priority order (details in CLAUDE.md and GAPS.md):
-- **A stats screen and a spaced-repetition review mode** (next up)
+- **In progress:** Azure and Google Cloud categories; a Security category
+  (scanning, hardening, endpoint security) with hacked-server mysteries;
+  Server Fleet Ops (Ansible, patching, backups); big-tech SRE practices;
+  Writing Labs for IAM policies, VPC Terraform, Ansible, and postmortems
+- A stats screen and a spaced-repetition review mode
 - Exam-specific gap passes for other certifications (CKAD, Terraform
   Associate, AWS)
 - More mysteries, including Kubernetes ones (these need a reactive
   Kubernetes sandbox)
-- More sandboxes (Kubernetes, Docker, and Linux exist; Terraform and
-  networking would be next)
+- More sandboxes (Kubernetes, Docker, Linux, and AWS exist; Terraform
+  state would be next)
 - A CLI scaffold for authoring new scenario JSON
 
 See CLAUDE.md for architecture and notes for continuing development.

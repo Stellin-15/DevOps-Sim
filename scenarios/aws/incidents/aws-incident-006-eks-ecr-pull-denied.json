@@ -1,0 +1,43 @@
+{
+  "id": "aws-incident-006",
+  "type": "incident",
+  "category": "aws",
+  "title": "New EKS node group can't pull images (ImagePullBackOff 403)",
+  "difficulty": "intermediate",
+  "tags": ["aws", "eks", "ecr", "iam", "kubernetes"],
+  "intro": "The platform team added a new Terraform-managed node group, 'ng-arm', to prod-eks. Pods scheduled on the new nodes are stuck in ImagePullBackOff. The same images run fine on the old nodes.",
+  "steps": [
+    {
+      "prompt": "Describe the stuck pod checkout-7c9d8f6b5-x4k2p in the shop namespace and read the events.",
+      "expected_commands": ["kubectl describe pod checkout-7c9d8f6b5-x4k2p -n shop", "kubectl describe po checkout-7c9d8f6b5-x4k2p -n shop"],
+      "fake_output": "Node: ip-10-0-4-77.ec2.internal\nEvents:\n  Warning  Failed  kubelet  Failed to pull image \"111122223333.dkr.ecr.us-east-1.amazonaws.com/checkout:1.8.2\": pull access denied ... 403 Forbidden: not authorized to perform: ecr:BatchGetImage",
+      "hint": "The Events at the bottom of describe show the exact pull error."
+    },
+    {
+      "prompt": "The node itself isn't allowed to read from ECR. Find the IAM role the ng-arm node group uses in prod-eks.",
+      "expected_commands": ["aws eks describe-nodegroup --cluster-name prod-eks --nodegroup-name ng-arm --query nodegroup.nodeRole", "aws eks describe-nodegroup --cluster-name prod-eks --nodegroup-name ng-arm"],
+      "fake_output": "\"arn:aws:iam::111122223333:role/ng-arm-node-role\"",
+      "hint": "describe-nodegroup shows nodeRole."
+    },
+    {
+      "prompt": "List the policies attached to ng-arm-node-role.",
+      "expected_commands": ["aws iam list-attached-role-policies --role-name ng-arm-node-role"],
+      "fake_output": "PolicyName                          PolicyArn\nAmazonEKSWorkerNodePolicy           arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy\nAmazonEKS_CNI_Policy                arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy",
+      "hint": "Compare with the three policies every EKS node role needs."
+    },
+    {
+      "prompt": "The ECR read-only policy is missing (the old node groups have it). Attach arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly to ng-arm-node-role.",
+      "expected_commands": ["aws iam attach-role-policy --role-name ng-arm-node-role --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"],
+      "fake_output": "(no output: the policy is attached)",
+      "hint": "attach-role-policy --role-name --policy-arn."
+    },
+    {
+      "prompt": "Delete the stuck pod checkout-7c9d8f6b5-x4k2p in shop so it's recreated and pulls again immediately, instead of waiting out the back-off.",
+      "expected_commands": ["kubectl delete pod checkout-7c9d8f6b5-x4k2p -n shop", "kubectl delete po checkout-7c9d8f6b5-x4k2p -n shop"],
+      "fake_output": "pod \"checkout-7c9d8f6b5-x4k2p\" deleted\n(replacement checkout-7c9d8f6b5-m8n2q: Pulled image in 4.1s, Running)",
+      "hint": "The Deployment's ReplicaSet recreates a deleted pod straight away."
+    }
+  ],
+  "resolution": "Kubernetes pulls images with the node's credentials, not the pod's. On EKS the kubelet authenticates to ECR using the node group's IAM role, which needs three managed policies: AmazonEKSWorkerNodePolicy, AmazonEKS_CNI_Policy, and AmazonEC2ContainerRegistryReadOnly. The new node group's Terraform left out the third. Old nodes worked, so the images and registry were fine, which pointed the investigation at what's different about the new nodes. The 403 on ecr:BatchGetImage named the missing permission exactly. Prevention: build node groups from one shared Terraform module so the policy set can't drift, and include 'pull the app image on a new node' in node-group rollout checks. (Pod-level AWS access, like reading S3 from app code, is a separate mechanism: IRSA or EKS Pod Identity, never widening the node role.)",
+  "real_commands_used": ["kubectl describe pod", "aws eks describe-nodegroup", "aws iam list-attached-role-policies", "aws iam attach-role-policy", "kubectl delete pod"]
+}

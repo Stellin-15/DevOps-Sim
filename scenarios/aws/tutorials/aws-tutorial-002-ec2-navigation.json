@@ -1,0 +1,46 @@
+{
+  "id": "aws-tutorial-002",
+  "type": "tutorial",
+  "category": "aws",
+  "title": "Navigating EC2: Finding and Inspecting Instances",
+  "difficulty": "beginner",
+  "tags": ["aws", "ec2", "vm"],
+  "intro": "EC2 is AWS's virtual machine service, the cloud version of 'a server'. The console is fine for one instance; the CLI is how you work with hundreds. This tutorial covers finding the right instance, reading its state, and seeing why it won't boot without logging in.",
+  "steps": [
+    {
+      "prompt": "List all running instances as a table of id, Name tag, type, private IP, and public IP, using --query.",
+      "expected_commands": ["aws ec2 describe-instances --filters Name=instance-state-name,Values=running --query 'Reservations[].Instances[].[InstanceId,Tags[?Key==`Name`]|[0].Value,InstanceType,PrivateIpAddress,PublicIpAddress]' --output table"],
+      "fake_output": "---------------------------------------------------------------------------------\n|                               DescribeInstances                               |\n+----------------------+-----------+------------+--------------+----------------+\n|  i-0a1b2c3d4e5f67890 |  web-1    |  t3.small  |  10.0.1.23   |  54.211.10.7   |\n|  i-0b2c3d4e5f6789012 |  api-1    |  m6i.large |  10.0.2.54   |  None          |\n|  i-0c3d4e5f678901234 |  batch-7  |  c6i.4xlarge| 10.0.2.201  |  None          |\n+----------------------+-----------+------------+--------------+----------------+",
+      "explanation": "Three running instances. Only web-1 has a public IP.",
+      "why": "Raw describe-instances output is hundreds of lines of nested JSON (Reservations → Instances → ...). --filters narrows server-side, and --query shapes the output client-side. Learning this one JMESPath pattern saves hours; the Name tag lookup (Tags[?Key==`Name`]|[0].Value) is worth memorising."
+    },
+    {
+      "prompt": "Find the instance whose Name tag is batch-7 by filtering on the tag.",
+      "expected_commands": ["aws ec2 describe-instances --filters Name=tag:Name,Values=batch-7", "aws ec2 describe-instances --filters \"Name=tag:Name,Values=batch-7\""],
+      "fake_output": "{\n  \"Reservations\": [{\n    \"Instances\": [{\n      \"InstanceId\": \"i-0c3d4e5f678901234\",\n      \"InstanceType\": \"c6i.4xlarge\",\n      \"LaunchTime\": \"2025-11-02T08:14:00+00:00\",\n      \"State\": {\"Name\": \"running\"},\n      \"Tags\": [{\"Key\": \"Name\", \"Value\": \"batch-7\"}, {\"Key\": \"owner\", \"Value\": \"data-team\"}]\n    }]\n  }]\n}",
+      "explanation": "batch-7 is a c6i.4xlarge launched almost a year ago, owned by data-team.",
+      "why": "Tags are how organisations find things (and how cost gets allocated). Filter by tag rather than guessing ids. A 16-vCPU instance running for a year with a name like 'batch' is exactly the kind of forgotten resource a cost review finds."
+    },
+    {
+      "prompt": "api-1 (i-0b2c3d4e5f6789012) was reported unresponsive. Check its status checks.",
+      "expected_commands": ["aws ec2 describe-instance-status --instance-ids i-0b2c3d4e5f6789012"],
+      "fake_output": "{\n  \"InstanceStatuses\": [{\n    \"InstanceId\": \"i-0b2c3d4e5f6789012\",\n    \"InstanceState\": {\"Name\": \"running\"},\n    \"SystemStatus\": {\"Status\": \"ok\"},\n    \"InstanceStatus\": {\"Status\": \"impaired\", \"Details\": [{\"Name\": \"reachability\", \"Status\": \"failed\"}]}\n  }]\n}",
+      "explanation": "System status is ok but instance status is impaired: AWS's hardware is fine, but the operating system isn't responding.",
+      "why": "The two checks split the blame. A failed SYSTEM check is AWS's problem (host hardware or network), fixed by stop/start, which moves the instance to new hardware. A failed INSTANCE check is yours: the OS, kernel, disk or network config. Knowing which one failed tells you whether to wait for AWS or start debugging."
+    },
+    {
+      "prompt": "Read the latest boot console output of i-0b2c3d4e5f6789012 to see why the OS is stuck, without needing to log in.",
+      "expected_commands": ["aws ec2 get-console-output --instance-id i-0b2c3d4e5f6789012 --latest --output text", "aws ec2 get-console-output --instance-id i-0b2c3d4e5f6789012 --output text", "aws ec2 get-console-output --instance-id i-0b2c3d4e5f6789012 --latest"],
+      "fake_output": "[  OK  ] Reached target Local File Systems (Pre).\n[ TIME ] Timed out waiting for device /dev/xvdf.\n[DEPEND] Dependency failed for /data.\n[DEPEND] Dependency failed for Local File Systems.\nYou are in emergency mode. After logging in, type \"journalctl -xb\" to view system logs",
+      "explanation": "The boot stopped in emergency mode: /etc/fstab lists /dev/xvdf for /data, and that volume isn't attached.",
+      "why": "When SSH and SSM are both dead, the console output is the one window into a broken boot. The fix here is 'nofail' in fstab (or mounting by UUID), so a missing data volume can't block the whole boot. aws-incident-005 is this exact failure."
+    },
+    {
+      "prompt": "Stop and start (not reboot) i-0c3d4e5f678901234 to change its type later. First, stop it.",
+      "expected_commands": ["aws ec2 stop-instances --instance-ids i-0c3d4e5f678901234"],
+      "fake_output": "{\n  \"StoppingInstances\": [{\n    \"InstanceId\": \"i-0c3d4e5f678901234\",\n    \"CurrentState\": {\"Name\": \"stopping\"},\n    \"PreviousState\": {\"Name\": \"running\"}\n  }]\n}",
+      "explanation": "batch-7 is stopping. Its EBS disks and private IP are kept.",
+      "why": "Reboot keeps the instance on the same host; stop/start moves it to a new one (which is also the fix for a failed system check), and is required to change the instance type. Stop is not terminate: terminate deletes the instance and, by default, its root volume. Also note that a public IP not backed by an Elastic IP changes on stop/start."
+    }
+  ]
+}

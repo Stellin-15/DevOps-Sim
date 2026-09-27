@@ -454,6 +454,42 @@ def handle_command(state: dict, raw: str):
     return f"{cmd}: not simulated in the sandbox. Type 'help' for supported commands."
 
 
+# ------------------------------------------------------- mystery/sandbox hooks
+
+def placeholders(state: dict) -> dict:
+    """Concrete values (pids) a mystery's solution_commands refer to, so a
+    stored expert path works against the seeded state."""
+    values = {}
+    for s in state.get("services", []):
+        if s.get("stray_listener"):
+            values["stray_pid"] = s["stray_listener"]
+        if s.get("oom_hog"):
+            values["hog_pid"] = s["oom_hog"]
+    for p in state.get("processes", []):
+        if "generate.py" in p["command"]:
+            values["runaway_pid"] = p["pid"]
+    return values
+
+
+GOAL_CHECKS = {
+    "service_active": lambda state, g: _service_running(state, g["service"]),
+    "disk_below": lambda state, g: _disk_used_gb(state) / DISK_SIZE_GB * 100 < g["percent"],
+    "load_below_nproc": lambda state, g: _load(state) < state["nproc"],
+}
+
+# Processes that should never be killed while fixing something else.
+PROTECTED = {
+    "/sbin/init": "killed PID 1 (/sbin/init) — that takes down the whole machine",
+    "sshd": "killed sshd — on a real server you just locked yourself out",
+    "nginx": "killed nginx — the front door for every request, taken down on the way to fixing something else",
+}
+
+
+def collateral_issues(state: dict) -> set:
+    return {reason for needle, reason in PROTECTED.items()
+            if not any(needle in p["command"] for p in state["processes"])}
+
+
 def describe_state(state: dict) -> list:
     return [
         f"You're logged into {state['hostname']} ({state['nproc']} CPUs, {state['mem_total_mb'] // 1024}GB RAM, "

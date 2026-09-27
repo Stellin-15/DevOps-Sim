@@ -1,0 +1,46 @@
+{
+  "id": "aws-tutorial-006",
+  "type": "tutorial",
+  "category": "aws",
+  "title": "IAM: Roles, Policies, and Testing Permissions",
+  "difficulty": "intermediate",
+  "tags": ["aws", "iam", "security", "least-privilege"],
+  "intro": "IAM decides who can do what to which resource. Every AWS 'AccessDenied' is an IAM question, and almost every AWS breach involves over-broad IAM. This tutorial inspects the role an application runs as, tests its permissions without breaking anything, and assumes a role the way applications and CI do.",
+  "steps": [
+    {
+      "prompt": "List the managed policies attached to the role orders-api-role.",
+      "expected_commands": ["aws iam list-attached-role-policies --role-name orders-api-role"],
+      "fake_output": "{\n  \"AttachedPolicies\": [\n    {\"PolicyName\": \"orders-api-dynamodb\", \"PolicyArn\": \"arn:aws:iam::111122223333:policy/orders-api-dynamodb\"},\n    {\"PolicyName\": \"AmazonS3FullAccess\", \"PolicyArn\": \"arn:aws:iam::aws:policy/AmazonS3FullAccess\"}\n  ]\n}",
+      "explanation": "A custom DynamoDB policy, plus AmazonS3FullAccess: every action on every bucket in the account.",
+      "why": "Roles, not IAM users with access keys, are how applications should authenticate: the credentials are temporary and rotate automatically. But a role is only as safe as its policies. AWS-managed 'FullAccess' policies are convenient and almost always far broader than needed."
+    },
+    {
+      "prompt": "Read version v3 of the orders-api-dynamodb policy (arn:aws:iam::111122223333:policy/orders-api-dynamodb) to see exactly what it grants.",
+      "expected_commands": ["aws iam get-policy-version --policy-arn arn:aws:iam::111122223333:policy/orders-api-dynamodb --version-id v3"],
+      "fake_output": "{\n  \"PolicyVersion\": {\n    \"Document\": {\n      \"Version\": \"2012-10-17\",\n      \"Statement\": [{\n        \"Effect\": \"Allow\",\n        \"Action\": [\"dynamodb:GetItem\", \"dynamodb:PutItem\", \"dynamodb:Query\"],\n        \"Resource\": \"arn:aws:dynamodb:us-east-1:111122223333:table/orders\"\n      }]\n    },\n    \"IsDefaultVersion\": true\n  }\n}",
+      "explanation": "Three specific actions on one specific table: least privilege done right.",
+      "why": "Compare this with S3FullAccess: specific actions on a specific resource ARN. A leaked credential with this policy can read and write one table. With S3FullAccess it can read or delete every bucket in the account."
+    },
+    {
+      "prompt": "Test whether orders-api-role (arn:aws:iam::111122223333:role/orders-api-role) can delete the orders table, without trying it for real.",
+      "expected_commands": ["aws iam simulate-principal-policy --policy-source-arn arn:aws:iam::111122223333:role/orders-api-role --action-names dynamodb:DeleteTable --resource-arns arn:aws:dynamodb:us-east-1:111122223333:table/orders"],
+      "fake_output": "{\n  \"EvaluationResults\": [{\n    \"EvalActionName\": \"dynamodb:DeleteTable\",\n    \"EvalResourceName\": \"arn:aws:dynamodb:us-east-1:111122223333:table/orders\",\n    \"EvalDecision\": \"implicitDeny\"\n  }]\n}",
+      "explanation": "implicitDeny: nothing allows it, so the role cannot delete the table.",
+      "why": "The policy simulator answers 'can X do Y to Z?' safely. implicitDeny means no policy allowed the action; explicitDeny means a policy (or an SCP or permission boundary) specifically forbids it. The difference tells you where to look when debugging an AccessDenied."
+    },
+    {
+      "prompt": "Assume the role arn:aws:iam::444455556666:role/DeployRole in the prod account, naming the session deploy-alice, the way a CI job or cross-account tool would.",
+      "expected_commands": ["aws sts assume-role --role-arn arn:aws:iam::444455556666:role/DeployRole --role-session-name deploy-alice"],
+      "fake_output": "{\n  \"Credentials\": {\n    \"AccessKeyId\": \"ASIAEXAMPLETEMPKEY\",\n    \"SecretAccessKey\": \"(hidden)\",\n    \"SessionToken\": \"(hidden)\",\n    \"Expiration\": \"2026-09-28T13:02:11+00:00\"\n  },\n  \"AssumedRoleUser\": {\"Arn\": \"arn:aws:sts::444455556666:assumed-role/DeployRole/deploy-alice\"}\n}",
+      "explanation": "Temporary credentials for DeployRole, valid for one hour.",
+      "why": "Cross-account roles are how multi-account companies work: people and pipelines have one identity and assume roles into each account, instead of keeping keys per account. Temporary keys start with ASIA and long-lived ones with AKIA, so an AKIA key in a config file is a finding. The role's trust policy decides who may assume it."
+    },
+    {
+      "prompt": "An error message contained an encoded authorization failure. Decode it to see which policy caused the denial: the message is stored in $MSG.",
+      "expected_commands": ["aws sts decode-authorization-message --encoded-message $MSG", "aws sts decode-authorization-message --encoded-message \"$MSG\""],
+      "fake_output": "{\n  \"DecodedMessage\": \"{\\\"allowed\\\":false,\\\"explicitDeny\\\":true,\\\"matchedStatements\\\":{\\\"items\\\":[{\\\"statementId\\\":\\\"DenyOutsideEU\\\",\\\"effect\\\":\\\"DENY\\\",\\\"source\\\":\\\"SCP\\\"}]},\\\"context\\\":{\\\"action\\\":\\\"ec2:RunInstances\\\",\\\"region\\\":\\\"us-east-1\\\"}}\"\n}",
+      "explanation": "An explicit deny from a Service Control Policy: launching instances outside the EU is forbidden organisation-wide.",
+      "why": "An explicit deny always wins over any allow, and SCPs apply to the whole account, so no amount of adding permissions to your role will fix this. Decoding the message (you need sts:DecodeAuthorizationMessage permission) saves hours of guessing. aws-incident-001 walks through this situation."
+    }
+  ]
+}

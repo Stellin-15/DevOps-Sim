@@ -1,0 +1,46 @@
+{
+  "id": "aws-tutorial-003",
+  "type": "tutorial",
+  "category": "aws",
+  "title": "Getting a Shell: SSM Session Manager vs SSH",
+  "difficulty": "beginner",
+  "tags": ["aws", "ssm", "ssh", "security"],
+  "intro": "The traditional way into a server is SSH: open port 22, manage key files, maybe run a bastion host. AWS Systems Manager (SSM) Session Manager gives you a shell with no open ports and no keys, with every session logged. Most security teams now prefer it. Here you use both, plus SSM's fleet-wide Run Command.",
+  "steps": [
+    {
+      "prompt": "List the instances registered with SSM (the SSM agent is running and can reach the service).",
+      "expected_commands": ["aws ssm describe-instance-information", "aws ssm describe-instance-information --output table"],
+      "fake_output": "InstanceId            PingStatus    PlatformName        AgentVersion\ni-0a1b2c3d4e5f67890   Online        Amazon Linux        3.3.1142.0\ni-0b2c3d4e5f6789012   Online        Amazon Linux        3.3.1142.0\ni-0d4e5f6789012a3b4   ConnectionLost Ubuntu             3.2.582.0",
+      "explanation": "Two instances are online; one has lost its SSM connection.",
+      "why": "An instance only appears here if its agent is running, it has an instance profile allowing SSM, and it can reach the SSM endpoints (through a NAT or VPC interface endpoints). ConnectionLost usually means one of those three broke, most often the network path."
+    },
+    {
+      "prompt": "Open a shell on i-0a1b2c3d4e5f67890 through Session Manager.",
+      "expected_commands": ["aws ssm start-session --target i-0a1b2c3d4e5f67890"],
+      "fake_output": "Starting session with SessionId: alice-0f3c1b2a9d8e7f601\nsh-5.2$ whoami\nssm-user",
+      "explanation": "You're on the instance as ssm-user, with no SSH key and no open inbound port.",
+      "why": "Access is controlled by IAM (who may call ssm:StartSession on which instances), not by key files that get copied around and never rotated. Sessions can be logged to S3 or CloudWatch for audit, and the instance's security group can have zero inbound rules."
+    },
+    {
+      "prompt": "Run 'uptime' on every instance tagged Role=web at once, with SSM Run Command (document AWS-RunShellScript).",
+      "expected_commands": ["aws ssm send-command --document-name AWS-RunShellScript --targets Key=tag:Role,Values=web --parameters commands=uptime", "aws ssm send-command --document-name AWS-RunShellScript --targets Key=tag:Role,Values=web --parameters 'commands=uptime'"],
+      "fake_output": "{\n  \"Command\": {\n    \"CommandId\": \"8d2f6c1a-4b3e-4f5a-9c7d-1e2f3a4b5c6d\",\n    \"Status\": \"Pending\",\n    \"TargetCount\": 12\n  }\n}",
+      "explanation": "The command was sent to 12 web instances.",
+      "why": "Targeting by tag scales from one server to thousands without listing ids, and it runs without anyone logging in. For real changes, add --max-concurrency and --max-errors so a bad command stops after a few failures instead of hitting the whole fleet."
+    },
+    {
+      "prompt": "See each instance's result for command id 8d2f6c1a-4b3e-4f5a-9c7d-1e2f3a4b5c6d.",
+      "expected_commands": ["aws ssm list-command-invocations --command-id 8d2f6c1a-4b3e-4f5a-9c7d-1e2f3a4b5c6d --details"],
+      "fake_output": "InstanceId            Status    Output\ni-0a1b2c3d4e5f67890   Success   10:41:02 up 12 days,  load average: 0.21, 0.30, 0.28\ni-0e5f6789012a3b4c5   Success   10:41:02 up 12 days,  load average: 7.94, 8.10, 8.02\n...",
+      "explanation": "One web instance has a load of about 8 while the others idle: worth a look.",
+      "why": "--details includes each instance's output. Comparing the same command across a fleet is how you spot the one odd server. The same pattern is used for patching (AWS-RunPatchBaseline) in the servers category."
+    },
+    {
+      "prompt": "Some teams still need SSH (scp, port forwarding). Connect to i-0a1b2c3d4e5f67890 with EC2 Instance Connect, which pushes a one-time key, instead of a long-lived key file.",
+      "expected_commands": ["aws ec2-instance-connect ssh --instance-id i-0a1b2c3d4e5f67890"],
+      "fake_output": "   ,     #_\n   ~\\_  ####_        Amazon Linux 2023\n[ec2-user@ip-10-0-1-23 ~]$",
+      "explanation": "An SSH session, using a temporary key valid for 60 seconds.",
+      "why": "Instance Connect keeps SSH but removes the worst part: permanent private keys on laptops. Access is again controlled by IAM. Port 22 still has to be reachable, so restrict it to your office range or an Instance Connect Endpoint, never 0.0.0.0/0."
+    }
+  ]
+}

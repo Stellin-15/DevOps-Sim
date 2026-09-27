@@ -1,0 +1,43 @@
+{
+  "id": "aws-incident-001",
+  "type": "incident",
+  "category": "aws",
+  "title": "AccessDenied that no IAM change can fix (an SCP deny)",
+  "difficulty": "advanced",
+  "tags": ["aws", "iam", "scp", "organizations"],
+  "intro": "The data team's new pipeline fails to launch its GPU instances: 'UnauthorizedOperation'. They've already attached AdministratorAccess to the pipeline's role, and it STILL fails. They want you to 'give it more permissions'.",
+  "steps": [
+    {
+      "prompt": "Confirm which identity the pipeline runs as: check the caller identity with the pipeline profile.",
+      "expected_commands": ["aws sts get-caller-identity --profile pipeline"],
+      "fake_output": "{\n    \"Account\": \"777788889999\",\n    \"Arn\": \"arn:aws:sts::777788889999:assumed-role/data-pipeline-role/botocore-session-1727531\"\n}",
+      "hint": "get-caller-identity with --profile shows who a profile really is."
+    },
+    {
+      "prompt": "Reproduce the failure with a dry run: try launching one p4d.24xlarge from ami-0abcdef1234567890 in us-east-1 as the pipeline profile, without actually launching anything.",
+      "expected_commands": ["aws ec2 run-instances --image-id ami-0abcdef1234567890 --instance-type p4d.24xlarge --dry-run --profile pipeline --region us-east-1", "aws ec2 run-instances --dry-run --image-id ami-0abcdef1234567890 --instance-type p4d.24xlarge --profile pipeline --region us-east-1"],
+      "fake_output": "An error occurred (UnauthorizedOperation) when calling the RunInstances operation: You are not authorized to perform this operation. User: arn:aws:sts::777788889999:assumed-role/data-pipeline-role/botocore-session-1727531 is not authorized to perform: ec2:RunInstances on resource: arn:aws:ec2:us-east-1:777788889999:instance/* with an explicit deny in a service control policy. Encoded authorization failure message: AQoDYXdzEJr...",
+      "hint": "--dry-run checks permissions without creating anything: 'DryRunOperation' means it would have worked."
+    },
+    {
+      "prompt": "'with an explicit deny in a service control policy' explains why AdministratorAccess didn't help. List the SCPs in the organization (this needs the management account's org-admin profile).",
+      "expected_commands": ["aws organizations list-policies --filter SERVICE_CONTROL_POLICY --profile org-admin"],
+      "fake_output": "Name                      Id                  Description\nFullAWSAccess             p-FullAWSAccess     Allows access to every operation\ndeny-expensive-instances  p-3xamp1e5cp        Blocks GPU and >16xlarge instance types outside the ml-sandbox OU\nregion-restriction        p-4bcd12efgh        Only us-east-1 and eu-west-1",
+      "hint": "Service control policies live in AWS Organizations and are managed from the management account."
+    },
+    {
+      "prompt": "Read the deny-expensive-instances policy (id p-3xamp1e5cp).",
+      "expected_commands": ["aws organizations describe-policy --policy-id p-3xamp1e5cp --profile org-admin"],
+      "fake_output": "{\n  \"Statement\": [{\n    \"Sid\": \"DenyBigInstances\",\n    \"Effect\": \"Deny\",\n    \"Action\": \"ec2:RunInstances\",\n    \"Resource\": \"arn:aws:ec2:*:*:instance/*\",\n    \"Condition\": {\"ForAnyValue:StringLike\": {\"ec2:InstanceType\": [\"p*\", \"g*\", \"*.24xlarge\"]}}\n  }]\n}",
+      "hint": "describe-policy --policy-id <id> shows the policy document."
+    },
+    {
+      "prompt": "The account 777788889999 is outside the ml-sandbox OU, so GPU launches are blocked by design. Don't weaken the SCP; check which OU the account is in so the request can go to the right owner.",
+      "expected_commands": ["aws organizations list-parents --child-id 777788889999 --profile org-admin"],
+      "fake_output": "{\n    \"Parents\": [{\"Id\": \"ou-ab12-analytics\", \"Type\": \"ORGANIZATIONAL_UNIT\"}]\n}",
+      "hint": "list-parents --child-id <account-id> shows where an account sits in the org tree."
+    }
+  ],
+  "resolution": "IAM permissions in AWS are evaluated as layers, and an explicit Deny anywhere wins over any Allow. The role had AdministratorAccess, but a Service Control Policy on the organization blocks GPU instance types for every account outside the ml-sandbox OU. SCPs set the maximum permissions for an entire account, even for its administrators, so adding more IAM permissions could never work. The error message said so directly ('explicit deny in a service control policy'); reading the full error, or decoding its authorization message, saves hours. The right fix is organisational, not technical: GPU spend is gated on purpose, so the data team either runs the pipeline in the ml-sandbox account or gets a reviewed exception. Lesson for both sides: don't attach AdministratorAccess to a pipeline role 'to see if it helps'. It didn't help, and now that role can do anything else in the account.",
+  "real_commands_used": ["aws sts get-caller-identity", "aws ec2 run-instances --dry-run", "aws organizations list-policies", "aws organizations describe-policy", "aws organizations list-parents"]
+}

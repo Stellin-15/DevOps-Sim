@@ -1,0 +1,46 @@
+{
+  "id": "aws-tutorial-004",
+  "type": "tutorial",
+  "category": "aws",
+  "title": "VPC Anatomy: Subnets, Route Tables, IGWs, and NAT",
+  "difficulty": "intermediate",
+  "tags": ["aws", "vpc", "networking", "routing"],
+  "intro": "A VPC is your private network in AWS. What makes a subnet 'public' or 'private' is not a setting; it's where its route table sends 0.0.0.0/0. Walk through a standard production VPC, vpc-0f1e2d3c4b5a69788, layer by layer. The AWS Sandbox and the AWS mysteries let you break and fix this same layout.",
+  "steps": [
+    {
+      "prompt": "List the VPCs in this region.",
+      "expected_commands": ["aws ec2 describe-vpcs", "aws ec2 describe-vpcs --output table"],
+      "fake_output": "VpcId                   CidrBlock      IsDefault  Name\nvpc-0f1e2d3c4b5a69788   10.0.0.0/16    False      prod-vpc\nvpc-01234abcd5678ef90   172.31.0.0/16  True       (default)",
+      "explanation": "prod-vpc uses 10.0.0.0/16 (65,536 addresses). There's also the default VPC AWS creates in every region.",
+      "why": "Plan CIDRs so VPCs never overlap. Peering, Transit Gateway, and VPNs to the office all break if two networks use the same range, and changing a VPC's CIDR later is painful. Many teams delete default VPCs so nothing gets launched into them by accident."
+    },
+    {
+      "prompt": "List the subnets of vpc-0f1e2d3c4b5a69788.",
+      "expected_commands": ["aws ec2 describe-subnets --filters Name=vpc-id,Values=vpc-0f1e2d3c4b5a69788"],
+      "fake_output": "SubnetId                   Name        CidrBlock     AZ           MapPublicIpOnLaunch\nsubnet-0aa11bb22cc33dd44   public-a    10.0.1.0/24   us-east-1a   True\nsubnet-0bb22cc33dd44ee55   public-b    10.0.3.0/24   us-east-1b   True\nsubnet-0cc33dd44ee55ff66   private-a   10.0.2.0/24   us-east-1a   False\nsubnet-0dd44ee55ff660077   private-b   10.0.4.0/24   us-east-1b   False",
+      "explanation": "A public and a private subnet in each of two availability zones.",
+      "why": "A subnet lives in exactly one AZ (a separate data centre). Production spreads across at least two, so one AZ failing doesn't take you down. The names say public and private, but only the route tables make that true."
+    },
+    {
+      "prompt": "See which route table private-a (subnet-0cc33dd44ee55ff66) uses, and its routes.",
+      "expected_commands": ["aws ec2 describe-route-tables --filters Name=association.subnet-id,Values=subnet-0cc33dd44ee55ff66"],
+      "fake_output": "RouteTableId: rtb-0e9d8c7b6a5f43210 (private-rt-a)\nDestination    Target                   State\n10.0.0.0/16    local                    active\n0.0.0.0/0      nat-0123456789abcdef0    active",
+      "explanation": "Traffic inside the VPC stays local; everything else goes to a NAT gateway.",
+      "why": "This is the definition of a private subnet: outbound internet access through NAT, but nothing on the internet can start a connection in. The 'local' route can't be removed, which is why every subnet in a VPC can reach every other; restrict that with security groups."
+    },
+    {
+      "prompt": "Check the internet gateway attached to vpc-0f1e2d3c4b5a69788.",
+      "expected_commands": ["aws ec2 describe-internet-gateways --filters Name=attachment.vpc-id,Values=vpc-0f1e2d3c4b5a69788"],
+      "fake_output": "InternetGatewayId       VpcId                   State\nigw-0abc1234def567890   vpc-0f1e2d3c4b5a69788   available",
+      "explanation": "One IGW is attached. The public subnets' route tables send 0.0.0.0/0 here.",
+      "why": "An attached IGW does nothing until a route table points at it. 'The IGW is attached, so the subnet must be public' is the wrong conclusion that mystery-aws-001 is built around."
+    },
+    {
+      "prompt": "List the NAT gateways in vpc-0f1e2d3c4b5a69788 and which subnets they sit in.",
+      "expected_commands": ["aws ec2 describe-nat-gateways --filter Name=vpc-id,Values=vpc-0f1e2d3c4b5a69788", "aws ec2 describe-nat-gateways --filters Name=vpc-id,Values=vpc-0f1e2d3c4b5a69788"],
+      "fake_output": "NatGatewayId            SubnetId                   State      PublicIp\nnat-0123456789abcdef0   subnet-0aa11bb22cc33dd44   available  3.91.44.12\nnat-0fedcba9876543210   subnet-0bb22cc33dd44ee55   available  3.91.60.87",
+      "explanation": "One NAT gateway per AZ, each in that AZ's public subnet.",
+      "why": "The NAT sits in a public subnet because it needs the IGW route itself. One NAT per AZ costs more but means an AZ outage can't cut off private instances in the other AZ. A single shared NAT is a common hidden single point of failure. Note the parameter here is --filter (singular) for this command, though --filters also works in current CLI versions."
+    }
+  ]
+}

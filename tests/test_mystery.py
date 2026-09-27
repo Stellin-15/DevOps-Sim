@@ -26,7 +26,7 @@ def scripted(answers):
 
 def expert_path(m):
     state = mystery.build_state(m)
-    values = mystery.placeholders(state)
+    values = mystery.placeholders(m, state)
     return [cmd.format(**values) for cmd in m["solution_commands"]]
 
 
@@ -180,6 +180,21 @@ class TestRunMystery:
         out = mystery.run_mystery(m, input_fn=scripted(
             ["docker logs config.yml Restarting", "solve", correct_letter(m), "exit"]))
         assert not out["solved"]
+
+    def test_exit_inside_an_ssm_session_does_not_leave_the_mystery(self):
+        m = self.m("mystery-aws-002")
+        assert "exit" in expert_path(m)  # the path leaves a session mid-way
+        out = mystery.run_mystery(m, input_fn=scripted(expert_path(m) + ["solve", correct_letter(m)]))
+        assert out["solved"] and out["score"] == 100
+
+    def test_opening_ssh_to_the_world_is_aws_collateral(self):
+        m = self.m("mystery-aws-003")
+        state = mystery.build_state(m)
+        sg = mystery.placeholders(m, state)["web_sg"]
+        risky = f"aws ec2 authorize-security-group-ingress --group-id {sg} --protocol tcp --port 22 --cidr 0.0.0.0/0"
+        out = mystery.run_mystery(m, input_fn=scripted([risky] + expert_path(m) + ["solve", correct_letter(m)]))
+        assert out["solved"] and out["score"] == 85
+        assert any("port 22" in c for c in out["collateral"])
 
     def test_help_does_not_count_as_a_command(self):
         m = self.m()

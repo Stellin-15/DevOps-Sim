@@ -1,0 +1,49 @@
+{
+  "id": "aws-incident-003",
+  "type": "incident",
+  "category": "aws",
+  "title": "502s after a 'harmless' framework upgrade (ALB health checks)",
+  "difficulty": "intermediate",
+  "tags": ["aws", "alb", "health-checks", "autoscaling"],
+  "intro": "After upgrading the web framework, the site returns 502 Bad Gateway. The instances are running, the app starts fine, and 'curl localhost:8080' on a box works. The Auto Scaling group keeps launching and terminating instances.",
+  "steps": [
+    {
+      "prompt": "Check target health for the web-tg target group (arn:aws:elasticloadbalancing:us-east-1:111122223333:targetgroup/web-tg/6d0ecf831eec9f09).",
+      "expected_commands": ["aws elbv2 describe-target-health --target-group-arn arn:aws:elasticloadbalancing:us-east-1:111122223333:targetgroup/web-tg/6d0ecf831eec9f09"],
+      "fake_output": "Target                Port  State      Reason                       Description\ni-0a9b8c7d6e5f40312   8080  unhealthy  Target.ResponseCodeMismatch  Health checks failed with these codes: [404]\ni-0b8c7d6e5f4031209   8080  unhealthy  Target.ResponseCodeMismatch  Health checks failed with these codes: [404]",
+      "hint": "The Description field shows the actual HTTP code the health check got."
+    },
+    {
+      "prompt": "Every target returns 404 to the health check, so the ALB has nowhere to send traffic, hence the 502s. Read the health-check configuration of web-tg (same ARN).",
+      "expected_commands": ["aws elbv2 describe-target-groups --target-group-arns arn:aws:elasticloadbalancing:us-east-1:111122223333:targetgroup/web-tg/6d0ecf831eec9f09"],
+      "fake_output": "HealthCheckProtocol: HTTP\nHealthCheckPort: traffic-port\nHealthCheckPath: /health\nMatcher: {\"HttpCode\": \"200\"}",
+      "hint": "Look at HealthCheckPath."
+    },
+    {
+      "prompt": "Check what the app now serves, from an instance: open a Session Manager session on i-0a9b8c7d6e5f40312.",
+      "expected_commands": ["aws ssm start-session --target i-0a9b8c7d6e5f40312"],
+      "fake_output": "Starting session with SessionId: alice-0d9e8f7a6b5c4d3e2\nsh-5.2$",
+      "hint": "aws ssm start-session --target <instance-id>"
+    },
+    {
+      "prompt": "Inside the session, ask the app for /health and for the framework's new default health endpoint /healthz, printing just the status code of each with curl -s -o /dev/null -w '%{http_code}'. Start with /health.",
+      "expected_commands": ["curl -s -o /dev/null -w '%{http_code}' localhost:8080/health", "curl -s -o /dev/null -w \"%{http_code}\" localhost:8080/health", "curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/health"],
+      "fake_output": "404\n(and localhost:8080/healthz returns 200)",
+      "hint": "-o /dev/null discards the body; -w '%{http_code}' prints only the status."
+    },
+    {
+      "prompt": "The upgrade moved the endpoint to /healthz. Point web-tg's health check at /healthz (same ARN) to stop the outage now; restoring /health in the app can follow in a normal deploy.",
+      "expected_commands": ["aws elbv2 modify-target-group --target-group-arn arn:aws:elasticloadbalancing:us-east-1:111122223333:targetgroup/web-tg/6d0ecf831eec9f09 --health-check-path /healthz"],
+      "fake_output": "HealthCheckPath: /healthz\n(targets turn healthy after 3 consecutive successful checks, about 30 seconds)",
+      "hint": "modify-target-group --health-check-path <path>"
+    },
+    {
+      "prompt": "Confirm the ASG stopped churning: check web-asg's recent scaling activities.",
+      "expected_commands": ["aws autoscaling describe-scaling-activities --auto-scaling-group-name web-asg"],
+      "fake_output": "StartTime             Status      Description\n2026-09-28T15:02:10Z  Successful  Terminating EC2 instance: i-0c7d6e5f403120987 (ELB health check failed)\n2026-09-28T14:58:44Z  Successful  Launching a new EC2 instance: i-0b8c7d6e5f4031209\n(no activity since 15:02: the group is stable)",
+      "hint": "describe-scaling-activities --auto-scaling-group-name <asg>"
+    }
+  ],
+  "resolution": "The app worked perfectly; only its health endpoint moved. The framework upgrade changed the default route from /health to /healthz, so every health check got a 404, every target was marked unhealthy, and the ALB returned 502 because it had no healthy targets. The ASG made it look like instability: with ELB health checks, it terminated each 'unhealthy' instance and launched a replacement that failed the same way, in an endless loop. 'curl localhost:8080' worked because it tested the root path, not the health path. Checking the Reason field on target health turns a vague outage into a one-line diagnosis. Prevention: treat the health-check path as an API contract (a test that fails if it moves), and roll out upgrades with a canary instance that must pass ALB health checks before the rest are replaced.",
+  "real_commands_used": ["aws elbv2 describe-target-health", "aws elbv2 describe-target-groups", "aws ssm start-session", "curl -w '%{http_code}'", "aws elbv2 modify-target-group --health-check-path", "aws autoscaling describe-scaling-activities"]
+}

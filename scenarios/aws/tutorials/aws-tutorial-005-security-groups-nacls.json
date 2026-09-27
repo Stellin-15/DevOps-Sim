@@ -1,0 +1,46 @@
+{
+  "id": "aws-tutorial-005",
+  "type": "tutorial",
+  "category": "aws",
+  "title": "Security Groups vs Network ACLs",
+  "difficulty": "intermediate",
+  "tags": ["aws", "security-groups", "nacl", "firewall"],
+  "intro": "AWS has two firewalls. Security groups attach to instances and are stateful: replies are allowed automatically. Network ACLs attach to subnets and are stateless: every packet is checked in both directions. Most VPC 'it just times out' problems are one of these two. This tutorial audits and tightens them.",
+  "steps": [
+    {
+      "prompt": "Audit: find every security group with a rule open to the whole internet (0.0.0.0/0).",
+      "expected_commands": ["aws ec2 describe-security-groups --filters Name=ip-permission.cidr,Values=0.0.0.0/0", "aws ec2 describe-security-groups --filters Name=ip-permission.cidr,Values='0.0.0.0/0'"],
+      "fake_output": "GroupId                 GroupName   Protocol  Port   Source\nsg-0a1a2a3a4a5a6a7a8    web-sg      tcp       443    0.0.0.0/0\nsg-0b1b2b3b4b5b6b7b8    legacy-db   tcp       5432   0.0.0.0/0",
+      "explanation": "web-sg (443) is expected. legacy-db exposes postgres to the internet.",
+      "why": "Filtering on ip-permission.cidr turns a manual review of hundreds of groups into one query. Anything other than 80/443 open to 0.0.0.0/0 needs an explanation. Exposed databases and SSH are among the most common findings in real breach reports."
+    },
+    {
+      "prompt": "Replace legacy-db's rule: first revoke 5432 from 0.0.0.0/0 on sg-0b1b2b3b4b5b6b7b8.",
+      "expected_commands": ["aws ec2 revoke-security-group-ingress --group-id sg-0b1b2b3b4b5b6b7b8 --protocol tcp --port 5432 --cidr 0.0.0.0/0"],
+      "fake_output": "{\n    \"Return\": true\n}",
+      "explanation": "The public rule is gone.",
+      "why": "Before revoking, check who legitimately connects (VPC Flow Logs or the application config), or you replace a security hole with an outage. Here the only real clients are the app servers."
+    },
+    {
+      "prompt": "Allow 5432 on sg-0b1b2b3b4b5b6b7b8 only from members of the app servers' security group sg-0c1c2c3c4c5c6c7c8.",
+      "expected_commands": ["aws ec2 authorize-security-group-ingress --group-id sg-0b1b2b3b4b5b6b7b8 --protocol tcp --port 5432 --source-group sg-0c1c2c3c4c5c6c7c8"],
+      "fake_output": "{\n    \"Return\": true,\n    \"SecurityGroupRules\": [{\"IpProtocol\": \"tcp\", \"FromPort\": 5432, \"ReferencedGroupInfo\": {\"GroupId\": \"sg-0c1c2c3c4c5c6c7c8\"}}]\n}",
+      "explanation": "Only instances in the app security group can reach the database.",
+      "why": "Referencing a security group instead of a CIDR follows the servers as they scale: new app instances get access automatically and nothing else does, even if IPs change. This is the standard pattern for any internal tier (app to database, load balancer to app)."
+    },
+    {
+      "prompt": "Now the stateless layer: show the network ACL for subnet subnet-0aa11bb22cc33dd44.",
+      "expected_commands": ["aws ec2 describe-network-acls --filters Name=association.subnet-id,Values=subnet-0aa11bb22cc33dd44"],
+      "fake_output": "NetworkAclId: acl-0f0e0d0c0b0a09080 (public-nacl)\nINBOUND   Rule  Proto  Ports        Source       Action\n          100   tcp    443          0.0.0.0/0    ALLOW\n          110   tcp    1024-65535   0.0.0.0/0    ALLOW\n          *     all    all          0.0.0.0/0    DENY\nOUTBOUND  Rule  Proto  Ports        Destination  Action\n          100   all    all          0.0.0.0/0    ALLOW\n          *     all    all          0.0.0.0/0    DENY",
+      "explanation": "Inbound allows 443 and the ephemeral range; outbound allows everything.",
+      "why": "Rules are evaluated lowest number first, and the first match wins. Inbound 1024-65535 exists for the replies to connections the instances open (package downloads, API calls). Remove it and outbound connections from this subnet silently break. mystery-aws-004 shows the mirror-image mistake on outbound."
+    },
+    {
+      "prompt": "Block a scanner at 198.51.100.7 from the whole subnet, ahead of the allow rules: add inbound rule 90 denying all traffic from 198.51.100.7/32 on acl-0f0e0d0c0b0a09080.",
+      "expected_commands": ["aws ec2 create-network-acl-entry --network-acl-id acl-0f0e0d0c0b0a09080 --rule-number 90 --protocol -1 --cidr-block 198.51.100.7/32 --rule-action deny --ingress"],
+      "fake_output": "(no output: the entry was created)",
+      "explanation": "Rule 90 is evaluated before 100, so that IP is dropped before any allow rule matches.",
+      "why": "This is what NACLs are good for: coarse, subnet-wide, explicit DENY rules. Security groups can't deny at all, they can only allow. Keep NACLs simple and put fine-grained policy in security groups; every stateless rule you add is another place replies can be dropped."
+    }
+  ]
+}

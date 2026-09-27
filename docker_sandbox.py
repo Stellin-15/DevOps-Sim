@@ -345,6 +345,21 @@ def handle_command(state: dict, raw: str):
     return f"'docker {verb}' isn't simulated in the sandbox. Type 'help' for supported commands."
 
 
+# ------------------------------------------------------- mystery/sandbox hooks
+# Read-only sandbox: Docker mysteries are diagnosis-only, so there are no
+# goals to check, no ids to fill in, and nothing to damage.
+
+GOAL_CHECKS = {}
+
+
+def placeholders(state: dict) -> dict:
+    return {}
+
+
+def collateral_issues(state: dict) -> set:
+    return set()
+
+
 def describe_state(state: dict) -> list:
     running = sum(1 for c in state["containers"] if c["state"] != "exited")
     return [

@@ -1,0 +1,46 @@
+{
+  "id": "aws-tutorial-008",
+  "type": "tutorial",
+  "category": "aws",
+  "title": "CloudWatch and CloudTrail: What Happened, and Who Did It",
+  "difficulty": "intermediate",
+  "tags": ["aws", "cloudwatch", "cloudtrail", "logs"],
+  "intro": "CloudWatch holds your applications' logs and metrics: what happened. CloudTrail records every AWS API call: who changed what. In an incident you usually need both, 'the site broke at 14:02' and 'someone modified the security group at 14:01'.",
+  "steps": [
+    {
+      "prompt": "Stream the last 10 minutes of the log group /ecs/checkout and keep following it.",
+      "expected_commands": ["aws logs tail /ecs/checkout --since 10m --follow", "aws logs tail /ecs/checkout --follow --since 10m"],
+      "fake_output": "2026-09-28T14:02:11 checkout/web/5f1c ERROR payment provider timeout after 3000ms\n2026-09-28T14:02:12 checkout/web/5f1c ERROR payment provider timeout after 3000ms\n2026-09-28T14:02:14 checkout/web/a91e INFO order 88213 created",
+      "explanation": "Payment-provider timeouts started around 14:02.",
+      "why": "'aws logs tail' is 'tail -f' for CloudWatch Logs, across every stream (container or instance) in the group at once. Much faster than clicking through the console when you need to watch an incident live."
+    },
+    {
+      "prompt": "Count errors per minute in /ecs/checkout over the last hour with a Logs Insights query, starting from $(date -d '1 hour ago' +%s) until $(date +%s).",
+      "expected_commands": ["aws logs start-query --log-group-name /ecs/checkout --start-time $(date -d '1 hour ago' +%s) --end-time $(date +%s) --query-string 'filter @message like /ERROR/ | stats count(*) by bin(1m)'"],
+      "fake_output": "{\n    \"queryId\": \"3d9f1a2b-5c6d-4e7f-8a9b-0c1d2e3f4a5b\"\n}\n(fetch results with: aws logs get-query-results --query-id 3d9f1a2b-5c6d-4e7f-8a9b-0c1d2e3f4a5b)\nbin(1m)            count(*)\n2026-09-28 14:01   0\n2026-09-28 14:02   412\n2026-09-28 14:03   389",
+      "explanation": "Zero errors, then roughly 400 a minute from 14:02.",
+      "why": "Insights queries turn log lines into numbers. An error rate over time answers 'when exactly did it start?', which you need in order to line it up with deploys and changes. It's asynchronous: start-query returns an id, then you fetch the results."
+    },
+    {
+      "prompt": "List CloudWatch alarms currently in the ALARM state.",
+      "expected_commands": ["aws cloudwatch describe-alarms --state-value ALARM"],
+      "fake_output": "AlarmName                       StateValue  StateUpdatedTimestamp\ncheckout-5xx-rate-high          ALARM       2026-09-28T14:03:00Z\npayments-nat-egress-errors      ALARM       2026-09-28T14:02:30Z",
+      "explanation": "Two alarms. The NAT egress one fired first, at 14:02:30.",
+      "why": "The first alarm to fire is often closest to the cause. Payment calls leave through the NAT gateway, so errors there point at the network path rather than the checkout code."
+    },
+    {
+      "prompt": "Who changed anything around 14:01? Look up recent AuthorizeSecurityGroupEgress and RevokeSecurityGroupEgress calls in CloudTrail, starting with RevokeSecurityGroupEgress.",
+      "expected_commands": ["aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,AttributeValue=RevokeSecurityGroupEgress"],
+      "fake_output": "EventTime             EventName                   Username               Resources\n2026-09-28T14:01:47Z  RevokeSecurityGroupEgress   terraform-ci           sg-0c1c2c3c4c5c6c7c8 (checkout-sg)",
+      "explanation": "At 14:01:47 a Terraform CI run removed an egress rule from checkout-sg: outbound traffic to the payment provider is now blocked.",
+      "why": "CloudTrail records every API call with who, when, and from where. 'What changed right before it broke?' is the most productive question in incident response, and CloudTrail answers it for AWS changes. lookup-events covers the last 90 days of management events. For longer retention or data events, send a trail to S3 or CloudTrail Lake."
+    },
+    {
+      "prompt": "Confirm the impact with metrics: get the average CPUUtilization of instance i-0a1b2c3d4e5f67890 in 5-minute periods between 2026-09-28T13:00:00Z and 2026-09-28T15:00:00Z.",
+      "expected_commands": ["aws cloudwatch get-metric-statistics --namespace AWS/EC2 --metric-name CPUUtilization --dimensions Name=InstanceId,Value=i-0a1b2c3d4e5f67890 --start-time 2026-09-28T13:00:00Z --end-time 2026-09-28T15:00:00Z --period 300 --statistics Average"],
+      "fake_output": "Timestamp              Average\n2026-09-28T13:55:00Z   31.2\n2026-09-28T14:00:00Z   33.0\n2026-09-28T14:05:00Z   8.4\n2026-09-28T14:10:00Z   7.9",
+      "explanation": "CPU dropped after 14:02: the service is idle because requests are failing fast, not because it's overloaded.",
+      "why": "A drop in load during an incident is a clue: requests are failing early or not arriving. Always check both directions. Note that basic EC2 metrics are 5-minute granularity; enable detailed monitoring for 1-minute resolution on critical instances."
+    }
+  ]
+}

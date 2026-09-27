@@ -1,0 +1,46 @@
+{
+  "id": "aws-tutorial-009",
+  "type": "tutorial",
+  "category": "aws",
+  "title": "Load Balancers and Auto Scaling Groups",
+  "difficulty": "intermediate",
+  "tags": ["aws", "elb", "alb", "autoscaling"],
+  "intro": "Production web traffic on AWS usually flows internet → Application Load Balancer → target group → instances in an Auto Scaling Group. The load balancer only sends traffic to targets that pass its health check, and the ASG replaces instances that fail. Most 'the site is down but the servers are up' incidents live in this layer.",
+  "steps": [
+    {
+      "prompt": "Check the health of every target in the web-tg target group (arn:aws:elasticloadbalancing:us-east-1:111122223333:targetgroup/web-tg/6d0ecf831eec9f09).",
+      "expected_commands": ["aws elbv2 describe-target-health --target-group-arn arn:aws:elasticloadbalancing:us-east-1:111122223333:targetgroup/web-tg/6d0ecf831eec9f09"],
+      "fake_output": "Target                Port  State      Reason                     Description\ni-0a1b2c3d4e5f67890   8080  healthy\ni-0e5f6789012a3b4c5   8080  unhealthy  Target.ResponseCodeMismatch Health checks failed with these codes: [500]\ni-0f6789012a3b4c5d6   8080  draining   Target.DeregistrationInProgress",
+      "explanation": "One healthy, one failing its health check with HTTP 500, and one draining (being removed gracefully).",
+      "why": "The Reason field is the whole diagnosis. ResponseCodeMismatch means the app answered with the wrong status code; Target.Timeout means it didn't answer (check security groups between the ALB and the targets); Target.FailedHealthChecks is generic. Draining shows connection draining at work: in-flight requests finish before the instance is removed."
+    },
+    {
+      "prompt": "Read the target group's health-check settings for web-tg in the same ARN.",
+      "expected_commands": ["aws elbv2 describe-target-groups --target-group-arns arn:aws:elasticloadbalancing:us-east-1:111122223333:targetgroup/web-tg/6d0ecf831eec9f09"],
+      "fake_output": "HealthCheckPath: /health\nHealthCheckPort: traffic-port\nHealthyThresholdCount: 3\nUnhealthyThresholdCount: 2\nHealthCheckIntervalSeconds: 10\nMatcher: {\"HttpCode\": \"200\"}",
+      "explanation": "The ALB calls GET /health every 10s; 2 failures mark a target unhealthy and 3 successes mark it healthy again.",
+      "why": "Health-check design is a real engineering decision. A check that also tests the database takes every instance out of rotation when the database blips, turning a partial outage into a total one. A check that tests nothing keeps broken instances in rotation. Check what this instance itself needs in order to serve."
+    },
+    {
+      "prompt": "Look at the Auto Scaling group web-asg: its size limits and instances.",
+      "expected_commands": ["aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names web-asg"],
+      "fake_output": "AutoScalingGroupName: web-asg\nMinSize: 2  MaxSize: 10  DesiredCapacity: 3\nHealthCheckType: ELB   HealthCheckGracePeriod: 300\nInstances:\n  i-0a1b2c3d4e5f67890  us-east-1a  InService  Healthy  LaunchTemplate web-lt v14\n  i-0e5f6789012a3b4c5  us-east-1b  InService  Unhealthy LaunchTemplate web-lt v14",
+      "explanation": "3 desired, between 2 and 10. HealthCheckType ELB means the ASG replaces instances the load balancer considers unhealthy.",
+      "why": "With the default HealthCheckType EC2, the ASG only replaces instances whose VM has died; an app returning 500s would stay in service forever. ELB health checks make the ASG self-heal at the application level. The grace period stops it from killing instances that are still booting."
+    },
+    {
+      "prompt": "Roll out launch template version 15 to web-asg by replacing instances gradually with an instance refresh.",
+      "expected_commands": ["aws autoscaling start-instance-refresh --auto-scaling-group-name web-asg"],
+      "fake_output": "{\n    \"InstanceRefreshId\": \"08b91cf7-8fa6-48af-b6a6-d227f40f1b9b\"\n}",
+      "explanation": "The ASG will replace instances in batches while keeping enough healthy capacity.",
+      "why": "Instance refresh is a rolling deployment for VMs: new instances come up and pass health checks before old ones are terminated (MinHealthyPercentage, 90% by default). It's the VM equivalent of 'kubectl rollout', and much safer than terminating instances by hand."
+    },
+    {
+      "prompt": "Follow what the ASG has been doing: its recent scaling activities.",
+      "expected_commands": ["aws autoscaling describe-scaling-activities --auto-scaling-group-name web-asg"],
+      "fake_output": "StartTime             Status      Description\n2026-09-28T14:20:05Z  InProgress  Launching a new EC2 instance: i-0a9b8c7d6e5f40312 (instance refresh)\n2026-09-28T14:12:40Z  Successful  Terminating EC2 instance: i-0e5f6789012a3b4c5 (ELB health check failed)",
+      "explanation": "The ASG already replaced the unhealthy instance on its own, and the refresh is launching v15 instances.",
+      "why": "Scaling activities explain every launch and termination. When instances 'keep disappearing', this history shows the reason, often a health check failing on every new instance, which puts the ASG in an endless replace loop that looks like instability."
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "id": "aws-tutorial-011",
+  "type": "tutorial",
+  "category": "aws",
+  "title": "Cost and Governance: Finding Waste and Risk",
+  "difficulty": "intermediate",
+  "tags": ["aws", "cost", "finops", "governance"],
+  "intro": "At a large company the cloud bill is a top-five expense, and 'what are we paying for, and who owns it?' is a DevOps question. These commands find the usual waste (orphaned disks, idle IPs, untagged resources) and pull security findings, the same kind of weekly hygiene big platform teams automate.",
+  "steps": [
+    {
+      "prompt": "Show last month's cost (2026-08-01 to 2026-09-01) grouped by service.",
+      "expected_commands": ["aws ce get-cost-and-usage --time-period Start=2026-08-01,End=2026-09-01 --granularity MONTHLY --metrics UnblendedCost --group-by Type=DIMENSION,Key=SERVICE"],
+      "fake_output": "Service                               Amount (USD)\nAmazon Elastic Compute Cloud - Compute  41,210.33\nEC2 - Other                             18,904.12\nAmazon Relational Database Service      12,488.90\nAmazon Simple Storage Service            6,302.45\nAmazon Virtual Private Cloud             4,117.80",
+      "explanation": "Compute is the largest item, but 'EC2 - Other' at almost $19k is suspicious.",
+      "why": "'EC2 - Other' is where EBS volumes, snapshots, NAT gateway data processing and data transfer hide. It's frequently the biggest surprise on a bill. Grouping by USAGE_TYPE instead of SERVICE shows which of those it is."
+    },
+    {
+      "prompt": "Find EBS volumes that aren't attached to any instance (status 'available').",
+      "expected_commands": ["aws ec2 describe-volumes --filters Name=status,Values=available"],
+      "fake_output": "VolumeId                Size  Type  CreateTime            Tags\nvol-0a11b22c33d44e556   500   gp3   2025-03-02T10:14:00Z  Name=old-es-data-1\nvol-0b22c33d44e55f667   500   gp3   2025-03-02T10:14:00Z  Name=old-es-data-2\nvol-0c33d44e55f660778   2000  io2   2024-11-20T08:00:00Z  (no tags)",
+      "explanation": "3TB of detached disks, one of them expensive io2 with no tags, idle for months.",
+      "why": "Terminating an instance doesn't always delete its data volumes (DeleteOnTermination is false for extra volumes by default), so they pile up and bill forever. Snapshot anything you might need, confirm with the owner, then delete. The untagged one is exactly why tagging policies exist."
+    },
+    {
+      "prompt": "Find Elastic IPs that aren't associated with anything.",
+      "expected_commands": ["aws ec2 describe-addresses --query 'Addresses[?AssociationId==null]'", "aws ec2 describe-addresses --query \"Addresses[?AssociationId==null]\""],
+      "fake_output": "[\n  {\"PublicIp\": \"3.92.10.44\", \"AllocationId\": \"eipalloc-0d1e2f3a4b5c6d7e8\"},\n  {\"PublicIp\": \"52.4.200.9\", \"AllocationId\": \"eipalloc-0e2f3a4b5c6d7e8f9\"}\n]",
+      "explanation": "Two unused public IPs.",
+      "why": "AWS now charges for every public IPv4 address, attached or not, so idle ones are pure waste. The JMESPath filter [?AssociationId==null] is a handy pattern: 'show me the things that point at nothing'."
+    },
+    {
+      "prompt": "Find every resource tagged team=data, across all services.",
+      "expected_commands": ["aws resourcegroupstaggingapi get-resources --tag-filters Key=team,Values=data"],
+      "fake_output": "ResourceARN\narn:aws:ec2:us-east-1:111122223333:instance/i-0c3d4e5f678901234\narn:aws:s3:::acme-data-lake\narn:aws:rds:us-east-1:111122223333:db:analytics\n...(38 resources)",
+      "explanation": "38 resources belong to the data team.",
+      "why": "The tagging API searches across services in one call, which is how cost allocation and 'who owns this?' work at scale. Enforce required tags (owner, team, environment) with tag policies or SCPs at creation time, because retro-tagging thousands of resources never happens."
+    },
+    {
+      "prompt": "Pull the CRITICAL findings from Security Hub.",
+      "expected_commands": ["aws securityhub get-findings --filters '{\"SeverityLabel\":[{\"Value\":\"CRITICAL\",\"Comparison\":\"EQUALS\"}]}'"],
+      "fake_output": "Title                                                        Resource\nS3 general purpose buckets should block public access        arn:aws:s3:::acme-exports\nSecurity groups should not allow ingress from 0.0.0.0/0 to 22 sg-0b1b2b3b4b5b6b7b8\nIAM root user access key should not exist                    AWS::::Account:111122223333",
+      "explanation": "Three critical findings, all misconfigurations rather than exotic attacks.",
+      "why": "Security Hub gathers GuardDuty, Inspector, and configuration checks (the CIS and AWS Foundational benchmarks) in one place. Notice what's at the top: public buckets, open SSH, root keys. Basic hygiene prevents most cloud breaches, and the security category goes deeper."
+    }
+  ]
+}

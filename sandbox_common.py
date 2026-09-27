@@ -86,18 +86,39 @@ def apply_pipe(output: str, segment: str) -> str:
     cmd = tokens[0]
 
     if cmd == "grep":
-        flags = {t for t in tokens[1:] if t.startswith("-")}
-        pattern_tokens = [t for t in tokens[1:] if not t.startswith("-")]
+        # Context flags (-A/-B/-C N, or -A4) take a number argument.
+        after = before = 0
+        rest = []
+        args = tokens[1:]
+        i = 0
+        while i < len(args):
+            m = re.fullmatch(r"-([ABC])(\d*)", args[i])
+            if m:
+                n = m.group(2)
+                if not n and i + 1 < len(args) and args[i + 1].isdigit():
+                    n = args[i + 1]
+                    i += 1
+                n = int(n or 0)
+                if m.group(1) in "AC":
+                    after = n
+                if m.group(1) in "BC":
+                    before = n
+            else:
+                rest.append(args[i])
+            i += 1
+        flags = {t for t in rest if t.startswith("-")}
+        pattern_tokens = [t for t in rest if not t.startswith("-")]
         if not pattern_tokens:
-            return "usage: grep [-i] [-v] PATTERN"
+            return "usage: grep [-i] [-v] [-c] [-A N] [-B N] PATTERN"
         pattern = " ".join(pattern_tokens).strip("'\"")
         ignore_case = any("i" in f for f in flags)
         invert = any("v" in f for f in flags)
         needle = pattern.lower() if ignore_case else pattern
-        kept = [l for l in lines if (needle in (l.lower() if ignore_case else l)) != invert]
+        hits = [i for i, l in enumerate(lines) if (needle in (l.lower() if ignore_case else l)) != invert]
         if any("c" in f for f in flags):
-            return str(len(kept))
-        return "\n".join(kept)
+            return str(len(hits))
+        keep = sorted({j for i in hits for j in range(max(0, i - before), min(len(lines), i + after + 1))})
+        return "\n".join(lines[j] for j in keep)
     if cmd == "head":
         return "\n".join(lines[:_count_arg(tokens)])
     if cmd == "tail":
@@ -171,7 +192,7 @@ def run_loop(kind: str, noun: str, generate_state, handle_command, describe_stat
     """The interactive loop every sandbox shares. describe_state(state)
     returns the intro lines shown once the state is loaded."""
     store = SandboxStore(kind)
-    print(f"\n=== {kind.title()} Sandbox ===")
+    print(f"\n=== {'AWS' if kind == 'aws' else kind.title()} Sandbox ===")
     state = store.choose_or_generate(generate_state, noun)
     store.save_current(state)
 
@@ -183,7 +204,9 @@ def run_loop(kind: str, noun: str, generate_state, handle_command, describe_stat
         raw = read_input("\n$ ")
         if not raw:
             continue
-        if normalize(raw) in {"exit", "quit", ":q"}:
+        # A sandbox with a nested shell (AWS's ssm start-session) sets
+        # state["session"]; 'exit' then ends that session, not the sandbox.
+        if normalize(raw) in {"exit", "quit", ":q"} and not state.get("session"):
             break
         output = run_command(handle_command, state, raw)
         if output is None:

@@ -1,0 +1,38 @@
+{
+  "id": "mystery-aws-001",
+  "type": "mystery",
+  "category": "aws",
+  "sandbox": "aws",
+  "title": "The New Web Server Times Out",
+  "difficulty": "beginner",
+  "tags": ["aws", "vpc", "routing"],
+  "setup": {"seed": 12, "problems": ["missing_igw_route"]},
+  "symptom": "A teammate rebuilt the production VPC from a template last night. web-1 is running, its security group allows HTTPS from anywhere, and it has a public IP, but every request to the site hangs until it times out. The morning package updates on worker-1 failed too. Nobody has touched the application.",
+  "goals": [
+    {"check": "reachable", "from": "internet", "to": "web-1", "port": 443, "description": "The site on web-1 answers HTTPS from the internet"},
+    {"check": "reachable", "from": "worker-1", "to": "internet", "port": 443, "description": "worker-1 can reach the internet again (for package updates)"}
+  ],
+  "evidence": [
+    {"description": "the symptom itself: the request times out", "seen_any": ["Timeout was reached", "timed out"]},
+    {"description": "where traffic leaving the public subnet actually goes", "seen_any": ["DESTINATION  TARGET"]}
+  ],
+  "question": {
+    "prompt": "Why did both the site and the worker's updates fail?",
+    "options": [
+      "The security group on web-1 blocks HTTPS",
+      "The public subnet's route table has no default route (0.0.0.0/0) to the internet gateway, so nothing in that subnet (web-1 or the NAT gateway) can send traffic to the internet",
+      "The NAT gateway was deleted",
+      "web-1 has no public IP address"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 5,
+  "solution_commands": [
+    "aws ec2 describe-instances",
+    "curl -m 5 https://{web_ip}",
+    "aws ec2 describe-route-tables",
+    "aws ec2 create-route --route-table-id {public_rt} --destination-cidr-block 0.0.0.0/0 --gateway-id {igw_id}",
+    "curl -m 5 https://{web_ip}"
+  ],
+  "debrief": "A subnet is only 'public' because its route table sends 0.0.0.0/0 to an internet gateway. Nothing else makes it public: not its name, not a public IP on the instance, not the IGW merely being attached to the VPC. The template created and attached the IGW but never added the route, so web-1's replies had no way out, and a timeout (not 'refused') is exactly how a missing route looks from outside. The worker failed for the same reason one hop later: private instances reach the internet through the NAT gateway, and the NAT gateway sits in the public subnet, so it needs that same IGW route. One missing route took out two unrelated-looking things. When a VPC is built from a template, check 'describe-route-tables' before anything else, and prefer Terraform or CloudFormation modules that create the route along with the gateway."
+}

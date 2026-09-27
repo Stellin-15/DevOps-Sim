@@ -103,7 +103,7 @@ all, so they're easy to skip even after CKA-level prep:
 - **Scripted incidents lead you by the hand.** Every incident here is a
   sequence of prompts, and each prompt hints at what to check next. Real
   on-call starts with only a symptom and a blank terminal. Mystery
-  Incidents (see Part 9) practice exactly that, but so far only on the
+  Incidents (see the final Overall part) practice exactly that, but so far only on the
   Linux and Docker sandboxes. **A Kubernetes mystery doesn't exist
   yet**: the Kubernetes sandbox is read-only, so there's nothing to fix.
 - **Escalation and communication** aren't practiced here at all — a huge
@@ -320,9 +320,10 @@ state file.
   with a zero-destroy plan, and version pinning). Still unpracticed:
   *writing* a module's variables and outputs yourself (no HCL lab for
   it yet), and `dynamic` blocks.
-- Cloud-provider knowledge itself (VPCs, IAM, subnets) — Terraform is
-  only as useful as your understanding of what it's creating. This is the
-  largest real-world prerequisite and is out of scope for a CLI game.
+- Cloud-provider knowledge itself (VPCs, IAM, subnets). Terraform is
+  only as useful as your understanding of what it's creating.
+  **Now partly covered** by the AWS category (Part 9) and its VPC
+  sandbox.
 - Terraform Cloud / Atlantis / OpenTofu workflows, Terragrunt.
 
 ## Readiness verdict
@@ -366,8 +367,10 @@ terminating load balancers.
 - ~~MTU/fragmentation~~: **closed** by networking-incident-007 (a VPN
   PMTUD black hole: `ping -M do -s`, `tracepath`, blocked ICMP, and MSS
   clamping as the real fix).
-- Cloud networking specifics: security groups vs NACLs, NAT gateways,
-  VPC peering/Transit Gateway, private endpoints.
+- ~~Cloud networking specifics~~: **mostly closed** for AWS by Part 9.
+  The AWS sandbox makes you debug security groups vs NACLs, IGW and NAT
+  routes, and VPC endpoints hands-on. VPC peering and Transit Gateway
+  are still missing.
 - Load balancer internals (L4 vs L7, health checks, connection draining,
   sticky sessions) and service meshes.
 - IPv6.
@@ -540,7 +543,85 @@ remaining relative to what current MLOps roles ask for.
 
 ---
 
-# Part 9 — Overall: will this make you proficient in DevOps?
+# Part 9 — AWS
+
+**Content:** 11 tutorials, 7 incidents, an interactive AWS Sandbox, and
+4 Mystery Incidents on it.
+
+The sandbox is a fake account with one production VPC:
+- a public and a private subnet;
+- an internet gateway (IGW) and a NAT gateway;
+- security groups and network ACLs;
+- three instances.
+
+Traffic is evaluated for real, layer by layer: public IP → route table →
+NACL (stateless, in both directions) → security group. Every failure
+looks the same from outside (a timeout), so you have to read the
+configuration to find the broken layer. Fixes change the state:
+- create-route and replace-route;
+- authorize and revoke security group rules;
+- network ACL entries;
+- Elastic IPs;
+- NAT gateways.
+
+Careless fixes count as collateral damage: opening SSH to 0.0.0.0/0,
+or terminating an instance.
+
+## Covered
+
+**Tutorials** (every section of `commands/aws.md`):
+- identity and profiles (`sts get-caller-identity`, `AWS_PROFILE`, regions);
+- EC2 navigation with `--filters`/`--query`, status checks, and console output;
+- SSM Session Manager vs SSH vs EC2 Instance Connect, plus Run Command across a fleet;
+- VPC anatomy (subnets, route tables, IGW, NAT per AZ);
+- security groups vs NACLs (auditing 0.0.0.0/0, source-group references, NACL deny rules);
+- IAM roles, policies, the policy simulator, assume-role, and decoding authorization messages;
+- S3 (Block Public Access, versioning, presigned URLs);
+- CloudWatch Logs and Insights, alarms, metrics, and CloudTrail;
+- ALB target health and health-check design, ASG instance refresh;
+- ECR login and scanning, EKS kubeconfig and the IAM-to-RBAC mapping;
+- cost and governance (Cost Explorer, orphaned volumes and EIPs, the tagging API, Security Hub).
+
+**Incidents:**
+- an SCP explicit deny that no IAM change can fix;
+- a public S3 bucket (contain first, then read access logs to see what was taken);
+- ALB 502s from a moved health-check path;
+- a leaked access key with attacker persistence and crypto-mining in an unused region;
+- an instance stuck in emergency mode after NVMe device renaming;
+- an EKS node role missing ECR read access;
+- an $18k NAT gateway bill fixed with an S3 gateway endpoint.
+
+**Mysteries:** a missing IGW route, a private route table with no NAT
+route, a security group missing 443, and a stateless NACL dropping replies.
+
+## Still missing
+
+- **Writing** IAM policies and VPC Terraform yourself. Planned as Writing Labs
+  (step 7 of the current expansion).
+- RDS/Aurora operations (failover, parameter groups, snapshots and restore),
+  DynamoDB capacity, and Lambda/serverless debugging.
+- Multi-account networking (Transit Gateway, VPC peering, PrivateLink) and
+  Route 53 DNS (records, health checks, failover routing).
+- CloudFormation/CDK (Terraform is used as the infrastructure-as-code representative).
+- KMS key policies, and Secrets Manager rotation.
+- The AWS Certified Solutions Architect / SysOps exam breadth: this is an
+  operator's toolkit, not an exam pass.
+
+## Readiness verdict
+
+Enough to be useful on day one in an AWS shop:
+- you can find things;
+- you can tell which network layer is dropping traffic;
+- you can read and test IAM;
+- you respond to the most common AWS security incidents in the right order
+  (contain, then investigate).
+
+Pair it with a real free-tier account. Build the sandbox's VPC yourself with
+Terraform, then break it on purpose.
+
+---
+
+# Part 10 — Overall: will this make you proficient in DevOps?
 
 ## By the numbers
 
@@ -554,7 +635,8 @@ remaining relative to what current MLOps roles ask for.
 | CI/CD | 13 | 6 | 3 Writing Labs (Actions) |
 | Monitoring | 12 | 6 | 2 Writing Labs (alert rules) |
 | MLOps | 12 | 7 | |
-| **Total** | **113** | **56** | 22 Writing Labs, 7 career paths, 3 sandboxes, 6 Mystery Incidents, Exam Mode |
+| AWS | 11 | 7 | Sandbox (VPC), 4 Mysteries |
+| **Total** | **124** | **63** | 22 Writing Labs, 7 career paths, 4 sandboxes, 10 Mystery Incidents, Exam Mode |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -566,7 +648,7 @@ command beats the alternatives — not just what it does.
 will know the commands, the failure modes, and — most importantly — the
 debugging method** (check the layer before guessing the fix; refused vs
 timeout; verify after every change; revoke before cleaning up; revert
-don't force-push). The 56 incidents are modeled on the kinds of problems
+don't force-push). The 63 incidents are modeled on the kinds of problems
 that genuinely trip up working engineers, and working through them
 builds judgment that command references alone never will.
 
@@ -589,12 +671,14 @@ that no amount of additional scenario content can fully close:
    fixes change the state, and careless fixes cost points (killing sshd
    or init counts as collateral damage). You can't win by guessing: you
    must have actually seen the evidence before you're allowed to answer.
-   The outputs are still simulated, though, and there are only 6
-   mysteries, none of them Kubernetes. Pair this game with a homelab
+   The outputs are still simulated, though, and there are only 10
+   mysteries (Linux, Docker, AWS), none of them Kubernetes. Pair this game with a homelab
    (kind/minikube, a free-tier cloud account) where things break for real.
-3. **Cloud-provider fundamentals** (IAM, VPCs, managed services) are a
-   prerequisite for Terraform, networking, and CI/CD work, and are out of
-   scope for a CLI game.
+3. **Cloud-provider fundamentals** (IAM, VPCs, managed services).
+   **Partly addressed.** The AWS category (Part 9) and its VPC sandbox
+   teach networking layers, IAM, and incident response. Azure and GCP
+   are next in the current expansion. Managed databases, serverless, and
+   multi-account networking still need a real account.
 4. **The human side of operations** — incident command, communication
    during an outage, blameless post-mortems, and knowing when to escalate
    — isn't practiced here at all.

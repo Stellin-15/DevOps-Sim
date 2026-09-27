@@ -1,0 +1,46 @@
+{
+  "id": "aws-tutorial-001",
+  "type": "tutorial",
+  "category": "aws",
+  "title": "Who Am I? Profiles, Identity, and Regions",
+  "difficulty": "beginner",
+  "tags": ["aws", "cli", "iam", "profiles"],
+  "intro": "The most dangerous AWS command is the right command run in the wrong account. Before touching anything, a professional checks which identity, account, and region the CLI will act as. At a company with dozens of accounts (dev, staging, prod, security, billing), this habit prevents real disasters.",
+  "steps": [
+    {
+      "prompt": "List the named profiles configured on this machine.",
+      "expected_commands": ["aws configure list-profiles"],
+      "fake_output": "default\ndev\nstaging\nprod-readonly\nprod-admin",
+      "explanation": "Five profiles, one per account and role you can use.",
+      "why": "Named profiles (in ~/.aws/config) keep each account's credentials separate. That beats one 'default' profile you keep overwriting with 'aws configure', which is how people end up running a dev script against prod."
+    },
+    {
+      "prompt": "Ask AWS who you actually are right now with the default profile.",
+      "expected_commands": ["aws sts get-caller-identity"],
+      "fake_output": "{\n    \"UserId\": \"AROAEXAMPLEID:alice@example.com\",\n    \"Account\": \"111122223333\",\n    \"Arn\": \"arn:aws:sts::111122223333:assumed-role/DeveloperAccess/alice@example.com\"\n}",
+      "explanation": "You're alice, using an assumed role (DeveloperAccess) in account 111122223333.",
+      "why": "get-caller-identity needs no permissions and always works, so it's the universal 'where am I?' check. The ARN also tells you whether you're a long-lived IAM user (arn:...:user/) or a temporary assumed role (arn:...:assumed-role/), which matters for security reviews."
+    },
+    {
+      "prompt": "Check the identity behind the prod-readonly profile before using it.",
+      "expected_commands": ["aws sts get-caller-identity --profile prod-readonly"],
+      "fake_output": "{\n    \"UserId\": \"AROAEXAMPLEID:alice@example.com\",\n    \"Account\": \"444455556666\",\n    \"Arn\": \"arn:aws:sts::444455556666:assumed-role/ReadOnly/alice@example.com\"\n}",
+      "explanation": "prod-readonly is a read-only role in the production account 444455556666.",
+      "why": "--profile applies to a single command. Starting an investigation with a read-only role means a typo can't delete anything; switch to the admin profile only for the one command that needs it."
+    },
+    {
+      "prompt": "Make prod-readonly the profile for the rest of this shell session, using an environment variable.",
+      "expected_commands": ["export AWS_PROFILE=prod-readonly"],
+      "fake_output": "(no output: every aws command in this shell now uses prod-readonly)",
+      "explanation": "No more --profile on every command.",
+      "why": "Environment variables override the default profile but only live as long as this shell, which is safer than changing the default. Tools like direnv or aws-vault set this per project directory automatically. Show the profile in your shell prompt so you always see it."
+    },
+    {
+      "prompt": "List the regions enabled for this account, as plain text.",
+      "expected_commands": ["aws ec2 describe-regions --query 'Regions[].RegionName' --output text", "aws ec2 describe-regions --query Regions[].RegionName --output text"],
+      "fake_output": "us-east-1\tus-east-2\tus-west-2\teu-west-1\teu-central-1\tap-southeast-1",
+      "explanation": "Six regions are enabled.",
+      "why": "Most AWS resources are regional: an instance in eu-west-1 doesn't appear in a us-east-1 listing at all. 'It's gone!' is very often 'you're looking at the wrong region'. --query (JMESPath) and --output text turn verbose JSON into exactly the field you need, which is the key skill for scripting the CLI."
+    }
+  ]
+}

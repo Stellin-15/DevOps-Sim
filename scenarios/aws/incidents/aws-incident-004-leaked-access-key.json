@@ -1,0 +1,43 @@
+{
+  "id": "aws-incident-004",
+  "type": "incident",
+  "category": "aws",
+  "title": "GuardDuty: an access key is being used from an unknown country",
+  "difficulty": "advanced",
+  "tags": ["aws", "security", "iam", "incident-response"],
+  "intro": "GuardDuty raised a HIGH finding at 03:12: API calls from an IP in a country where you have no staff, using the access key of the IAM user 'ci-deployer'. That key was committed to a public GitHub repo two hours ago by accident. Every minute counts: crypto-mining bots scan GitHub for AWS keys within minutes.",
+  "steps": [
+    {
+      "prompt": "Contain first: deactivate the key AKIAEXAMPLELEAKED01 belonging to ci-deployer (deactivate, don't delete yet, so the evidence is kept).",
+      "expected_commands": ["aws iam update-access-key --user-name ci-deployer --access-key-id AKIAEXAMPLELEAKED01 --status Inactive"],
+      "fake_output": "(no output: the key is now inactive and all calls with it fail)",
+      "hint": "update-access-key --status Inactive is instant and reversible."
+    },
+    {
+      "prompt": "Deactivating the key doesn't kill temporary credentials the attacker may already have created from it. Check what the attacker did: look up CloudTrail events made with access key AKIAEXAMPLELEAKED01.",
+      "expected_commands": ["aws cloudtrail lookup-events --lookup-attributes AttributeKey=AccessKeyId,AttributeValue=AKIAEXAMPLELEAKED01"],
+      "fake_output": "EventTime             EventName              SourceIP        Region\n2026-09-28T03:05:41Z  GetCallerIdentity      185.220.101.4   us-east-1\n2026-09-28T03:06:02Z  CreateUser             185.220.101.4   us-east-1   (userName=support-backup)\n2026-09-28T03:06:05Z  CreateAccessKey        185.220.101.4   us-east-1   (userName=support-backup)\n2026-09-28T03:07:30Z  RunInstances           185.220.101.4   ap-southeast-1  (count=20, type=c5.4xlarge)",
+      "hint": "lookup-events supports AttributeKey=AccessKeyId."
+    },
+    {
+      "prompt": "The attacker created a backdoor user 'support-backup' with its own key. Find that user's access keys.",
+      "expected_commands": ["aws iam list-access-keys --user-name support-backup"],
+      "fake_output": "AccessKeyId            Status   CreateDate\nAKIAEXAMPLEBACKDOOR9   Active   2026-09-28T03:06:05Z",
+      "hint": "list-access-keys --user-name <user>"
+    },
+    {
+      "prompt": "Deactivate the backdoor key AKIAEXAMPLEBACKDOOR9 of support-backup.",
+      "expected_commands": ["aws iam update-access-key --user-name support-backup --access-key-id AKIAEXAMPLEBACKDOOR9 --status Inactive"],
+      "fake_output": "(no output: the backdoor key is inactive)",
+      "hint": "Same command as the first step, for the other user and key."
+    },
+    {
+      "prompt": "The attacker launched 20 instances in ap-southeast-1, a region you don't use, for crypto-mining. List the running instances there.",
+      "expected_commands": ["aws ec2 describe-instances --region ap-southeast-1 --filters Name=instance-state-name,Values=running", "aws ec2 describe-instances --filters Name=instance-state-name,Values=running --region ap-southeast-1"],
+      "fake_output": "InstanceId            Type         LaunchTime            KeyName\ni-0f1e2d3c4b5a60001   c5.4xlarge   2026-09-28T03:07:31Z  (none)\ni-0f1e2d3c4b5a60002   c5.4xlarge   2026-09-28T03:07:31Z  (none)\n... (20 instances)",
+      "hint": "Attackers pick regions you don't watch, so always pass --region."
+    }
+  ],
+  "resolution": "The order of operations is the lesson. First contain the leaked key (deactivate, don't delete, so its history stays attributable). Then assume the attacker established persistence: here, a new IAM user with its own key, which would have survived rotating the original key. Then clean up the damage: 20 mining instances in a region nobody watched, costing thousands of dollars a day. Next steps not shown: terminate those instances after snapshotting one for forensics; delete the backdoor user; revoke any role sessions the attacker created (an inline policy denying sessions issued before now); check every region, not just the one GuardDuty named; and open a case with AWS Support, who often waive fraudulent charges. Root causes: a long-lived access key existed for CI at all (GitHub Actions should use OIDC federation to assume a role, see cicd-tutorial-005), and no pre-commit secret scanning (gitleaks) caught it. An SCP limiting usable regions would have blocked the mining launch entirely.",
+  "real_commands_used": ["aws iam update-access-key --status Inactive", "aws cloudtrail lookup-events --lookup-attributes AttributeKey=AccessKeyId", "aws iam list-access-keys", "aws ec2 describe-instances --region"]
+}

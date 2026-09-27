@@ -1,0 +1,37 @@
+{
+  "id": "aws-incident-007",
+  "type": "incident",
+  "category": "aws",
+  "title": "The $18,000 surprise: NAT gateway data processing",
+  "difficulty": "intermediate",
+  "tags": ["aws", "cost", "nat", "vpc-endpoints", "finops"],
+  "intro": "Finance flags that 'EC2 - Other' jumped from $2k to $18k last month. No new instances were launched. The only notable change: the data team moved their nightly jobs, which read about 400TB a month from S3, into private subnets 'for security'.",
+  "steps": [
+    {
+      "prompt": "Break last month's (2026-08-01 to 2026-09-01) EC2 - Other cost down by usage type.",
+      "expected_commands": ["aws ce get-cost-and-usage --time-period Start=2026-08-01,End=2026-09-01 --granularity MONTHLY --metrics UnblendedCost --filter '{\"Dimensions\":{\"Key\":\"SERVICE\",\"Values\":[\"EC2 - Other\"]}}' --group-by Type=DIMENSION,Key=USAGE_TYPE"],
+      "fake_output": "UsageType                        Amount (USD)\nUSE1-NatGateway-Bytes            17,944.20\nUSE1-EBS:VolumeUsage.gp3            612.40\nUSE1-NatGateway-Hours                98.55",
+      "hint": "Group by USAGE_TYPE to see what's inside 'EC2 - Other'."
+    },
+    {
+      "prompt": "Almost all of it is NAT gateway data processing ($0.045 per GB). The S3 reads from private subnets go out through the NAT. Check whether the VPC vpc-0f1e2d3c4b5a69788 has an S3 gateway endpoint.",
+      "expected_commands": ["aws ec2 describe-vpc-endpoints --filters Name=vpc-id,Values=vpc-0f1e2d3c4b5a69788"],
+      "fake_output": "VpcEndpointId            ServiceName                            Type       State\nvpce-0a1b2c3d4e5f60718   com.amazonaws.us-east-1.ssm            Interface  available\nvpce-0b2c3d4e5f6071829   com.amazonaws.us-east-1.ssmmessages    Interface  available",
+      "hint": "S3 traffic can bypass the NAT only through a gateway endpoint for com.amazonaws.<region>.s3."
+    },
+    {
+      "prompt": "There's no S3 endpoint. Create a gateway endpoint for com.amazonaws.us-east-1.s3 in vpc-0f1e2d3c4b5a69788, associated with the private route tables rtb-0e9d8c7b6a5f43210 and rtb-0f8e7d6c5b4a32109.",
+      "expected_commands": ["aws ec2 create-vpc-endpoint --vpc-id vpc-0f1e2d3c4b5a69788 --vpc-endpoint-type Gateway --service-name com.amazonaws.us-east-1.s3 --route-table-ids rtb-0e9d8c7b6a5f43210 rtb-0f8e7d6c5b4a32109", "aws ec2 create-vpc-endpoint --vpc-id vpc-0f1e2d3c4b5a69788 --service-name com.amazonaws.us-east-1.s3 --route-table-ids rtb-0e9d8c7b6a5f43210 rtb-0f8e7d6c5b4a32109"],
+      "fake_output": "{\n  \"VpcEndpoint\": {\n    \"VpcEndpointId\": \"vpce-0c3d4e5f6071829a3\",\n    \"VpcEndpointType\": \"Gateway\",\n    \"ServiceName\": \"com.amazonaws.us-east-1.s3\",\n    \"State\": \"available\",\n    \"RouteTableIds\": [\"rtb-0e9d8c7b6a5f43210\", \"rtb-0f8e7d6c5b4a32109\"]\n  }\n}",
+      "hint": "A gateway endpoint adds a route (an S3 prefix list) to each route table you name."
+    },
+    {
+      "prompt": "Verify the route was added to the private route table rtb-0e9d8c7b6a5f43210.",
+      "expected_commands": ["aws ec2 describe-route-tables --route-table-ids rtb-0e9d8c7b6a5f43210"],
+      "fake_output": "Destination            Target                   State\n10.0.0.0/16            local                    active\npl-63a5400a            vpce-0c3d4e5f6071829a3   active\n0.0.0.0/0              nat-0123456789abcdef0    active",
+      "hint": "Look for a pl-... destination (the S3 prefix list) pointing at the vpce-..."
+    }
+  ],
+  "resolution": "Moving the jobs into private subnets was a good security decision with an unplanned cost: every byte they read from S3 now left through the NAT gateway, which charges about $0.045 per GB processed, on top of its hourly fee. 400TB a month through a NAT is roughly $18,000. A gateway VPC endpoint for S3 (and DynamoDB) is free and routes that traffic privately inside AWS; route tables prefer the more specific S3 prefix-list route over 0.0.0.0/0, so the jobs needed no change. Lessons: add S3 and DynamoDB gateway endpoints to every VPC template by default; 'EC2 - Other' is where network costs hide, so break it down by usage type; and set AWS Budgets alerts on individual usage types, so a 9x jump is caught in days, not at month-end. Interface endpoints (for other services) are not free: compare them with NAT costs before adding them.",
+  "real_commands_used": ["aws ce get-cost-and-usage --group-by USAGE_TYPE", "aws ec2 describe-vpc-endpoints", "aws ec2 create-vpc-endpoint --vpc-endpoint-type Gateway", "aws ec2 describe-route-tables"]
+}

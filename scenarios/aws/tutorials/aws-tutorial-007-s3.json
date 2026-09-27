@@ -1,0 +1,46 @@
+{
+  "id": "aws-tutorial-007",
+  "type": "tutorial",
+  "category": "aws",
+  "title": "S3: Storing Data Without Leaking It",
+  "difficulty": "beginner",
+  "tags": ["aws", "s3", "storage", "security"],
+  "intro": "S3 is object storage: backups, logs, build artifacts, website assets, data lakes. It's durable and cheap, and it's the source of many of the largest data leaks in history, almost always from a misconfigured bucket, never from S3 itself failing. You'll use the daily commands and the guard rails that prevent a leak.",
+  "steps": [
+    {
+      "prompt": "Show how much data is under s3://acme-app-logs/2026/09/: recursively, in human-readable sizes, with a total.",
+      "expected_commands": ["aws s3 ls s3://acme-app-logs/2026/09/ --recursive --human-readable --summarize"],
+      "fake_output": "2026-09-27 23:59:58   48.2 MiB 2026/09/27/app-23.log.gz\n2026-09-28 00:59:57   51.0 MiB 2026/09/28/app-00.log.gz\n...\nTotal Objects: 672\n   Total Size: 31.4 GiB",
+      "explanation": "672 objects, 31.4 GiB this month.",
+      "why": "S3 has no real directories. '2026/09/' is just a key prefix, and --recursive walks every key under it. --summarize is the quick answer to 'how big is this?' without a separate metrics tool."
+    },
+    {
+      "prompt": "Check whether Block Public Access is enabled on the bucket acme-app-logs.",
+      "expected_commands": ["aws s3api get-public-access-block --bucket acme-app-logs"],
+      "fake_output": "An error occurred (NoSuchPublicAccessBlockConfiguration) when calling the GetPublicAccessBlock operation: The public access block configuration was not found",
+      "explanation": "No public access block is configured on this bucket, so a bucket policy or ACL could make it public.",
+      "why": "Block Public Access is the safety net that overrides any policy or ACL granting public access. New buckets have it on by default since 2023, but older buckets often don't. Many companies also enable it at the account level so no bucket can be made public by accident."
+    },
+    {
+      "prompt": "Turn on all four Block Public Access settings for acme-app-logs.",
+      "expected_commands": ["aws s3api put-public-access-block --bucket acme-app-logs --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"],
+      "fake_output": "(no output: the configuration was applied)",
+      "explanation": "The bucket can no longer be made public by any ACL or policy.",
+      "why": "All four settings together: block new public ACLs, ignore existing ones, reject public bucket policies, and restrict access if a public policy already exists. If something legitimately needs public files (a website), serve them through CloudFront with origin access control instead of a public bucket."
+    },
+    {
+      "prompt": "Enable versioning on acme-app-logs so overwritten or deleted objects can be recovered.",
+      "expected_commands": ["aws s3api put-bucket-versioning --bucket acme-app-logs --versioning-configuration Status=Enabled"],
+      "fake_output": "(no output: versioning is enabled)",
+      "explanation": "Every overwrite or delete now keeps the previous version.",
+      "why": "Versioning is your undo button against a bad script ('aws s3 sync --delete' pointed at the wrong folder) and against ransomware-style deletion. Pair it with a lifecycle rule that expires old versions, or storage costs grow forever."
+    },
+    {
+      "prompt": "Share one file, s3://acme-app-logs/2026/09/28/app-00.log.gz, with a vendor for one hour, without making anything public.",
+      "expected_commands": ["aws s3 presign s3://acme-app-logs/2026/09/28/app-00.log.gz --expires-in 3600"],
+      "fake_output": "https://acme-app-logs.s3.us-east-1.amazonaws.com/2026/09/28/app-00.log.gz?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=...&X-Amz-Expires=3600&X-Amz-Signature=...",
+      "explanation": "A URL that works for exactly one object, for one hour.",
+      "why": "A presigned URL is the right answer to 'can you make this file public so I can download it?'. It's scoped to one object and expires. Note it carries your permissions: if your credentials expire sooner (for example an assumed role's session), the URL stops working then."
+    }
+  ]
+}

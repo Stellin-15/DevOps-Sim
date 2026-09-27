@@ -1,0 +1,41 @@
+{
+  "id": "mystery-aws-002",
+  "type": "mystery",
+  "category": "aws",
+  "sandbox": "aws",
+  "title": "The Private Workers Can't Pull Updates",
+  "difficulty": "intermediate",
+  "tags": ["aws", "vpc", "nat", "ssm"],
+  "setup": {"seed": 14, "problems": ["private_no_egress"]},
+  "symptom": "Security flagged worker-1 as missing a month of patches. Its nightly patch job has failed every night, with an error nobody has read. The website is fine, and someone swears there's a NAT gateway 'costing us money every month', so outbound access should work.",
+  "goals": [
+    {"check": "reachable", "from": "worker-1", "to": "internet", "port": 443, "description": "worker-1 can reach package repositories on the internet (443)"}
+  ],
+  "evidence": [
+    {"description": "the failure, seen from the worker itself", "seen_any": ["Failed to download metadata", "Timeout was reached"]},
+    {"description": "that the NAT gateway really exists and is healthy", "seen_any": ["NAT GATEWAY ID"]},
+    {"description": "where the private subnet's traffic actually goes", "seen_any": ["DESTINATION  TARGET"]}
+  ],
+  "question": {
+    "prompt": "Why can't worker-1 reach the internet?",
+    "options": [
+      "The NAT gateway is broken",
+      "worker-1 needs a public IP address",
+      "The private subnet's route table has no 0.0.0.0/0 route pointing at the NAT gateway. The NAT exists, but nothing sends traffic to it",
+      "SSM Session Manager is blocking outbound traffic"
+    ],
+    "answer": 2
+  },
+  "expert_commands": 7,
+  "solution_commands": [
+    "aws ssm start-session --target {worker_id}",
+    "sudo dnf check-update",
+    "exit",
+    "aws ec2 describe-nat-gateways",
+    "aws ec2 describe-route-tables",
+    "aws ec2 create-route --route-table-id {private_rt} --destination-cidr-block 0.0.0.0/0 --nat-gateway-id {nat_id}",
+    "aws ssm start-session --target {worker_id}",
+    "sudo dnf check-update"
+  ],
+  "debrief": "A NAT gateway doesn't do anything by itself; a route has to send traffic to it. The private route table only had the 'local' route, so worker-1 could talk inside the VPC and nowhere else, while the team paid for an idle NAT. Two things worth noticing. First, you could still get a shell on a box with no internet access: SSM Session Manager works here because the VPC has interface endpoints for ssm, ssmmessages and ec2messages ('aws ec2 describe-vpc-endpoints'). Without those endpoints, SSM would have failed too and you'd have been locked out, which is why the endpoints are worth having. Second, the fix was a route, not a public IP. Giving a private worker a public IP to 'fix' its updates would expose it to the internet and bypass the design. For AWS package repos specifically, an S3 gateway endpoint can avoid NAT charges entirely."
+}

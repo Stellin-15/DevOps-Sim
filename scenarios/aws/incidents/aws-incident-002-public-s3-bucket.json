@@ -1,0 +1,43 @@
+{
+  "id": "aws-incident-002",
+  "type": "incident",
+  "category": "aws",
+  "title": "A researcher emails: 'your customer exports are public'",
+  "difficulty": "intermediate",
+  "tags": ["aws", "s3", "security", "data-leak"],
+  "intro": "A security researcher reports that https://acme-exports.s3.amazonaws.com/ lists files like customers-2026-09.csv to anyone. It's a real, urgent data exposure. Contain it first, then find out how it happened and what was accessed.",
+  "steps": [
+    {
+      "prompt": "Contain first: turn on all four Block Public Access settings on the bucket acme-exports.",
+      "expected_commands": ["aws s3api put-public-access-block --bucket acme-exports --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"],
+      "fake_output": "(no output: public access to acme-exports is now blocked, whatever the policy says)",
+      "hint": "put-public-access-block overrides any public policy or ACL immediately, so it's the fastest safe containment."
+    },
+    {
+      "prompt": "Verify from outside, without credentials, that listing is now denied: fetch the bucket URL https://acme-exports.s3.amazonaws.com/ with curl.",
+      "expected_commands": ["curl -s https://acme-exports.s3.amazonaws.com/", "curl https://acme-exports.s3.amazonaws.com/", "curl -I https://acme-exports.s3.amazonaws.com/"],
+      "fake_output": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>",
+      "hint": "Test the way an attacker would: anonymously."
+    },
+    {
+      "prompt": "Contained. Now find the cause: read the bucket policy of acme-exports.",
+      "expected_commands": ["aws s3api get-bucket-policy --bucket acme-exports", "aws s3api get-bucket-policy --bucket acme-exports --query Policy --output text"],
+      "fake_output": "{\n  \"Statement\": [{\n    \"Sid\": \"TemporaryVendorAccess\",\n    \"Effect\": \"Allow\",\n    \"Principal\": \"*\",\n    \"Action\": [\"s3:GetObject\", \"s3:ListBucket\"],\n    \"Resource\": [\"arn:aws:s3:::acme-exports\", \"arn:aws:s3:::acme-exports/*\"]\n  }]\n}",
+      "hint": "Look at the Principal: '*' means everyone on the internet."
+    },
+    {
+      "prompt": "A 'temporary' vendor share with Principal '*'. Who added it? Search CloudTrail for PutBucketPolicy events.",
+      "expected_commands": ["aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,AttributeValue=PutBucketPolicy"],
+      "fake_output": "EventTime             EventName        Username          SourceIP        Resources\n2026-06-14T16:22:09Z  PutBucketPolicy  bob@example.com   198.51.100.23   acme-exports",
+      "hint": "lookup-events with AttributeKey=EventName."
+    },
+    {
+      "prompt": "It's been public since June. Find out who actually downloaded data: query the S3 server access logs (in Athena, table s3_access_logs) for anonymous GetObject requests on acme-exports. Run the saved query file public-reads.sql with the Athena CLI, output to s3://acme-athena-results/.",
+      "expected_commands": ["aws athena start-query-execution --query-string file://public-reads.sql --result-configuration OutputLocation=s3://acme-athena-results/"],
+      "fake_output": "{\n    \"QueryExecutionId\": \"a1b2c3d4-5678-90ab-cdef-111122223333\"\n}\nrequester  remote_ip        key                        requests\n-          203.0.113.99     customers-2026-09.csv      1\n-          192.0.2.144      customers-2026-07.csv      3\n-          192.0.2.144      customers-2026-08.csv      3",
+      "hint": "Athena runs SQL over logs in S3; start-query-execution takes the SQL and an output location."
+    }
+  ],
+  "resolution": "Contain first, investigate second. Block Public Access stopped the exposure within seconds, without having to understand or edit the policy under pressure. The cause was a 'temporary' bucket policy granting s3:GetObject and s3:ListBucket to Principal '*', added in June to share files with a vendor and never removed. The access logs matter as much as the fix: one anonymous read is probably the researcher, but another IP downloaded three months of customer exports, which likely makes this a reportable data breach (for example under GDPR's 72-hour rule), so legal and security leadership need to know now. Without server access logs or CloudTrail data events you couldn't have answered 'what was taken', so enable them before you need them. Prevention: account-level Block Public Access, presigned URLs or cross-account roles for vendor sharing, and a Security Hub or Config rule that alerts on public buckets.",
+  "real_commands_used": ["aws s3api put-public-access-block", "curl (anonymous test)", "aws s3api get-bucket-policy", "aws cloudtrail lookup-events", "aws athena start-query-execution"]
+}

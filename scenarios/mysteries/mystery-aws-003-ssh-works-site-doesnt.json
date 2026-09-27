@@ -1,0 +1,37 @@
+{
+  "id": "mystery-aws-003",
+  "type": "mystery",
+  "category": "aws",
+  "sandbox": "aws",
+  "title": "SSH Works, but the Site Doesn't",
+  "difficulty": "beginner",
+  "tags": ["aws", "security-groups"],
+  "setup": {"seed": 16, "problems": ["sg_missing_port"]},
+  "symptom": "The launch checklist says web-1 is ready: 'SSH in from the office works, nginx is running and listening on 443'. But customers can't load the site at all. The launch is in an hour.",
+  "goals": [
+    {"check": "reachable", "from": "internet", "to": "web-1", "port": 443, "description": "Customers can reach the site on web-1 over HTTPS"}
+  ],
+  "evidence": [
+    {"description": "the site timing out from outside", "seen_any": ["Timeout was reached", "timed out"]},
+    {"description": "which ports web-1's firewall actually lets in", "seen_any": ["PORT  SOURCE"]}
+  ],
+  "question": {
+    "prompt": "Why can you SSH in but customers can't load the site?",
+    "options": [
+      "nginx isn't really listening on 443",
+      "The route table is missing the internet gateway route",
+      "web-sg only allows port 22 from the office range. There's no inbound rule for 443, so HTTPS is silently dropped while SSH (allowed) works",
+      "The network ACL blocks port 443"
+    ],
+    "answer": 2
+  },
+  "expert_commands": 5,
+  "solution_commands": [
+    "curl -m 5 https://{web_ip}",
+    "ssh ec2-user@{web_ip}",
+    "aws ec2 describe-security-groups --group-ids {web_sg}",
+    "aws ec2 authorize-security-group-ingress --group-id {web_sg} --protocol tcp --port 443 --cidr 0.0.0.0/0",
+    "curl -m 5 https://{web_ip}"
+  ],
+  "debrief": "SSH working proved a lot: the instance is up, it has a public IP, the route to the internet gateway exists, and the NACL passes traffic. That narrows the problem to something port-specific, and the security group is the port-specific layer. web-sg allowed 22 from the office range and nothing else. Security groups deny by default and drop silently, so HTTPS timed out instead of being refused. The fix was one rule: 443 from 0.0.0.0/0. The trap was a different rule. Under launch pressure it's tempting to 'just open everything' or to open 22 to 0.0.0.0/0 while you're at it; that would have cost points here, and in real life exposed SSH gets brute-forced within minutes. Keep SSH restricted to the office range, or better, use SSM Session Manager and open no SSH port at all."
+}

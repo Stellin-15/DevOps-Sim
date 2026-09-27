@@ -29,6 +29,13 @@ class TestApplyPipe:
     def test_grep_count(self):
         assert sc.apply_pipe(SAMPLE, "grep -c running") == "2"
 
+    def test_grep_context_lines(self):
+        text = "a\nmatch\nb\nc\nd"
+        assert sc.apply_pipe(text, "grep -A2 match") == "match\nb\nc"
+        assert sc.apply_pipe(text, "grep -A 1 match") == "match\nb"
+        assert sc.apply_pipe(text, "grep -B1 match") == "a\nmatch"
+        assert sc.apply_pipe(text, "grep -C 1 match") == "a\nmatch\nb"
+
     def test_grep_quoted_pattern_with_spaces(self):
         assert sc.apply_pipe("out of memory here\nfine", "grep -i 'Out of memory'") == "out of memory here"
 

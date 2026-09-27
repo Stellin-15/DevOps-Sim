@@ -1,0 +1,38 @@
+{
+  "id": "mystery-aws-004",
+  "type": "mystery",
+  "category": "aws",
+  "sandbox": "aws",
+  "title": "The 'Network Hardening' Change That Broke Everything",
+  "difficulty": "advanced",
+  "tags": ["aws", "nacl", "stateless-firewall"],
+  "setup": {"seed": 18, "problems": ["nacl_ephemeral_block"]},
+  "symptom": "After a compliance ticket titled 'restrict outbound traffic from the public subnet to web ports only', nobody can reach web-1: not the site, and not even SSH from the office. The engineer who made the change says 'I only touched OUTBOUND rules, and inbound 443 and 22 are still allowed, so it can't be my change.' The security groups haven't changed in months.",
+  "goals": [
+    {"check": "reachable", "from": "internet", "to": "web-1", "port": 443, "description": "The site on web-1 answers HTTPS from the internet"},
+    {"check": "reachable", "from": "internet", "to": "web-1", "port": 22, "description": "SSH from the office works again"}
+  ],
+  "evidence": [
+    {"description": "the symptom: connections time out", "seen_any": ["Timeout was reached", "timed out"]},
+    {"description": "the public subnet's outbound network ACL rules", "seen_any": ["OUTBOUND\n  RULE"]}
+  ],
+  "question": {
+    "prompt": "If inbound 443 and 22 are allowed, why does an outbound-only change break incoming connections?",
+    "options": [
+      "The security group was changed at the same time",
+      "Network ACLs are stateless. A reply to a client goes back out to the client's random ephemeral port (1024-65535), and the new outbound rules only allow destination ports 80 and 443, so every reply is dropped",
+      "The ACL's inbound rules are evaluated after the outbound ones",
+      "The internet gateway was detached"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 5,
+  "solution_commands": [
+    "curl -m 5 https://{web_ip}",
+    "aws ec2 describe-security-groups --group-ids {web_sg}",
+    "aws ec2 describe-network-acls --filters Name=association.subnet-id,Values={public_subnet}",
+    "aws ec2 create-network-acl-entry --network-acl-id {public_nacl} --rule-number 130 --protocol tcp --port-range From=1024,To=65535 --cidr-block 0.0.0.0/0 --rule-action allow --egress",
+    "curl -m 5 https://{web_ip}"
+  ],
+  "debrief": "This is the most common NACL mistake on AWS. Security groups are stateful: allow a connection in and its replies are automatically allowed out. Network ACLs are stateless: every packet is checked on its own, in both directions. When a customer connects to port 443, the reply leaves web-1 addressed to the customer's ephemeral port (something like 51514), not to 443. The 'harden outbound' change allowed only destination ports 80 and 443, so every reply was dropped, and the connection looked exactly like a timeout. The same thing killed SSH. The fix is an outbound rule for 1024-65535. Lessons: when a NACL change breaks things, check both directions; prefer doing fine-grained filtering in security groups (stateful, per instance) and keep NACLs coarse; and test firewall changes in staging with an actual connection, not by reading the rules."
+}

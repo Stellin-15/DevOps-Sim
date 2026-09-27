@@ -1,0 +1,49 @@
+{
+  "id": "aws-incident-005",
+  "type": "incident",
+  "category": "aws",
+  "title": "The database server never came back from a reboot",
+  "difficulty": "advanced",
+  "tags": ["aws", "ec2", "ebs", "boot", "fstab"],
+  "intro": "During patching, reports-db (i-0d4e5f6789012a3b4) was rebooted. That was 20 minutes ago. SSH times out, Session Manager says the target isn't connected, and the status check shows 'impaired'.",
+  "steps": [
+    {
+      "prompt": "Check the status checks of i-0d4e5f6789012a3b4.",
+      "expected_commands": ["aws ec2 describe-instance-status --instance-ids i-0d4e5f6789012a3b4"],
+      "fake_output": "SystemStatus: ok\nInstanceStatus: impaired (reachability: failed)",
+      "hint": "System ok + instance impaired means the problem is inside the OS."
+    },
+    {
+      "prompt": "The OS didn't come up. Read the boot console output of i-0d4e5f6789012a3b4.",
+      "expected_commands": ["aws ec2 get-console-output --instance-id i-0d4e5f6789012a3b4 --latest --output text", "aws ec2 get-console-output --instance-id i-0d4e5f6789012a3b4 --output text", "aws ec2 get-console-output --instance-id i-0d4e5f6789012a3b4 --latest"],
+      "fake_output": "[ TIME ] Timed out waiting for device /dev/nvme1n1.\n[DEPEND] Dependency failed for /var/lib/postgresql.\n[DEPEND] Dependency failed for Local File Systems.\nYou are in emergency mode. After logging in, type \"journalctl -xb\" to view system logs",
+      "hint": "get-console-output works even when you can't log in."
+    },
+    {
+      "prompt": "fstab expects /dev/nvme1n1 for the data volume. See which volumes are actually attached to i-0d4e5f6789012a3b4, and as which devices.",
+      "expected_commands": ["aws ec2 describe-volumes --filters Name=attachment.instance-id,Values=i-0d4e5f6789012a3b4"],
+      "fake_output": "VolumeId                Size  Device      State\nvol-0aa1bb2cc3dd4ee5f   20    /dev/xvda   in-use (root)\nvol-0bb2cc3dd4ee5ff60   500   /dev/sdg    in-use (pg-data)\nvol-0cc3dd4ee5ff60718   100   /dev/sdf    in-use (pg-wal, attached last week)",
+      "hint": "Filter volumes by attachment.instance-id."
+    },
+    {
+      "prompt": "A second volume was attached last week, so on this Nitro instance the NVMe device names were reassigned at boot: 'nvme1n1' is now the WAL disk, not the data disk. Recover by stopping i-0d4e5f6789012a3b4, so its root volume can be attached to a rescue instance to fix fstab.",
+      "expected_commands": ["aws ec2 stop-instances --instance-ids i-0d4e5f6789012a3b4"],
+      "fake_output": "CurrentState: stopping  PreviousState: running",
+      "hint": "A root volume can only be detached from a stopped instance."
+    },
+    {
+      "prompt": "Detach the root volume vol-0aa1bb2cc3dd4ee5f and attach it to the rescue instance i-0e9f8a7b6c5d40321 as /dev/sdz. Type the attach command.",
+      "expected_commands": ["aws ec2 attach-volume --volume-id vol-0aa1bb2cc3dd4ee5f --instance-id i-0e9f8a7b6c5d40321 --device /dev/sdz"],
+      "fake_output": "{\n    \"Device\": \"/dev/sdz\",\n    \"InstanceId\": \"i-0e9f8a7b6c5d40321\",\n    \"State\": \"attaching\",\n    \"VolumeId\": \"vol-0aa1bb2cc3dd4ee5f\"\n}",
+      "hint": "attach-volume --volume-id --instance-id --device."
+    },
+    {
+      "prompt": "On the rescue instance, mount the broken root and fix fstab to mount by UUID with nofail. First, get the data volume's filesystem UUID: run blkid on /dev/nvme2n1 (where pg-data appears on the rescue box).",
+      "expected_commands": ["sudo blkid /dev/nvme2n1", "blkid /dev/nvme2n1"],
+      "fake_output": "/dev/nvme2n1: UUID=\"3f1c2a9e-7b6d-4e5f-8a9b-0c1d2e3f4a5b\" TYPE=\"xfs\"",
+      "hint": "blkid prints a device's filesystem UUID, which never changes when device names do."
+    }
+  ],
+  "resolution": "On Nitro-based EC2 instances, EBS volumes appear as NVMe devices (/dev/nvme0n1, /dev/nvme1n1, ...) and the numbering depends on attach and discovery order, not on the /dev/sdf-style name you gave the attachment. Attaching a new WAL volume last week reshuffled the names, but nothing rebooted until today, so the landmine sat hidden for a week. fstab mounted by device name, the expected device didn't hold the expected filesystem, and systemd dropped into emergency mode, where SSH and the SSM agent never start. The recovery is the standard EC2 rescue: stop, detach the root volume, attach it to a helper instance, fix /etc/fstab, move it back. The permanent fix: always mount by UUID=... (or LABEL), and add 'nofail' for non-root volumes so a missing data disk can't block the entire boot. Enabling EC2 Serial Console access in advance gives you a way in for exactly this situation without the detach dance.",
+  "real_commands_used": ["aws ec2 describe-instance-status", "aws ec2 get-console-output", "aws ec2 describe-volumes --filters attachment.instance-id", "aws ec2 stop-instances", "aws ec2 attach-volume", "blkid"]
+}

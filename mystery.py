@@ -1,6 +1,6 @@
 """
 Mystery Incidents — free-form diagnosis. The player gets only a symptom
-and a live sandbox environment (Linux or Docker) with a known, hidden
+and a live sandbox environment (Linux, Docker, or AWS) with a known, hidden
 root cause. No steps, no prompts: any command, any order. Typing 'solve'
 checks the real outcome (goals evaluated against the sandbox state), then
 asks what the root cause was, so a lucky fix doesn't count.
@@ -10,64 +10,44 @@ efficiency (commands used vs an expert's count), and collateral damage
 (e.g. killing sshd — on a real server that locks you out).
 """
 
+import aws_sandbox
 import docker_sandbox
 import linux_sandbox
 from engine import normalize, read_input
 from sandbox_common import run_command
 
+# Each sandbox module supplies the mystery hooks: generate_state(**setup),
+# GOAL_CHECKS {name: fn(state, goal) -> bool}, placeholders(state) -> dict
+# of ids/pids for solution_commands, and collateral_issues(state) -> set of
+# dangerous conditions (a new one appearing mid-mystery is collateral).
 SANDBOXES = {
     "linux": linux_sandbox,
     "docker": docker_sandbox,
-}
-
-# Processes that should never be killed while fixing something else. The
-# value is what the debrief says about it.
-PROTECTED = {
-    "/sbin/init": "PID 1 — killing it takes down the whole machine",
-    "sshd": "sshd — on a real server you just locked yourself out",
-    "nginx": "nginx — the front door for every request, taken down on the way to fixing something else",
+    "aws": aws_sandbox,
 }
 
 MAX_ANSWER_ATTEMPTS = 2
 
 
 def build_state(mystery: dict) -> dict:
-    setup = mystery["setup"]
-    if mystery["sandbox"] == "linux":
-        return linux_sandbox.generate_state(setup.get("seed"), setup["problems"])
-    return docker_sandbox.generate_state(setup.get("seed"), setup["assignments"])
+    return SANDBOXES[mystery["sandbox"]].generate_state(**mystery["setup"])
 
 
-def placeholders(state: dict) -> dict:
-    """Concrete values (pids) a mystery's solution_commands refer to, so a
-    stored expert path works against the seeded state."""
-    values = {}
-    for s in state.get("services", []):
-        if s.get("stray_listener"):
-            values["stray_pid"] = s["stray_listener"]
-        if s.get("oom_hog"):
-            values["hog_pid"] = s["oom_hog"]
-    for p in state.get("processes", []):
-        if "generate.py" in p["command"]:
-            values["runaway_pid"] = p["pid"]
-    return values
+def placeholders(mystery: dict, state: dict) -> dict:
+    return SANDBOXES[mystery["sandbox"]].placeholders(state)
 
 
 # ------------------------------------------------------------------ goals
 
-def _check(state: dict, goal: dict) -> bool:
-    kind = goal["check"]
-    if kind == "service_active":
-        return linux_sandbox._service_running(state, goal["service"])
-    if kind == "disk_below":
-        return linux_sandbox._disk_used_gb(state) / linux_sandbox.DISK_SIZE_GB * 100 < goal["percent"]
-    if kind == "load_below_nproc":
-        return linux_sandbox._load(state) < state["nproc"]
-    raise ValueError(f"unknown goal check: {kind}")
+def _check(mystery: dict, state: dict, goal: dict) -> bool:
+    checks = SANDBOXES[mystery["sandbox"]].GOAL_CHECKS
+    if goal["check"] not in checks:
+        raise ValueError(f"unknown goal check for {mystery['sandbox']}: {goal['check']}")
+    return checks[goal["check"]](state, goal)
 
 
 def unmet_goals(state: dict, mystery: dict) -> list:
-    return [g["description"] for g in mystery.get("goals", []) if not _check(state, g)]
+    return [g["description"] for g in mystery.get("goals", []) if not _check(mystery, state, g)]
 
 
 def missing_evidence(seen: list, mystery: dict) -> list:
@@ -78,15 +58,6 @@ def missing_evidence(seen: list, mystery: dict) -> list:
     transcript = "\n".join(seen).lower()
     return [e["description"] for e in mystery.get("evidence", [])
             if not any(s.lower() in transcript for s in e["seen_any"])]
-
-
-def _protected_pids(state: dict) -> dict:
-    found = {}
-    for p in state.get("processes", []):
-        for needle, reason in PROTECTED.items():
-            if needle in p["command"]:
-                found[p["pid"]] = reason
-    return found
 
 
 # ------------------------------------------------------------------- scoring
@@ -135,7 +106,7 @@ def run_mystery(mystery: dict, input_fn=None) -> dict:
     input_fn = input_fn or read_input
     module = SANDBOXES[mystery["sandbox"]]
     state = build_state(mystery)
-    protected = _protected_pids(state)
+    baseline_issues = module.collateral_issues(state)
     collateral = []
     commands = 0
     seen = []
@@ -154,7 +125,7 @@ def run_mystery(mystery: dict, input_fn=None) -> dict:
         norm = normalize(raw)
         if not norm:
             continue
-        if norm in {"exit", "quit", ":q"}:
+        if norm in {"exit", "quit", ":q"} and not state.get("session"):
             print("\nLeaving the mystery unsolved.")
             return {"solved": False, "score": 0, "commands": commands, "collateral": collateral, "gave_up": False}
         if norm in {"giveup", "give up"}:
@@ -179,11 +150,11 @@ def run_mystery(mystery: dict, input_fn=None) -> dict:
             print(f"\n=== {'SOLVED' if correct else 'FIXED, BUT ROOT CAUSE MISSED'} ===")
             print(f"Commands used: {commands} (an experienced engineer: ~{mystery['expert_commands']})")
             for c in collateral:
-                print(f"Collateral damage: you killed {c}")
+                print(f"Collateral damage: you {c}")
             if correct:
                 print(f"Score: {points}/100 — {rating(points)}")
             print(f"\n{mystery['debrief']}")
-            path = [cmd.format(**placeholders(build_state(mystery))) for cmd in mystery["solution_commands"]]
+            path = [cmd.format(**placeholders(mystery, build_state(mystery))) for cmd in mystery["solution_commands"]]
             print("\nOne efficient path:\n  " + "\n  ".join(path))
             return {"solved": correct, "score": points, "commands": commands, "collateral": collateral, "gave_up": False}
 
@@ -193,7 +164,6 @@ def run_mystery(mystery: dict, input_fn=None) -> dict:
         seen.append(output or "")
         if output:
             print(f"\n{output}")
-        for pid, reason in list(protected.items()):
-            if not any(p["pid"] == pid for p in state.get("processes", [])):
-                collateral.append(reason)
-                del protected[pid]
+        for issue in sorted(module.collateral_issues(state) - baseline_issues):
+            if issue not in collateral:
+                collateral.append(issue)

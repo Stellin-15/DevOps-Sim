@@ -28,7 +28,7 @@ The source-of-truth docs, all already in the repo, are:
 - **GAPS.md** — an honest, periodically-updated self-assessment of what
   kube-sim does and doesn't prepare someone for. Part 1 is the deepest
   (Kubernetes / CKA); Parts 2-8 give each other category its own
-  covered / still-missing / readiness-verdict section; Part 9 is the
+  covered / still-missing / readiness-verdict section; the final part is the
   overall verdict on DevOps proficiency, with totals and a recommended
   path. Read the relevant part before adding content so new scenarios
   target real gaps. Update it in the same commit whenever content closes
@@ -178,13 +178,47 @@ Don't duplicate content from these files elsewhere — link to them.
   the CKA's 66% pass mark, and reviews every miss. Results go to
   `progress["exam_history"]`; `best_percent()` shows the best score per
   category.
+- **aws_sandbox.py** — a fake AWS account with one VPC, driven by real
+  `aws ec2 ...` commands:
+  - public-a holds web-1 and the NAT gateway;
+  - private-a holds api-1 and worker-1.
+
+  `reachability(state, source, target, port)` walks the real layers:
+  public IP → route table (IGW or NAT) → NACLs → security groups. NACLs
+  are stateless (both directions, ephemeral ports) and only apply when
+  traffic crosses a subnet; security groups are stateful.
+
+  - **Problems:** 6 random ones, 2 per account (see `PROBLEMS`). Every
+    failure shows the player a timeout, never the reason.
+  - **Reactive commands:** create/replace-route, SG authorize/revoke,
+    NACL entries, associate-address, create-nat-gateway, and terminate.
+  - **Sessions:** `aws ssm start-session` opens a nested shell by setting
+    `state["session"]`. `sandbox_common.run_loop` and `mystery.run_mystery`
+    let `exit` end the session instead of the sandbox.
+  - **Output:** `normalize()` lowercases input, so ids and args are parsed
+    lowercase. Output is always a table (`--query`/`--output` are
+    ignored).
 - **mystery.py** — Mystery Incidents: a symptom and a seeded sandbox
-  state (`scenarios/mysteries/*.json`; `sandbox` picks linux or docker,
-  and `setup` feeds that module's `generate_state` a seed plus forced
-  `problems`/`assignments`). There is no step list, so the player runs
-  anything and then types `solve`. `solve` checks three things in order:
-  1. **goals**: state checks such as `service_active`, `disk_below`, and
-     `load_below_nproc` (see `_check`). Docker mysteries have none,
+  state (`scenarios/mysteries/*.json`). `sandbox` picks linux, docker or
+  aws, and `mystery.build_state` calls that module's
+  `generate_state(**setup)`.
+
+  Mysteries are **sandbox-agnostic**: each sandbox module supplies three
+  hooks.
+  - `GOAL_CHECKS`: `{name: fn(state, goal)}`, for example linux's
+    `service_active`/`disk_below`/`load_below_nproc`, or aws's
+    `reachable`/`not_reachable`.
+  - `placeholders(state)`: seeded pids and ids for `solution_commands`.
+  - `collateral_issues(state)`: dangerous conditions. Any that weren't
+    present at the start count as collateral. Linux flags killed
+    init/sshd/nginx (`PROTECTED`); AWS flags opening non-web ports to
+    0.0.0.0/0, terminating instances, and allowing all inbound traffic
+    on the public NACL.
+
+  A new sandbox needs only these hooks to host mysteries. There is no
+  step list: the player runs anything and then types `solve`. `solve`
+  checks three things in order:
+  1. **goals**: the sandbox's `GOAL_CHECKS`. Docker mysteries have none,
      because that sandbox is read-only.
   2. **evidence**: substrings that must have appeared in some command's
      *output*. Typed commands don't count, so `echo batch.jar` can't
@@ -192,10 +226,11 @@ Don't duplicate content from these files elsewhere — link to them.
      zero commands by guessing the multiple-choice answer.
   3. **a root-cause question**: two tries allowed.
 
-  Score is 100, minus 20 per wrong answer, minus 15 per collateral kill
-  (`PROTECTED`: init, sshd, nginx), minus up to 30 for using more than
-  twice `expert_commands`. `solution_commands` may use `{stray_pid}`-style
-  placeholders (see `placeholders()`), because pids come from the seed.
+  Score is 100, minus 20 per wrong answer, minus 15 per collateral
+  issue, minus up to 30 for using more than twice `expert_commands`.
+  `solution_commands` may use `{stray_pid}` or `{web_sg}` style
+  placeholders, because pids and ids come from the seed. Evidence
+  strings must not appear in the symptom text; a test enforces this.
   `test_mystery.py` runs every mystery's stored solution against its
   seeded state, proving it's solvable, that it meets the goals, and that
   it finds the evidence.
@@ -275,7 +310,8 @@ Current per-category content depth (tutorials / incidents):
 - cicd: 13 / 6 (+3 Writing Labs: GitHub Actions)
 - monitoring: 12 / 6 (+2 Writing Labs: alert rules)
 - mlops: 12 / 7
-- **total: 113 tutorials, 56 incidents, 22 Writing Labs, 6 Mystery Incidents (4 linux, 2 docker)**
+- aws: 11 / 7 (+ AWS VPC sandbox, 4 mysteries)
+- **total: 124 tutorials, 63 incidents, 22 Writing Labs, 10 Mystery Incidents (4 linux, 2 docker, 4 aws)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with
@@ -394,7 +430,7 @@ final `resolution` debrief instead).
 python -m pytest
 ```
 
-(`pytest.ini` points it at `tests/`.) Sixteen files:
+(`pytest.ini` points it at `tests/`.) Seventeen files:
 - `test_engine.py` — matching/normalization logic, proven kubectl-agnostic
 - `test_scenario_loader.py` — category-aware JSON loading (`list_categories`,
   category-filtered vs. aggregated `load_tutorials`/`load_incidents`,
@@ -432,6 +468,9 @@ python -m pytest
 - `test_docker_sandbox.py` — invariants over 200 seeds (1-2 problems,
   only app containers break, every problem type occurs) and the
   evidence each problem leaves in real commands
+- `test_aws_sandbox.py` — each problem breaks exactly its paths; each
+  real fix restores them; NACL statelessness; SSM session enter and exit;
+  describe filters; AWS-style errors; collateral detection
 - `test_linux_sandbox.py` — invariants over 200 seeds (exactly 2
   problems, df never above 100%) and each problem's full diagnose-and-
   fix workflow, including the rm-on-an-open-file trap
@@ -466,7 +505,7 @@ exercise something the generic checks don't cover.
 
 ## Likely next work
 
-See GAPS.md Part 9 for the reasoning. In priority order:
+See GAPS.md's final 'Overall' part for the reasoning. In priority order:
 
 0. **In progress: cloud, security, fleet ops, and SRE expansion.** The
    user approved this ahead of the stats screen. There are six new
@@ -474,9 +513,9 @@ See GAPS.md Part 9 for the reasoning. In priority order:
    patching, backups), and sre. Their command references are already in
    `commands/{aws,azure,gcp,security,servers,sre}.md`; write each
    category's scenarios from its file. Remaining steps, in order:
-   1. aws plus an `aws_sandbox.py` VPC sandbox, with mystery.py made
-      sandbox-agnostic (per-sandbox `GOAL_CHECKS` and `placeholders`);
-   2. azure and gcp;
+   1. ✓ aws, with the `aws_sandbox.py` VPC sandbox, sandbox-agnostic
+      mysteries, and 4 AWS mysteries;
+   2. azure and gcp (next);
    3. security, plus hacked-server problems in linux_sandbox (a
       cryptominer with cron persistence, an SSH backdoor);
    4. servers;

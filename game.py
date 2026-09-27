@@ -8,6 +8,7 @@ import career_path
 import exam
 import mystery
 import progress as progress_module
+import aws_sandbox
 import docker_sandbox
 import linux_sandbox
 import sandbox
@@ -32,6 +33,12 @@ CATEGORY_LABELS = {
     "cicd": "CI/CD",
     "monitoring": "Monitoring",
     "mlops": "MLOps",
+    "aws": "AWS",
+    "azure": "Azure",
+    "gcp": "Google Cloud",
+    "security": "Security",
+    "servers": "Server Fleet Ops",
+    "sre": "SRE (big-tech practices)",
 }
 
 
@@ -172,6 +179,7 @@ SANDBOXES = [
     ("Kubernetes — a random cluster with broken pods", sandbox.run_sandbox),
     ("Docker — a host with crashed, OOM-killed, or unhealthy containers", docker_sandbox.run_sandbox),
     ("Linux — a server with two real problems to find AND fix", linux_sandbox.run_sandbox),
+    ("AWS — a VPC where two network layers are broken (routes, NACLs, security groups...)", aws_sandbox.run_sandbox),
 ]
 
 
@@ -197,7 +205,7 @@ def main_menu_loop() -> None:
         print("  3. Writing Labs (write real config files and scripts in your own editor)")
         print("  4. Exam Mode (timed, no hints, scored)")
         print("  5. Mystery Incidents (just a symptom — find and fix it your way)")
-        print("  6. Sandbox (Kubernetes, Docker, or Linux — explore freely)")
+        print("  6. Sandbox (Kubernetes, Docker, Linux, or AWS — explore freely)")
         print("  q. Quit")
 
         choice = read_input("\nChoose: ").lower()
