@@ -4,40 +4,55 @@
   "category": "mlops",
   "title": "Running and Tracking a Training Job",
   "difficulty": "beginner",
-  "tags": ["mlops", "training", "mlflow", "kubernetes"],
+  "tags": [
+    "mlops",
+    "training",
+    "mlflow",
+    "kubernetes"
+  ],
   "intro": "Model training in production usually runs as a Kubernetes Job, with MLflow tracking the results — let's walk through both.",
   "steps": [
     {
       "prompt": "Set the MLflow tracking URI to your tracking server.",
-      "expected_commands": ["export MLFLOW_TRACKING_URI=http://localhost:5000"],
+      "expected_commands": [
+        "export MLFLOW_TRACKING_URI=http://localhost:5000"
+      ],
       "fake_output": "(no output — environment variable set)",
       "explanation": "This tells your training script where to log metrics/params/artifacts — usually set once per environment.",
       "why": "MLflow reads this environment variable automatically inside your training code — the alternative is hardcoding the tracking URI in every script, which breaks the moment you move from local to a shared staging server."
     },
     {
-      "prompt": "Launch the training job as a Kubernetes Job using your training image.",
-      "expected_commands": ["kubectl create job train-run-01 --image=my-training-image -- python train.py"],
+      "prompt": "Launch the training job as a Kubernetes Job named 'train-run-01', using image 'my-training-image' and running 'python train.py'.",
+      "expected_commands": [
+        "kubectl create job train-run-01 --image=my-training-image -- python train.py"
+      ],
       "fake_output": "job.batch/train-run-01 created",
       "explanation": "Running training as a Job (not a Deployment) makes sense because it's meant to run once to completion, not stay running forever.",
       "why": "A Deployment would restart the training container forever every time it finished — a Job specifically tracks completion and stops, which is the correct lifecycle for something meant to run once and produce a result, not serve traffic indefinitely."
     },
     {
       "prompt": "Follow its logs to watch training progress.",
-      "expected_commands": ["kubectl logs job/train-run-01 -f"],
+      "expected_commands": [
+        "kubectl logs job/train-run-01 -f"
+      ],
       "fake_output": "Epoch 1/10 - loss: 0.842 - accuracy: 0.71\nEpoch 2/10 - loss: 0.601 - accuracy: 0.79\n...\nTraining complete. Model saved.",
       "explanation": "Same kubectl logs you already know — training jobs are just regular pods under the hood.",
       "why": "'job/train-run-01' works here the same way 'deployment/web' does elsewhere — kubectl resolves it to the pod the Job created, so you don't need to know the pod's actual generated name to follow its logs."
     },
     {
       "prompt": "Confirm the job completed successfully.",
-      "expected_commands": ["kubectl get jobs"],
+      "expected_commands": [
+        "kubectl get jobs"
+      ],
       "fake_output": "NAME            COMPLETIONS   DURATION\ntrain-run-01    1/1           14m",
       "explanation": "1/1 completions means the job's pod exited with code 0 — success.",
       "why": "Watching the logs stream 'Training complete' is reassuring but isn't proof of a clean exit code — 'get jobs' is the authoritative source, since a script can print a success-looking message and still exit non-zero due to a bug in its own cleanup code."
     },
     {
       "prompt": "List experiments logged in MLflow to confirm this run was tracked.",
-      "expected_commands": ["mlflow experiments list"],
+      "expected_commands": [
+        "mlflow experiments list"
+      ],
       "fake_output": "Experiment Id   Name\n0               Default\n1               checkout-fraud-model",
       "explanation": "Every training run's params, metrics, and model artifact get logged here — this is what makes 'which model version is this' answerable months later.",
       "why": "This is the MLOps-specific step that a plain Kubernetes Job wouldn't give you on its own — the Job confirms the code ran, but MLflow is what actually answers 'what hyperparameters and accuracy did this specific run produce,' which is the part that matters for reproducibility."

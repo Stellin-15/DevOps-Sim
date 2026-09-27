@@ -8,6 +8,7 @@ per-player local state, not project content). Schema matches SPEC.md:
   "incidents_completed": ["incident-001", ...],
   "yaml_labs_completed": ["yaml-001", ...],
   "career_paths_completed": ["path-001", ...],
+  "exam_history": [{"category": "docker", "score": 8, "total": 10, ...}],
   "attempts": {"tutorial-001": 1, "incident-001": 3}
 }
 
@@ -32,6 +33,7 @@ DEFAULT_PROGRESS = {
     "incidents_completed": [],
     "yaml_labs_completed": [],
     "career_paths_completed": [],
+    "exam_history": [],
     "attempts": {},
 }
 
@@ -83,5 +85,6 @@ def _fresh_progress() -> dict:
         "incidents_completed": [],
         "yaml_labs_completed": [],
         "career_paths_completed": [],
+        "exam_history": [],
         "attempts": {},
     }

@@ -2,7 +2,10 @@
 
 import sys
 
+import random
+
 import career_path
+import exam
 import progress as progress_module
 import sandbox
 import yaml_lab
@@ -121,6 +124,27 @@ def career_paths_menu(progress: dict) -> None:
         play(chosen, progress, runner=lambda p: career_path.run_career_path(p, scenarios_by_id, progress))
 
 
+def exam_menu(progress: dict) -> None:
+    category = choose_category()
+    if category == "BACK":
+        return
+    scenarios = load_tutorials(category) + load_incidents(category)
+    label = CATEGORY_LABELS.get(category, "All Categories") if category else "All Categories"
+    pool_size = sum(len(s["steps"]) for s in scenarios)
+
+    best = exam.best_percent(progress, category)
+    print(f"\n=== {label} Exam ===")
+    print(f"{pool_size} possible questions." + (f" Your best so far: {best}%." if best is not None else ""))
+    raw = read_input("How many questions? [10]: ")
+    count = int(raw) if raw.isdigit() and int(raw) > 0 else 10
+    count = min(count, pool_size)
+
+    questions = exam.build_questions(scenarios, count, random.Random())
+    outcome = exam.run_exam(questions, time_limit=count * exam.SECONDS_PER_QUESTION)
+    exam.record_result(progress, category, outcome)
+    progress_module.save_progress(progress)
+
+
 def main_menu_loop() -> None:
     progress = progress_module.load_progress()
 
@@ -129,7 +153,8 @@ def main_menu_loop() -> None:
         print("  1. Practice (pick a category)")
         print("  2. Career Paths (chained scenarios across categories)")
         print("  3. Writing Labs (write real config files and scripts in your own editor)")
-        print("  4. Sandbox (random cluster)")
+        print("  4. Exam Mode (timed, no hints, scored)")
+        print("  5. Sandbox (random cluster)")
         print("  q. Quit")
 
         choice = read_input("\nChoose: ").lower()
@@ -146,6 +171,8 @@ def main_menu_loop() -> None:
             if scenario:
                 play(scenario, progress, runner=yaml_lab.run_yaml_lab)
         elif choice == "4":
+            exam_menu(progress)
+        elif choice == "5":
             sandbox.run_sandbox()
         else:
             print("Invalid choice.")

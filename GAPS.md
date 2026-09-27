@@ -61,8 +61,15 @@ value, YAML syntax error), with the same nudge → hint → full-solution-
 reveal escalation as everywhere else. See `yaml_lab.py` and
 `scenarios/yaml_labs/`.
 
-What YAML Labs still doesn't replicate: real exam **time pressure**
-(there's no clock here), the breadth of an actual live cluster (no real
+**Update — time pressure now addressed by Exam Mode:** a timed, scored
+exam (one minute per question, 66% pass mark — the CKA's real one) that
+draws random steps from a category with no hints and no feedback until
+the end, then reviews every miss. It measures recall under pressure,
+which is exactly what the forgiving tutorial loop can't. It's still
+single commands, though — the real CKA's multi-step, 5-to-10-minute
+tasks on a live cluster aren't simulated.
+
+What YAML Labs still doesn't replicate: the breadth of an actual live cluster (no real
 apiserver validating your YAML beyond what each lab's `validate` spec
 checks), and the physical friction of working across multiple terminal
 panes/contexts at once. Time on a real kind/minikube cluster remains
@@ -528,13 +535,18 @@ that no amount of additional scenario content can fully close:
    the point, not the syntax).
 2. Play every incident without hints first; read every resolution even
    when you solved it.
-3. Play all six Career Paths to practice switching layers mid-problem —
+3. Take an Exam for each category until you pass (66%) consistently —
+   then retake it a week later. Spaced recall is what makes commands
+   stick; a single pass right after the tutorials proves little.
+4. Complete the Writing Labs for each category.
+5. Play all six Career Paths to practice switching layers mid-problem —
    especially "The Worst On-Call Night".
-4. Rebuild each incident for real on a local cluster/VM — break it on
+6. Rebuild each incident for real on a local cluster/VM — break it on
    purpose, then fix it with the same commands.
-5. Write the artifacts yourself: a Dockerfile, a Terraform module, a
-   GitHub Actions workflow, alert rules, and a bash deploy script for one
-   small real project, end to end.
-6. For certification goals, see Part 1 (CKA); similar exam-specific gap
+7. Write the artifacts yourself for one small real project, end to end:
+   a Dockerfile, a Terraform module, a GitHub Actions workflow, alert
+   rules, and a bash deploy script — the Writing Labs are practice for
+   this, not a replacement.
+8. For certification goals, see Part 1 (CKA); similar exam-specific gap
    passes haven't been done for other certs (e.g. Terraform Associate,
    AWS) yet.

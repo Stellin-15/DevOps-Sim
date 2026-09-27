@@ -140,8 +140,24 @@ Don't duplicate content from these files elsewhere — link to them.
   its widest cell (header or row) instead of a fixed width — required
   because service/pod names vary a lot in length and a fixed width let
   long names collide with the next column.
+- **exam.py** — Exam Mode. `build_questions()` flattens a category's
+  tutorials+incidents into single-step questions and draws N at random;
+  each carries the previous step's prompt and (truncated) output as
+  context, plus any earlier output/prompt line containing an id the
+  answer needs (`ID_LIKE` regex: web-abc123, gpu-node-1, hex ids, lock
+  ids). A step whose needed id is never visible is dropped from the pool
+  — and `test_every_real_step_is_answerable_out_of_context` fails if
+  that ever happens, so content stays fair (it caught 6 real prompts
+  that never named what the answer required). `run_exam()` takes an
+  injectable `clock` and `input_fn` (resolved at call time, not as a
+  default argument — a default captured `read_input` at import and
+  couldn't be patched), gives no feedback until the end, scores against
+  the CKA's 66% pass mark, and reviews every miss. Results go to
+  `progress["exam_history"]`; `best_percent()` shows the best score per
+  category.
 - **game.py** — entry point / main menu: Practice (category picker →
-  Learn/Incidents within it), Career Paths, YAML Labs, Sandbox, Quit.
+  Learn/Incidents within it), Career Paths, Writing Labs, Exam Mode,
+  Sandbox, Quit.
   `choose_category()` lists categories from `list_categories()` plus an
   "All categories" option (passes `category=None` through to the
   loaders). `exit`/`quit` work at every prompt — see `engine.read_input` /
@@ -159,9 +175,21 @@ Don't duplicate content from these files elsewhere — link to them.
   markers, and calls `record_attempt`/`mark_completed`/`save_progress`
   after every run via the `play()` helper.
 
-## Known environment quirk
+## Known environment quirks
 
-PowerShell prepends a UTF-8 BOM (`﻿`) when you pipe a string to a
+**Editing files via bash heredoc scripts:** in this environment, a
+`python - <<'EOF'` script that writes Python or JSON source containing
+`\n` escapes inside string literals has repeatedly produced REAL
+newlines in the output file (breaking string literals — it once put a
+syntax error into game.py). Use the Edit/Write tools for any change
+containing `\n`, and run `python -m pytest` (which now imports game.py
+via test_game.py) after every edit.
+
+**Native Windows `bash`:** from native Windows Python, `bash` can resolve
+to a launcher that hangs forever, so the game never shells out to bash
+(see lab_formats.py).
+
+**PowerShell stdin BOM:** PowerShell prepends a UTF-8 BOM (`﻿`) when you pipe a string to a
 Python process's stdin (e.g. testing with `$lines | python game.py`). Real
 interactive typing never has this, but redirected/piped input on Windows
 can. `engine.normalize()` and `engine.read_input()` both strip it — if you
@@ -316,7 +344,7 @@ final `resolution` debrief instead).
 python -m pytest
 ```
 
-(`pytest.ini` points it at `tests/`.) Ten files:
+(`pytest.ini` points it at `tests/`.) Twelve files:
 - `test_engine.py` — matching/normalization logic, proven kubectl-agnostic
 - `test_scenario_loader.py` — category-aware JSON loading (`list_categories`,
   category-filtered vs. aggregated `load_tutorials`/`load_incidents`,
@@ -342,6 +370,13 @@ python -m pytest
 - `test_lab_formats.py` — the Dockerfile, HCL, and bash parsers (line
   continuations, labels, nested maps, repeated blocks, comments, syntax
   errors, unbalanced blocks/quotes) and the `order`/`absent` checks
+- `test_exam.py` — question drawing (context, truncation, seeding),
+  scoring, the pass mark, time-limit edge cases with a fake clock, early
+  exit, no-feedback-until-the-end, history — plus the content-wide
+  answerability guard described under exam.py
+- `test_game.py` — smoke tests that import game.py and drive the real
+  main menu with scripted input. Added after a syntax error in game.py
+  slipped past a fully green suite because nothing imported it.
 - `test_career_path.py` — the run loop: completes all steps, records each
   sub-scenario into `progress` as it goes, stops cleanly on quit, skips
   (doesn't crash on) a missing scenario id
@@ -370,16 +405,12 @@ exercise something the generic checks don't cover.
 
 See GAPS.md Part 9 for the reasoning. In priority order:
 
-1. **Exam mode** (next, per the agreed roadmap order): timed, no hints,
-   randomly drawn scenarios from a category, scored at the end — closes
-   GAPS.md Part 1's "no exam timer" gap. Should reuse engine.run_step's
-   matching but disable hint/reveal escalation.
-   Then, in order: sandboxes for other categories (Docker host, Linux
-   box), "mystery incidents" (free-form diagnosis, any command in any
-   order, scored on finding the root cause), new-topic content from
-   GAPS.md, a stats/spaced-repetition review mode, and more cert passes.
-   (Writing Labs — step 1 of that roadmap — are done: 21 labs across 7
-   formats.)
+1. **Sandboxes for Docker and Linux** (next, per the agreed roadmap
+   order: writing labs ✓ → exam mode ✓ → sandboxes → mystery incidents
+   → new-topic content from GAPS.md → stats/spaced-repetition review →
+   more cert passes). A fake Docker host and a fake Linux box to explore
+   freely, following sandbox.py's pattern (random broken state,
+   token-dispatched commands, keep/discard on exit).
 2. Per-category exam gap passes (like Part 1 did for the CKA): e.g.
    Terraform Associate, CKAD, AWS certs.
 3. Topics each GAPS.md part lists as missing: tracing/SLOs (monitoring),

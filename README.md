@@ -37,6 +37,13 @@ string.
   Docker Compose files, Dockerfiles, Terraform (HCL), and bash scripts.
   Half are "write from scratch", half are "fix this broken or dangerous
   file". This is the skill a command-matcher can't fake.
+- **Exam Mode** — pick a category and a number of questions; they're drawn
+  at random from that category's tutorials and incidents, one minute
+  each, with **no hints and no feedback until the end** — like a real
+  exam. You're scored against the CKA's real 66% pass mark, every miss is
+  reviewed with the correct command, and your best score per category is
+  remembered. The rest of the game is forgiving on purpose; this is the
+  part that tells you whether it stuck.
 - **Sandbox** — no scoring, no steps. The game generates a random fake
   Kubernetes cluster: several services, each with a Deployment, a
   Service, and 1-3 pods (some healthy, some randomly broken with
@@ -144,6 +151,7 @@ scenario_loader.py  category-aware loading: list_categories(),
                      load_tutorials(category=None), load_incidents(...),
                      load_yaml_labs(), load_career_paths(),
                      load_all_scenarios_by_id()
+exam.py             Exam Mode: random timed questions, scoring, history
 career_path.py       chains existing scenarios across categories into
                      one continuous playthrough
 progress.py         reads/writes progress.json (completion + attempt
@@ -280,12 +288,11 @@ Built so far: hardcoded single scenario → JSON-driven scenarios with a
 menu → hint escalation → sandbox → progress tracking → full Kubernetes
 coverage → CKA gap-filling → Writing Labs → multi-category architecture →
 Career Paths → all 8 categories expanded to full depth → Dockerfile,
-Terraform, and bash Writing Labs.
+Terraform, and bash Writing Labs → Exam Mode.
 
 Next, in priority order (details in CLAUDE.md and GAPS.md):
-- **Exam mode** — timed, no hints, random scenarios, scored (next up)
-- Sandboxes for Docker and Linux, then "mystery incidents" (free-form
-  diagnosis in any order)
+- **Sandboxes for Docker and Linux** (next up), then "mystery incidents"
+  (free-form diagnosis in any order)
 - Exam-specific gap passes for other certifications (CKAD, Terraform
   Associate, AWS)
 - Topics each GAPS.md part lists as missing (tracing/SLOs, tcpdump,
