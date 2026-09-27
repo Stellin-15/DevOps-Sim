@@ -308,20 +308,21 @@ the engine, loader, sandboxes, yaml_lab, career_path, mystery, or scenario conte
 
 | Category | Tutorials | Incidents | Topics |
 |---|---|---|---|
-| Kubernetes | 29 | 10 | pods → operators, full CKA coverage incl. etcd, kubeadm, certs, security; plus 9 Writing Labs and Sandbox |
-| Docker | 10 | 5 | images/layers, volumes, networking, Compose, cleanup, Dockerfiles, runtime limits, container security; plus 3 Writing Labs (2 Dockerfile, Compose) |
-| Linux | 12 | 6 | find, text pipelines, processes/signals, systemd, networking, users/permissions, SSH, cron, disks, performance; plus 2 bash-script Writing Labs |
-| Terraform | 10 | 6 | safe CI workflow, variables/outputs, state inspection & refactoring, import, workspaces, remote state/locking, providers, debugging; plus 2 HCL Writing Labs |
-| Networking | 10 | 6 | DNS, refused vs timeout, ports/nmap, routing/ARP, firewalls, TLS/openssl, HTTP/curl, in-cluster networking, CIDR |
-| CI/CD | 10 | 6 | git workflows, revert vs reset, tags/releases, GitHub Actions CLI, secrets/OIDC, local CI repro, rolling/blue-green/canary; plus 3 workflow Writing Labs |
-| Monitoring | 10 | 6 | PromQL, golden signals, Prometheus ops, alerting/Alertmanager, journald, Elasticsearch, Loki, Grafana API; plus 2 alert-rule Writing Labs |
-| MLOps | 10 | 6 | environments, GPUs, MLflow, DVC, serving, KServe/Kubeflow, profiling, model monitoring, model canaries |
-| **Total** | **101** | **51** | + 21 Writing Labs |
+| Kubernetes | 29 | 13 | pods → operators, full CKA coverage incl. etcd, kubeadm, certs, security, RBAC/PDB/storage incidents; plus 9 Writing Labs and Sandbox |
+| Docker | 11 | 5 | images/layers, volumes, networking, Compose, cleanup, Dockerfiles, runtime limits, container security, BuildKit/buildx multi-platform; plus 3 Writing Labs (2 Dockerfile, Compose) |
+| Linux | 14 | 6 | find, text pipelines, processes/signals, systemd, networking, users/permissions, SSH, cron, disks, performance, strace/lsof, packages/firewalls; plus 3 bash-script Writing Labs |
+| Terraform | 11 | 6 | safe CI workflow, modules/for_each/moved blocks, variables/outputs, state inspection & refactoring, import, workspaces, remote state/locking, providers, debugging; plus 2 HCL Writing Labs |
+| Networking | 11 | 7 | DNS, refused vs timeout, ports/nmap, routing/ARP, firewalls, TLS/openssl, HTTP/curl, in-cluster networking, CIDR, tcpdump, MTU black holes |
+| CI/CD | 13 | 6 | git workflows, revert vs reset, git bisect, tags/releases, GitHub Actions CLI, secrets/OIDC, local CI repro, rolling/blue-green/canary, GitOps (Argo CD), SBOMs/scanning/signing; plus 3 workflow Writing Labs |
+| Monitoring | 12 | 6 | PromQL, golden signals, tracing (OTel/Jaeger), SLOs and burn-rate alerts, Prometheus ops, alerting/Alertmanager, journald, Elasticsearch, Loki, Grafana API; plus 2 alert-rule Writing Labs |
+| MLOps | 12 | 7 | environments, GPUs, MLflow, DVC, serving, KServe/Kubeflow, profiling, model monitoring, model canaries, LLM serving (vLLM), feature stores (Feast) |
+| **Total** | **113** | **56** | + 22 Writing Labs |
 
-Plus **6 Career Paths** chaining scenarios across categories: ship a
+Plus **7 Career Paths** chaining scenarios across categories: ship a
 feature end to end, a production incident chain, ML model from laptop to
 production, security hardening layer by layer, building a platform from
-zero, and "The Worst On-Call Night" (seven incidents, seven layers).
+zero, "The Worst On-Call Night" (seven incidents, seven layers), and
+shipping a self-hosted LLM safely (build → sign → GitOps → serve → SLO).
 
 Plus **6 Mystery Incidents**, symptom only: an API down after a deploy,
 a disk alert that won't clear, a database that keeps dying, a slow
@@ -351,13 +352,12 @@ menu → hint escalation → sandbox → progress tracking → full Kubernetes
 coverage → CKA gap-filling → Writing Labs → multi-category architecture →
 Career Paths → all 8 categories expanded to full depth → Dockerfile,
 Terraform, and bash Writing Labs → Exam Mode → Docker and Linux sandboxes →
-Mystery Incidents.
+Mystery Incidents → new-topic content (tracing, SLOs, tcpdump/MTU, GitOps,
+supply chain, bisect, LLM serving, feature stores, strace, BuildKit,
+Terraform modules, and RBAC/PDB/storage incidents).
 
 Next, in priority order (details in CLAUDE.md and GAPS.md):
-- **New-topic content** (next up): topics each GAPS.md part lists as
-  missing, such as tracing/SLOs, tcpdump/MTU, feature stores, LLM
-  serving, GitOps, and shell scripting depth
-- A stats screen and a spaced-repetition review mode
+- **A stats screen and a spaced-repetition review mode** (next up)
 - Exam-specific gap passes for other certifications (CKAD, Terraform
   Associate, AWS)
 - More mysteries, including Kubernetes ones (these need a reactive

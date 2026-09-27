@@ -1,0 +1,31 @@
+{
+  "id": "yaml-022",
+  "type": "yaml_lab",
+  "category": "linux",
+  "title": "Write a Health-Check Script: Arrays, Functions, Loops, and trap",
+  "difficulty": "advanced",
+  "tags": ["bash", "scripting", "functions", "trap"],
+  "intro": "The earlier bash labs were straight-line scripts. Real automation loops over lists, factors repeated logic into functions, cleans up after itself even when it fails, and reports a meaningful exit code. Write a script that checks a list of service URLs and says which ones are down.",
+  "steps": [
+    {
+      "file": "healthcheck.sh",
+      "format": "bash",
+      "starter_content": "#!/usr/bin/env bash\n# Check each service URL and report which are down.\n",
+      "prompt": "Write healthcheck.sh:\n(1) 'set -euo pipefail'.\n(2) Create a temp file with tmp=$(mktemp) and remove it on exit, even on error, with: trap 'rm -f \"$tmp\"' EXIT\n(3) An array: urls=(\"http://api:8080/health\" \"http://web:3000/health\")\n(4) A function check_url() that stores its argument in a 'local' variable and runs curl -fsS --max-time 5 on it, sending output to \"$tmp\" and returning curl's status.\n(5) failures=0, then loop with for url in \"${urls[@]}\"; do ... done. For each URL, if check_url succeeds, print 'OK <url>'. Otherwise print 'DOWN <url>' to stderr and increment the counter with failures=$((failures + 1)).\n(6) End with exit \"$failures\" so the exit code is the number of services down.",
+      "apply_commands": ["bash -n healthcheck.sh", "./healthcheck.sh", "shellcheck healthcheck.sh", "check"],
+      "validate": {
+        "fields": {
+          "shebang": {"contains": "bash"},
+          "text": {"contains": ["set -euo pipefail", "mktemp", "trap", "EXIT", "urls=(", "check_url()", "local ", "curl -fsS", "--max-time", "for url in \"${urls[@]}\"", ">&2", "$((failures + 1))", "exit \"$failures\""]}
+        },
+        "order": ["set -euo pipefail", "trap", "check_url()", "for url in", "done", "exit \"$failures\""],
+        "absent": ["((failures++))", "for url in ${urls[@]}", "for url in $urls"]
+      },
+      "hint": "Order: set -euo pipefail, then tmp=$(mktemp) and the trap, then the urls=(...) array, then the function (check_url() { local url=\"$1\"; curl -fsS --max-time 5 \"$url\" > \"$tmp\"; }), then the loop (inside it, use 'if check_url \"$url\"; then ... else ... fi'), then exit \"$failures\". Don't use ((failures++)): see the 'why' after you pass.",
+      "solution": "#!/usr/bin/env bash\n# Check each service URL and report which are down.\nset -euo pipefail\n\ntmp=$(mktemp)\ntrap 'rm -f \"$tmp\"' EXIT\n\nurls=(\"http://api:8080/health\" \"http://web:3000/health\")\n\ncheck_url() {\n  local url=\"$1\"\n  curl -fsS --max-time 5 \"$url\" > \"$tmp\"\n}\n\nfailures=0\nfor url in \"${urls[@]}\"; do\n  if check_url \"$url\"; then\n    echo \"OK   $url\"\n  else\n    echo \"DOWN $url\" >&2\n    failures=$((failures + 1))\n  fi\ndone\n\nexit \"$failures\"\n",
+      "fake_output": "$ ./healthcheck.sh\nOK   http://api:8080/health\ncurl: (7) Failed to connect to web port 3000: Connection refused\nDOWN http://web:3000/health\n$ echo $?\n1",
+      "explanation": "Checks every URL even when one fails, reports on the right streams, cleans up its temp file on any exit, and exits with the failure count.",
+      "why": "Several deliberate choices here. (1) Calling check_url inside 'if' is what keeps 'set -e' from killing the script at the first down service: commands tested by if/while/&&/|| are exempt from -e. (2) ((failures++)) is a classic -e trap: when failures is 0, the expression evaluates to 0, which bash treats as a failing status, so the script exits on the very first failure. $((failures + 1)) in an assignment always succeeds. (3) \"${urls[@]}\" with quotes expands to one word per element, even if a URL contains spaces; unquoted, it word-splits. (4) trap ... EXIT runs on normal exit, on error, and on Ctrl+C, so temp files and lock files never leak. (5) 'local' keeps the function's variables from overwriting globals of the same name. (6) curl -f turns HTTP 4xx/5xx into a failing exit code, which curl doesn't do by default, and --max-time stops one hung service from hanging the whole check."
+    }
+  ]
+}

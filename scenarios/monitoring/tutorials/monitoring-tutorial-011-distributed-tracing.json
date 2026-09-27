@@ -1,0 +1,46 @@
+{
+  "id": "monitoring-tutorial-011",
+  "type": "tutorial",
+  "category": "monitoring",
+  "title": "Distributed Tracing with OpenTelemetry and Jaeger",
+  "difficulty": "intermediate",
+  "tags": ["tracing", "opentelemetry", "jaeger", "observability"],
+  "intro": "Metrics tell you checkout is slow; logs tell you what one service saw. Neither tells you which of the six services a single request passed through spent the time. That's what a trace is: one request's path, with a timed span per hop. Here you check the pipeline end to end, from app to OpenTelemetry Collector to Jaeger, then find a slow span.",
+  "steps": [
+    {
+      "prompt": "Apps send spans to an OpenTelemetry Collector, not straight to Jaeger. Check the collector's own health endpoint (the health_check extension listens on port 13133).",
+      "expected_commands": ["curl -s localhost:13133", "curl localhost:13133", "curl -s http://localhost:13133"],
+      "fake_output": "{\"status\":\"Server available\",\"upSince\":\"2026-09-27T08:14:02Z\",\"uptime\":\"26h31m\"}",
+      "explanation": "The collector process is up and its pipelines started.",
+      "why": "Check the collector before blaming the app or the backend. It's the middle of the pipeline, so if it's down every service loses traces at once. Its health endpoint is cheaper to check than reading its logs."
+    },
+    {
+      "prompt": "Confirm the collector is actually receiving and exporting spans. Its internal metrics are on port 8888; grep them for accepted and refused spans.",
+      "expected_commands": ["curl -s localhost:8888/metrics | grep -E 'accepted_spans|refused_spans'", "curl -s localhost:8888/metrics | grep spans", "curl localhost:8888/metrics | grep spans"],
+      "fake_output": "otelcol_receiver_accepted_spans{receiver=\"otlp\",transport=\"grpc\"} 1.482e+07\notelcol_receiver_refused_spans{receiver=\"otlp\",transport=\"grpc\"} 0\notelcol_exporter_sent_spans{exporter=\"otlp/jaeger\"} 1.478e+07\notelcol_exporter_send_failed_spans{exporter=\"otlp/jaeger\"} 0",
+      "explanation": "Spans are arriving over OTLP/gRPC and leaving for Jaeger with no failures.",
+      "why": "'Health OK' only means the process is running. accepted vs sent vs send_failed tells you where spans are lost: at the receiver (the app can't reach it), in the processors (sampling or memory-limit drops), or at the exporter (the backend is unreachable)."
+    },
+    {
+      "prompt": "Ask Jaeger's query API (port 16686) which services it has seen traces from.",
+      "expected_commands": ["curl -s localhost:16686/api/services", "curl localhost:16686/api/services", "curl -s http://localhost:16686/api/services"],
+      "fake_output": "{\"data\":[\"frontend\",\"checkout\",\"payments\",\"inventory\",\"shipping\"],\"total\":5}",
+      "explanation": "Five services report spans. 'recommendations' is missing, so it isn't instrumented or can't reach the collector.",
+      "why": "A service missing from this list is a blind spot. Its time shows up only as an unexplained gap inside its caller's span. Check this list before trusting any trace."
+    },
+    {
+      "prompt": "Find the slowest recent checkout traces: query the Jaeger API for service=checkout with minDuration=2s, limit 5.",
+      "expected_commands": ["curl -s 'localhost:16686/api/traces?service=checkout&minDuration=2s&limit=5'", "curl -s \"localhost:16686/api/traces?service=checkout&minDuration=2s&limit=5\""],
+      "fake_output": "traceID            root span           duration  spans\n4bf92f3577b34da6   POST /checkout       3.41s     23\n9c1e7a2d5f6b8e01   POST /checkout       2.87s     21",
+      "explanation": "Two checkouts took over 2 seconds. Trace 4bf92f3577b34da6 is the slowest.",
+      "why": "Filter on duration instead of scrolling through all traces. Most traces are fast, and averages hide the slow ones users complain about, so you go straight to the outliers."
+    },
+    {
+      "prompt": "Pull trace 4bf92f3577b34da6 and look at where its 3.41s went.",
+      "expected_commands": ["curl -s localhost:16686/api/traces/4bf92f3577b34da6", "curl localhost:16686/api/traces/4bf92f3577b34da6"],
+      "fake_output": "span                                   service     start    duration\nPOST /checkout                         frontend    0ms      3410ms\n  POST /api/checkout                   checkout    4ms      3398ms\n    SELECT cart_items                  checkout    9ms      12ms\n    POST /charge                       payments    25ms     3302ms\n      HTTP POST fraud-check.vendor.io  payments    31ms     3288ms\n    POST /reserve                      inventory   3330ms   61ms",
+      "explanation": "3.29 of the 3.41 seconds is payments waiting on an external fraud-check vendor. The database and inventory are fine.",
+      "why": "This is what only tracing shows. Metrics said checkout was slow and payments was slow; the trace says it's one outbound call made by payments. Note also that inventory starts after payments finishes: the calls are sequential, and running them in parallel would hide part of the vendor latency."
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "id": "cicd-tutorial-012",
+  "type": "tutorial",
+  "category": "cicd",
+  "title": "Supply-Chain Security: SBOMs, Scanning, Signing, Digests",
+  "difficulty": "advanced",
+  "tags": ["supply-chain", "sbom", "cosign", "security"],
+  "intro": "A pipeline that builds and deploys an image also has to answer: what's inside it, is any of it known-vulnerable, and is the image in production really the one CI built? This tutorial covers the four tools used for that: syft (SBOM), grype (vulnerability scan), cosign (signing), and digest pinning. The image is registry.example.com/api:2.4.0.",
+  "steps": [
+    {
+      "prompt": "Generate an SBOM (software bill of materials) for registry.example.com/api:2.4.0 in SPDX JSON format, saved to sbom.spdx.json.",
+      "expected_commands": ["syft registry.example.com/api:2.4.0 -o spdx-json > sbom.spdx.json", "syft registry.example.com/api:2.4.0 -o spdx-json=sbom.spdx.json"],
+      "fake_output": " ✔ Pulled image\n ✔ Loaded image                registry.example.com/api:2.4.0\n ✔ Cataloged contents          412 packages",
+      "explanation": "The SBOM lists all 412 packages in the image: OS packages and application dependencies, with versions.",
+      "why": "When the next Log4Shell-style CVE lands, 'which of our images contain this library?' should be a search over stored SBOMs taking minutes, not a week of pulling every image. Generate the SBOM at build time and store it with the image."
+    },
+    {
+      "prompt": "Scan that SBOM for known vulnerabilities, and fail if anything is high severity or worse.",
+      "expected_commands": ["grype sbom:./sbom.spdx.json --fail-on high", "grype sbom:sbom.spdx.json --fail-on high"],
+      "fake_output": "NAME        INSTALLED  FIXED-IN  TYPE  VULNERABILITY   SEVERITY\nopenssl     3.0.2      3.0.7     deb   CVE-2022-3602   High\nlodash      4.17.15    4.17.21   npm   CVE-2021-23337  High\n[0000] ERROR discovered vulnerabilities at or above the severity threshold",
+      "explanation": "Two high-severity CVEs, both with fixed versions available. The non-zero exit code fails the pipeline.",
+      "why": "Scanning the SBOM rather than the image means you can rescan old releases against new CVE data without pulling them again. '--fail-on' turns the scan into a gate. Without it, a scan is just a report nobody reads."
+    },
+    {
+      "prompt": "After fixing and rebuilding, sign the image by its digest with cosign using the key cosign.key. The digest from the build is sha256:9f86d081884c7d65 (shortened for this example).",
+      "expected_commands": ["cosign sign --key cosign.key registry.example.com/api@sha256:9f86d081884c7d65"],
+      "fake_output": "Pushing signature to: registry.example.com/api",
+      "explanation": "The signature is stored in the registry next to the image, tied to that exact digest.",
+      "why": "Sign the digest, never a tag. Tags are mutable pointers (anyone with push access can move api:2.4.0 to different content), while a digest is a hash of the content itself. In CI, keyless signing ('cosign sign' with the job's OIDC identity) avoids having a long-lived key to leak at all."
+    },
+    {
+      "prompt": "Before deploying, verify the signature against the public key cosign.pub.",
+      "expected_commands": ["cosign verify --key cosign.pub registry.example.com/api@sha256:9f86d081884c7d65"],
+      "fake_output": "Verification for registry.example.com/api@sha256:9f86d081884c7d65 --\nThe following checks were performed on each of these signatures:\n  - The cosign claims were validated\n  - The signatures were verified against the specified public key",
+      "explanation": "The image is exactly what your CI signed. It hasn't been swapped or tampered with.",
+      "why": "Signing is worthless unless something enforces verification. In Kubernetes that's an admission policy (Kyverno or Sigstore's policy-controller) that rejects unsigned images, so an attacker who can push to the registry still can't get an image to run."
+    },
+    {
+      "prompt": "Find the digest a tag currently points to, so deploy manifests can pin it: inspect registry.example.com/api:2.4.0 with crane.",
+      "expected_commands": ["crane digest registry.example.com/api:2.4.0"],
+      "fake_output": "sha256:9f86d081884c7d65",
+      "explanation": "The tag resolves to the digest you signed and verified.",
+      "why": "Deploying 'image: api:2.4.0' means 'whatever that tag points to at pull time', which can differ between nodes and change silently. 'image: api@sha256:...' is reproducible and matches what was scanned and signed. Tools like Renovate keep pinned digests up to date for you."
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "id": "networking-tutorial-011",
+  "type": "tutorial",
+  "category": "networking",
+  "title": "Packet Capture with tcpdump",
+  "difficulty": "advanced",
+  "tags": ["tcpdump", "packet-capture", "tcp", "debugging"],
+  "intro": "When curl, dig, and ss all look fine but something is still wrong, the packets themselves are the ground truth. tcpdump shows exactly what went on the wire, and what didn't. The skill is filtering hard enough that the one conversation you care about isn't buried.",
+  "steps": [
+    {
+      "prompt": "List the interfaces tcpdump can capture on, so you pick the right one instead of guessing.",
+      "expected_commands": ["tcpdump -D", "sudo tcpdump -D", "tcpdump --list-interfaces"],
+      "fake_output": "1.eth0 [Up, Running, Connected]\n2.docker0 [Up, Running, Connected]\n3.lo [Up, Running, Loopback]\n4.any (Pseudo-device that captures on all interfaces) [Up, Running]",
+      "explanation": "eth0 is the external interface, docker0 the container bridge, and 'any' captures on everything.",
+      "why": "Capturing on the wrong interface shows nothing and looks like 'no traffic'. Traffic between two containers never touches eth0, and traffic to localhost only appears on lo. Pick the interface that's actually on the packet's path."
+    },
+    {
+      "prompt": "Capture traffic to or from port 5432 (postgres) on eth0. Don't resolve names or port numbers, and stop after 20 packets.",
+      "expected_commands": ["sudo tcpdump -i eth0 -nn -c 20 port 5432", "tcpdump -i eth0 -nn -c 20 port 5432", "sudo tcpdump -nn -i eth0 -c 20 port 5432", "sudo tcpdump -i eth0 -nn -c 20 'port 5432'"],
+      "fake_output": "10:02:11.104 IP 10.0.1.15.51234 > 10.0.2.40.5432: Flags [S], seq 1103, win 64240, length 0\n10:02:12.108 IP 10.0.1.15.51234 > 10.0.2.40.5432: Flags [S], seq 1103, win 64240, length 0\n10:02:14.124 IP 10.0.1.15.51234 > 10.0.2.40.5432: Flags [S], seq 1103, win 64240, length 0",
+      "explanation": "The same SYN is retransmitted after 1s and then 2s, and no SYN-ACK ever comes back. The packets leave, but nothing answers.",
+      "why": "-nn matters more than it looks: without it tcpdump does a reverse-DNS lookup per packet, which is slow and can itself generate traffic that pollutes the capture. Repeated SYNs with no reply mean a filtered timeout (a firewall or security group drops them). A reply of [R] (RST) would mean refused: the host is reachable but nothing is listening."
+    },
+    {
+      "prompt": "Narrow it to the conversation with the database host 10.0.2.40 on port 5432, and show only SYN or RST packets (the connection setups and refusals).",
+      "expected_commands": ["sudo tcpdump -i eth0 -nn 'host 10.0.2.40 and port 5432 and (tcp[tcpflags] & (tcp-syn|tcp-rst) != 0)'", "tcpdump -i eth0 -nn 'host 10.0.2.40 and port 5432 and (tcp[tcpflags] & (tcp-syn|tcp-rst) != 0)'"],
+      "fake_output": "10:05:30.220 IP 10.0.1.15.51260 > 10.0.2.40.5432: Flags [S], seq 88, win 64240, length 0\n10:05:31.224 IP 10.0.1.15.51260 > 10.0.2.40.5432: Flags [S], seq 88, win 64240, length 0",
+      "explanation": "Still only outbound SYNs: no SYN-ACK and no RST.",
+      "why": "Filters are BPF expressions, combined with and/or/not; quote them so the shell doesn't eat the parentheses. Filtering on TCP flags cuts a busy capture down to just the connection attempts, which is where 'can't connect' problems live."
+    },
+    {
+      "prompt": "Run the same port 5432 capture on the database host itself, on its interface ens5, to see whether the SYNs arrive at all.",
+      "expected_commands": ["sudo tcpdump -i ens5 -nn port 5432", "tcpdump -i ens5 -nn port 5432", "sudo tcpdump -nn -i ens5 port 5432"],
+      "fake_output": "tcpdump: verbose output suppressed, use -v[v]... for full protocol decode\nlistening on ens5, link-type EN10MB (Ethernet), snapshot length 262144 bytes\n^C\n0 packets captured",
+      "explanation": "Zero packets arrive. The SYNs leave the client but never reach the server, so something in the network path drops them.",
+      "why": "Capturing at both ends is the decisive technique: it splits the path in half. SYNs leave A but never reach B, so the drop is in between (a security group, NACL, or route). If they did arrive and got no answer, the problem would be on B (a host firewall, or postgres listening only on localhost)."
+    },
+    {
+      "prompt": "For deeper analysis in Wireshark, write the client-side capture to a file instead of the screen: port 5432 on eth0, saved as db.pcap.",
+      "expected_commands": ["sudo tcpdump -i eth0 -nn -w db.pcap port 5432", "tcpdump -i eth0 -nn -w db.pcap port 5432", "sudo tcpdump -i eth0 -w db.pcap port 5432"],
+      "fake_output": "tcpdump: listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes\n^C47 packets captured\n47 packets received by filter\n0 packets dropped by kernel",
+      "explanation": "47 packets saved in binary pcap format, ready to copy off with scp and open in Wireshark.",
+      "why": "-w writes raw packets rather than text, so nothing is lost and you can re-filter later with 'tcpdump -r db.pcap' or Wireshark. 'dropped by kernel' above 0 means the capture couldn't keep up, so tighten the filter. Captures can contain passwords and tokens, so treat pcap files as sensitive."
+    }
+  ]
+}

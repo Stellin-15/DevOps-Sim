@@ -1,0 +1,53 @@
+{
+  "id": "linux-tutorial-014",
+  "type": "tutorial",
+  "category": "linux",
+  "title": "Packages and Host Firewalls: apt, dnf, ufw, and nftables",
+  "difficulty": "beginner",
+  "tags": ["apt", "dnf", "ufw", "nftables", "firewall"],
+  "intro": "Two chores every Linux admin does weekly: installing and patching software, and deciding which ports the host accepts. The commands differ between the Debian/Ubuntu and RHEL/Fedora families, but the ideas are the same.",
+  "steps": [
+    {
+      "prompt": "On an Ubuntu host, refresh the package lists, then list which installed packages have upgrades available.",
+      "expected_commands": ["sudo apt update && apt list --upgradable", "apt update && apt list --upgradable"],
+      "fake_output": "Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease\nGet:2 http://security.ubuntu.com/ubuntu noble-security InRelease [126 kB]\n...\nopenssl/noble-security 3.0.13-0ubuntu3.4 amd64 [upgradable from: 3.0.13-0ubuntu3.1]\nnginx/noble-updates 1.24.0-2ubuntu7.1 amd64 [upgradable from: 1.24.0-2ubuntu7]",
+      "explanation": "The package lists are refreshed, and openssl has a security update waiting.",
+      "why": "'apt update' only refreshes the list of what's available and changes nothing; 'apt upgrade' installs. Looking at --upgradable first shows what's about to change, such as a security fix for openssl, or an nginx upgrade that will restart a service mid-day."
+    },
+    {
+      "prompt": "Install only the openssl upgrade, without upgrading everything else.",
+      "expected_commands": ["sudo apt install --only-upgrade openssl", "apt install --only-upgrade openssl", "sudo apt-get install --only-upgrade openssl"],
+      "fake_output": "The following packages will be upgraded:\n  openssl\n1 upgraded, 0 newly installed, 0 to remove and 1 not upgraded.",
+      "explanation": "Just openssl was patched.",
+      "why": "Targeted upgrades keep a production change small and easy to reason about. Remember that processes already running still have the old library loaded until they restart: 'needrestart' or 'lsof | grep DEL' lists them."
+    },
+    {
+      "prompt": "On a RHEL/Rocky host, find which package provides the 'dig' command, since it isn't installed.",
+      "expected_commands": ["dnf provides dig", "dnf provides '*/dig'", "dnf whatprovides dig", "yum provides dig"],
+      "fake_output": "bind-utils-9.16.23-18.el9.x86_64 : Utilities for querying DNS name servers\nRepo        : appstream\nMatched from:\nFilename    : /usr/bin/dig",
+      "explanation": "dig comes from bind-utils (on Ubuntu it's dnsutils).",
+      "why": "Package names rarely match command names, and they differ between distro families. 'dnf provides' (or 'apt-file search' on Debian) answers the question instead of guessing. On RHEL-family systems, dnf has replaced yum; the yum command still works as an alias."
+    },
+    {
+      "prompt": "Back on Ubuntu with ufw: check the firewall's status and rules, numbered.",
+      "expected_commands": ["sudo ufw status numbered", "ufw status numbered", "sudo ufw status verbose"],
+      "fake_output": "Status: active\n\n     To                         Action      From\n     --                         ------      ----\n[ 1] 22/tcp                     ALLOW IN    Anywhere\n[ 2] 80,443/tcp                 ALLOW IN    Anywhere\n[ 3] 5432/tcp                   ALLOW IN    Anywhere",
+      "explanation": "Rule 3 exposes postgres (5432) to the whole internet.",
+      "why": "Reading the rules before changing them is how you spot a dangerous one like this. Numbered output lets you delete by number. Before enabling ufw on a remote machine, always allow 22/tcp first, or you lock yourself out."
+    },
+    {
+      "prompt": "Replace rule 3: delete it, then allow 5432/tcp only from the app subnet 10.0.1.0/24.",
+      "expected_commands": ["sudo ufw delete 3 && sudo ufw allow from 10.0.1.0/24 to any port 5432 proto tcp", "ufw delete 3 && ufw allow from 10.0.1.0/24 to any port 5432 proto tcp"],
+      "fake_output": "Deleting:\n allow 5432/tcp\nProceed with operation (y|n)? y\nRule deleted\nRule added",
+      "explanation": "postgres is now reachable only from the application subnet.",
+      "why": "Allow by source, not just by port: the database needs to be reachable from the app servers, not the world. This is the same principle as a cloud security group that references the app's subnet or group instead of 0.0.0.0/0. Use both layers: they fail independently."
+    },
+    {
+      "prompt": "ufw (and firewalld on RHEL) are front-ends that generate nftables rules underneath. Show the actual kernel ruleset.",
+      "expected_commands": ["sudo nft list ruleset", "nft list ruleset"],
+      "fake_output": "table inet filter {\n  chain input {\n    type filter hook input priority filter; policy drop;\n    ct state established,related accept\n    iif \"lo\" accept\n    tcp dport 22 accept\n    tcp dport { 80, 443 } accept\n    ip saddr 10.0.1.0/24 tcp dport 5432 accept\n  }\n}",
+      "explanation": "The kernel's real rules: default policy drop, with explicit accepts, including the new source-restricted postgres rule.",
+      "why": "When a front-end's view and reality disagree (Docker, for example, inserts its own rules that bypass ufw for published ports), the kernel ruleset is the truth. 'policy drop' plus 'ct state established,related accept' is the standard shape: allow replies to your own traffic, and only explicitly-listed new connections."
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "id": "cicd-tutorial-011",
+  "type": "tutorial",
+  "category": "cicd",
+  "title": "GitOps with Argo CD",
+  "difficulty": "intermediate",
+  "tags": ["gitops", "argocd", "kubernetes", "deployment"],
+  "intro": "In push-based CD, the pipeline runs 'kubectl apply' against the cluster. In GitOps it's pulled: a controller in the cluster (Argo CD) watches a Git repo and keeps the cluster matching it. Git becomes the source of truth, and a rollback is a git revert. This tutorial works through the core argocd CLI loop on an app called 'checkout'.",
+  "steps": [
+    {
+      "prompt": "List the applications Argo CD manages and their sync and health status.",
+      "expected_commands": ["argocd app list"],
+      "fake_output": "NAME      CLUSTER                         NAMESPACE  PROJECT  STATUS     HEALTH    SYNCPOLICY  REPO\ncheckout  https://kubernetes.default.svc  shop       default  OutOfSync  Healthy   Manual      https://git.example.com/shop/deploy.git\ncatalog   https://kubernetes.default.svc  shop       default  Synced     Healthy   Auto-Prune  https://git.example.com/shop/deploy.git",
+      "explanation": "checkout is OutOfSync: what's running differs from what Git says. catalog matches Git and syncs automatically.",
+      "why": "The two columns answer different questions. STATUS (sync) says whether the cluster matches Git; HEALTH says whether the running resources work. An app can be Synced but Degraded (Git describes something broken), or OutOfSync but Healthy (a change is waiting, or someone edited the cluster by hand)."
+    },
+    {
+      "prompt": "See exactly what differs between Git and the live cluster for checkout.",
+      "expected_commands": ["argocd app diff checkout"],
+      "fake_output": "===== apps/Deployment shop/checkout ======\n  spec:\n    replicas:\n-     6\n+     3\n    template:\n      spec:\n        containers:\n-       - image: registry.example.com/checkout:1.8.2\n+       - image: registry.example.com/checkout:1.9.0",
+      "explanation": "Git wants version 1.9.0 with 3 replicas. The live cluster runs 1.8.2 with 6, because someone scaled it up by hand during a traffic spike.",
+      "why": "Always diff before syncing. The sync will also undo the manual scale-up. That's GitOps working as designed (the cluster converges to Git), but if the 6 replicas were needed, the right fix is to commit replicas: 6 to Git, not to keep editing the cluster."
+    },
+    {
+      "prompt": "Sync checkout so the cluster converges to what Git says.",
+      "expected_commands": ["argocd app sync checkout"],
+      "fake_output": "Name:               checkout\nSync Status:        Synced to main (a1f9c3e)\nHealth Status:      Progressing\n\nGROUP  KIND        NAMESPACE  NAME      STATUS  HEALTH       MESSAGE\napps   Deployment  shop       checkout  Synced  Progressing  deployment.apps/checkout configured",
+      "explanation": "Argo CD applied Git revision a1f9c3e. The rollout to 1.9.0 is in progress.",
+      "why": "Syncing is the only way changes reach the cluster: no pipeline holds cluster credentials, and every change is a reviewed Git commit with an author. That's the security and audit win of GitOps over a CI job that can run kubectl apply."
+    },
+    {
+      "prompt": "Wait until checkout is healthy, with a 300-second timeout, instead of assuming the rollout worked.",
+      "expected_commands": ["argocd app wait checkout --health --timeout 300", "argocd app wait checkout --health --timeout=300"],
+      "fake_output": "Name:               checkout\nSync Status:        Synced to main (a1f9c3e)\nHealth Status:      Degraded\nFATA[0300] timed out (300s) waiting for app \"checkout\" match desired state",
+      "explanation": "The new pods never became healthy: 1.9.0 is broken.",
+      "why": "'Synced' only means the manifests were applied, not that the app works. Gate on health in automation, the same way you'd use 'kubectl rollout status'."
+    },
+    {
+      "prompt": "Show checkout's deployment history to find the last good revision.",
+      "expected_commands": ["argocd app history checkout"],
+      "fake_output": "ID  DATE                           REVISION\n7   2026-09-20 14:02:11 +0000 UTC  main (7c2e0d4)\n8   2026-09-28 09:41:37 +0000 UTC  main (a1f9c3e)",
+      "explanation": "History ID 7 (Git commit 7c2e0d4) was the last known-good deploy.",
+      "why": "Each entry maps to a Git commit, so you can see exactly what changed between the good and bad deploys ('git diff 7c2e0d4 a1f9c3e')."
+    },
+    {
+      "prompt": "The durable GitOps rollback is to revert the bad commit a1f9c3e in the deploy repo, so Git itself is correct again. Revert it.",
+      "expected_commands": ["git revert a1f9c3e", "git revert --no-edit a1f9c3e"],
+      "fake_output": "[main 5b8d21f] Revert \"checkout: bump to 1.9.0\"\n 1 file changed, 2 insertions(+), 2 deletions(-)",
+      "explanation": "After you push, Argo CD sees the new commit and rolls checkout back to 1.8.2.",
+      "why": "'argocd app rollback checkout 7' works in an emergency, but it only works with auto-sync off, and Git still says 1.9.0, so the next sync redeploys the broken version. Reverting in Git keeps Git the single source of truth, and the rollback is reviewed and recorded like any other change."
+    }
+  ]
+}

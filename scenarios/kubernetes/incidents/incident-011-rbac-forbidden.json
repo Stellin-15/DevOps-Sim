@@ -1,0 +1,55 @@
+{
+  "id": "incident-011",
+  "type": "incident",
+  "category": "kubernetes",
+  "title": "The report job can't list pods (RBAC denial)",
+  "difficulty": "intermediate",
+  "tags": ["rbac", "serviceaccount", "security", "debugging"],
+  "intro": "A nightly job, 'pod-report', is meant to list every pod in the 'shop' namespace and post a summary. It was moved from the 'default' namespace to 'shop' yesterday, and it has failed every run since. Nobody changed its code.",
+  "steps": [
+    {
+      "prompt": "Read the logs of the most recent run of the pod-report job in the shop namespace.",
+      "expected_commands": ["kubectl logs job/pod-report -n shop", "kubectl -n shop logs job/pod-report", "kubectl logs -n shop job/pod-report"],
+      "fake_output": "Error from server (Forbidden): pods is forbidden: User \"system:serviceaccount:shop:default\" cannot list resource \"pods\" in API group \"\" in the namespace \"shop\"",
+      "hint": "Jobs have logs too: 'kubectl logs job/<name> -n <namespace>' picks one of the job's pods for you."
+    },
+    {
+      "prompt": "The error names the identity that was denied: the 'default' service account in shop, not a dedicated one. Confirm which service account the job's pod template uses.",
+      "expected_commands": ["kubectl get job pod-report -n shop -o jsonpath='{.spec.template.spec.serviceAccountName}'", "kubectl get job pod-report -n shop -o yaml | grep serviceAccountName"],
+      "fake_output": "(empty — no serviceAccountName is set, so the pod runs as 'default')",
+      "hint": "The field is .spec.template.spec.serviceAccountName. An empty result means the pod falls back to the namespace's 'default' account."
+    },
+    {
+      "prompt": "Check what permissions the job used to have. List the RoleBindings in the default namespace, where it ran before the move.",
+      "expected_commands": ["kubectl get rolebindings -n default -o wide", "kubectl get rolebinding -n default -o wide", "kubectl get rolebindings -n default"],
+      "fake_output": "NAME                ROLE              AGE    USERS   GROUPS   SERVICEACCOUNTS\npod-reader-binding  Role/pod-reader   210d                    default/pod-report",
+      "hint": "'-o wide' adds the SUBJECTS columns, which tell you who each binding grants to."
+    },
+    {
+      "prompt": "In default, a 'pod-report' service account was bound to a 'pod-reader' Role. Neither was recreated in shop. Prove the denial directly by impersonating the account the job actually runs as.",
+      "expected_commands": ["kubectl auth can-i list pods -n shop --as=system:serviceaccount:shop:default"],
+      "fake_output": "no",
+      "hint": "'kubectl auth can-i <verb> <resource> -n <ns> --as=system:serviceaccount:<ns>:<name>' answers exactly what the API server will decide."
+    },
+    {
+      "prompt": "Recreate the fix in shop, starting with the Role: create 'pod-reader' allowing get and list on pods.",
+      "expected_commands": ["kubectl create role pod-reader --verb=get,list --resource=pods -n shop", "kubectl create role pod-reader --verb=get --verb=list --resource=pods -n shop"],
+      "fake_output": "role.rbac.authorization.k8s.io/pod-reader created",
+      "hint": "kubectl create role <name> --verb=get,list --resource=pods -n <ns>"
+    },
+    {
+      "prompt": "Create a dedicated 'pod-report' service account in shop, then bind the role to it with a RoleBinding named 'pod-reader-binding'. (Don't grant the rights to 'default'; that would give them to every pod in the namespace.) Type the binding command.",
+      "expected_commands": ["kubectl create rolebinding pod-reader-binding --role=pod-reader --serviceaccount=shop:pod-report -n shop"],
+      "fake_output": "rolebinding.rbac.authorization.k8s.io/pod-reader-binding created",
+      "hint": "--serviceaccount takes <namespace>:<name>, so here it's shop:pod-report."
+    },
+    {
+      "prompt": "Once the job's pod template sets serviceAccountName: pod-report, verify the new account can list pods before waiting for tonight's run.",
+      "expected_commands": ["kubectl auth can-i list pods -n shop --as=system:serviceaccount:shop:pod-report"],
+      "fake_output": "yes",
+      "hint": "Same impersonation check as before, but for shop:pod-report."
+    }
+  ],
+  "resolution": "RBAC is namespaced. Moving a workload to a new namespace doesn't move its service account, Role, or RoleBinding with it, and the job's manifest never set serviceAccountName. In default that didn't matter, because the binding happened to target the account it ended up with. In shop the pod silently fell back to shop's 'default' account, which has no rights. The 403 message is the key clue, because it names the exact identity that was denied, and 'kubectl auth can-i --as' reproduces the API server's decision without redeploying anything. Lessons: always set serviceAccountName explicitly, ship the ServiceAccount/Role/RoleBinding in the same manifest bundle as the workload, and never fix a denial by granting rights to 'default', because every pod without its own account would inherit them.",
+  "real_commands_used": ["kubectl logs job/", "kubectl get job -o jsonpath", "kubectl get rolebindings -o wide", "kubectl auth can-i --as", "kubectl create role", "kubectl create rolebinding --serviceaccount"]
+}

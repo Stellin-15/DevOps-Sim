@@ -143,11 +143,17 @@ plane being the actual outage).
 
 ## What's still not covered (backlog, not addressed this pass)
 
-- Dynamic storage provisioning failures, volume mount troubleshooting
-- RBAC-denial as an *incident* (tutorial-012 teaches the commands, but
-  there's no investigative incident built around "why can't this pod do X")
-- PodDisruptionBudget blocking a drain
-- Admission controllers / webhooks
+- ~~Dynamic storage provisioning failures~~: **done** in incident-013 (a
+  PVC stuck Pending on a StorageClass that doesn't exist in this cluster,
+  plus the "PVCs are immutable, StatefulSets never update them" trap).
+  Volume *mount* failures (for example FailedAttachVolume, or a
+  multi-attach error on a ReadWriteOnce volume) still aren't covered.
+- ~~RBAC denial as an incident~~: **done** in incident-011 (a job that
+  moved namespaces falls back to the 'default' service account;
+  diagnosed from the 403 text and `auth can-i --as`).
+- ~~PodDisruptionBudget blocking a drain~~: **done** in incident-012.
+- Admission controllers / webhooks (still missing; also relevant to
+  enforcing image signatures, see Part 6)
 - ~~More YAML Labs~~ — **done**: StatefulSet, Ingress (with TLS), HPA,
   and RBAC (Role + RoleBinding) labs added, for 9 Kubernetes labs total
 - Kubeflow at an operator level now lives in the MLOps category (Part 8);
@@ -165,7 +171,7 @@ on-call rotation, shadowed, before being the primary responder.*
 
 # Part 2 — Docker
 
-**Content:** 10 tutorials, 5 incidents, 3 Writing Labs, and a Sandbox (a random
+**Content:** 11 tutorials, 5 incidents, 3 Writing Labs, and a Sandbox (a random
 host with OOM-killed, crashed, restart-looping, or unhealthy containers
 and dangling images/volumes to find with real docker commands and pipes).
 Two Mystery Incidents (an OOM kill, and a restart loop that the
@@ -195,24 +201,28 @@ and the ARG-vs-ENV secret mistake.
   multi-stage build), plus yaml-011 for docker-compose.yml. Validation is
   structural (instruction order, stages, forbidden text) — it doesn't
   run a real `docker build`, so it can't catch e.g. a wrong COPY path.
-- BuildKit specifics (cache mounts, secrets mounts `--secret`),
-  multi-platform builds (`docker buildx`) — common in modern CI.
-- Registry operations beyond push/login: image signing, digest pinning.
+- ~~BuildKit and multi-platform builds~~: **closed** by docker-tutorial-011
+  (buildx builders, `--secret` mounts, registry cache with mode=max,
+  amd64+arm64 manifest lists, `imagetools inspect`).
+- ~~Image signing, digest pinning~~: **closed** by cicd-tutorial-012
+  (cosign sign/verify by digest, `crane digest`), which lives in CI/CD
+  because that's where it runs.
 - `docker pause/unpause/rename/attach/diff` — rarely used in practice,
   deliberately skipped.
 - Swarm mode — deliberately out of scope (largely displaced by Kubernetes).
 
 ## Readiness verdict
 
-Solid for day-to-day development and debugging work with containers.
-Missing the hands-on Dockerfile-writing practice that separates "can use
-Docker" from "can containerize an app well."
+Solid for day-to-day development and debugging work with containers,
+and, with the Dockerfile labs and BuildKit tutorial, for containerizing
+an app well. The remaining gap is realism: the Dockerfile checker is
+structural, so run a real `docker build` on your own projects.
 
 ---
 
 # Part 3 — Linux
 
-**Content:** 12 tutorials, 6 incidents, 2 Writing Labs, and an interactive
+**Content:** 14 tutorials, 6 incidents, 3 Writing Labs, and an interactive
 Sandbox: a server with two random real problems (failed service blocked by
 a stray process, disk filled by a log held open by a process, runaway CPU,
 memory hog that got postgres OOM-killed) that you must find AND fix with
@@ -249,10 +259,16 @@ silently for weeks, and sshd StrictModes rejecting keys.
   called without an argument). The script checker is structural
   (balanced if/fi, do/done, case/esac and quotes, plus required and
   forbidden text) — not a real bash parser or shellcheck, so subtler bugs
-  go unnoticed. Loops, functions, traps, and arrays still aren't practiced.
-- `strace`/`lsof` for deeper process debugging (lsof appears once).
-- Package management (apt/dnf/yum) — trivial but universal.
-- SELinux/AppArmor, firewalls (ufw/iptables/nftables).
+  go unnoticed. yaml-022 now adds arrays, functions with `local`, loops,
+  `trap ... EXIT` cleanup, and the `((n++))`-under-`set -e` trap. Still
+  unpracticed: `getopts` argument parsing, `while read` loops over
+  files, and a real shellcheck pass.
+- ~~`strace`/`lsof`~~: **closed** by linux-tutorial-013 (attach to a hung
+  process, map fds to sockets, `-c` summaries, `-f -e trace=network`).
+- ~~Package management, firewalls~~: **closed** by linux-tutorial-014
+  (apt/dnf, targeted upgrades, `dnf provides`, ufw with source
+  restrictions, and the real `nft list ruleset`).
+- SELinux/AppArmor (still missing).
 - LVM and resizing a filesystem on a grown cloud volume.
 - `tmux`/`screen` for surviving disconnects (mentioned, not practiced).
 
@@ -260,14 +276,15 @@ silently for weeks, and sshd StrictModes rejecting keys.
 
 Strong on operating and troubleshooting an existing Linux server — the
 incident set here covers problems that genuinely trip up experienced
-engineers. Not yet enough for automating Linux work, which requires
-scripting practice this game doesn't offer.
+engineers. Automation is now practiced too (three bash labs of growing
+difficulty), but a structural checker is not shellcheck. Write and lint
+real scripts to finish the job.
 
 ---
 
 # Part 4 — Terraform
 
-**Content:** 10 tutorials, 6 incidents.
+**Content:** 11 tutorials, 6 incidents, 2 Writing Labs.
 
 ## Covered
 
@@ -297,8 +314,12 @@ state file.
   checks structure and values; it doesn't validate against provider
   schemas the way `terraform validate` does, so a misspelled argument
   name passes.
-- Writing reusable modules (inputs/outputs/versioning), `for_each` vs
-  `count` trade-offs, `dynamic` blocks, data sources.
+- ~~Modules, `for_each` vs `count`, data sources~~: **mostly closed** by
+  terraform-tutorial-011 (the count-renumbering trap shown in a real
+  plan, `state mv` vs `moved` blocks, moving resources into a module
+  with a zero-destroy plan, and version pinning). Still unpracticed:
+  *writing* a module's variables and outputs yourself (no HCL lab for
+  it yet), and `dynamic` blocks.
 - Cloud-provider knowledge itself (VPCs, IAM, subnets) — Terraform is
   only as useful as your understanding of what it's creating. This is the
   largest real-world prerequisite and is out of scope for a CLI game.
@@ -316,7 +337,7 @@ be genuinely productive.
 
 # Part 5 — Networking
 
-**Content:** 10 tutorials, 6 incidents.
+**Content:** 11 tutorials, 7 incidents.
 
 ## Covered
 
@@ -338,11 +359,13 @@ terminating load balancers.
 
 ## Still missing
 
-- **Packet capture** (`tcpdump`, reading a pcap in Wireshark) — the tool
-  of last resort for problems nothing else explains. Hard to simulate
-  meaningfully as text, but its absence is a real gap.
-- MTU/fragmentation problems (large requests hang, small ones work) —
-  common with VPNs and overlay networks.
+- ~~Packet capture~~: **closed** for tcpdump by networking-tutorial-011
+  (choosing the interface, `-nn`, BPF filters on TCP flags, capturing
+  at both ends to split the path, `-w` to a pcap). Actually reading a
+  pcap in Wireshark is a GUI skill and stays out of scope.
+- ~~MTU/fragmentation~~: **closed** by networking-incident-007 (a VPN
+  PMTUD black hole: `ping -M do -s`, `tracepath`, blocked ICMP, and MSS
+  clamping as the real fix).
 - Cloud networking specifics: security groups vs NACLs, NAT gateways,
   VPC peering/Transit Gateway, private endpoints.
 - Load balancer internals (L4 vs L7, health checks, connection draining,
@@ -353,14 +376,15 @@ terminating load balancers.
 
 Strong practical troubleshooting foundation — the refused/timeout
 distinction and layer-by-layer method taught here resolve the majority of
-real "can't connect" incidents. Cloud-provider networking and packet
-capture are the next things to learn on real infrastructure.
+real "can't connect" incidents, and packet capture and MTU problems are
+now covered too. Cloud-provider networking (security groups, NAT, VPC
+peering) is the next thing to learn, on real infrastructure.
 
 ---
 
 # Part 6 — CI/CD
 
-**Content:** 10 tutorials, 6 incidents.
+**Content:** 13 tutorials, 6 incidents, 3 Writing Labs.
 
 ## Covered
 
@@ -390,11 +414,18 @@ and recovering commits lost to a bad rebase.
   and OIDC-based cloud deploys written by hand.
 - GitLab CI and Jenkins are recognized in commands/cicd.md but not
   practiced — GitHub Actions is used throughout as the representative.
-- GitOps (Argo CD / Flux), artifact repositories, SBOMs and supply-chain
-  security (signing images with cosign, SLSA provenance).
+- ~~GitOps~~: **closed** for Argo CD by cicd-tutorial-011 (sync vs
+  health, diff before sync, `app wait --health`, and why a git revert
+  beats `argocd app rollback`). Flux isn't covered; the concepts are
+  the same.
+- ~~SBOMs and supply-chain security~~: **mostly closed** by
+  cicd-tutorial-012 (syft SBOMs, grype `--fail-on`, cosign sign/verify
+  by digest, `crane digest`). Still missing: SLSA provenance
+  attestations, and an admission policy that enforces signatures.
 - Database migrations in a deploy pipeline (expand/contract pattern) —
   one of the hardest real-world CD problems.
-- `git bisect` for finding which commit introduced a regression.
+- ~~`git bisect`~~: **closed** by cicd-tutorial-013 (including `bisect
+  run` with an exit-code test script and exit 125 to skip).
 
 ## Readiness verdict
 
@@ -407,7 +438,7 @@ writing that this game only partially supports today.
 
 # Part 7 — Monitoring & Observability
 
-**Content:** 10 tutorials, 6 incidents.
+**Content:** 12 tutorials, 6 incidents, 2 Writing Labs.
 
 ## Covered
 
@@ -430,10 +461,15 @@ journald volume.
 
 ## Still missing
 
-- **Distributed tracing** (OpenTelemetry, Jaeger/Tempo) — the third
-  pillar of observability, absent entirely. Essential for microservices.
-- **SLOs and error budgets** — defining SLIs, burn-rate alerting
-  (multi-window, multi-burn-rate). Mentioned conceptually, not practiced.
+- ~~Distributed tracing~~: **closed** at the operator level by
+  monitoring-tutorial-011 (collector health and its span-loss metrics,
+  finding services missing from Jaeger, filtering traces by duration,
+  reading a span tree). *Instrumenting* code with OpenTelemetry SDKs
+  isn't practiced.
+- ~~SLOs and error budgets~~: **closed** by monitoring-tutorial-012 (a
+  good/total SLI, budget remaining, burn rate, multi-window 14.4x
+  paging, and `promtool test rules`). Writing the burn-rate rule file
+  yourself would make a good future Writing Lab.
 - ~~Writing alert rule YAML~~ — **closed**: YAML Labs yaml-009 (write a
   ratio-based, `for:`-guarded paging rule) and yaml-010 (fix the flapping
   rule from monitoring-incident-003, including its missing `by (le)`).
@@ -447,14 +483,15 @@ journald volume.
 
 Strong on the Prometheus/logging operator skills that most on-call
 rotations rely on, and on the specific ways monitoring systems fail.
-Tracing and SLO-based alerting are the major missing pieces for a
-modern observability practice.
+Tracing and SLO burn-rate alerting are now covered at the operator
+level. What's left is authoring: instrumenting services and writing
+dashboards.
 
 ---
 
 # Part 8 — MLOps
 
-**Content:** 10 tutorials, 6 incidents.
+**Content:** 12 tutorials, 7 incidents.
 
 ## Covered
 
@@ -477,11 +514,17 @@ and an unreproducible model trained on unversioned data.
 
 ## Still missing
 
-- Feature stores (Feast) — the real systemic fix for training/serving
-  skew, mentioned in resolutions but not practiced.
-- Distributed training (multi-GPU/multi-node, NCCL issues), and LLM-
-  specific serving (vLLM, KV-cache memory, quantization, token-based
-  autoscaling) — an increasingly large share of real MLOps work.
+- ~~Feature stores~~: **closed** by mlops-tutorial-012 (Feast plan/apply,
+  offline vs online stores, materialization lag as a new form of skew,
+  and handling missing or stale feature values when serving).
+- ~~LLM serving~~: **mostly closed** by mlops-tutorial-011 (vLLM:
+  context length vs concurrency, tensor parallelism, the
+  OpenAI-compatible API, and scaling on queue depth and KV cache rather
+  than GPU utilization) and mlops-incident-007 (a crash loop caused by
+  a model swap's 128k default context). Quantization and speculative
+  decoding aren't covered.
+- Distributed training (multi-GPU/multi-node, NCCL issues) (still
+  missing).
 - Model registries' promotion workflows (staging → production approval).
 - Writing pipeline definitions (Kubeflow Pipelines / Airflow / Argo
   Workflows DAGs).
@@ -491,8 +534,9 @@ and an unreproducible model trained on unversioned data.
 
 Covers the operational side of MLOps well — the parts where ML meets
 DevOps infrastructure, and the distinctive "nothing errors but the model
-is wrong" failure mode. LLM serving and feature stores are the biggest
-gaps relative to what current MLOps roles ask for.
+is wrong" failure mode. LLM serving and feature stores are now covered;
+distributed training and writing pipeline DAGs are the biggest gaps
+remaining relative to what current MLOps roles ask for.
 
 ---
 
@@ -502,15 +546,15 @@ gaps relative to what current MLOps roles ask for.
 
 | Category | Tutorials | Incidents | Extra |
 |---|---|---|---|
-| Kubernetes | 29 | 10 | 9 Writing Labs, Sandbox |
-| Docker | 10 | 5 | 3 Writing Labs (Dockerfile, Compose), Sandbox, 2 Mysteries |
-| Linux | 12 | 6 | 2 Writing Labs (bash), interactive Sandbox, 4 Mysteries |
-| Terraform | 10 | 6 | 2 Writing Labs (HCL) |
-| Networking | 10 | 6 | |
-| CI/CD | 10 | 6 | 3 Writing Labs (Actions) |
-| Monitoring | 10 | 6 | 2 Writing Labs (alert rules) |
-| MLOps | 10 | 6 | |
-| **Total** | **101** | **51** | 21 Writing Labs, 6 career paths, 3 sandboxes, 6 Mystery Incidents, Exam Mode |
+| Kubernetes | 29 | 13 | 9 Writing Labs, Sandbox |
+| Docker | 11 | 5 | 3 Writing Labs (Dockerfile, Compose), Sandbox, 2 Mysteries |
+| Linux | 14 | 6 | 3 Writing Labs (bash), interactive Sandbox, 4 Mysteries |
+| Terraform | 11 | 6 | 2 Writing Labs (HCL) |
+| Networking | 11 | 7 | |
+| CI/CD | 13 | 6 | 3 Writing Labs (Actions) |
+| Monitoring | 12 | 6 | 2 Writing Labs (alert rules) |
+| MLOps | 12 | 7 | |
+| **Total** | **113** | **56** | 22 Writing Labs, 7 career paths, 3 sandboxes, 6 Mystery Incidents, Exam Mode |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -522,14 +566,14 @@ command beats the alternatives — not just what it does.
 will know the commands, the failure modes, and — most importantly — the
 debugging method** (check the layer before guessing the fix; refused vs
 timeout; verify after every change; revoke before cleaning up; revert
-don't force-push). The 51 incidents are modeled on the kinds of problems
+don't force-push). The 56 incidents are modeled on the kinds of problems
 that genuinely trip up working engineers, and working through them
 builds judgment that command references alone never will.
 
 **It will not, on its own, make you fully proficient**, for four reasons
 that no amount of additional scenario content can fully close:
 
-1. **Authoring vs. operating.** Largely addressed: 21 Writing Labs now
+1. **Authoring vs. operating.** Largely addressed: 22 Writing Labs now
    have you write real Kubernetes manifests, GitHub Actions workflows,
    Prometheus alert rules, Compose files, Dockerfiles, Terraform, and
    bash scripts in your own editor. What remains is **depth and
@@ -565,7 +609,7 @@ that no amount of additional scenario content can fully close:
    then retake it a week later. Spaced recall is what makes commands
    stick; a single pass right after the tutorials proves little.
 4. Complete the Writing Labs for each category.
-5. Play all six Career Paths to practice switching layers mid-problem —
+5. Play all seven Career Paths to practice switching layers mid-problem —
    especially "The Worst On-Call Night".
 6. Play every Mystery Incident, then replay it to aim for 100. Scoring
    near the expert's command count means you went straight to the right

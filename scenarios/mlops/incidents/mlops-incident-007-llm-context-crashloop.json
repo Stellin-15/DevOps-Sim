@@ -1,0 +1,49 @@
+{
+  "id": "mlops-incident-007",
+  "type": "incident",
+  "category": "mlops",
+  "title": "The LLM server crash-loops after a 'simple' model upgrade",
+  "difficulty": "advanced",
+  "tags": ["llm", "vllm", "gpu", "kv-cache", "kubernetes"],
+  "intro": "The team swapped the chat model from Llama 3 8B (8k context) to Llama 3.1 8B (128k context). It's the same parameter count on the same GPU, so everyone expected it to fit. Since the deploy, the 'llm-server' pods in the 'ai' namespace crash on startup and the chatbot is down.",
+  "steps": [
+    {
+      "prompt": "Check the llm-server pods in the ai namespace.",
+      "expected_commands": ["kubectl get pods -n ai -l app=llm-server", "kubectl get pods -n ai"],
+      "fake_output": "NAME                          READY   STATUS             RESTARTS      AGE\nllm-server-5c8f7d9b64-q2x7m   0/1     CrashLoopBackOff   6 (40s ago)   14m",
+      "hint": "Filter by label with -l app=llm-server."
+    },
+    {
+      "prompt": "Read the logs from the previous (crashed) run of llm-server-5c8f7d9b64-q2x7m.",
+      "expected_commands": ["kubectl logs llm-server-5c8f7d9b64-q2x7m -n ai --previous", "kubectl logs llm-server-5c8f7d9b64-q2x7m -n ai -p", "kubectl logs -p llm-server-5c8f7d9b64-q2x7m -n ai"],
+      "fake_output": "INFO: Memory profiling: model weights take 15.0GiB\nINFO: # GPU blocks: 2812\nValueError: The model's max seq len (131072) is larger than the maximum number of tokens that can be stored in KV cache (44992). Try increasing `gpu_memory_utilization` or decreasing `max_model_len` when initializing the engine.",
+      "hint": "--previous (-p) shows the output of the container instance that crashed, not the one that's starting."
+    },
+    {
+      "prompt": "The weights fit fine. What fails is vLLM refusing to start because a single 128k-token request couldn't fit in the KV cache. Check the args the deployment passes to vllm.",
+      "expected_commands": ["kubectl get deployment llm-server -n ai -o jsonpath='{.spec.template.spec.containers[0].args}'", "kubectl get deploy llm-server -n ai -o jsonpath='{.spec.template.spec.containers[0].args}'", "kubectl get deployment llm-server -n ai -o yaml"],
+      "fake_output": "[\"--model\",\"meta-llama/Llama-3.1-8B-Instruct\",\"--gpu-memory-utilization\",\"0.90\"]",
+      "hint": "Container args live at .spec.template.spec.containers[0].args."
+    },
+    {
+      "prompt": "There's no --max-model-len, so vLLM defaults to the model's full 131072 tokens. The old model's 8k default hid this. Check how long the chatbot's conversations actually get: query Prometheus (http://prometheus:9090) with promtool for the 99th percentile of vllm:request_prompt_tokens over the last 7 days.",
+      "expected_commands": ["promtool query instant http://prometheus:9090 'histogram_quantile(0.99, sum by (le) (rate(vllm:request_prompt_tokens_bucket[7d])))'"],
+      "fake_output": "{} => 6144 @[1790000000]",
+      "hint": "histogram_quantile(0.99, sum by (le) (rate(<metric>_bucket[7d])))"
+    },
+    {
+      "prompt": "p99 is about 6k tokens, so 16384 gives plenty of headroom. Add --max-model-len 16384 to the deployment's container args with a JSON patch (append to /spec/template/spec/containers/0/args).",
+      "expected_commands": ["kubectl patch deployment llm-server -n ai --type=json -p='[{\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/args/-\",\"value\":\"--max-model-len=16384\"}]'", "kubectl patch deploy llm-server -n ai --type=json -p='[{\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/args/-\",\"value\":\"--max-model-len=16384\"}]'"],
+      "fake_output": "deployment.apps/llm-server patched",
+      "hint": "A JSON patch 'add' to a path ending in '/-' appends to a list. Put the flag and its value in one string with '='."
+    },
+    {
+      "prompt": "Watch the rollout of the llm-server deployment finish.",
+      "expected_commands": ["kubectl rollout status deployment/llm-server -n ai", "kubectl rollout status deploy/llm-server -n ai", "kubectl rollout status deployment llm-server -n ai"],
+      "fake_output": "Waiting for deployment \"llm-server\" rollout to finish: 0 of 1 updated replicas are available...\ndeployment \"llm-server\" successfully rolled out",
+      "hint": "kubectl rollout status deployment/<name> -n <ns>"
+    }
+  ],
+  "resolution": "Same parameter count doesn't mean same memory needs. The weights were fine; the KV cache wasn't. vLLM checks at startup that at least one request of the maximum length fits in the KV cache, and with no --max-model-len it uses the model's full context: 131072 tokens for Llama 3.1, versus 8192 for Llama 3. The old model's short context was an implicit limit nobody knew they relied on. Capping the context at 16384, based on measured prompt lengths rather than a guess, fixes the startup and leaves about 8x more concurrency than a 128k cap would. Lessons: pin serving parameters explicitly (context length, GPU memory fraction, max concurrent sequences) instead of relying on per-model defaults; treat a model swap like a code change, with a staging load test; and remember that in LLM serving the memory limit is context length times concurrency, not parameter count. Raising --gpu-memory-utilization toward 0.98 might also get it to start, but leaves no headroom for CUDA graphs and activation spikes: a crash moved to peak traffic, not fixed.",
+  "real_commands_used": ["kubectl get pods -l", "kubectl logs --previous", "kubectl get deployment -o jsonpath", "promtool query instant", "kubectl patch --type=json", "kubectl rollout status"]
+}

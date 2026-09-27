@@ -1,0 +1,55 @@
+{
+  "id": "networking-incident-007",
+  "type": "incident",
+  "category": "networking",
+  "title": "Small requests work, large ones hang forever (MTU black hole)",
+  "difficulty": "advanced",
+  "tags": ["mtu", "vpn", "pmtud", "tcpdump"],
+  "intro": "Since the office moved to a new site-to-site VPN, calls to the internal API at 10.20.0.15 behave strangely. GET /health works instantly, but uploading a report (a POST of about 40KB) hangs until it times out. There are no errors on the server, and it's the same code as last week.",
+  "steps": [
+    {
+      "prompt": "Reproduce it: time a small GET to http://10.20.0.15/health with a 10-second limit.",
+      "expected_commands": ["curl -m 10 http://10.20.0.15/health", "curl --max-time 10 http://10.20.0.15/health", "curl -s -m 10 http://10.20.0.15/health"],
+      "fake_output": "{\"status\":\"ok\"}",
+      "hint": "curl -m <seconds> sets a total time limit."
+    },
+    {
+      "prompt": "Now send a large body: POST the 40KB file report.json to http://10.20.0.15/reports with the same 10-second limit.",
+      "expected_commands": ["curl -m 10 -X POST --data-binary @report.json http://10.20.0.15/reports", "curl -m 10 --data-binary @report.json http://10.20.0.15/reports", "curl -m 10 -d @report.json http://10.20.0.15/reports"],
+      "fake_output": "curl: (28) Operation timed out after 10001 milliseconds with 0 bytes received",
+      "hint": "--data-binary @file sends a file's contents as the body."
+    },
+    {
+      "prompt": "The connection works, but big packets vanish. Test the path MTU directly: ping 10.20.0.15 with 1472-byte payloads and the don't-fragment bit set (1472 + 28 bytes of headers = 1500).",
+      "expected_commands": ["ping -M do -s 1472 -c 3 10.20.0.15", "ping -c 3 -M do -s 1472 10.20.0.15"],
+      "fake_output": "PING 10.20.0.15 (10.20.0.15) 1472(1500) bytes of data.\n\n--- 10.20.0.15 ping statistics ---\n3 packets transmitted, 0 received, 100% packet loss",
+      "hint": "Linux ping: -M do forbids fragmentation, -s sets the payload size. And 1472 + 8 (ICMP) + 20 (IP) = 1500."
+    },
+    {
+      "prompt": "Full 1500-byte packets are silently dropped. Try a 1372-byte payload (a 1400-byte packet).",
+      "expected_commands": ["ping -M do -s 1372 -c 3 10.20.0.15", "ping -c 3 -M do -s 1372 10.20.0.15"],
+      "fake_output": "PING 10.20.0.15 (10.20.0.15) 1372(1400) bytes of data.\n1380 bytes from 10.20.0.15: icmp_seq=1 ttl=62 time=18.4 ms\n1380 bytes from 10.20.0.15: icmp_seq=2 ttl=62 time=18.1 ms\n1380 bytes from 10.20.0.15: icmp_seq=3 ttl=62 time=18.3 ms",
+      "hint": "Same flags, smaller -s."
+    },
+    {
+      "prompt": "So the path MTU is between 1400 and 1500: the VPN adds its own headers. Let tracepath find the exact value along the route to 10.20.0.15.",
+      "expected_commands": ["tracepath -n 10.20.0.15", "tracepath 10.20.0.15"],
+      "fake_output": " 1?: [LOCALHOST]                      pmtu 1500\n 1:  10.0.0.1                          0.412ms\n 2:  10.0.0.1                          0.380ms pmtu 1422\n 2:  172.16.8.1                       17.905ms\n 3:  10.20.0.15                       18.210ms reached\n     Resume: pmtu 1422 hops 3 back 3",
+      "hint": "tracepath discovers the path MTU hop by hop and doesn't need root."
+    },
+    {
+      "prompt": "The path MTU is 1422, but this host still sends 1500-byte packets. Normally a router sends back an ICMP 'fragmentation needed' message and the sender shrinks its packets (path MTU discovery). Capture ICMP on eth0 while retrying the upload, to see whether that message ever arrives.",
+      "expected_commands": ["sudo tcpdump -i eth0 -nn icmp", "tcpdump -i eth0 -nn icmp", "sudo tcpdump -nn -i eth0 icmp"],
+      "fake_output": "listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes\n^C\n0 packets captured",
+      "hint": "Filter on the icmp protocol."
+    },
+    {
+      "prompt": "No ICMP ever comes back: a firewall on the VPN path blocks it, so path MTU discovery can't work (a 'PMTUD black hole'). The immediate fix on this host is to lower eth0's MTU to 1422 to match the path.",
+      "expected_commands": ["sudo ip link set dev eth0 mtu 1422", "ip link set dev eth0 mtu 1422", "sudo ip link set eth0 mtu 1422"],
+      "fake_output": "(no output: the new MTU applies immediately; 'ip link show eth0' now shows 'mtu 1422')",
+      "hint": "ip link set dev <iface> mtu <size>"
+    }
+  ],
+  "resolution": "A classic MTU black hole. The new VPN wraps every packet in about 78 bytes of tunnel headers, so the largest packet that fits through is 1422 bytes, not 1500. Small requests (a GET, the TCP handshake) fit and work. A large POST fills 1500-byte packets, which the VPN router drops. It's supposed to send back ICMP 'fragmentation needed' so the sender can shrink its packets, but a firewall on the path blocks all ICMP, so the sender never learns and retransmits the same oversized packets until the request times out. The tell-tale sign is 'small works, big hangs, and nothing errors'. Lowering the host MTU fixes this one machine. The proper fixes are on the network: allow ICMP type 3 code 4 through the firewall (blocking all ICMP is a common and harmful 'security' rule), and/or have the VPN gateway clamp the TCP MSS (for example iptables '--clamp-mss-to-pmtu'), so every TCP connection through the tunnel agrees on a smaller segment size from the start. Kubernetes overlay networks (VXLAN, WireGuard) hit exactly the same problem, which is why CNIs set pod MTUs below the node's.",
+  "real_commands_used": ["curl -m", "curl --data-binary @file", "ping -M do -s", "tracepath", "tcpdump icmp", "ip link set mtu"]
+}

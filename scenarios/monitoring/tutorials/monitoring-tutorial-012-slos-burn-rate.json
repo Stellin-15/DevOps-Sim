@@ -1,0 +1,46 @@
+{
+  "id": "monitoring-tutorial-012",
+  "type": "tutorial",
+  "category": "monitoring",
+  "title": "SLOs, Error Budgets, and Burn-Rate Alerts",
+  "difficulty": "advanced",
+  "tags": ["slo", "error-budget", "promql", "alerting"],
+  "intro": "An SLO turns 'the site should be reliable' into a number: 99.9% of requests succeed over 30 days. The 0.1% left over is your error budget. You work out the SLI, how much budget is left, and how fast it's burning, then check the multi-window alert that pages only when it matters. Queries go through promtool against Prometheus at http://prometheus:9090.",
+  "steps": [
+    {
+      "prompt": "Compute the availability SLI for 'checkout' over the last 30 days: the ratio of non-5xx requests to all requests (metric http_requests_total, labels service and code).",
+      "expected_commands": ["promtool query instant http://prometheus:9090 'sum(rate(http_requests_total{service=\"checkout\",code!~\"5..\"}[30d])) / sum(rate(http_requests_total{service=\"checkout\"}[30d]))'"],
+      "fake_output": "{} => 0.99931 @[1790000000]",
+      "explanation": "99.931% of checkout requests succeeded over 30 days, so it's just above a 99.9% SLO.",
+      "why": "Measure the SLI as good events divided by all events, from the user's side (request success), not CPU or 'pod is up'. A service can be 'up' while failing requests, and users only experience the requests."
+    },
+    {
+      "prompt": "How much of the error budget is left? With a 99.9% target the budget is 0.001. Compute the remaining fraction: 1 - (1 - SLI) / 0.001, reusing the same 30-day ratio.",
+      "expected_commands": ["promtool query instant http://prometheus:9090 '1 - (1 - (sum(rate(http_requests_total{service=\"checkout\",code!~\"5..\"}[30d])) / sum(rate(http_requests_total{service=\"checkout\"}[30d])))) / 0.001'"],
+      "fake_output": "{} => 0.31 @[1790000000]",
+      "explanation": "Only 31% of this month's error budget is left, so 69% is already spent.",
+      "why": "The remaining budget turns reliability into a decision: with budget left, ship features and take risks; with it nearly gone, slow releases and fix reliability. That's the real point of an SLO. The number isn't the goal, the agreement about what to do when it runs low is."
+    },
+    {
+      "prompt": "Now the burn rate over the last hour: the error ratio over 1h divided by the budget (0.001). A burn rate of 1 spends exactly the whole budget in 30 days.",
+      "expected_commands": ["promtool query instant http://prometheus:9090 '(sum(rate(http_requests_total{service=\"checkout\",code=~\"5..\"}[1h])) / sum(rate(http_requests_total{service=\"checkout\"}[1h]))) / 0.001'"],
+      "fake_output": "{} => 16.2 @[1790000000]",
+      "explanation": "Burning at 16.2x: at this rate the entire 30-day budget would be gone in under 2 days.",
+      "why": "Alerting on 'error rate > 1%' either pages on every blip or misses slow leaks. Burn rate scales with the SLO: 14.4x over 1h means 2% of the monthly budget spent in one hour, which is the standard 'page someone now' threshold."
+    },
+    {
+      "prompt": "Check the rules file for the standard multi-window burn-rate alert (1h AND 5m both above 14.4) before loading it: validate slo-rules.yml.",
+      "expected_commands": ["promtool check rules slo-rules.yml"],
+      "fake_output": "Checking slo-rules.yml\n  SUCCESS: 2 rules found",
+      "explanation": "Both rules parse: a fast-burn page (1h and 5m windows) and a slow-burn ticket (6h and 30m windows).",
+      "why": "Two windows fix both classic problems. The long window (1h) proves the burn is significant rather than a 30-second blip. The short window (5m) proves it's still happening, so the alert resolves within minutes of the fix instead of an hour later. A slower pair (6h and 30m at 6x) creates a ticket instead of a page for slow leaks."
+    },
+    {
+      "prompt": "Unit-test the alert against synthetic data before trusting it: run the rule tests in slo-tests.yml.",
+      "expected_commands": ["promtool test rules slo-tests.yml"],
+      "fake_output": "Unit Testing:  slo-tests.yml\n  SUCCESS",
+      "explanation": "The tests feed in a fake error spike and assert that the page fires, and a short blip and assert that it doesn't.",
+      "why": "An alert you've never seen fire is an alert you don't know works. promtool's rule tests let you prove, in CI, that the page fires on a real burn and stays quiet on noise, the same way code has unit tests."
+    }
+  ]
+}

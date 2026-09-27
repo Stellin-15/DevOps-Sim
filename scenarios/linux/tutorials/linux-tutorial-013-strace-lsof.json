@@ -1,0 +1,46 @@
+{
+  "id": "linux-tutorial-013",
+  "type": "tutorial",
+  "category": "linux",
+  "title": "Seeing What a Process Is Really Doing: strace and lsof",
+  "difficulty": "advanced",
+  "tags": ["strace", "lsof", "debugging", "processes"],
+  "intro": "A worker process (PID 2481) is 'running' but has done nothing for an hour. Its logs are silent and CPU is 0%. ps can't tell you what it's waiting for, but the kernel can. strace shows the system calls a process makes, and lsof shows every file and socket it has open.",
+  "steps": [
+    {
+      "prompt": "Attach strace to PID 2481 and see what system call it's stuck in.",
+      "expected_commands": ["sudo strace -p 2481", "strace -p 2481"],
+      "fake_output": "strace: Process 2481 attached\nread(7, ^Cstrace: Process 2481 detached\n <detached ...>",
+      "explanation": "It's blocked in read() on file descriptor 7, waiting for data that never comes.",
+      "why": "A hung process is almost always blocked in a system call: read, connect, futex (a lock), or wait. strace names the exact call and file descriptor in seconds. Attaching with -p doesn't restart anything, so it's safe on a live process (it does slow the process down while attached, so detach promptly)."
+    },
+    {
+      "prompt": "What is file descriptor 7? List PID 2481's open files and sockets with lsof.",
+      "expected_commands": ["sudo lsof -p 2481", "lsof -p 2481"],
+      "fake_output": "COMMAND  PID  USER  FD   TYPE  DEVICE  NODE  NAME\nworker  2481  app   3u   IPv4  81234   TCP   10.0.1.15:48120->10.0.3.9:5672 (ESTABLISHED)\nworker  2481  app   7u   IPv4  81240   TCP   10.0.1.15:48122->10.0.4.22:6379 (ESTABLISHED)",
+      "explanation": "fd 7 is a TCP connection to 10.0.4.22:6379, Redis. The worker is waiting for a reply from Redis.",
+      "why": "In Linux everything is a file descriptor: files, sockets, pipes. lsof maps fd numbers to what they are, which turns strace's 'read(7' into 'waiting on Redis'. (ls -l /proc/2481/fd gives the same map with no lsof installed.)"
+    },
+    {
+      "prompt": "Get a summary of system calls instead of a stream: trace PID 2481 for a while with -c to count calls and time, then press Ctrl+C.",
+      "expected_commands": ["sudo strace -c -p 2481", "strace -c -p 2481", "sudo strace -p 2481 -c"],
+      "fake_output": "% time     seconds  usecs/call     calls    errors syscall\n------ ----------- ----------- --------- --------- ----------------\n 99.97    3.601204     3601204         1           read\n  0.03    0.001080          12        87        87 connect\n------ ----------- ----------- --------- --------- ----------------\n100.00    3.602284                    88        87 total",
+      "explanation": "All the time is in one read(). Separately, 87 connect() calls all failed: something retries connecting in a loop.",
+      "why": "-c turns thousands of lines into a table. It's the fastest way to see where time goes (a slow syscall) or what fails repeatedly (the errors column). Failed calls that never reach the logs show up here."
+    },
+    {
+      "prompt": "See those failing connects in detail: trace only network-related calls (-e trace=network) with timestamps (-tt), following child threads (-f).",
+      "expected_commands": ["sudo strace -f -tt -e trace=network -p 2481", "strace -f -tt -e trace=network -p 2481", "sudo strace -tt -f -e trace=network -p 2481"],
+      "fake_output": "[pid 2490] 10:41:02.114207 connect(9, {sa_family=AF_INET, sin_port=htons(6380), sin_addr=inet_addr(\"10.0.4.22\")}, 16) = -1 ECONNREFUSED (Connection refused)\n[pid 2490] 10:41:02.614733 connect(9, {sa_family=AF_INET, sin_port=htons(6380), sin_addr=inet_addr(\"10.0.4.22\")}, 16) = -1 ECONNREFUSED (Connection refused)",
+      "explanation": "A background thread (2490) retries port 6380 every 500ms and is refused. That's a Redis replica port that nothing is listening on.",
+      "why": "-e trace= narrows the output to a class of calls (network, file, process), and -f is essential for multi-threaded programs: without it you only see the main thread and miss the one doing the work. The kernel's error name (ECONNREFUSED, ENOENT, EACCES) is often more precise than whatever the app logs."
+    },
+    {
+      "prompt": "Find every process on the host that has a connection to the Redis server 10.0.4.22.",
+      "expected_commands": ["sudo lsof -nP -i @10.0.4.22", "lsof -nP -i @10.0.4.22", "sudo lsof -i @10.0.4.22"],
+      "fake_output": "COMMAND  PID  USER  FD  TYPE  DEVICE  NODE  NAME\nworker  2481  app   7u  IPv4  81240   TCP   10.0.1.15:48122->10.0.4.22:6379 (ESTABLISHED)\napi     1733  app  12u  IPv4  80012   TCP   10.0.1.15:47001->10.0.4.22:6379 (ESTABLISHED)",
+      "explanation": "The api process talks to the same Redis server, so it may be about to hang the same way.",
+      "why": "lsof -i filters by network address or port ('-i :6379', '-i @host'). -n and -P skip DNS and port-name lookups, which are slow and can hang when DNS is part of the problem. The worker's real bug is a read with no timeout: when Redis stalls, it waits forever. Every network call in production code needs a timeout."
+    }
+  ]
+}

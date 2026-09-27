@@ -1,0 +1,53 @@
+{
+  "id": "terraform-tutorial-011",
+  "type": "tutorial",
+  "category": "terraform",
+  "title": "Modules, for_each vs count, and Data Sources",
+  "difficulty": "advanced",
+  "tags": ["terraform", "modules", "for_each", "count"],
+  "intro": "Copy-pasting resource blocks doesn't scale past a handful. Terraform's answers are modules (reusable, versioned bundles of resources), for_each (one resource per map entry, keyed by name), and data sources (reading things Terraform doesn't manage). The commands here show why for_each is safer than count, and how to adopt modules without destroying anything.",
+  "steps": [
+    {
+      "prompt": "The config uses count to create one S3 bucket per name in a list. See how Terraform currently tracks them: list the state.",
+      "expected_commands": ["terraform state list"],
+      "fake_output": "aws_s3_bucket.logs[0]\naws_s3_bucket.logs[1]\naws_s3_bucket.logs[2]",
+      "explanation": "The three buckets (api, web, worker) are tracked by position: [0], [1], [2].",
+      "why": "With count, each resource's identity is its index in the list, not its name. Keep that in mind for the next step."
+    },
+    {
+      "prompt": "Someone removed 'api', the first name in the list. Run a plan and read what Terraform wants to do.",
+      "expected_commands": ["terraform plan"],
+      "fake_output": "  # aws_s3_bucket.logs[0] must be replaced\n-/+ bucket = \"logs-api\" -> \"logs-web\"\n  # aws_s3_bucket.logs[1] must be replaced\n-/+ bucket = \"logs-web\" -> \"logs-worker\"\n  # aws_s3_bucket.logs[2] will be destroyed\nPlan: 2 to add, 0 to change, 3 to destroy.",
+      "explanation": "Removing one name shifts every later index, so Terraform would destroy and recreate web and worker (losing their contents) as well as delete api.",
+      "why": "This is the count trap: removing an item from the middle of a list renumbers everything after it. for_each keys each instance by a stable string (logs[\"web\"]), so removing 'api' removes exactly one bucket. Use count only for 'N identical things' or an on/off switch (count = var.enabled ? 1 : 0)."
+    },
+    {
+      "prompt": "After rewriting the resource with for_each over a set of names, move the existing state entries to their new keys instead of recreating them. Start with web: move aws_s3_bucket.logs[1] to aws_s3_bucket.logs[\"web\"].",
+      "expected_commands": ["terraform state mv 'aws_s3_bucket.logs[1]' 'aws_s3_bucket.logs[\"web\"]'"],
+      "fake_output": "Move \"aws_s3_bucket.logs[1]\" to \"aws_s3_bucket.logs[\\\"web\\\"]\"\nSuccessfully moved 1 object(s).",
+      "explanation": "The same real bucket, now tracked under a stable name.",
+      "why": "Quote the addresses so the shell doesn't mangle the brackets and quotes. For changes that go through code review, prefer a 'moved' block in the configuration (moved { from = aws_s3_bucket.logs[1]  to = aws_s3_bucket.logs[\"web\"] }): it's reviewed, applied through the normal plan, and works for everyone who uses the config, not just whoever ran state mv."
+    },
+    {
+      "prompt": "The buckets now live in a reusable module under ./modules/log-bucket, called as module \"logs\". Adding or changing a module source requires fetching it: run the command that installs modules without touching the backend or providers.",
+      "expected_commands": ["terraform get", "terraform init"],
+      "fake_output": "- logs in modules/log-bucket",
+      "explanation": "Terraform registered the local module.",
+      "why": "'terraform get' only fetches modules; 'terraform init' does that plus the backend and providers, and is the usual choice. Pin registry and Git modules to a version (version = \"~> 2.1\" or ?ref=v2.1.0): an unpinned module can change under you on the next init, just like an unpinned provider."
+    },
+    {
+      "prompt": "Moving resources into a module changes their addresses too. After adding moved blocks for that, confirm with a plan that nothing will be destroyed.",
+      "expected_commands": ["terraform plan"],
+      "fake_output": "  # aws_s3_bucket.logs[\"web\"] has moved to module.logs.aws_s3_bucket.this[\"web\"]\n  # aws_s3_bucket.logs[\"worker\"] has moved to module.logs.aws_s3_bucket.this[\"worker\"]\nPlan: 0 to add, 0 to change, 0 to destroy.",
+      "explanation": "Only moves, no replacements: the refactor is safe to apply.",
+      "why": "'0 to destroy' is the whole acceptance test for a refactor. If a plan shows destroy/create pairs for resources you only renamed or moved, you're missing a moved block. Never apply a refactor plan you haven't read."
+    },
+    {
+      "prompt": "The module needs the ID of a VPC it doesn't manage. It uses a data source to look it up by tag. Check what that data source resolved to, using the console: evaluate data.aws_vpc.main.id.",
+      "expected_commands": ["echo 'data.aws_vpc.main.id' | terraform console", "terraform console"],
+      "fake_output": "\"vpc-0a1b2c3d4e5f67890\"",
+      "explanation": "The data source found the existing VPC by its tags.",
+      "why": "Data sources read existing infrastructure (a VPC made by another team, the latest AMI, the current account ID) without managing it, so there are no hardcoded IDs that break between environments. The console is the fastest way to check what an expression evaluates to before building on it."
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "id": "incident-012",
+  "type": "incident",
+  "category": "kubernetes",
+  "title": "The node drain that never finishes (PodDisruptionBudget)",
+  "difficulty": "intermediate",
+  "tags": ["pdb", "drain", "maintenance", "scheduling"],
+  "intro": "You're patching node-2 during a maintenance window. 'kubectl drain' has been printing the same retry message for 20 minutes and the window closes soon.",
+  "steps": [
+    {
+      "prompt": "Re-run the drain on node-2 (ignoring DaemonSets and allowing emptyDir data to be deleted) and read what it's actually waiting on.",
+      "expected_commands": ["kubectl drain node-2 --ignore-daemonsets --delete-emptydir-data"],
+      "fake_output": "node/node-2 already cordoned\nevicting pod shop/payments-6d9f7c-x2k4p\nerror when evicting pods/\"payments-6d9f7c-x2k4p\" -n \"shop\" (will retry after 5s): Cannot evict pod as it would violate the pod's disruption budget.",
+      "hint": "The drain flags you need are --ignore-daemonsets and --delete-emptydir-data."
+    },
+    {
+      "prompt": "The eviction is blocked by a PodDisruptionBudget. List the PDBs in the shop namespace.",
+      "expected_commands": ["kubectl get pdb -n shop", "kubectl get poddisruptionbudgets -n shop", "kubectl get poddisruptionbudget -n shop"],
+      "fake_output": "NAME           MIN AVAILABLE   MAX UNAVAILABLE   ALLOWED DISRUPTIONS   AGE\npayments-pdb   2               N/A               0                     90d",
+      "hint": "The short name is pdb. Look at the ALLOWED DISRUPTIONS column."
+    },
+    {
+      "prompt": "ALLOWED DISRUPTIONS is 0: no payments pod may be evicted at all. The PDB demands 2 available, so see how many payments replicas actually exist.",
+      "expected_commands": ["kubectl get deployment payments -n shop", "kubectl get deploy payments -n shop"],
+      "fake_output": "NAME       READY   UP-TO-DATE   AVAILABLE   AGE\npayments   2/2     2            2           90d",
+      "hint": "Compare the deployment's replica count with the PDB's MIN AVAILABLE."
+    },
+    {
+      "prompt": "2 replicas with minAvailable: 2 means the budget can never allow a disruption. Someone scaled payments down from 3 last month and nobody updated the PDB. Scale payments back to 3 replicas so a pod can be evicted without dropping below the budget.",
+      "expected_commands": ["kubectl scale deployment payments --replicas=3 -n shop", "kubectl scale deploy payments --replicas=3 -n shop", "kubectl scale deployment/payments --replicas=3 -n shop"],
+      "fake_output": "deployment.apps/payments scaled",
+      "hint": "kubectl scale deployment <name> --replicas=<n> -n <namespace>"
+    },
+    {
+      "prompt": "Once the third replica is Ready on another node, check the PDB again.",
+      "expected_commands": ["kubectl get pdb payments-pdb -n shop", "kubectl get pdb -n shop"],
+      "fake_output": "NAME           MIN AVAILABLE   MAX UNAVAILABLE   ALLOWED DISRUPTIONS   AGE\npayments-pdb   2               N/A               1                     90d",
+      "hint": "ALLOWED DISRUPTIONS should now be 1."
+    },
+    {
+      "prompt": "One disruption is allowed now. Retry the drain of node-2.",
+      "expected_commands": ["kubectl drain node-2 --ignore-daemonsets --delete-emptydir-data"],
+      "fake_output": "evicting pod shop/payments-6d9f7c-x2k4p\npod/payments-6d9f7c-x2k4p evicted\nnode/node-2 drained",
+      "hint": "Same drain command as before."
+    }
+  ],
+  "resolution": "A PodDisruptionBudget with minAvailable equal to the replica count (or maxUnavailable: 0) allows zero voluntary disruptions, so any drain, cluster-autoscaler scale-down, or node upgrade blocks forever. Drain respects PDBs by design (it uses the Eviction API), so this isn't a bug; the PDB is doing exactly what it says. The tempting shortcuts are deleting the PDB, or running 'kubectl delete pod' (which bypasses the Eviction API). Both remove the protection at the exact moment you're about to reduce capacity. Better: temporarily add capacity (scale up) so the budget has slack, or express the PDB as maxUnavailable: 1 (or a percentage) so it scales with the replica count. Add an alert on PDBs whose ALLOWED DISRUPTIONS stays at 0, because that's a maintenance window waiting to fail.",
+  "real_commands_used": ["kubectl drain --ignore-daemonsets --delete-emptydir-data", "kubectl get pdb", "kubectl get deployment", "kubectl scale deployment --replicas"]
+}

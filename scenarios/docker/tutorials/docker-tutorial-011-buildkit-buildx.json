@@ -1,0 +1,53 @@
+{
+  "id": "docker-tutorial-011",
+  "type": "tutorial",
+  "category": "docker",
+  "title": "BuildKit and buildx: Secrets, Cache, and Multi-Platform Images",
+  "difficulty": "advanced",
+  "tags": ["buildkit", "buildx", "multi-platform", "security"],
+  "intro": "Modern Docker builds run on BuildKit, which adds features the classic builder never had: secrets that never land in a layer, caches that survive between CI runs, and one image for both amd64 and arm64 (Graviton servers, Apple Silicon laptops). The image is registry.example.com/api:3.0.",
+  "steps": [
+    {
+      "prompt": "List your buildx builders and the platforms each can build for.",
+      "expected_commands": ["docker buildx ls"],
+      "fake_output": "NAME/NODE     DRIVER/ENDPOINT  STATUS   BUILDKIT  PLATFORMS\ndefault *     docker\n  default     default          running  v0.16.0   linux/amd64, linux/386",
+      "explanation": "Only the default builder exists, and it only builds for amd64.",
+      "why": "The default 'docker' driver builds for the host's own architecture and can't export caches to a registry. Multi-platform builds and remote caching need a builder using the docker-container driver."
+    },
+    {
+      "prompt": "Create a new builder named 'multi' with the docker-container driver and switch to it.",
+      "expected_commands": ["docker buildx create --name multi --driver docker-container --use", "docker buildx create --use --name multi --driver docker-container"],
+      "fake_output": "multi",
+      "explanation": "The 'multi' builder runs BuildKit in its own container and is now the default for buildx commands.",
+      "why": "A containerized BuildKit supports every exporter and cache backend, and runs other architectures through QEMU emulation (or through native nodes you append to the builder for speed)."
+    },
+    {
+      "prompt": "The Dockerfile needs an npm token to install private packages. Build while passing it as a BuildKit secret with id 'npmrc' from the file ~/.npmrc, instead of a build arg. Tag the image registry.example.com/api:3.0 and load it locally.",
+      "expected_commands": ["docker buildx build --secret id=npmrc,src=$HOME/.npmrc -t registry.example.com/api:3.0 --load .", "docker buildx build --secret id=npmrc,src=~/.npmrc -t registry.example.com/api:3.0 --load .", "docker build --secret id=npmrc,src=$HOME/.npmrc -t registry.example.com/api:3.0 ."],
+      "fake_output": "[+] Building 38.2s (12/12) FINISHED\n => [deps 3/3] RUN --mount=type=secret,id=npmrc,target=/root/.npmrc npm ci   31.4s\n => exporting to image                                                           1.9s",
+      "explanation": "The Dockerfile's 'RUN --mount=type=secret,id=npmrc,target=/root/.npmrc npm ci' could read the token while that one command ran, and it's in no layer of the final image.",
+      "why": "A --build-arg or an ENV/COPY of the token is stored in the image's layers or history, where 'docker history' reveals it to anyone who can pull the image (docker-tutorial-010 and the Dockerfile lab both touch on this). A secret mount exists only for the duration of that RUN."
+    },
+    {
+      "prompt": "Speed up CI builds: build with the layer cache stored in the registry at registry.example.com/api:buildcache (use mode=max so intermediate stages are cached too), and push the image.",
+      "expected_commands": ["docker buildx build --cache-from type=registry,ref=registry.example.com/api:buildcache --cache-to type=registry,ref=registry.example.com/api:buildcache,mode=max -t registry.example.com/api:3.0 --push ."],
+      "fake_output": "=> importing cache manifest from registry.example.com/api:buildcache   0.8s\n=> CACHED [deps 3/3] RUN --mount=type=secret,id=npmrc,target=/root/.npmrc npm ci   0.0s\n=> exporting cache to registry.example.com/api:buildcache            4.1s\n[+] Building 9.7s (14/14) FINISHED",
+      "explanation": "The dependency install was a cache hit, so the build took 9.7s instead of 38s, on a fresh CI runner with an empty local cache.",
+      "why": "CI runners are usually ephemeral, so the local layer cache is gone on every run. Exporting the cache to the registry lets any runner reuse it. mode=max also caches intermediate stages of a multi-stage build, which the default mode=min skips."
+    },
+    {
+      "prompt": "Build and push one image that runs on both linux/amd64 and linux/arm64, tagged registry.example.com/api:3.0.",
+      "expected_commands": ["docker buildx build --platform linux/amd64,linux/arm64 -t registry.example.com/api:3.0 --push .", "docker buildx build --push --platform linux/amd64,linux/arm64 -t registry.example.com/api:3.0 ."],
+      "fake_output": "=> [linux/amd64 build 4/6] RUN npm run build     12.1s\n=> [linux/arm64 build 4/6] RUN npm run build     58.3s\n=> pushing manifest list registry.example.com/api:3.0   1.2s",
+      "explanation": "One tag, two images, plus a manifest list. Each node pulls the variant for its own architecture.",
+      "why": "Without this, an amd64-only image fails on ARM nodes with 'exec format error'. Multi-platform images must be pushed (or exported), because the local image store traditionally holds only one platform per tag. The arm64 half was slow because it ran under QEMU emulation; for heavy builds, cross-compile in the Dockerfile with $BUILDPLATFORM and $TARGETARCH, or add a native arm64 node."
+    },
+    {
+      "prompt": "Verify the pushed tag really contains both architectures.",
+      "expected_commands": ["docker buildx imagetools inspect registry.example.com/api:3.0"],
+      "fake_output": "Name:      registry.example.com/api:3.0\nMediaType: application/vnd.oci.image.index.v1+json\nManifests:\n  Name:      registry.example.com/api:3.0@sha256:1c9e...\n  Platform:  linux/amd64\n  Name:      registry.example.com/api:3.0@sha256:7b42...\n  Platform:  linux/arm64",
+      "explanation": "An index with amd64 and arm64 manifests, each with its own digest.",
+      "why": "Checking the registry catches the common CI mistake of building two platforms but pushing only one. Note that each platform has its own digest: when you pin by digest, pin the index digest so every architecture still resolves."
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "id": "mlops-tutorial-012",
+  "type": "tutorial",
+  "category": "mlops",
+  "title": "Feature Stores with Feast",
+  "difficulty": "intermediate",
+  "tags": ["feast", "feature-store", "training-serving-skew"],
+  "intro": "Training/serving skew happens when training computes a feature one way (in a notebook, from the warehouse) and serving computes it another way (in the API, from a live database). The model then sees different numbers in production than it learned on. A feature store defines each feature once and serves the same values to both. This tutorial covers the core Feast workflow in a repo that defines features for drivers.",
+  "steps": [
+    {
+      "prompt": "Preview what Feast would change in the registry and infrastructure from your feature definitions, without applying anything.",
+      "expected_commands": ["feast plan"],
+      "fake_output": "Created entity driver\nCreated feature view driver_hourly_stats\nCreated sqlite table repo_driver_hourly_stats",
+      "explanation": "One entity (driver) and one feature view would be registered, plus an online-store table created.",
+      "why": "'feast plan' is to 'feast apply' what 'terraform plan' is to 'terraform apply': review first, especially in CI, where a renamed feature view could drop an online table production reads from."
+    },
+    {
+      "prompt": "Register the definitions.",
+      "expected_commands": ["feast apply"],
+      "fake_output": "Created entity driver\nCreated feature view driver_hourly_stats\nDeploying infrastructure for driver_hourly_stats",
+      "explanation": "The definitions are now in the registry, the shared catalog every training job and service reads.",
+      "why": "The definition lives in version-controlled Python and the registry, not in someone's notebook. That shared definition is what removes skew: training and serving can't disagree about how conv_rate is computed if there's only one definition."
+    },
+    {
+      "prompt": "List the registered feature views to confirm.",
+      "expected_commands": ["feast feature-views list"],
+      "fake_output": "NAME                 ENTITIES    TYPE\ndriver_hourly_stats  {'driver'}  FeatureView",
+      "explanation": "driver_hourly_stats is registered against the driver entity.",
+      "why": "The registry is also discovery: before building a new feature, check whether another team already has it. Duplicated features that drift apart are another source of skew."
+    },
+    {
+      "prompt": "Load the latest feature values from the offline store (the warehouse) into the online store (low-latency, for serving), up to now: materialize incrementally with the current UTC time.",
+      "expected_commands": ["feast materialize-incremental $(date -u +%Y-%m-%dT%H:%M:%S)", "feast materialize-incremental $(date -u +\"%Y-%m-%dT%H:%M:%S\")"],
+      "fake_output": "Materializing 1 feature views to 2026-09-28 10:15:00+00:00 into the sqlite online store.\n\ndriver_hourly_stats from 2026-09-27 10:15:00+00:00 to 2026-09-28 10:15:00+00:00:\n100%|████████████████| 5/5 [00:00<00:00, 412.3it/s]",
+      "explanation": "The online store now holds the latest values per driver, picking up from the last materialization.",
+      "why": "The offline store has full history (for training with point-in-time-correct joins); the online store holds only the latest value per entity (for millisecond lookups). Run materialize on a schedule. If it stops, serving quietly uses stale features while training data stays fresh: a new kind of skew, so alert on materialization lag."
+    },
+    {
+      "prompt": "Start the Feast feature server locally so a model service can fetch features over HTTP.",
+      "expected_commands": ["feast serve"],
+      "fake_output": "INFO: Started server process [4121]\nINFO: Uvicorn running on http://127.0.0.1:6566",
+      "explanation": "The feature server is up on port 6566.",
+      "why": "Serving features over HTTP (or through the Python SDK in-process) means the model service doesn't reimplement feature logic. It asks for 'conv_rate for driver 1001' and gets exactly what training used."
+    },
+    {
+      "prompt": "Fetch online features for driver_id 1001: POST to localhost:6566/get-online-features with the JSON body in the file features.json.",
+      "expected_commands": ["curl -s -X POST localhost:6566/get-online-features -d @features.json", "curl -X POST localhost:6566/get-online-features -d @features.json", "curl -s localhost:6566/get-online-features -d @features.json"],
+      "fake_output": "{\"metadata\":{\"feature_names\":[\"driver_id\",\"conv_rate\",\"avg_daily_trips\"]},\"results\":[{\"values\":[1001],\"statuses\":[\"PRESENT\"]},{\"values\":[0.53],\"statuses\":[\"PRESENT\"]},{\"values\":[47],\"statuses\":[\"PRESENT\"]}]}",
+      "explanation": "The same conv_rate and avg_daily_trips definitions that training used, served in milliseconds.",
+      "why": "Check the statuses: NOT_FOUND or OUTSIDE_MAX_AGE means the entity is missing or its value is older than the feature view's TTL. Serving code must handle that explicitly with a sensible default, rather than letting a null reach the model and silently produce garbage predictions."
+    }
+  ]
+}

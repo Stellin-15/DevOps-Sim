@@ -1,0 +1,46 @@
+{
+  "id": "mlops-tutorial-011",
+  "type": "tutorial",
+  "category": "mlops",
+  "title": "Serving an LLM with vLLM",
+  "difficulty": "advanced",
+  "tags": ["llm", "vllm", "serving", "gpu"],
+  "intro": "Serving an LLM is different from serving a classic model. Memory goes mostly to the KV cache (the per-token attention state for every in-flight request), not the weights. Throughput comes from batching many requests together. And the unit of load is tokens, not requests. vLLM is the most common open-source server. Here you run one on a 2-GPU node.",
+  "steps": [
+    {
+      "prompt": "Check the GPUs before starting anything: model, memory, and what's already using them.",
+      "expected_commands": ["nvidia-smi"],
+      "fake_output": "| GPU  Name        Memory-Usage          GPU-Util |\n|   0  NVIDIA L40S     412MiB / 46068MiB     0%  |\n|   1  NVIDIA L40S     412MiB / 46068MiB     0%  |\nNo running processes found",
+      "explanation": "Two idle 46GB GPUs.",
+      "why": "vLLM claims a fixed fraction of GPU memory at startup (90% by default). A leftover process from an earlier run holding memory makes the new server fail with an out-of-memory error, or quietly start with a much smaller KV cache."
+    },
+    {
+      "prompt": "Serve meta-llama/Llama-3.1-8B-Instruct with vllm serve, split across both GPUs (tensor parallel size 2), capping the context length at 16384 tokens and using 90% of GPU memory.",
+      "expected_commands": ["vllm serve meta-llama/Llama-3.1-8B-Instruct --tensor-parallel-size 2 --max-model-len 16384 --gpu-memory-utilization 0.90", "vllm serve meta-llama/Llama-3.1-8B-Instruct --tensor-parallel-size 2 --max-model-len 16384 --gpu-memory-utilization 0.9"],
+      "fake_output": "INFO: Loading weights took 11.42 seconds\nINFO: Memory profiling: model weights take 7.5GiB per GPU\nINFO: # GPU blocks: 18240, # CPU blocks: 4096\nINFO: Maximum concurrency for 16384 tokens per request: 17.81x\nINFO: Uvicorn running on http://0.0.0.0:8000",
+      "explanation": "The weights use 7.5GiB per GPU; the rest becomes KV cache, enough for about 17 full-length (16k-token) requests at once.",
+      "why": "Read the 'Maximum concurrency' line: it's your real capacity. The model supports 128k tokens, but allowing that would make each request reserve 8x more KV cache, cutting concurrency roughly 8x. Most apps don't need 128k context, so cap --max-model-len at what your traffic uses. Tensor parallelism splits every layer across GPUs; use it when the model doesn't fit on one GPU, or to free memory for cache."
+    },
+    {
+      "prompt": "vLLM exposes an OpenAI-compatible API on port 8000. List the models it serves.",
+      "expected_commands": ["curl -s localhost:8000/v1/models", "curl localhost:8000/v1/models", "curl -s http://localhost:8000/v1/models"],
+      "fake_output": "{\"object\":\"list\",\"data\":[{\"id\":\"meta-llama/Llama-3.1-8B-Instruct\",\"object\":\"model\",\"max_model_len\":16384}]}",
+      "explanation": "The model is loaded and the context cap is applied.",
+      "why": "Because the API is OpenAI-compatible, apps written for the OpenAI SDK only need a base_url change. That also makes it easy to swap between a hosted API and self-hosted serving."
+    },
+    {
+      "prompt": "Send a test chat completion to /v1/chat/completions with a short prompt from the file req.json.",
+      "expected_commands": ["curl -s localhost:8000/v1/chat/completions -H 'Content-Type: application/json' -d @req.json", "curl localhost:8000/v1/chat/completions -H 'Content-Type: application/json' -d @req.json"],
+      "fake_output": "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"Hello! How can I help?\"}}],\"usage\":{\"prompt_tokens\":24,\"completion_tokens\":8,\"total_tokens\":32}}",
+      "explanation": "It works. 'usage' reports tokens in and out.",
+      "why": "Track usage per client. Load, cost, and latency all scale with tokens, not request count: one 10k-token prompt costs as much as hundreds of short ones. Rate limits and autoscaling for LLMs should be token-based."
+    },
+    {
+      "prompt": "Under load, check the server's Prometheus metrics for the queue and the KV cache: grep /metrics for requests running and waiting, and cache usage.",
+      "expected_commands": ["curl -s localhost:8000/metrics | grep -E 'num_requests_(running|waiting)|cache_usage'", "curl -s localhost:8000/metrics | grep vllm:", "curl localhost:8000/metrics | grep vllm"],
+      "fake_output": "vllm:num_requests_running{model_name=\"meta-llama/Llama-3.1-8B-Instruct\"} 17\nvllm:num_requests_waiting{model_name=\"meta-llama/Llama-3.1-8B-Instruct\"} 42\nvllm:gpu_cache_usage_perc{model_name=\"meta-llama/Llama-3.1-8B-Instruct\"} 0.99",
+      "explanation": "The KV cache is 99% full, so only 17 requests can run and 42 are queued.",
+      "why": "GPU utilization is a misleading scaling signal for LLMs: it looks busy even when there's capacity. Scale on num_requests_waiting (queue depth) or KV cache usage instead. (In newer vLLM versions the cache metric is named kv_cache_usage_perc.)"
+    }
+  ]
+}

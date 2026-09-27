@@ -1,0 +1,53 @@
+{
+  "id": "cicd-tutorial-013",
+  "type": "tutorial",
+  "category": "cicd",
+  "title": "Finding the Commit That Broke It with git bisect",
+  "difficulty": "intermediate",
+  "tags": ["git", "bisect", "debugging", "regression"],
+  "intro": "The export feature worked in release v2.3.0 and is broken on main, with 200 commits in between. Reading them all is hopeless. git bisect binary-searches the history, so about 8 test runs pinpoint the exact commit.",
+  "steps": [
+    {
+      "prompt": "Start a bisect session.",
+      "expected_commands": ["git bisect start"],
+      "fake_output": "status: waiting for both good and bad commits",
+      "explanation": "Git is ready and needs one known-bad and one known-good commit.",
+      "why": "Bisect works on any yes/no question about history ('is it broken here?'), not just test failures: performance regressions, a changed output, a build that stopped working."
+    },
+    {
+      "prompt": "Mark the current commit (main) as bad.",
+      "expected_commands": ["git bisect bad", "git bisect bad HEAD"],
+      "fake_output": "status: waiting for good commit(s), bad commit known",
+      "explanation": "HEAD is the known-broken end.",
+      "why": "With no argument, 'bad' means the current commit, which is usually what you want."
+    },
+    {
+      "prompt": "Mark the tag v2.3.0 as good.",
+      "expected_commands": ["git bisect good v2.3.0"],
+      "fake_output": "Bisecting: 100 revisions left to test after this (roughly 7 steps)\n[3e1f0a9c] Refactor CSV writer into its own module",
+      "explanation": "Git checks out the midpoint. About 7 more steps will find the culprit among 200 commits.",
+      "why": "Each answer halves the search space: log2(200) is about 8. Checking by hand, you'd read up to 200 commits and still might miss it."
+    },
+    {
+      "prompt": "Rather than testing each midpoint by hand, let git run the regression test for you: bisect run with ./test_export.sh, which exits 0 when export works and non-zero when it's broken.",
+      "expected_commands": ["git bisect run ./test_export.sh"],
+      "fake_output": "running './test_export.sh'\n...\n8c4d2e71 is the first bad commit\ncommit 8c4d2e71\nAuthor: Dana <dana@example.com>\n    Stream rows instead of buffering (perf)\n\n src/export/csv.py | 14 ++++++-----\nbisect found first bad commit",
+      "explanation": "Commit 8c4d2e71, a performance change that switched to streaming rows, broke export.",
+      "why": "'bisect run' makes the search fully automatic and removes human error from 8 good/bad calls. The script's exit code is the verdict: 0 = good, 1-127 = bad, and 125 = 'can't test this commit, skip it' (useful when some midpoint doesn't even build)."
+    },
+    {
+      "prompt": "Inspect exactly what the first bad commit 8c4d2e71 changed.",
+      "expected_commands": ["git show 8c4d2e71", "git show --stat 8c4d2e71"],
+      "fake_output": "-    rows = list(cursor)\n-    writer.writerows(rows)\n+    for row in cursor:\n+        writer.writerow(row)\n+    cursor.close()   # closed before the header row is flushed",
+      "explanation": "The cursor is closed while the writer still needs it, so a small, very specific bug is now pinned down.",
+      "why": "Bisect gives you the smallest possible diff to read. That's why small, focused commits pay off: a bisect that lands on a 2,000-line 'misc fixes' commit tells you much less."
+    },
+    {
+      "prompt": "End the bisect session and return to where you started.",
+      "expected_commands": ["git bisect reset"],
+      "fake_output": "Previous HEAD position was 8c4d2e71 Stream rows instead of buffering (perf)\nSwitched to branch 'main'",
+      "explanation": "You're back on main with a clean working tree.",
+      "why": "Forgetting to reset leaves you on a detached HEAD in the middle of history, and the next commit you make lands somewhere confusing. Always reset when you're done."
+    }
+  ]
+}

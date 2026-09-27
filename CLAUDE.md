@@ -267,15 +267,15 @@ unique). The Kubernetes-only `kubernetes.md` command reference is
 identical to (and replaces) the old root `COMMANDS.md`.
 
 Current per-category content depth (tutorials / incidents):
-- kubernetes: 29 / 10 (also has 9 Writing Labs and Sandbox) — CKA-gap-filled
-- docker: 10 / 5 (+3 Writing Labs: 2 Dockerfile, 1 Compose)
-- linux: 12 / 6 (+2 Writing Labs: bash)
-- terraform: 10 / 6 (+2 Writing Labs: HCL)
-- networking: 10 / 6
-- cicd: 10 / 6 (+3 Writing Labs: GitHub Actions)
-- monitoring: 10 / 6 (+2 Writing Labs: alert rules)
-- mlops: 10 / 6
-- **total: 101 tutorials, 51 incidents, 21 Writing Labs, 6 Mystery Incidents (4 linux, 2 docker)**
+- kubernetes: 29 / 13 (also has 9 Writing Labs and Sandbox) — CKA-gap-filled
+- docker: 11 / 5 (+3 Writing Labs: 2 Dockerfile, 1 Compose)
+- linux: 14 / 6 (+3 Writing Labs: bash)
+- terraform: 11 / 6 (+2 Writing Labs: HCL)
+- networking: 11 / 7
+- cicd: 13 / 6 (+3 Writing Labs: GitHub Actions)
+- monitoring: 12 / 6 (+2 Writing Labs: alert rules)
+- mlops: 12 / 7
+- **total: 113 tutorials, 56 incidents, 22 Writing Labs, 6 Mystery Incidents (4 linux, 2 docker)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with
@@ -297,14 +297,16 @@ existing tutorial/incident ids by id — no new scenario authoring, purely
 composition of what already exists. `test_career_path_content.py` enforces
 every step id resolves to a real scenario (self-consistency, same pattern
 as the other content tests) and that a path spans at least 2 categories
-(the whole point is combining categories, not padding one). Currently 6 paths: `path-001`
+(the whole point is combining categories, not padding one). Currently 7 paths: `path-001`
 build→ship (terraform → docker → kubernetes → cicd → monitoring),
 `path-002` incident chain (linux → networking → kubernetes → monitoring),
 `path-003` ML model laptop→production (mlops + docker), `path-004`
 security hardening layer by layer (linux → networking → docker →
 kubernetes → cicd), `path-005` platform from zero (networking →
 terraform → linux → kubernetes), and `path-006` "The Worst On-Call
-Night" — seven incidents only, across seven categories. More paths need
+Night" (seven incidents only, across seven categories), and `path-007`
+"Ship an LLM Service Safely" (buildx → supply chain → GitOps → vLLM →
+LLM incident → SLOs, built from the step-5 new-topic content). More paths need
 no new scenario content — just new orderings of existing ids.
 
 ## Build status vs. SPEC.md's v1–v6 order
@@ -355,6 +357,9 @@ pods, kubeadm bootstrap/upgrade, certificates, and cluster/pod security.
   failure, a CoreDNS outage, a silently-broken HPA (missing
   metrics-server), a NotReady node — chosen to cover common real
   incidents and "silent failure" patterns GAPS.md flagged as under-taught
+- incident-011–013: an RBAC denial after a namespace move, a PDB that
+  blocks a drain forever, and a PVC stuck Pending on a StorageClass that
+  doesn't exist (all three from GAPS.md Part 1's backlog)
 
 Several steps deliberately combine multiple flags in one command
 (set-based label selectors, `--sort-by` + events, `autoscale` with three
@@ -463,13 +468,12 @@ exercise something the generic checks don't cover.
 
 See GAPS.md Part 9 for the reasoning. In priority order:
 
-1. **New-topic content from GAPS.md** (next, per the agreed roadmap
-   order: writing labs ✓ → exam mode ✓ → sandboxes ✓ → mystery
-   incidents ✓ → new-topic content → stats/spaced-repetition review →
-   more cert passes). These are the topics each GAPS.md part lists as
-   missing: tracing/SLOs (monitoring), tcpdump/MTU (networking),
-   feature stores and LLM serving (mlops), GitOps and supply-chain
-   security (cicd), and shell scripting depth (linux).
+1. **Stats screen and spaced-repetition review** (next, per the agreed
+   roadmap order: writing labs ✓ → exam mode ✓ → sandboxes ✓ →
+   mystery incidents ✓ → new-topic content ✓ → stats/spaced-repetition
+   review → more cert passes). progress.json already records attempts
+   and exam history, so a review mode can resurface steps the player
+   missed or hasn't seen in a while.
 2. Per-category exam gap passes (like Part 1 did for the CKA): e.g.
    Terraform Associate, CKAD, AWS certs.
 3. More mysteries. A Kubernetes one needs the Kubernetes sandbox to
@@ -481,4 +485,9 @@ See GAPS.md Part 9 for the reasoning. In priority order:
    handle_command() plus a SANDBOXES entry in game.py.
 5. v6 scenario-scaffolding CLI — more valuable now that content volume
    is large.
-6. Keep GAPS.md current: every content pass should update its part.
+6. Remaining named topic gaps (see each GAPS.md part's "Still missing"):
+   admission controllers, volume mount failures, SELinux, getopts and
+   `while read`, dynamic blocks and writing modules, cloud networking,
+   DB migrations in CD, SLSA provenance, distributed training, and
+   pipeline DAGs.
+7. Keep GAPS.md current: every content pass should update its part.

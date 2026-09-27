@@ -1,0 +1,49 @@
+{
+  "id": "incident-013",
+  "type": "incident",
+  "category": "kubernetes",
+  "title": "The new database pod is stuck Pending (PVC never binds)",
+  "difficulty": "intermediate",
+  "tags": ["storage", "pvc", "storageclass", "debugging"],
+  "intro": "A developer deployed a new 'orders-db' StatefulSet in the 'orders' namespace. Its first pod, orders-db-0, has been Pending for 15 minutes. The cluster has plenty of CPU and memory free.",
+  "steps": [
+    {
+      "prompt": "Describe the pod orders-db-0 in the orders namespace and read its Events.",
+      "expected_commands": ["kubectl describe pod orders-db-0 -n orders", "kubectl describe po orders-db-0 -n orders"],
+      "fake_output": "Events:\n  Warning  FailedScheduling  default-scheduler  0/3 nodes are available: pod has unbound immediate PersistentVolumeClaims. preemption: 0/3 nodes are available: 3 Preemption is not helpful for scheduling.",
+      "hint": "Pending pods almost always explain themselves in the Events at the bottom of describe."
+    },
+    {
+      "prompt": "It isn't a resources problem: the pod is waiting for its volume claim to bind. List the PVCs in the orders namespace.",
+      "expected_commands": ["kubectl get pvc -n orders", "kubectl get persistentvolumeclaims -n orders"],
+      "fake_output": "NAME               STATUS    VOLUME   CAPACITY   ACCESS MODES   STORAGECLASS   AGE\ndata-orders-db-0   Pending                                      fast-ssd       15m",
+      "hint": "StatefulSets create one PVC per pod from volumeClaimTemplates, named <template>-<pod>."
+    },
+    {
+      "prompt": "Describe the PVC data-orders-db-0 to see why it isn't binding.",
+      "expected_commands": ["kubectl describe pvc data-orders-db-0 -n orders"],
+      "fake_output": "Events:\n  Warning  ProvisioningFailed  persistentvolume-controller  storageclass.storage.k8s.io \"fast-ssd\" not found",
+      "hint": "describe works on PVCs too, and their Events come from the provisioner."
+    },
+    {
+      "prompt": "The claim asks for a StorageClass called 'fast-ssd' that doesn't exist. List the StorageClasses this cluster actually has.",
+      "expected_commands": ["kubectl get storageclass", "kubectl get sc", "kubectl get storageclasses"],
+      "fake_output": "NAME                 PROVISIONER             RECLAIMPOLICY   VOLUMEBINDINGMODE      AGE\nstandard (default)   ebs.csi.aws.com         Delete          WaitForFirstConsumer   300d\ngp3-ssd              ebs.csi.aws.com         Delete          WaitForFirstConsumer   300d",
+      "hint": "The short name is sc. Note which class is marked (default)."
+    },
+    {
+      "prompt": "The SSD class here is called gp3-ssd; 'fast-ssd' was copied from another cluster's manifest. PVC specs can't be edited after creation, and a StatefulSet doesn't recreate its PVCs when you change its template. So fix storageClassName in the manifest, then delete the stuck claim data-orders-db-0 so the StatefulSet recreates it.",
+      "expected_commands": ["kubectl delete pvc data-orders-db-0 -n orders"],
+      "fake_output": "persistentvolumeclaim \"data-orders-db-0\" deleted",
+      "hint": "kubectl delete pvc <name> -n <namespace>. It's safe here because it never bound, so there is no data."
+    },
+    {
+      "prompt": "After re-applying the corrected StatefulSet and deleting pod orders-db-0 so it's recreated, watch the new claim bind.",
+      "expected_commands": ["kubectl get pvc -n orders -w", "kubectl get pvc -n orders --watch", "kubectl get pvc -n orders"],
+      "fake_output": "NAME               STATUS    VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   AGE\ndata-orders-db-0   Pending                                                                        gp3-ssd        2s\ndata-orders-db-0   Bound     pvc-7e1c2b9a-4d6f-4a8e-9f0b-1c2d3e4f5a6b   20Gi       RWO            gp3-ssd        6s",
+      "hint": "-w (--watch) streams changes until you press Ctrl+C."
+    }
+  ],
+  "resolution": "The pod never had a scheduling problem, it had a storage one: 'unbound immediate PersistentVolumeClaims' means the scheduler is waiting on a claim, and the claim's own Events named a StorageClass that doesn't exist in this cluster. The trap is how sticky PVCs are. volumeClaimTemplates only create claims, never update them, and a PVC's storageClassName is immutable, so fixing the StatefulSet YAML alone changes nothing until the old claim is deleted. That was safe here because it never bound; on a claim that has bound, deleting it can destroy data if the reclaim policy is Delete. Prevention: don't hardcode StorageClass names across clusters (omit it to get the default, or template it per environment), and alert on PVCs Pending for more than a few minutes. Also note the WaitForFirstConsumer binding mode: with it, a PVC showing Pending before any pod uses it is normal, not a failure.",
+  "real_commands_used": ["kubectl describe pod", "kubectl get pvc", "kubectl describe pvc", "kubectl get storageclass", "kubectl delete pvc", "kubectl get pvc -w"]
+}

@@ -1,0 +1,17 @@
+{
+  "id": "path-007",
+  "type": "career_path",
+  "title": "Ship an LLM Service Safely",
+  "difficulty": "advanced",
+  "tags": ["llm", "supply-chain", "gitops", "slo", "docker", "cicd", "mlops", "monitoring"],
+  "intro": "Your team is putting a self-hosted LLM chatbot into production. You take it from build to on-call: a multi-platform image, a supply chain you can prove, a GitOps deploy, the serving stack itself, the first production incident, and the SLO that tells you whether it's reliable enough.",
+  "steps": [
+    "docker-tutorial-011",
+    "cicd-tutorial-012",
+    "cicd-tutorial-011",
+    "mlops-tutorial-011",
+    "mlops-incident-007",
+    "monitoring-tutorial-012"
+  ],
+  "resolution": "You built one image for every architecture without leaking a secret into it; generated its SBOM, scanned it, signed it by digest, and verified the signature; deployed it through Git so every change is reviewed and a rollback is a revert; served the model with its memory budget explicit; debugged the crash-loop that a 'harmless' model swap caused; and defined the SLO that decides when reliability work beats new features. Each layer answered a different question: what's in it, is it the real thing, how did it get there, does it fit, and is it good enough."
+}
