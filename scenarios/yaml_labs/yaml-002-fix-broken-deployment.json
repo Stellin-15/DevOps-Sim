@@ -1,0 +1,33 @@
+{
+  "id": "yaml-002",
+  "type": "yaml_lab",
+  "category": "kubernetes",
+  "title": "Fix a Broken Deployment Manifest",
+  "difficulty": "intermediate",
+  "tags": ["yaml", "deployments", "debugging"],
+  "intro": "A teammate's Deployment manifest fails to apply against a real cluster with a selector/template label mismatch error. Find it and fix it — this is one of the most common real hand-editing mistakes.",
+  "steps": [
+    {
+      "file": "deployment.yaml",
+      "starter_content": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web\nspec:\n  replicas: 3\n  selector:\n    matchLabels:\n      app: web\n  template:\n    metadata:\n      labels:\n        app: webserver\n    spec:\n      containers:\n      - name: web\n        image: nginx:1.25\n        ports:\n        - containerPort: 80\n",
+      "prompt": "This Deployment fails to apply on a real cluster with: 'spec.template.metadata.labels: Invalid value: ... selector does not match template labels'. Find the mismatch and fix it, then apply.",
+      "apply_commands": ["kubectl apply -f deployment.yaml"],
+      "validate": {
+        "kind": "Deployment",
+        "fields": {
+          "metadata.name": "web",
+          "spec.replicas": 3,
+          "spec.selector.matchLabels.app": "web",
+          "spec.template.metadata.labels.app": "web",
+          "spec.template.spec.containers[0].image": "nginx:1.25",
+          "spec.template.spec.containers[0].ports[0].containerPort": 80
+        }
+      },
+      "hint": "Compare spec.selector.matchLabels against spec.template.metadata.labels line by line — they must match exactly. Only one of the two 'app:' values is wrong.",
+      "solution": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web\nspec:\n  replicas: 3\n  selector:\n    matchLabels:\n      app: web\n  template:\n    metadata:\n      labels:\n        app: web\n    spec:\n      containers:\n      - name: web\n        image: nginx:1.25\n        ports:\n        - containerPort: 80\n",
+      "fake_output": "deployment.apps/web created",
+      "explanation": "A Deployment's spec.selector is immutable after creation and must match the pod template's labels exactly — even a single differing label anywhere breaks it.",
+      "why": "This particular error only ever shows up when you actually try to apply the manifest — nothing about the YAML being syntactically valid catches it, since both label values are individually fine strings. It's exactly why you always apply and read the real error rather than just eyeballing a manifest as 'looks right.'"
+    }
+  ]
+}

@@ -6,6 +6,7 @@ per-player local state, not project content). Schema matches SPEC.md:
 {
   "tutorials_completed": ["tutorial-001", ...],
   "incidents_completed": ["incident-001", ...],
+  "yaml_labs_completed": ["yaml-001", ...],
   "attempts": {"tutorial-001": 1, "incident-001": 3}
 }
 
@@ -23,12 +24,14 @@ PROGRESS_FILE = BASE_DIR / "progress.json"
 DEFAULT_PROGRESS = {
     "tutorials_completed": [],
     "incidents_completed": [],
+    "yaml_labs_completed": [],
     "attempts": {},
 }
 
 COMPLETED_KEY = {
     "tutorial": "tutorials_completed",
     "incident": "incidents_completed",
+    "yaml_lab": "yaml_labs_completed",
 }
 
 
@@ -67,4 +70,9 @@ def attempt_count(progress: dict, scenario_id: str) -> int:
 
 
 def _fresh_progress() -> dict:
-    return {"tutorials_completed": [], "incidents_completed": [], "attempts": {}}
+    return {
+        "tutorials_completed": [],
+        "incidents_completed": [],
+        "yaml_labs_completed": [],
+        "attempts": {},
+    }

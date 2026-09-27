@@ -1,0 +1,31 @@
+{
+  "id": "yaml-004",
+  "type": "yaml_lab",
+  "category": "kubernetes",
+  "title": "Write a NetworkPolicy",
+  "difficulty": "advanced",
+  "tags": ["yaml", "networkpolicy", "security"],
+  "intro": "tutorial-010 taught you how to read an existing NetworkPolicy with get/describe. Writing one means correctly telling apart two selectors that look similar but mean opposite things.",
+  "steps": [
+    {
+      "file": "netpol.yaml",
+      "starter_content": "",
+      "prompt": "Write a NetworkPolicy named 'deny-from-other' that applies to pods labeled app=db, allowing ingress traffic only from pods labeled app=web.",
+      "apply_commands": ["kubectl apply -f netpol.yaml"],
+      "validate": {
+        "kind": "NetworkPolicy",
+        "fields": {
+          "metadata.name": "deny-from-other",
+          "spec.podSelector.matchLabels.app": "db",
+          "spec.ingress[0].from[0].podSelector.matchLabels.app": "web",
+          "spec.policyTypes[0]": "Ingress"
+        }
+      },
+      "hint": "spec.podSelector (top level) picks which pods this policy applies TO (app=db). spec.ingress[].from[].podSelector picks who's ALLOWED to reach them (app=web) — two different selectors, easy to swap by accident.",
+      "solution": "apiVersion: networking.k8s.io/v1\nkind: NetworkPolicy\nmetadata:\n  name: deny-from-other\nspec:\n  podSelector:\n    matchLabels:\n      app: db\n  policyTypes:\n  - Ingress\n  ingress:\n  - from:\n    - podSelector:\n        matchLabels:\n          app: web\n",
+      "fake_output": "networkpolicy.networking.k8s.io/deny-from-other created",
+      "explanation": "Once this applies, pods labeled app=db only accept traffic from pods labeled app=web — everything else that was previously allowed by default now gets dropped, exactly like the deny-from-other policy you read with describe in tutorial-010.",
+      "why": "Swapping podSelector and the ingress[].from[].podSelector is an easy, silent mistake — the manifest still applies successfully either way, since both are individually valid selectors. It just enforces the exact opposite rule from what you intended, which is a genuinely dangerous kind of bug because nothing errors."
+    }
+  ]
+}

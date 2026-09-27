@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 sandbox_data/
 progress.json
+workspace/

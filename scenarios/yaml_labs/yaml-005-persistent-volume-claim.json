@@ -1,0 +1,31 @@
+{
+  "id": "yaml-005",
+  "type": "yaml_lab",
+  "category": "kubernetes",
+  "title": "Write a PersistentVolumeClaim",
+  "difficulty": "intermediate",
+  "tags": ["yaml", "storage", "pvc"],
+  "intro": "tutorial-011 taught get/describe for existing PVCs. Writing one from scratch means getting the storage request's quantity syntax and access mode right.",
+  "steps": [
+    {
+      "file": "pvc.yaml",
+      "starter_content": "",
+      "prompt": "Write a PersistentVolumeClaim named 'db-data' requesting 10Gi of storage with ReadWriteOnce access, using the 'standard' storage class.",
+      "apply_commands": ["kubectl apply -f pvc.yaml"],
+      "validate": {
+        "kind": "PersistentVolumeClaim",
+        "fields": {
+          "metadata.name": "db-data",
+          "spec.accessModes[0]": "ReadWriteOnce",
+          "spec.resources.requests.storage": "10Gi",
+          "spec.storageClassName": "standard"
+        }
+      },
+      "hint": "accessModes is a list even though you're only specifying one value. resources.requests.storage uses the same quantity format as CPU/memory (a number plus a unit, like '10Gi').",
+      "solution": "apiVersion: v1\nkind: PersistentVolumeClaim\nmetadata:\n  name: db-data\nspec:\n  accessModes:\n  - ReadWriteOnce\n  resources:\n    requests:\n      storage: 10Gi\n  storageClassName: standard\n",
+      "fake_output": "persistentvolumeclaim/db-data created",
+      "explanation": "Once this PVC exists and binds to a matching PersistentVolume (or one gets dynamically provisioned by the 'standard' StorageClass), a pod can reference it by name in spec.volumes — the pod spec itself never needs to know which actual disk is behind it.",
+      "why": "accessModes being a list, not a single string, is the detail people most often get wrong from memory — it's plural because some volume types genuinely support being claimed with more than one mode at once (e.g. ReadWriteOnce and ReadOnlyMany together), even though a single mode is the common case."
+    }
+  ]
+}

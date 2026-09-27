@@ -1,0 +1,32 @@
+{
+  "id": "yaml-001",
+  "type": "yaml_lab",
+  "category": "kubernetes",
+  "title": "Write a Pod Manifest From Scratch",
+  "difficulty": "intermediate",
+  "tags": ["yaml", "pods", "manifests"],
+  "intro": "Everything so far has been imperative one-liners. Real manifests — and the CKA exam — need you to write YAML by hand. This lab writes a blank file for you to fill in with your own editor, then checks the actual structure once you apply it.",
+  "steps": [
+    {
+      "file": "pod.yaml",
+      "starter_content": "",
+      "prompt": "Create a Pod named 'db' running the postgres:15 image, exposing container port 5432, with a memory limit of 512Mi and a memory request of 256Mi.",
+      "apply_commands": ["kubectl apply -f pod.yaml"],
+      "validate": {
+        "kind": "Pod",
+        "fields": {
+          "metadata.name": "db",
+          "spec.containers[0].image": "postgres:15",
+          "spec.containers[0].ports[0].containerPort": 5432,
+          "spec.containers[0].resources.limits.memory": "512Mi",
+          "spec.containers[0].resources.requests.memory": "256Mi"
+        }
+      },
+      "hint": "Skeleton: apiVersion: v1 / kind: Pod / metadata.name / spec.containers is a list of one item with name, image, ports (a list of {containerPort: ...}), and resources.limits / resources.requests, each with a memory key.",
+      "solution": "apiVersion: v1\nkind: Pod\nmetadata:\n  name: db\nspec:\n  containers:\n  - name: db\n    image: postgres:15\n    ports:\n    - containerPort: 5432\n    resources:\n      limits:\n        memory: 512Mi\n      requests:\n        memory: 256Mi\n",
+      "fake_output": "pod/db created",
+      "explanation": "This is exactly the kind of manifest 'kubectl run' can't produce on its own — resource limits and requests aren't available as kubectl run flags, so hand-writing YAML (or using --dry-run=client -o yaml as a starting point) is the only way to set them.",
+      "why": "In a real exam or incident, you'd often start from 'kubectl run db --image=postgres:15 --dry-run=client -o yaml > pod.yaml' to get the skeleton right, then hand-edit in the parts kubectl run can't express — that's faster and less error-prone than typing the whole thing from memory."
+    }
+  ]
+}

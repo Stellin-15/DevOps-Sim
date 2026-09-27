@@ -1,0 +1,33 @@
+{
+  "id": "yaml-003",
+  "type": "yaml_lab",
+  "category": "kubernetes",
+  "title": "Write a Multi-Container Pod with an Init Container",
+  "difficulty": "advanced",
+  "tags": ["yaml", "multi-container", "init-containers"],
+  "intro": "Init containers are a common trip-up when hand-writing YAML — they live in their own top-level list, not nested inside the main containers list.",
+  "steps": [
+    {
+      "file": "pod-multi.yaml",
+      "starter_content": "",
+      "prompt": "Create a Pod named 'app' with an init container named 'wait-for-db' (image busybox) that runs before the main container, and a main container named 'server' (image myapp:1.0) exposing container port 8080.",
+      "apply_commands": ["kubectl apply -f pod-multi.yaml"],
+      "validate": {
+        "kind": "Pod",
+        "fields": {
+          "metadata.name": "app",
+          "spec.initContainers[0].name": "wait-for-db",
+          "spec.initContainers[0].image": "busybox",
+          "spec.containers[0].name": "server",
+          "spec.containers[0].image": "myapp:1.0",
+          "spec.containers[0].ports[0].containerPort": 8080
+        }
+      },
+      "hint": "spec.initContainers is a separate top-level list under spec, a sibling of spec.containers — not nested inside it and not the same list.",
+      "solution": "apiVersion: v1\nkind: Pod\nmetadata:\n  name: app\nspec:\n  initContainers:\n  - name: wait-for-db\n    image: busybox\n    command: [\"sh\", \"-c\", \"sleep 2\"]\n  containers:\n  - name: server\n    image: myapp:1.0\n    ports:\n    - containerPort: 8080\n",
+      "fake_output": "pod/app created",
+      "explanation": "initContainers run one at a time, in order, and all must exit successfully before any container in spec.containers starts — that's the entire mechanism from tutorial-022, expressed as YAML instead of just observed via describe.",
+      "why": "This is the field beginners most often nest incorrectly by hand — putting an init container inside spec.containers with some extra flag, rather than in its own spec.initContainers list, is a very common hand-editing mistake under time pressure."
+    }
+  ]
+}

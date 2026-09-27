@@ -38,17 +38,26 @@ kubectl layer that a pure command-matching game can't meaningfully verify:
 | Storage (~10%) | Basic (PV/PVC/StorageClass get/describe) | No dynamic provisioning failure scenarios, no volume mount troubleshooting |
 | Cluster Architecture & Installation (~25%) | Was essentially absent | kubeadm bootstrap/upgrade, static pods, etcd backup/restore, certificate management — this is the single biggest gap, and this update addresses the highest-value pieces of it |
 
-Beyond content gaps, there's a **structural** one worth naming plainly:
-the CKA is a hands-on exam where you write and edit YAML under time
-pressure, in a real terminal, often using `--dry-run=client -o yaml` to
-generate a starting manifest and then hand-editing it. kube-sim only
-validates typed *commands*, not written *YAML* — it can teach you the
-commands you'd use to generate/apply/diff a manifest, but it cannot
-simulate the actual editing-a-file-under-time-pressure skill, which is a
-real and different muscle. **No amount of scenario content fixes this** —
-it would require an entirely different kind of tool (an actual editor
-sandbox). Practicing on a real kind/minikube cluster remains necessary
-before sitting the exam, no matter how much kube-sim content exists.
+**Update — largely addressed.** This used to be a structural gap nothing
+in kube-sim could fix: the CKA is a hands-on exam where you write and edit
+YAML under time pressure, and a pure command-matching game can't simulate
+that. It's now addressed by **YAML Labs**, a third mode alongside
+Learn/Incidents: the game writes a real file to `workspace/`, tells you
+what to build or fix, and you edit it in your *actual* editor (vim, nano,
+VS Code — whatever you'd really use) — the same muscle the exam tests,
+not a simulated one. Typing the apply command reads your real file off
+disk, parses it, and gives field-by-field feedback (missing field, wrong
+value, YAML syntax error), with the same nudge → hint → full-solution-
+reveal escalation as everywhere else. See `yaml_lab.py` and
+`scenarios/yaml_labs/`.
+
+What YAML Labs still doesn't replicate: real exam **time pressure**
+(there's no clock here), the breadth of an actual live cluster (no real
+apiserver validating your YAML beyond what each lab's `validate` spec
+checks), and the physical friction of working across multiple terminal
+panes/contexts at once. Time on a real kind/minikube cluster remains
+worthwhile before the actual exam — but "structurally impossible to
+practice YAML editing here at all" is no longer true.
 
 ## Where it falls short for real production incidents
 
@@ -116,7 +125,9 @@ plane being the actual outage).
   there's no investigative incident built around "why can't this pod do X")
 - PodDisruptionBudget blocking a drain
 - Admission controllers / webhooks
-- Any actual YAML-writing practice (structural limitation, see above)
+- More YAML Labs — only 5 exist (pod-from-scratch, broken-deployment-fix,
+  multi-container/init, NetworkPolicy, PVC); StatefulSet, Ingress, HPA,
+  and RBAC (Role/RoleBinding) manifests would be natural next labs
 - Kubeflow and other on-top-of-Kubernetes application platforms —
   deliberately out of scope, see above
 

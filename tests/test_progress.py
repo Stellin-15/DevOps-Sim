@@ -11,7 +11,12 @@ import progress as progress_module
 
 def test_fresh_progress_shape():
     p = progress_module._fresh_progress()
-    assert p == {"tutorials_completed": [], "incidents_completed": [], "attempts": {}}
+    assert p == {
+        "tutorials_completed": [],
+        "incidents_completed": [],
+        "yaml_labs_completed": [],
+        "attempts": {},
+    }
 
 
 def test_record_attempt_increments():
@@ -37,7 +42,13 @@ def test_mark_completed_incident():
     p = progress_module._fresh_progress()
     progress_module.mark_completed(p, "incident-001", "incident")
     assert progress_module.is_completed(p, "incident-001", "incident")
-    assert "incident-001" in p["incidents_completed"]
+
+
+def test_mark_completed_yaml_lab():
+    p = progress_module._fresh_progress()
+    progress_module.mark_completed(p, "yaml-001", "yaml_lab")
+    assert progress_module.is_completed(p, "yaml-001", "yaml_lab")
+    assert "yaml-001" in p["yaml_labs_completed"]
 
 
 def test_mark_completed_is_idempotent():

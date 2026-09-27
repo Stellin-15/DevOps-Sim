@@ -6,10 +6,12 @@ what's built, why it's shaped this way, and what's next.
 ## What this is
 
 `kube-sim` — a terminal game for learning real kubectl syntax by typing it,
-not memorizing it. Two structured modes (tutorials, incidents) plus a
-free-form sandbox. Everything runs locally, no real cluster, no network
-calls. All content is pre-written JSON; the game engine only knows how to
-read scenario JSON and fuzzy-match typed commands against it.
+not memorizing it. Two structured modes (tutorials, incidents), a
+free-form sandbox, and a YAML Labs mode for real manifest-editing
+practice. Everything runs locally, no real cluster, no network calls.
+Tutorial/incident content is pre-written JSON matched via fuzzy command
+comparison; YAML Labs instead validates real files the player edits in
+their own editor (see yaml_lab.py in Architecture, below).
 
 The source-of-truth docs, all already in the repo, are:
 - **SPEC.md** — full original spec: data model, matching rules, feedback
@@ -43,6 +45,19 @@ Don't duplicate content from these files elsewhere — link to them.
   `tests/test_scenario_content.py`, not by the loader.
 - **scenarios/** — content, not code. One JSON file per scenario. Schema is
   documented in SPEC.md and enforced by tests.
+- **yaml_lab.py** — third mode alongside tutorials/incidents, fundamentally
+  different from both: instead of matching typed command strings, it
+  writes a real file to `workspace/` (gitignored — genuinely per-player,
+  never committed), tells the player what to build/fix, and waits while
+  they edit it in their own actual editor. Typing the step's apply
+  command reads the real file off disk, parses it with `yaml.safe_load`,
+  and validates it against a `validate` spec (`{"kind": ..., "fields":
+  {"dotted.path[0].to.field": expected_value}}`) via `get_value()`'s
+  dotted-path resolver — giving per-field feedback, not just pass/fail.
+  Reuses `engine.QuitScenario`/`read_input` so `exit` works the same way
+  everywhere. This exists specifically because GAPS.md named "no real
+  YAML-editing practice" as a structural gap nothing else in this repo
+  could fix — see GAPS.md's update note on that entry.
 - **sandbox.py** — separate free-form mode. `generate_state()` builds a
   random fake cluster: for each of 4-6 randomly chosen services, a
   Deployment (1-3 replica pods), a ClusterIP Service, plus 3 nodes, an
@@ -57,14 +72,19 @@ Don't duplicate content from these files elsewhere — link to them.
   its widest cell (header or row) instead of a fixed width — required
   because service/pod names vary a lot in length and a fixed width let
   long names collide with the next column.
-- **game.py** — entry point / main menu (Learn, Incidents, Sandbox, Quit).
-  `exit`/`quit` work at every prompt (menu choice, scenario step, sandbox
-  command) — see `engine.read_input` / `engine.QUIT_COMMANDS`.
+- **game.py** — entry point / main menu (Learn, Incidents, YAML Labs,
+  Sandbox, Quit). `exit`/`quit` work at every prompt (menu choice,
+  scenario step, YAML lab step, sandbox command) — see
+  `engine.read_input` / `engine.QUIT_COMMANDS`. `play()` takes a `runner`
+  parameter (defaults to `engine.run_scenario`) so the same
+  attempt-tracking/completion-marking wrapper works for both
+  `run_scenario` and `yaml_lab.run_yaml_lab`.
 - **progress.py** — reads/writes `progress.json` (completed scenarios per
-  type, attempt counts per scenario id). `game.py` loads it once at
-  startup, passes it into `choose_from_list` to render `[x]`/attempt-count
-  markers, and calls `record_attempt`/`mark_completed`/`save_progress`
-  after every `run_scenario` call via the `play()` helper.
+  type — tutorial/incident/yaml_lab — attempt counts per scenario id).
+  `game.py` loads it once at startup, passes it into `choose_from_list` to
+  render `[x]`/attempt-count markers, and calls
+  `record_attempt`/`mark_completed`/`save_progress` after every run via
+  the `play()` helper.
 
 ## Known environment quirk
 
@@ -87,9 +107,16 @@ not bare `input()`.
       request — includes random cluster generation and a keep/discard
       choice on exit, saved sessions live in `sandbox_data/saved/`)
 - [ ] v6 (optional) — `python game.py add-scenario` CLI scaffold
+- [x] (beyond SPEC.md) — YAML Labs mode: real file editing + structural
+      validation (`yaml_lab.py`, `scenarios/yaml_labs/`), added to close
+      the "no real YAML editing" gap GAPS.md named
 
-Content: 29 tutorials, 10 incidents, all in `scenarios/`, all schema-valid
-per `tests/test_scenario_content.py`. Tutorials cover every COMMANDS.md
+Content: 29 tutorials, 10 incidents, 5 YAML labs, all in `scenarios/`.
+Tutorials/incidents are schema-valid per `tests/test_scenario_content.py`;
+YAML labs per `tests/test_yaml_lab_content.py` (which also proves every
+hand-written `solution` field actually passes its own `validate` spec —
+same self-consistency idea as the command-matching check, applied to
+manifest content instead of command strings). Tutorials cover every COMMANDS.md
 category except "Tooling & Shortcuts" (see below), plus — per GAPS.md's
 gap analysis — Cluster Architecture/CKA topics COMMANDS.md never listed
 at all: probes, multi-container/init pods, etcd backup/restore, static
@@ -146,29 +173,40 @@ final `resolution` debrief instead).
 python -m pytest
 ```
 
-(`pytest.ini` points it at `tests/`.) Four files:
+(`pytest.ini` points it at `tests/`.) Seven files:
 - `test_engine.py` — matching/normalization logic, proven kubectl-agnostic
 - `test_scenario_loader.py` — JSON loading from disk
-- `test_scenario_content.py` — every scenario file validated against the
-  schema, parametrized per scenario id; includes a self-consistency check
-  that every listed `expected_commands` string actually matches itself
-  under the real matcher (catches typos when hand-authoring JSON)
+- `test_scenario_content.py` — every tutorial/incident file validated
+  against the schema, parametrized per scenario id; includes a
+  self-consistency check that every listed `expected_commands` string
+  actually matches itself under the real matcher (catches typos when
+  hand-authoring JSON)
 - `test_sandbox.py` — random cluster generation invariants + free-form
   command parsing
+- `test_progress.py` — progress.json read/write, completion/attempt
+  tracking across all three scenario types
+- `test_yaml_lab.py` — dotted-path resolution (`get_value`), manifest
+  validation (`validate_manifest`), file I/O (`load_and_parse`), and the
+  full `run_yaml_lab` loop with a monkeypatched `read_input` that edits a
+  real temp file mid-loop (simulating "player switches to their editor")
+- `test_yaml_lab_content.py` — every yaml_lab file's schema, plus the
+  critical self-consistency check that each hand-written `solution`
+  actually parses and passes its own `validate` spec
 
 Run the suite after any change to `engine.py`, `scenario_loader.py`,
-`sandbox.py`, or any scenario JSON. Adding a new scenario file should
-require zero new test code — the parametrized content tests pick it up
-automatically; only add a dedicated test if the scenario needs to exercise
-something the generic checks don't cover.
+`sandbox.py`, `yaml_lab.py`, or any scenario JSON. Adding a new
+tutorial/incident/yaml_lab file should require zero new test code — the
+parametrized content tests pick it up automatically; only add a dedicated
+test if the scenario needs to exercise something the generic checks don't
+cover.
 
 ## Conventions / constraints to keep honoring
 
 - No real kubectl/cluster connection anywhere — every "output" is a
   pre-written string, never a live command execution.
 - Command validation is pattern/fuzzy-based, never exact string equality.
-- `sandbox_data/` and `progress.json` are gitignored — they're local
-  per-player state, not project content.
+- `sandbox_data/`, `progress.json`, and `workspace/` are gitignored —
+  they're local per-player state, not project content.
 - Keep engine and content separate (see Architecture above) — this is the
   main thing to protect when extending the game.
 

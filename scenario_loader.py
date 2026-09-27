@@ -24,3 +24,7 @@ def load_tutorials() -> list:
 
 def load_incidents() -> list:
     return load_scenarios("incidents")
+
+
+def load_yaml_labs() -> list:
+    return load_scenarios("yaml_labs")
