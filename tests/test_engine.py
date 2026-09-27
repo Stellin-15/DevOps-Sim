@@ -30,6 +30,9 @@ class TestNormalize:
     def test_flag_space_becomes_equals(self):
         assert normalize("kubectl run pod --image nginx") == "kubectl run pod --image=nginx"
 
+    def test_boolean_flag_does_not_swallow_following_flag(self):
+        assert normalize("cmd --permanent --add-port=80/tcp") == "cmd --permanent --add-port=80/tcp"
+
     def test_flag_equals_stays_equals(self):
         assert normalize("kubectl run pod --image=nginx") == "kubectl run pod --image=nginx"
 
@@ -51,6 +54,12 @@ class TestMatches:
         assert matches(
             "kubectl create deployment web --replicas=3 --image=nginx",
             ["kubectl create deployment web --image=nginx --replicas=3"],
+        )
+
+    def test_reordered_boolean_and_valued_flags(self):
+        assert matches(
+            "firewall-cmd --permanent --add-port=8443/tcp",
+            ["firewall-cmd --add-port=8443/tcp --permanent"],
         )
 
     def test_any_expected_command_can_match(self):

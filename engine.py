@@ -23,7 +23,7 @@ def normalize(cmd: str) -> str:
     """Lowercase, collapse whitespace, normalize --flag=value vs --flag value."""
     cmd = cmd.lstrip("﻿").strip().lower()
     cmd = re.sub(r"\s+", " ", cmd)
-    cmd = re.sub(r"(--\w[\w-]*)\s+(?=\S)", r"\1=", cmd)
+    cmd = re.sub(r"(--\w[\w-]*)\s+(?=[^\s-])", r"\1=", cmd)
     return cmd
 
 
