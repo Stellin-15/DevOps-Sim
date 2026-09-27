@@ -1,0 +1,46 @@
+{
+  "id": "docker-tutorial-010",
+  "type": "tutorial",
+  "category": "docker",
+  "title": "Container Security Basics",
+  "difficulty": "advanced",
+  "tags": ["docker", "security", "scanning"],
+  "intro": "A container is not a security boundary by default — it runs as root unless told otherwise, and ships whatever vulnerable packages its base image contains. These are the habits that close the most common gaps.",
+  "steps": [
+    {
+      "prompt": "Check which user the 'web' container's main process is actually running as.",
+      "expected_commands": ["docker exec web whoami", "docker exec -it web whoami"],
+      "fake_output": "root",
+      "explanation": "Root inside the container. If an attacker exploits the app, they're root in the container — and one kernel or misconfiguration bug away from root on the host.",
+      "why": "Most official base images default to root because it's convenient, not because it's needed — checking this directly beats assuming the Dockerfile author added a USER instruction."
+    },
+    {
+      "prompt": "Run the container as an unprivileged user (UID 1000) instead, without rebuilding the image.",
+      "expected_commands": ["docker run -d --user 1000:1000 myapp", "docker run -d --user=1000:1000 myapp"],
+      "fake_output": "d4e5f6a7b8c9",
+      "explanation": "--user overrides the image's default user at runtime.",
+      "why": "The permanent fix is a 'USER appuser' line in the Dockerfile so the image is safe by default — --user is the quick runtime override when you can't rebuild yet, and a good way to test whether the app actually needs root at all (usually it doesn't)."
+    },
+    {
+      "prompt": "Scan the 'myapp:v2' image for known vulnerabilities in its packages.",
+      "expected_commands": ["docker scout cves myapp:v2", "trivy image myapp:v2"],
+      "fake_output": "myapp:v2\n  CRITICAL: 2  HIGH: 7  MEDIUM: 19\n  openssl 3.0.2  CVE-2024-XXXX  CRITICAL  fixed in 3.0.13\n  (most findings come from the base image node:20)",
+      "explanation": "Most vulnerabilities come from the base image, not your own code — which is why upgrading the FROM line often fixes the majority at once.",
+      "why": "docker scout is built into recent Docker; trivy is the common open-source alternative used in CI pipelines. Either is far better than nothing — the real habit is running a scan in CI on every build, so a new CRITICAL fails the pipeline instead of reaching production."
+    },
+    {
+      "prompt": "Run the container with a read-only root filesystem, allowing writes only to /tmp.",
+      "expected_commands": ["docker run -d --read-only --tmpfs /tmp myapp"],
+      "fake_output": "e5f6a7b8c9d0",
+      "explanation": "An attacker who gets code execution can't drop files or modify binaries inside the container — the filesystem simply refuses writes outside /tmp.",
+      "why": "This is the Docker equivalent of Kubernetes' readOnlyRootFilesystem security context (tutorial-027). It breaks apps that write to unexpected paths, which is useful information in itself: you find out exactly where the app writes, and can mount just those paths as writable."
+    },
+    {
+      "prompt": "Check whether any container is running in privileged mode — a major red flag.",
+      "expected_commands": ["docker inspect web --format='{{.HostConfig.Privileged}}'"],
+      "fake_output": "false",
+      "explanation": "Privileged containers get essentially full access to the host's devices and kernel capabilities — almost never needed for application workloads.",
+      "why": "--privileged is often added as a copy-pasted 'fix' for a permissions error without understanding what it grants. Auditing for it is one of the fastest high-value security checks on any Docker host."
+    }
+  ]
+}

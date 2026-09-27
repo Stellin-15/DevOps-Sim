@@ -1,0 +1,37 @@
+{
+  "id": "docker-incident-005",
+  "type": "incident",
+  "category": "docker",
+  "title": "API Key Is Empty Inside the Container",
+  "difficulty": "intermediate",
+  "tags": ["docker", "dockerfile", "env", "debugging"],
+  "intro": "The app crashes on startup with 'API_KEY is not set'. The developer insists they passed it: the Dockerfile has 'ARG API_KEY' and the build used '--build-arg API_KEY=abc123'.",
+  "steps": [
+    {
+      "prompt": "Check the container's logs to confirm the exact error.",
+      "expected_commands": ["docker logs payments"],
+      "fake_output": "Error: API_KEY is not set\n    at loadConfig (config.js:12)",
+      "hint": "Always confirm the exact error message before theorizing about causes."
+    },
+    {
+      "prompt": "Check what environment variables are actually set inside the container at runtime.",
+      "expected_commands": ["docker exec -it payments env", "docker inspect payments --format='{{.Config.Env}}'"],
+      "fake_output": "PATH=/usr/local/bin:/usr/bin\nNODE_ENV=production",
+      "hint": "Look for API_KEY in the list — is it there at all?"
+    },
+    {
+      "prompt": "API_KEY isn't there at all. Check the image's build history to see how the Dockerfile handled it.",
+      "expected_commands": ["docker history myapp:v3"],
+      "fake_output": "CREATED BY\nCMD [\"node\" \"server.js\"]\nCOPY . .\nARG API_KEY\nFROM node:20-alpine",
+      "hint": "Notice there's an ARG instruction but no matching ENV instruction."
+    },
+    {
+      "prompt": "ARG only exists at build time — it never becomes a runtime variable on its own. Pass it at runtime instead (the correct approach for a secret anyway).",
+      "expected_commands": ["docker run -d --name payments -e API_KEY=abc123 myapp:v3"],
+      "fake_output": "3c4d5e6f7a8b",
+      "hint": "-e sets an environment variable for the running container, which is what the app actually reads."
+    }
+  ],
+  "resolution": "ARG values exist only during 'docker build' and disappear once the image is built — the running container never sees them unless the Dockerfile explicitly copies the value into an ENV instruction. But for a SECRET like an API key, baking it into the image via ENV would be worse: anyone who can pull the image can read it with 'docker history' or 'docker inspect'. The right fix is exactly what was done — pass secrets at RUNTIME with -e (or better, an env file or a secrets manager), never at build time. This is one of the most common real Dockerfile mistakes, and it has both a correctness failure mode (value missing) and a security failure mode (value leaked into the image) depending on which way someone tries to 'fix' it.",
+  "real_commands_used": ["docker logs", "docker exec env", "docker history", "docker run -e"]
+}

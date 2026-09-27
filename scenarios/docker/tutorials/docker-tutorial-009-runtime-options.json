@@ -1,0 +1,53 @@
+{
+  "id": "docker-tutorial-009",
+  "type": "tutorial",
+  "category": "docker",
+  "title": "Runtime Options: Restart Policies, Limits, and File Copying",
+  "difficulty": "intermediate",
+  "tags": ["docker", "runtime", "resources"],
+  "intro": "The flags you pass to 'docker run' decide how a container behaves when it crashes, how much of the host it's allowed to consume, and whether it cleans up after itself.",
+  "steps": [
+    {
+      "prompt": "Run a one-off container that deletes itself automatically when it exits — useful for quick throwaway commands.",
+      "expected_commands": ["docker run --rm alpine echo hello", "docker run --rm alpine"],
+      "fake_output": "hello",
+      "explanation": "--rm removes the container as soon as it exits, so it never shows up in 'docker ps -a' afterward.",
+      "why": "Without --rm, every one-off 'docker run' leaves a stopped container behind forever — exactly the accumulation that fills up disks over months (see docker-incident-003). --rm is the right default for anything you don't intend to restart."
+    },
+    {
+      "prompt": "Run 'web' so Docker restarts it automatically if it crashes, but NOT if you stop it on purpose.",
+      "expected_commands": ["docker run -d --name web --restart=unless-stopped myapp", "docker run -d --restart=unless-stopped --name web myapp"],
+      "fake_output": "b2c3d4e5f6a7",
+      "explanation": "unless-stopped restarts on crashes and on daemon/host reboot, but respects a deliberate 'docker stop'.",
+      "why": "'--restart=always' also restarts on crashes, but will bring a container you manually stopped back to life after a Docker daemon restart — surprising if you stopped it on purpose. 'on-failure' only restarts on non-zero exits. unless-stopped is usually the least surprising choice for a long-running service."
+    },
+    {
+      "prompt": "Run a container capped at 512MB of memory and 1.5 CPUs.",
+      "expected_commands": ["docker run -d --memory=512m --cpus=1.5 myapp", "docker run -d --cpus=1.5 --memory=512m myapp"],
+      "fake_output": "c3d4e5f6a7b8",
+      "explanation": "Without limits, one misbehaving container can consume the entire host's memory and starve everything else on it.",
+      "why": "This is the Docker equivalent of Kubernetes' resources.limits — and the same trade-off applies: hitting a memory limit gets the container OOM-killed (exit code 137, see docker-tutorial-007), which is a better failure than taking down the whole host, but means the limit has to be set with real headroom above normal usage."
+    },
+    {
+      "prompt": "Copy the app's log file out of the running 'web' container to your current directory.",
+      "expected_commands": ["docker cp web:/app/logs/app.log ./app.log", "docker cp web:/app/logs/app.log ."],
+      "fake_output": "Successfully copied 2.1MB to ./app.log",
+      "explanation": "docker cp works in either direction, and works even on stopped containers — handy for pulling evidence out of a crashed container before removing it.",
+      "why": "You could exec in and cat the file, but that only gets it onto your screen, not onto your disk for grep/sharing — and exec doesn't work at all on a stopped container, while cp still does."
+    },
+    {
+      "prompt": "Before starting a Compose stack, validate and print the fully resolved compose config (with env vars substituted) to catch mistakes.",
+      "expected_commands": ["docker compose config"],
+      "fake_output": "services:\n  web:\n    image: myapp:v2\n    environment:\n      DATABASE_URL: postgres://db:5432/app\n    ports:\n    - 8080:3000",
+      "explanation": "This prints exactly what Compose will actually use after merging override files and substituting ${VARIABLES} from your .env file.",
+      "why": "A typo'd variable name in docker-compose.yml silently becomes an empty string at runtime — 'compose config' shows you the resolved values BEFORE anything starts, instead of discovering the problem from a confusing app error afterward."
+    },
+    {
+      "prompt": "Open a shell inside the running 'web' service of your Compose stack.",
+      "expected_commands": ["docker compose exec web /bin/bash", "docker compose exec web sh", "docker compose exec web /bin/sh"],
+      "fake_output": "root@web:/app#",
+      "explanation": "Same as docker exec, but addressed by Compose service name instead of container id.",
+      "why": "Compose container names get auto-generated prefixes/suffixes (like myapp-web-1) — using the service name via 'compose exec' means you never need to look those up."
+    }
+  ]
+}

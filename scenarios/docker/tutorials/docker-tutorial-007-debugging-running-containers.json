@@ -1,0 +1,46 @@
+{
+  "id": "docker-tutorial-007",
+  "type": "tutorial",
+  "category": "docker",
+  "title": "Debugging a Running Container",
+  "difficulty": "intermediate",
+  "tags": ["docker", "debugging", "inspect"],
+  "intro": "Beyond logs and exec, Docker has several inspection tools for figuring out exactly what's happening inside a running container without guessing.",
+  "steps": [
+    {
+      "prompt": "Check live CPU/memory usage of all running containers.",
+      "expected_commands": ["docker stats"],
+      "fake_output": "CONTAINER ID   NAME   CPU %   MEM USAGE / LIMIT\na1b2c3d4       web    142.3%  890MiB / 512MiB",
+      "explanation": "142% CPU across multiple cores is fine, but MEM USAGE exceeding the LIMIT (890MiB used against a 512MiB limit) means this container is at serious risk of getting OOM-killed.",
+      "why": "This is the Docker equivalent of 'kubectl top pods' — live resource usage, not the static limits configured at run time. Add a container name/id as an argument to stop it from refreshing every container and focus on just one."
+    },
+    {
+      "prompt": "See the actual processes running inside the 'web' container.",
+      "expected_commands": ["docker top web"],
+      "fake_output": "UID    PID    PPID   CMD\nroot   4821   4801   node server.js\nroot   4855   4821   node worker.js",
+      "explanation": "This shows processes from the HOST's perspective, using the host's process table — it works even if the container has no shell to exec into.",
+      "why": "'docker exec web ps aux' shows almost the same thing but requires the container to actually have a working shell and ps binary — minimal/distroless images often have neither, which is exactly when 'docker top' becomes the only option."
+    },
+    {
+      "prompt": "Check environment variables actually set inside the running container.",
+      "expected_commands": ["docker exec -it web env"],
+      "fake_output": "PATH=/usr/local/bin\nNODE_ENV=production\nDATABASE_URL=postgres://db:5432/app",
+      "explanation": "This shows what's ACTUALLY set at runtime — useful when a value from your .env file or docker-compose.yml doesn't seem to be taking effect.",
+      "why": "The Dockerfile's ENV instructions, a docker run -e flag, and a Compose environment: block can all set the same variable — if a value looks wrong, checking it live inside the running container is the fastest way to see which of those actually won, without tracing through every config file."
+    },
+    {
+      "prompt": "Check the exact exit code the last time this container stopped.",
+      "expected_commands": ["docker inspect web --format='{{.State.ExitCode}}'"],
+      "fake_output": "137",
+      "explanation": "137 specifically means the container was killed by SIGKILL (137 = 128 + 9) — almost always an OOM kill, matching what 'docker stats' showed earlier about exceeding its memory limit.",
+      "why": "--format lets you pull one specific field out of inspect's huge JSON blob instead of scrolling through everything — same idea as kubectl's -o jsonpath, just using Go template syntax instead."
+    },
+    {
+      "prompt": "Watch the live stream of Docker daemon events (container starts, stops, kills) as they happen.",
+      "expected_commands": ["docker events"],
+      "fake_output": "2026-09-27T10:00:01 container die web (exitCode=137)\n2026-09-27T10:00:03 container start web",
+      "explanation": "This confirms the restart policy actually kicked in and restarted the container after the OOM kill — 'die' followed by 'start' a couple seconds later.",
+      "why": "This is a live stream, not a snapshot — it's what you'd run in a second terminal while reproducing a flaky crash, to catch the exact moment and reason a container goes down, rather than piecing it together after the fact from logs alone."
+    }
+  ]
+}

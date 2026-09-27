@@ -1,0 +1,37 @@
+{
+  "id": "docker-incident-003",
+  "type": "incident",
+  "category": "docker",
+  "title": "CI Build Server Out of Disk Space",
+  "difficulty": "intermediate",
+  "tags": ["docker", "disk", "cleanup"],
+  "intro": "Every build on the shared CI runner just started failing with 'no space left on device'. Nobody changed the pipeline config.",
+  "steps": [
+    {
+      "prompt": "Confirm the disk is actually full at the host level first.",
+      "expected_commands": ["df -h"],
+      "fake_output": "Filesystem      Size  Used  Avail  Use%  Mounted on\n/dev/sda1       100G   99G   1.0G   99%  /",
+      "hint": "Start broad — confirm the symptom before narrowing down what's causing it."
+    },
+    {
+      "prompt": "Check whether Docker specifically is what's eating the space.",
+      "expected_commands": ["docker system df"],
+      "fake_output": "TYPE            TOTAL   ACTIVE   SIZE      RECLAIMABLE\nImages          340     2        71.2GB    70.8GB (99%)\nContainers      512     0        8.1GB     8.1GB (100%)\nBuild Cache     -       -        12.4GB    12.4GB",
+      "hint": "docker system df breaks Docker's own disk usage down by category."
+    },
+    {
+      "prompt": "340 images, 512 stopped containers, all left over from months of CI builds that never cleaned up. Reclaim everything unused, including build cache.",
+      "expected_commands": ["docker system prune -a", "docker system prune -a -f"],
+      "fake_output": "Deleted Containers: 512\nDeleted Images: 338\nDeleted build cache objects: 1204\nTotal reclaimed space: 90.3GB",
+      "hint": "-a is needed here since most of the space is in tagged-but-unused images, not just dangling ones."
+    },
+    {
+      "prompt": "Confirm the disk has recovered.",
+      "expected_commands": ["df -h"],
+      "fake_output": "Filesystem      Size  Used  Avail  Use%  Mounted on\n/dev/sda1       100G    9G   91G    9%   /",
+      "hint": "Always confirm a fix actually worked rather than assuming the prune command succeeded as expected."
+    }
+  ],
+  "resolution": "The CI runner had been building a fresh image (and leaving behind a stopped container) on every single pipeline run for months, with nothing ever cleaning them up — Docker never removes old images, containers, or build cache on its own. It hit 99% and every subsequent build failed. The immediate fix was a full prune; the real fix is adding a scheduled 'docker system prune -a -f --filter until=24h' job to the runner (or configuring the CI system's own cleanup), so this doesn't silently accumulate back to 100% in another few months.",
+  "real_commands_used": ["df -h", "docker system df", "docker system prune -a"]
+}

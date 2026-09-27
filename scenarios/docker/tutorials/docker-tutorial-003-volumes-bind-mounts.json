@@ -1,0 +1,46 @@
+{
+  "id": "docker-tutorial-003",
+  "type": "tutorial",
+  "category": "docker",
+  "title": "Volumes and Bind Mounts",
+  "difficulty": "beginner",
+  "tags": ["docker", "volumes", "storage"],
+  "intro": "Containers are ephemeral — anything written inside one disappears when it's removed, unless you deliberately persist it with a volume or bind mount.",
+  "steps": [
+    {
+      "prompt": "Create a named volume called 'db-data'.",
+      "expected_commands": ["docker volume create db-data"],
+      "fake_output": "db-data",
+      "explanation": "This creates storage managed by Docker itself, independent of any container's lifecycle.",
+      "why": "You could skip this and let 'docker run -v db-data:/path' auto-create it on first use — creating it explicitly first is mainly useful when you want to configure it (a driver, labels) before anything attaches to it."
+    },
+    {
+      "prompt": "Run a postgres container using that named volume for /var/lib/postgresql/data.",
+      "expected_commands": ["docker run -d -v db-data:/var/lib/postgresql/data postgres"],
+      "fake_output": "a1b2c3d4e5f6",
+      "explanation": "Now the database files live in the 'db-data' volume, not inside the container's own writable layer.",
+      "why": "A bind mount (-v /host/absolute/path:/container/path) would work too, but a named volume is the better default for data you want Docker to manage — it isn't tied to a specific host path, so it works the same way across different machines."
+    },
+    {
+      "prompt": "List all volumes to confirm it's there.",
+      "expected_commands": ["docker volume ls"],
+      "fake_output": "DRIVER    VOLUME NAME\nlocal     db-data",
+      "explanation": "This just lists volume names — it won't tell you which containers are actually using each one.",
+      "why": "For that, you'd need 'docker volume inspect db-data' or cross-reference with 'docker inspect' on the container — 'volume ls' is just the quick existence check."
+    },
+    {
+      "prompt": "Remove the container, then bind-mount your current directory's ./config folder to /etc/app/config in a new one (read-only).",
+      "expected_commands": ["docker run -d -v ./config:/etc/app/config:ro myapp"],
+      "fake_output": "f6e5d4c3b2a1",
+      "explanation": ":ro makes the mount read-only inside the container — the app can read config files but can't accidentally modify your host files.",
+      "why": "A bind mount (a host path, not a named volume) is what you want here specifically because you need to edit config files on your host and have the container see the change immediately — a named volume's contents aren't meant to be edited from outside Docker like that."
+    },
+    {
+      "prompt": "You're done experimenting — remove the unused 'db-data' volume.",
+      "expected_commands": ["docker volume rm db-data"],
+      "fake_output": "db-data",
+      "explanation": "This permanently deletes the volume's data — only works if no running container is currently using it.",
+      "why": "Docker refuses to remove a volume that's still attached to a container, even a stopped one, specifically to prevent accidentally destroying data that something still references — you'd need to remove the container first if this failed."
+    }
+  ]
+}

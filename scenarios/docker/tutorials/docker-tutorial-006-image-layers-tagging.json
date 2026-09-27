@@ -1,0 +1,46 @@
+{
+  "id": "docker-tutorial-006",
+  "type": "tutorial",
+  "category": "docker",
+  "title": "Image Layers, Tagging, and Pushing",
+  "difficulty": "intermediate",
+  "tags": ["docker", "images", "registry"],
+  "intro": "An image is just a stack of cached layers, and a tag is just a pointer to one — understanding both is what makes rebuilds fast and deployments predictable.",
+  "steps": [
+    {
+      "prompt": "See the layer history of the 'myapp:v1' image, including how big each layer is.",
+      "expected_commands": ["docker history myapp:v1"],
+      "fake_output": "IMAGE          CREATED BY                                      SIZE\ni9j0k1l2       CMD [\"node\" \"server.js\"]                        0B\na1b2c3d4       COPY . .                                         1.2MB\ne5f6g7h8       RUN npm install                                 180MB\nz9y8x7w6       FROM node:20-alpine                              45MB",
+      "explanation": "That 180MB npm install layer is the expensive one — if you COPY source code before running npm install, every code change invalidates the cache and forces a full reinstall.",
+      "why": "This is exactly why Dockerfile instruction ORDER matters: put things that change rarely (installing dependencies) before things that change often (copying source code), so Docker's layer cache can skip the expensive step on most rebuilds."
+    },
+    {
+      "prompt": "Tag the existing 'myapp:v1' image as 'myregistry.io/myapp:v1' to prepare it for pushing.",
+      "expected_commands": ["docker tag myapp:v1 myregistry.io/myapp:v1"],
+      "fake_output": "(no output — tag created)",
+      "explanation": "This doesn't copy or rebuild anything — it just adds a second name pointing at the exact same image layers.",
+      "why": "Docker decides where to push an image based entirely on the registry hostname prefix in its tag — an image tagged just 'myapp:v1' has nowhere to push to, which is why re-tagging with the full registry path is a required step before push, not optional."
+    },
+    {
+      "prompt": "Log in to the registry before pushing.",
+      "expected_commands": ["docker login"],
+      "fake_output": "Username: you\nPassword: \nLogin Succeeded",
+      "explanation": "Credentials get cached locally after this, so you don't need to log in again for every subsequent push in the same session.",
+      "why": "Skipping this and going straight to push against a private registry gets you a plain 'unauthorized' error — the same failure mode as incident-006 (ImagePullBackOff) in the Kubernetes tutorials, just on the push side instead of the pull side."
+    },
+    {
+      "prompt": "Push the re-tagged image to the registry.",
+      "expected_commands": ["docker push myregistry.io/myapp:v1"],
+      "fake_output": "The push refers to repository [myregistry.io/myapp]\na1b2c3d4: Pushed\ne5f6g7h8: Pushed\nv1: digest: sha256:abc123... size: 1234",
+      "explanation": "Only layers the registry doesn't already have get uploaded — if a previous version shares base layers with this one, those are skipped.",
+      "why": "This is the same layer-caching concept from 'docker history' applying again, just over the network this time — it's why pushing a small code-only change is fast even for a large image, since only the changed layer(s) actually transfer."
+    },
+    {
+      "prompt": "Clean up local disk space by removing images that have no container using them and aren't tagged.",
+      "expected_commands": ["docker image prune"],
+      "fake_output": "Deleted Images: 4\nTotal reclaimed space: 620MB",
+      "explanation": "This only removes 'dangling' images — layers left behind from old builds that no tag points to anymore.",
+      "why": "This is scoped to images specifically, a narrower version of 'docker system prune' — reach for this one when you just rebuilt an image several times and want to clean up the intermediate leftovers without touching stopped containers or networks too."
+    }
+  ]
+}

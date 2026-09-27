@@ -1,4 +1,4 @@
-# GAPS.md — will kube-sim actually prepare you for the CKA and real production incidents?
+# GAPS.md — will kube-sim actually make you proficient in DevOps?
 
 Honest self-assessment, written from the perspective of a beginner using
 this game as their main prep tool for (a) passing the CKA exam and (b)
@@ -7,15 +7,17 @@ answer: **helpful, not sufficient, for both** — and this file exists to be
 specific about where it falls short, so nobody mistakes "completed every
 scenario" for "ready."
 
-**Scope note:** this assessment covers the **Kubernetes** category only.
-The game has since expanded to Docker, Linux, Terraform, Networking,
-CI/CD, Monitoring, and MLOps too (see README.md/CLAUDE.md) — those
-categories are at an earlier content-depth stage and haven't had an
-equivalent gap analysis yet. Everything below is specifically about
-whether the Kubernetes content (tutorials 001-029, incidents 001-010,
-YAML labs) holds up against real CKA/production expectations.
+**Structure:** the first half of this file is the original, deepest
+assessment — **Kubernetes / CKA**. Each other category (Docker, Linux,
+Terraform, Networking, CI/CD, Monitoring, MLOps) gets its own section
+further down, written the same way: what's covered, what a real job
+expects, what's still missing. The final section is a cross-category
+summary: what "proficient in DevOps" actually requires beyond any single
+tool, and how far this game gets you toward it.
 
 ---
+
+# Part 1 — Kubernetes / CKA
 
 ## What kube-sim is actually good at
 
@@ -146,3 +148,44 @@ this for CKA prep: also get time on a real cluster (kind/minikube) before
 the exam, especially for YAML-writing speed. If you're using it to build
 toward handling production on your own: pair it with actually being on an
 on-call rotation, shadowed, before being the primary responder.*
+
+---
+
+# Part 2 — Docker
+
+**Content:** 10 tutorials, 5 incidents.
+
+## Covered
+
+Every section of `commands/docker.md`: images (build, tag, push, history,
+prune), containers (run flags, lifecycle, logs, exec, inspect, top,
+stats, cp, events), volumes and bind mounts, networks, Compose (up/down,
+logs, build, exec, config), system cleanup, Dockerfile essentials
+(multi-stage builds, ARG vs ENV, HEALTHCHECK, --no-cache), runtime
+options (restart policies, resource limits, --rm), and container
+security (non-root users, image scanning, read-only filesystems,
+privileged-mode auditing — the last group isn't in docker.md at all but
+is expected in real work). Incidents cover the five most common real
+Docker failures: immediate exit (missing dependency), cross-container
+networking, disk exhaustion from never-pruned images, port conflicts,
+and the ARG-vs-ENV secret mistake.
+
+## Still missing
+
+- **Writing Dockerfiles** — same structural issue YAML Labs solved for
+  Kubernetes manifests: tutorials teach you to *recognize* instructions
+  and debug builds, but never have you write a Dockerfile yourself. A
+  "Dockerfile Lab" (like YAML Labs, validating a real file you write) is
+  the single highest-value Docker addition left.
+- BuildKit specifics (cache mounts, secrets mounts `--secret`),
+  multi-platform builds (`docker buildx`) — common in modern CI.
+- Registry operations beyond push/login: image signing, digest pinning.
+- `docker pause/unpause/rename/attach/diff` — rarely used in practice,
+  deliberately skipped.
+- Swarm mode — deliberately out of scope (largely displaced by Kubernetes).
+
+## Readiness verdict
+
+Solid for day-to-day development and debugging work with containers.
+Missing the hands-on Dockerfile-writing practice that separates "can use
+Docker" from "can containerize an app well."

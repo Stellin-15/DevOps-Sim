@@ -1,0 +1,46 @@
+{
+  "id": "docker-tutorial-008",
+  "type": "tutorial",
+  "category": "docker",
+  "title": "Dockerfile Essentials",
+  "difficulty": "intermediate",
+  "tags": ["docker", "dockerfile", "build"],
+  "intro": "You've built images from an existing Dockerfile — now let's look at the instructions themselves and a couple of build-time debugging tricks.",
+  "steps": [
+    {
+      "prompt": "Build an image using a specific Dockerfile named 'Dockerfile.prod' instead of the default 'Dockerfile'.",
+      "expected_commands": ["docker build -t myapp:prod -f Dockerfile.prod ."],
+      "fake_output": "Step 1/6 : FROM node:20-alpine AS build\nStep 2/6 : FROM node:20-alpine\n...\nSuccessfully built abc123\nSuccessfully tagged myapp:prod",
+      "explanation": "-f points at a specific Dockerfile — common when you keep separate dev/prod Dockerfiles, or a multi-stage build split across files.",
+      "why": "Without -f, docker build always looks for a file literally named 'Dockerfile' in the build context — -f is required the moment you deviate from that default name."
+    },
+    {
+      "prompt": "Notice the output showed two FROM lines — this is a multi-stage build. Check the image size to confirm the final image doesn't include the build stage's tools.",
+      "expected_commands": ["docker images"],
+      "fake_output": "REPOSITORY   TAG    IMAGE ID   SIZE\nmyapp        prod   abc123     52MB",
+      "explanation": "52MB is small because only the FINAL stage (FROM node:20-alpine, no build tools) ends up in the shipped image — the first stage's compilers/build dependencies are discarded.",
+      "why": "This is the entire point of multi-stage builds: 'FROM node:20-alpine AS build' does the npm install/compile work in a throwaway stage, then a later 'COPY --from=build' pulls only the compiled output into a clean final stage — you get small production images without needing a separate cleanup step."
+    },
+    {
+      "prompt": "Build without using any cached layers, to rule out a stale cache as the cause of a weird bug.",
+      "expected_commands": ["docker build --no-cache -t myapp:v2 ."],
+      "fake_output": "Step 1/5 : FROM node:20-alpine\n ---> Pulling fresh\nStep 3/5 : RUN npm install\n ---> Running (no cache)\nSuccessfully built d4e5f6",
+      "explanation": "Every layer rebuilds from scratch — slower, but rules out 'the cache is lying to me' as a variable when debugging a build that behaves unexpectedly.",
+      "why": "This is specifically the fix that resolves docker-incident-001 (Container Keeps Exiting Immediately) if the actual root cause was a stale cached layer from before a Dockerfile fix — a normal 'docker build' can keep reusing a broken cached layer even after you've fixed the instruction that created it."
+    },
+    {
+      "prompt": "Pass a build-time argument for the app version into the build.",
+      "expected_commands": ["docker build --build-arg VERSION=2.1.0 -t myapp:2.1.0 ."],
+      "fake_output": "Step 2/5 : ARG VERSION=1.0.0\nStep 3/5 : RUN echo \"Building version $VERSION\"\n ---> Building version 2.1.0\nSuccessfully built e5f6g7",
+      "explanation": "ARG values only exist during the build itself — unlike ENV, they are NOT available inside the running container unless you explicitly copy the value into an ENV instruction too.",
+      "why": "This ARG-vs-ENV distinction is the single most common Dockerfile confusion: ARG is a build-time-only input (like a version string baked into the build), ENV is a runtime variable the running container can actually read — mixing them up is exactly what causes 'why is my env var empty inside the container' bugs."
+    },
+    {
+      "prompt": "Confirm the running container's health check is passing.",
+      "expected_commands": ["docker inspect myapp --format='{{.State.Health.Status}}'"],
+      "fake_output": "healthy",
+      "explanation": "This reads the result of the Dockerfile's HEALTHCHECK instruction — Docker runs that check on an interval and tracks healthy/unhealthy/starting status automatically.",
+      "why": "Without a HEALTHCHECK, 'docker ps' only ever shows 'Up' for a running container, even if the app inside has deadlocked and stopped actually serving requests — HEALTHCHECK is what lets Docker (and orchestrators built on top of it) tell the difference between a process that's alive and an app that's actually working."
+    }
+  ]
+}

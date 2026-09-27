@@ -1,0 +1,46 @@
+{
+  "id": "docker-tutorial-004",
+  "type": "tutorial",
+  "category": "docker",
+  "title": "Docker Networking",
+  "difficulty": "intermediate",
+  "tags": ["docker", "networking"],
+  "intro": "Containers on different networks can't see each other by default, even on the same machine — this is the single most common cause of 'my app can't connect to my database' in local Docker setups.",
+  "steps": [
+    {
+      "prompt": "List the networks that currently exist.",
+      "expected_commands": ["docker network ls"],
+      "fake_output": "NETWORK ID     NAME      DRIVER    SCOPE\nabc123def456   bridge    bridge    local\ndef456abc789   host      host      local\n012345678901   none      null      local",
+      "explanation": "'bridge' is the default network new containers join if you don't specify one — but two containers both on the default bridge still can't reliably reach each other by container name.",
+      "why": "Compose creates its own dedicated network automatically (as seen in the Compose tutorial) specifically to avoid this default-bridge limitation — 'docker network ls' is how you'd confirm that network actually exists when debugging a Compose networking issue."
+    },
+    {
+      "prompt": "Create a custom bridge network called 'app-net'.",
+      "expected_commands": ["docker network create app-net"],
+      "fake_output": "7f8e9d0c1b2a",
+      "explanation": "Containers on a custom network can resolve each other by container name automatically — this is the built-in DNS the default bridge network doesn't give you.",
+      "why": "This is the manual equivalent of what Compose does for you automatically — worth knowing directly for the times you're running plain 'docker run' rather than Compose."
+    },
+    {
+      "prompt": "Run a postgres container named 'db' attached to that network.",
+      "expected_commands": ["docker run -d --name db --network app-net postgres"],
+      "fake_output": "1a2b3c4d5e6f",
+      "explanation": "Now any other container on 'app-net' can reach this one at the hostname 'db' — no IP address needed.",
+      "why": "Naming the container matters here specifically because that name becomes the DNS hostname other containers use — an auto-generated random name would still work, but 'db' is far more predictable to reference from your app's connection string."
+    },
+    {
+      "prompt": "Run your app container on the same network so it can reach 'db'.",
+      "expected_commands": ["docker run -d --name web --network app-net myapp"],
+      "fake_output": "6f5e4d3c2b1a",
+      "explanation": "Both containers being on 'app-net' is what makes 'db' resolvable from inside 'web' — if you forgot --network here, this exact setup would silently fail to connect.",
+      "why": "This is the fix for the most common Docker networking mistake: two containers meant to talk to each other, started with plain 'docker run' and no shared --network, ending up isolated from one another by default."
+    },
+    {
+      "prompt": "Inspect the network to see exactly which containers are attached to it.",
+      "expected_commands": ["docker network inspect app-net"],
+      "fake_output": "\"Containers\": {\n  \"1a2b3c4d5e6f\": {\"Name\": \"db\", \"IPv4Address\": \"172.20.0.2/16\"},\n  \"6f5e4d3c2b1a\": {\"Name\": \"web\", \"IPv4Address\": \"172.20.0.3/16\"}\n}",
+      "explanation": "This is the direct way to confirm two containers are actually on the same network — the first thing to check when 'connection refused' turns out to be a networking issue, not an app bug.",
+      "why": "'docker inspect <container>' also shows a container's own network info, but only for that one container — 'network inspect' shows everyone attached to a given network at once, which is faster when you're checking whether two specific containers can actually see each other."
+    }
+  ]
+}

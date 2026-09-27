@@ -1,0 +1,37 @@
+{
+  "id": "docker-incident-004",
+  "type": "incident",
+  "category": "docker",
+  "title": "Container Won't Start: Port Already Allocated",
+  "difficulty": "beginner",
+  "tags": ["docker", "ports", "debugging"],
+  "intro": "Running 'docker run -d -p 8080:3000 myapp:v2' fails immediately with: 'Bind for 0.0.0.0:8080 failed: port is already allocated'.",
+  "steps": [
+    {
+      "prompt": "Check whether another Docker container is already using port 8080.",
+      "expected_commands": ["docker ps"],
+      "fake_output": "CONTAINER ID   IMAGE      PORTS                    NAMES\n7f3a9b2c1d0e   myapp:v1   0.0.0.0:8080->3000/tcp   old-web",
+      "hint": "The PORTS column shows exactly which host ports each running container has claimed."
+    },
+    {
+      "prompt": "The old v1 container is still holding port 8080. Stop it.",
+      "expected_commands": ["docker stop old-web", "docker stop 7f3a9b2c1d0e"],
+      "fake_output": "old-web",
+      "hint": "Stopping it frees the port, but the container still exists and can be restarted later if you need to roll back."
+    },
+    {
+      "prompt": "Now start the new v2 container on port 8080.",
+      "expected_commands": ["docker run -d -p 8080:3000 myapp:v2"],
+      "fake_output": "9a8b7c6d5e4f",
+      "hint": "The same command that failed before should work now the port is free."
+    },
+    {
+      "prompt": "Clean up by removing the old stopped v1 container once you're confident v2 works.",
+      "expected_commands": ["docker rm old-web", "docker rm 7f3a9b2c1d0e"],
+      "fake_output": "old-web",
+      "hint": "Only remove it after confirming the new version is healthy — it's your quick rollback path until then."
+    }
+  ],
+  "resolution": "Only one process on a host can bind a given port at a time — the old v1 container was still running and holding 8080, so the new v2 container couldn't claim it. This is the manual version of a rolling deployment: stop old, start new, confirm, then clean up. Keeping the stopped old container around until the new one is confirmed healthy is deliberate — 'docker start old-web' is an instant rollback. In a real deployment an orchestrator (Kubernetes, Compose with a load balancer) handles this handoff without any downtime window, which is exactly the problem those tools exist to solve.",
+  "real_commands_used": ["docker ps", "docker stop", "docker run -p", "docker rm"]
+}

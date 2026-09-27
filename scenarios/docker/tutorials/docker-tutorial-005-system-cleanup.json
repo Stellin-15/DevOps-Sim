@@ -1,0 +1,39 @@
+{
+  "id": "docker-tutorial-005",
+  "type": "tutorial",
+  "category": "docker",
+  "title": "System Cleanup and Disk Usage",
+  "difficulty": "beginner",
+  "tags": ["docker", "cleanup", "disk"],
+  "intro": "Docker happily accumulates stopped containers, dangling images, and unused volumes forever unless you clean up — a dev machine that's been building images for months can easily have tens of gigabytes of dead weight.",
+  "steps": [
+    {
+      "prompt": "Check how much disk space Docker is actually using, broken down by category.",
+      "expected_commands": ["docker system df"],
+      "fake_output": "TYPE            TOTAL   ACTIVE   SIZE      RECLAIMABLE\nImages          42      3        18.2GB    15.1GB (82%)\nContainers      12      2        450MB     380MB (84%)\nVolumes         8       1        3.4GB     2.9GB (85%)",
+      "explanation": "82% of image storage is reclaimable — that's old, unused image layers just sitting there.",
+      "why": "This is the equivalent of 'df -h' but scoped specifically to Docker's own storage — regular 'df -h' would show you the disk is full, but not that Docker specifically is the cause or what inside Docker is reclaimable."
+    },
+    {
+      "prompt": "Remove all stopped containers, unused networks, and dangling images in one command.",
+      "expected_commands": ["docker system prune"],
+      "fake_output": "Deleted Containers: 10\nDeleted Networks: 2\nTotal reclaimed space: 4.1GB",
+      "explanation": "This is the safe default cleanup — it does NOT touch volumes or images that are still tagged/referenced, only genuinely orphaned stuff.",
+      "why": "Notice this reclaimed only 4.1GB out of the 15.1GB the earlier system df showed as reclaimable for images alone — plain prune deliberately leaves tagged images alone, since those might still be intentionally kept around for a rollback."
+    },
+    {
+      "prompt": "That wasn't enough. Remove ALL unused images too, not just dangling ones.",
+      "expected_commands": ["docker system prune -a"],
+      "fake_output": "Deleted Images: 28\nTotal reclaimed space: 14.7GB",
+      "explanation": "-a is the more aggressive option — it removes any image not currently used by a running container, tagged or not.",
+      "why": "This is the one to think twice about on a shared machine — it'll delete images other people (or your own future self) might have been about to reuse, forcing a re-pull/re-build next time they're needed."
+    },
+    {
+      "prompt": "Now clean up unused volumes specifically, since prune alone doesn't touch those.",
+      "expected_commands": ["docker volume prune"],
+      "fake_output": "Deleted Volumes: 5\nTotal reclaimed space: 2.1GB",
+      "explanation": "Volumes are the one category 'docker system prune' (without --volumes) deliberately skips, since they're the most likely thing to contain data you actually meant to keep.",
+      "why": "You could add --volumes to the original 'system prune' command instead of running this separately — it's broken out as its own command specifically because volume data loss is the one cleanup mistake that's hardest to undo, so it deserves a deliberate, separate step."
+    }
+  ]
+}
