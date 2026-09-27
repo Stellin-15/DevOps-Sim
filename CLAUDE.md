@@ -468,7 +468,23 @@ exercise something the generic checks don't cover.
 
 See GAPS.md Part 9 for the reasoning. In priority order:
 
-1. **Stats screen and spaced-repetition review** (next, per the agreed
+0. **In progress: cloud, security, fleet ops, and SRE expansion.** The
+   user approved this ahead of the stats screen. There are six new
+   categories: aws, azure, gcp, security, servers (fleet ops: Ansible,
+   patching, backups), and sre. Their command references are already in
+   `commands/{aws,azure,gcp,security,servers,sre}.md`; write each
+   category's scenarios from its file. Remaining steps, in order:
+   1. aws plus an `aws_sandbox.py` VPC sandbox, with mystery.py made
+      sandbox-agnostic (per-sandbox `GOAL_CHECKS` and `placeholders`);
+   2. azure and gcp;
+   3. security, plus hacked-server problems in linux_sandbox (a
+      cryptominer with cron persistence, an SSH backdoor);
+   4. servers;
+   5. sre;
+   6. Writing Labs (IAM policy, Terraform VPC, security group, Ansible
+      rolling patch, GCP firewall, markdown postmortem) and career paths
+      008–011.
+1. **Stats screen and spaced-repetition review** (after the expansion, per the agreed
    roadmap order: writing labs ✓ → exam mode ✓ → sandboxes ✓ →
    mystery incidents ✓ → new-topic content ✓ → stats/spaced-repetition
    review → more cert passes). progress.json already records attempts
