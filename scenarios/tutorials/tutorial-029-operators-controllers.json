@@ -1,0 +1,39 @@
+{
+  "id": "tutorial-029",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Operators & Custom Controllers",
+  "difficulty": "advanced",
+  "tags": ["operators", "controllers", "crd"],
+  "intro": "A Deployment controller's whole job is watching Deployment objects and reconciling reality to match them. An Operator is the same idea, just for a custom resource — this builds directly on the CRDs from tutorial-018.",
+  "steps": [
+    {
+      "prompt": "The cert-manager Operator manages Certificate custom resources from tutorial-018. Check that the operator itself is actually running.",
+      "expected_commands": ["kubectl get pods -n cert-manager"],
+      "fake_output": "NAME                                      READY   STATUS    RESTARTS   AGE\ncert-manager-7d8f9c6b5-x2z9k               1/1     Running   0          30d\ncert-manager-webhook-6b8d9f7c4-a1b2c       1/1     Running   0          30d",
+      "explanation": "An Operator is just a regular Deployment running regular pods — nothing about it is magic infrastructure, it's application code watching the API server like any client would.",
+      "why": "This is worth confirming first whenever a custom resource isn't behaving as expected — if the operator pod itself is down or crash-looping, nothing watching that CRD will ever reconcile, no matter how correct the Certificate object you created is."
+    },
+    {
+      "prompt": "Check the operator's own logs to see it actually reconciling a Certificate object.",
+      "expected_commands": ["kubectl logs cert-manager-7d8f9c6b5-x2z9k -n cert-manager"],
+      "fake_output": "I0927 10:00:01 Reconciling Certificate default/web-tls\nI0927 10:00:02 Certificate default/web-tls is up to date, no changes required\nI0927 10:00:15 Reconciling Certificate default/web-tls\nI0927 10:00:15 Renewing certificate as it is within the renewal window",
+      "explanation": "This is the reconciliation loop in action, in plain text: the operator continuously compares the actual state (the current cert) against the desired state (what the Certificate object says it should be), and acts only when they differ.",
+      "why": "This is the exact same loop a built-in controller runs for a Deployment (compare actual pod count to desired replicas, create/delete to match) — the only difference is a built-in controller watches Deployments, and this one watches a CRD instead."
+    },
+    {
+      "prompt": "Check the actual status Kubernetes stored on the Certificate object itself — not the operator's logs, the object's own state.",
+      "expected_commands": ["kubectl get certificate web-tls -o jsonpath='{.status.conditions}'"],
+      "fake_output": "[{\"type\":\"Ready\",\"status\":\"True\",\"reason\":\"Ready\",\"message\":\"Certificate is up to date and has not expired\"}]",
+      "explanation": "The operator writes its findings back onto the custom resource's status field — this is how 'kubectl get certificates' was able to show a READY column back in tutorial-018, without needing to ask the operator directly.",
+      "why": "This status-writeback pattern is exactly how you'd check on ANY operator-managed resource without needing to know that operator's internals — conditions with type/status/reason/message is a Kubernetes-wide convention, not something cert-manager invented."
+    },
+    {
+      "prompt": "Someone accidentally deleted the underlying Secret the operator was supposed to be managing. Check if the operator noticed and fixed it on its own.",
+      "expected_commands": ["kubectl get secret web-tls-cert"],
+      "fake_output": "NAME            TYPE                DATA   AGE\nweb-tls-cert    kubernetes.io/tls   2      12s",
+      "explanation": "AGE of 12s means this Secret was just recreated — the operator's reconciliation loop noticed the actual state (no Secret) didn't match the desired state (Certificate says one should exist) and fixed it automatically, with nobody paging anyone.",
+      "why": "This self-healing is the entire value proposition of the Operator pattern: instead of a human running a runbook every time something like this happens, the reconciliation loop just runs continuously and corrects drift on its own — the same reason a Deployment recreates a manually-deleted pod."
+    }
+  ]
+}

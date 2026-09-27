@@ -1,0 +1,39 @@
+{
+  "id": "tutorial-027",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Cluster & Pod Security",
+  "difficulty": "advanced",
+  "tags": ["security", "securitycontext", "podsecurity"],
+  "intro": "RBAC controls who can talk to the API server, but that's only half of cluster security — SecurityContext and Pod Security Standards control what a container is allowed to do once it's actually running.",
+  "steps": [
+    {
+      "prompt": "Check the 'web' pod's security context to see what privileges its container actually runs with.",
+      "expected_commands": ["kubectl get pod web -o jsonpath='{.spec.containers[0].securityContext}'"],
+      "fake_output": "{\"runAsNonRoot\":true,\"runAsUser\":1000,\"readOnlyRootFilesystem\":true,\"allowPrivilegeEscalation\":false}",
+      "explanation": "This container runs as a non-root user with a read-only root filesystem and can't escalate privileges — a compromised process inside it has meaningfully less it can do to the host.",
+      "why": "Without an explicit securityContext, many container images default to running as root — jsonpath is the fast way to confirm a pod actually has these hardening settings instead of trusting the deployment author remembered to add them."
+    },
+    {
+      "prompt": "Check which Pod Security Standard level is enforced on this namespace.",
+      "expected_commands": ["kubectl get ns production -o jsonpath='{.metadata.labels}'"],
+      "fake_output": "{\"pod-security.kubernetes.io/enforce\":\"restricted\",\"pod-security.kubernetes.io/audit\":\"restricted\"}",
+      "explanation": "Pod Security Admission reads these labels directly off the namespace — 'restricted' is the strictest built-in level, blocking things like privileged containers and host networking at admission time, before a pod is even created.",
+      "why": "This replaced the older PodSecurityPolicy (removed in newer Kubernetes versions) — the whole policy now lives as three namespace labels (enforce/audit/warn) instead of a separate cluster-wide resource."
+    },
+    {
+      "prompt": "A teammate's new pod manifest got rejected. Try creating a privileged pod in this namespace to see the actual admission error yourself.",
+      "expected_commands": ["kubectl run bad-pod --image=nginx --privileged"],
+      "fake_output": "Error from server (Forbidden): pods \"bad-pod\" is forbidden: violates PodSecurity \"restricted:latest\": privileged (container \"bad-pod\" must not set securityContext.privileged=true)",
+      "explanation": "This is rejected before the pod object is even created — Pod Security Admission runs at admission time, not as a runtime check afterward.",
+      "why": "Compare this to a NetworkPolicy or RBAC rule, which only take effect once something is already running — Pod Security Admission is a hard gate at creation time, which is exactly why it's the right tool for 'never allow privileged containers here' rather than catching it after the fact."
+    },
+    {
+      "prompt": "Check whether the 'ci-bot' ServiceAccount from earlier could delete secrets in this namespace — a real security review question, not just a curiosity.",
+      "expected_commands": ["kubectl auth can-i delete secrets --as=system:serviceaccount:default:ci-bot"],
+      "fake_output": "no",
+      "explanation": "Confirming the negative matters as much as confirming the positive — this is exactly the kind of check a security review or audit would run against every service account with any elevated access.",
+      "why": "Same 'auth can-i --as=' pattern from the RBAC tutorial — the difference here is the intent: you're not debugging a broken permission, you're proactively verifying a boundary holds before it's ever tested by an actual incident."
+    }
+  ]
+}

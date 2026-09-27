@@ -1,0 +1,46 @@
+{
+  "id": "tutorial-028",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Bootstrapping a Cluster with kubeadm",
+  "difficulty": "advanced",
+  "tags": ["kubeadm", "cluster-setup", "cka"],
+  "intro": "Every kubeadm cluster starts the same way: initialize the first control plane node, install a pod network, then join worker nodes to it. This is the setup tutorial-025's upgrades and tutorial-023's disaster recovery both assume already happened once.",
+  "steps": [
+    {
+      "prompt": "Initialize the first control plane node, telling it what pod CIDR range to use for the network you'll install next.",
+      "expected_commands": ["kubeadm init --pod-network-cidr=10.244.0.0/16"],
+      "fake_output": "[init] Using Kubernetes version: v1.30.1\n[certs] Generating certificates and keys...\n[control-plane] Creating static pod manifests...\n[bootstrap-token] Using token: abc123.def456ghi789jkl0\nYour Kubernetes control-plane has initialized successfully!\n\nTo start using your cluster:\n  mkdir -p $HOME/.kube\n  cp -i /etc/kubernetes/admin.conf $HOME/.kube/config\n\nThen you can join any number of worker nodes by running:\n  kubeadm join 10.0.0.1:6443 --token abc123.def456ghi789jkl0 --discovery-token-ca-cert-hash sha256:aaaa...",
+      "explanation": "This single command generates all the control-plane certificates, starts the static pods (etcd, apiserver, scheduler, controller-manager) from tutorial-024, and prints the exact join command for workers.",
+      "why": "--pod-network-cidr has to be specified up front because it can't be changed after the fact without re-initializing — get it wrong here and you're redoing this step, so it needs to match whatever CNI plugin you're about to install."
+    },
+    {
+      "prompt": "Copy the admin kubeconfig so you can actually use kubectl as a normal user instead of root.",
+      "expected_commands": ["cp -i /etc/kubernetes/admin.conf $HOME/.kube/config"],
+      "fake_output": "(no output — admin.conf copied to ~/.kube/config)",
+      "explanation": "kubeadm init generates this file with full cluster-admin credentials — copying it to the default kubeconfig location is what makes plain 'kubectl' work without extra flags.",
+      "why": "This is the one step that's just file copying, not a kubectl or kubeadm command at all — it's easy to skip and then wonder why kubectl says 'connection refused' even though the cluster genuinely initialized fine."
+    },
+    {
+      "prompt": "The cluster has no pod network yet, which is why core pods are stuck Pending. Install a CNI plugin (Flannel, matching the pod CIDR from step 1).",
+      "expected_commands": ["kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml"],
+      "fake_output": "namespace/kube-flannel created\nserviceaccount/flannel created\nconfigmap/kube-flannel-cfg created\ndaemonset.apps/kube-flannel-ds created",
+      "explanation": "Kubernetes doesn't ship a pod network implementation — kubeadm init leaves CoreDNS and other pods Pending until something (Flannel, Calico, Cilium...) is installed to actually let pods talk to each other across nodes.",
+      "why": "Notice this installs as a DaemonSet — one CNI pod per node, same pattern as the log-agent DaemonSet from earlier, since networking setup genuinely needs to happen on every node individually."
+    },
+    {
+      "prompt": "On a separate worker node, join it to the cluster using the token from step 1's output.",
+      "expected_commands": ["kubeadm join 10.0.0.1:6443 --token abc123.def456ghi789jkl0 --discovery-token-ca-cert-hash sha256:aaaa..."],
+      "fake_output": "[preflight] Running pre-flight checks\n[kubelet-start] Starting the kubelet\nThis node has joined the cluster!",
+      "explanation": "The token and CA cert hash together prove to the joining node that it's really talking to the control plane it thinks it is, not an impostor — this is the same bootstrap-token mechanism from step 1's output.",
+      "why": "Tokens expire after 24 hours by default — if you're joining a node later than that, you'd need 'kubeadm token create --print-join-command' to generate a fresh one instead of reusing an old, expired one."
+    },
+    {
+      "prompt": "Back on the control plane, confirm the new node actually joined and is healthy.",
+      "expected_commands": ["kubectl get nodes"],
+      "fake_output": "NAME       STATUS   ROLES           AGE   VERSION\nmaster     Ready    control-plane   10m   v1.30.1\nnode-1     Ready    <none>          30s   v1.30.1",
+      "explanation": "STATUS Ready confirms the new node's kubelet is heartbeating and the CNI plugin successfully set up networking for it too.",
+      "why": "If this showed NotReady instead, the CNI DaemonSet pod on that specific node would be the first thing to check — a node can join successfully and still show NotReady if its own network setup didn't complete."
+    }
+  ]
+}

@@ -126,30 +126,46 @@ self-consistency check that each scenario's own listed commands actually
 match under the real matcher). Run this after any change to the engine,
 loader, sandbox, or scenario content.
 
+## Is this enough to pass the CKA or handle production on your own?
+
+Short answer: helpful, not sufficient, for either — see **GAPS.md** for a
+full honest self-assessment, including what was added specifically to
+close gaps it identified, and what's still missing (mainly: real
+YAML-writing practice, which a command-matching game structurally can't
+simulate — get time on a real kind/minikube cluster before the exam).
+
 ## Status / roadmap
 
 Built so far: hardcoded single scenario → JSON-driven scenarios with a
 menu → hint escalation → sandbox mode → progress tracking → full tutorial
-coverage of COMMANDS.md. 20 tutorials (each step explaining both what a
-command does and why it's the right pick over alternatives) and 5
-incidents included.
+coverage of COMMANDS.md → CKA/production-readiness gap-filling (see
+GAPS.md). 29 tutorials (each step explaining both what a command does and
+why it's the right pick over alternatives) and 10 incidents included.
 
-Tutorial topics: pods, deployments, services, scaling/rollouts,
-configmaps/secrets, logs/exec, cluster/context/namespaces, replicasets/
-statefulsets/daemonsets, jobs/cronjobs, ingress/network policies,
-persistent storage, RBAC/service accounts, resource quotas/autoscaling,
-labels/selectors/annotations, scheduling/node draining, events/
-diagnostics, applying/diffing manifests, CRDs, Helm, and kubeconfig/
-multi-cluster contexts — every COMMANDS.md category except "Tooling &
-Shortcuts" (aliases and shell completion aren't things with meaningful
-simulated output; their short resource names like `po`/`deploy`/`sts` are
-still accepted throughout the other tutorials).
+Tutorial topics: everything in COMMANDS.md (pods, deployments, services,
+scaling/rollouts, configmaps/secrets, logs/exec, cluster/context/
+namespaces, replicasets/statefulsets/daemonsets, jobs/cronjobs, ingress/
+network policies, persistent storage, RBAC/service accounts, resource
+quotas/autoscaling, labels/selectors/annotations, scheduling/node
+draining, events/diagnostics, applying/diffing manifests, CRDs, Helm,
+kubeconfig/multi-cluster — every category except "Tooling & Shortcuts",
+since aliases/shell completion have no meaningful simulated output, though
+their short resource names like `po`/`deploy`/`sts` are accepted
+everywhere) — plus, beyond COMMANDS.md: probes, multi-container/init
+containers, etcd backup & restore, static pods & control-plane
+troubleshooting, kubeadm bootstrap & upgrades, certificate management,
+cluster/pod security, and Operators & custom controllers.
 
-Sandbox now covers pods, deployments, services, configmaps, secrets,
-nodes, and events. Not yet built:
+Incident topics: CrashLoopBackOff, OOMKilled, service-unreachable,
+pod-stuck-pending, stale ConfigMap, ImagePullBackOff, a readiness-probe
+cascading failure, a CoreDNS outage, a silently-broken HPA, and a
+NotReady node.
+
+Sandbox covers pods, deployments, services, configmaps, secrets, nodes,
+and events. Not yet built:
 - A CLI scaffold for authoring new scenario JSON
-- More incident scenarios for the newer topics (only 5 incidents exist
-  against 20 tutorials)
+- Dynamic storage/volume mount failure scenarios, RBAC-denial as an
+  incident, PodDisruptionBudget-blocks-drain, admission controllers
 - Further sandbox resources (jobs/cronjobs, PVCs, HPA, RBAC)
 
 See CLAUDE.md for the detailed status against the original build order and

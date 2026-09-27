@@ -1,0 +1,37 @@
+{
+  "id": "incident-009",
+  "type": "incident",
+  "category": "kubernetes",
+  "title": "HPA stuck at minimum replicas during a traffic spike",
+  "difficulty": "intermediate",
+  "tags": ["hpa", "metrics-server", "autoscaling", "debugging"],
+  "intro": "Traffic to 'frontend' tripled an hour ago and pods are clearly overloaded, but the HorizontalPodAutoscaler hasn't scaled anything up.",
+  "steps": [
+    {
+      "prompt": "Check the HPA's current state.",
+      "expected_commands": ["kubectl get hpa frontend"],
+      "fake_output": "NAME       REFERENCE             TARGETS         MINPODS   MAXPODS   REPLICAS   AGE\nfrontend   Deployment/frontend   <unknown>/80%   2         10        2          40d",
+      "hint": "Look closely at the TARGETS column, not just REPLICAS."
+    },
+    {
+      "prompt": "TARGETS shows <unknown> instead of an actual percentage — the HPA can't see any metrics at all. Get more detail.",
+      "expected_commands": ["kubectl describe hpa frontend"],
+      "fake_output": "Events:\n  Warning  FailedGetResourceMetric  horizontal-pod-autoscaler  unable to get metrics for resource cpu: no metrics returned from resource metrics API",
+      "hint": "describe on an HPA shows its own Events, same pattern as pods and deployments."
+    },
+    {
+      "prompt": "The metrics API itself isn't returning anything. Check if metrics-server is even running in the cluster.",
+      "expected_commands": ["kubectl get pods -n kube-system -l k8s-app=metrics-server"],
+      "fake_output": "No resources found in kube-system namespace.",
+      "hint": "An HPA depends entirely on metrics-server (or a compatible metrics API) — no metrics-server means no CPU/memory data exists to scale on."
+    },
+    {
+      "prompt": "metrics-server was never installed on this cluster — confirm by checking if the metrics API is registered at all.",
+      "expected_commands": ["kubectl api-resources --api-group=metrics.k8s.io"],
+      "fake_output": "(no output — no resources found for this API group)",
+      "hint": "If the API group itself doesn't exist, that confirms metrics-server isn't just down — it was never deployed."
+    }
+  ],
+  "resolution": "metrics-server was never installed on this cluster in the first place — the HPA has been silently non-functional since it was created 40 days ago, not because of anything that changed today. It happened to go unnoticed until traffic actually spiked enough that manual scaling was needed and someone checked why the HPA wasn't reacting. The immediate fix is deploying metrics-server; the longer-term fix is adding a check (or alert) that catches an HPA stuck at <unknown> targets, since this failure mode is completely silent otherwise — nothing pages anyone when an HPA just... doesn't work.",
+  "real_commands_used": ["kubectl get hpa", "kubectl describe hpa", "kubectl get pods -n kube-system -l", "kubectl api-resources"]
+}

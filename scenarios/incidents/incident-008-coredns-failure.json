@@ -1,0 +1,37 @@
+{
+  "id": "incident-008",
+  "type": "incident",
+  "category": "kubernetes",
+  "title": "Nothing can resolve internal service names",
+  "difficulty": "intermediate",
+  "tags": ["dns", "coredns", "networking", "debugging"],
+  "intro": "Multiple teams are reporting their services can't reach each other by name — 'could not resolve host' errors everywhere, all at once, across unrelated apps.",
+  "steps": [
+    {
+      "prompt": "Multiple unrelated services failing at the same time points at shared infrastructure, not one app. Check the CoreDNS pods first.",
+      "expected_commands": ["kubectl get pods -n kube-system -l k8s-app=kube-dns"],
+      "fake_output": "NAME                       READY   STATUS             RESTARTS   AGE\ncoredns-5d78c9869d-2xk9p   0/1     CrashLoopBackOff   6          8m\ncoredns-5d78c9869d-9jz3q   0/1     CrashLoopBackOff   6          8m",
+      "hint": "DNS in Kubernetes is itself just a Deployment (CoreDNS) running in kube-system — check it like any other workload."
+    },
+    {
+      "prompt": "Both CoreDNS replicas are crash-looping. Check why.",
+      "expected_commands": ["kubectl logs coredns-5d78c9869d-2xk9p -n kube-system"],
+      "fake_output": "plugin/loop: Loop (127.0.0.1:52931 -> :53) detected for zone \".\", see https://coredns.io/plugins/loop#troubleshooting. Query: \"HINFO\"",
+      "hint": "CoreDNS logs its own reason for exiting on crash — no need to guess."
+    },
+    {
+      "prompt": "That's a DNS forwarding loop — CoreDNS is somehow forwarding queries back to itself. Check its ConfigMap for the upstream forwarding config.",
+      "expected_commands": ["kubectl get configmap coredns -n kube-system -o yaml"],
+      "fake_output": "data:\n  Corefile: |\n    .:53 {\n        forward . /etc/resolv.conf\n    }",
+      "hint": "The Corefile's 'forward' directive controls where unresolved queries go — that's the likely culprit."
+    },
+    {
+      "prompt": "The node's /etc/resolv.conf was recently changed to point at this cluster's own DNS, creating the loop CoreDNS detected. After fixing the Corefile to forward to a real external resolver, confirm CoreDNS recovers.",
+      "expected_commands": ["kubectl get pods -n kube-system -l k8s-app=kube-dns"],
+      "fake_output": "NAME                       READY   STATUS    RESTARTS   AGE\ncoredns-5d78c9869d-2xk9p   1/1     Running   6          9m\ncoredns-5d78c9869d-9jz3q   1/1     Running   6          9m",
+      "hint": "After editing the ConfigMap, CoreDNS pods need to pick up the change — a rollout restart applies it."
+    }
+  ],
+  "resolution": "A node-level change to /etc/resolv.conf pointed the host's own DNS resolution at the cluster's CoreDNS service, and CoreDNS's Corefile was configured to forward unresolved queries to /etc/resolv.conf — creating an infinite loop that CoreDNS's built-in loop detection correctly caught and refused to run with, crash-looping instead of serving broken DNS silently. Every service in the cluster depends on CoreDNS for internal name resolution, which is why the outage looked unrelated across completely different apps — the actual failure was in shared infrastructure, not any of the apps reporting the symptom.",
+  "real_commands_used": ["kubectl get pods -n kube-system", "kubectl logs", "kubectl get configmap -o yaml", "kubectl rollout restart"]
+}

@@ -1,0 +1,39 @@
+{
+  "id": "tutorial-021",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Liveness, Readiness & Startup Probes",
+  "difficulty": "intermediate",
+  "tags": ["probes", "health-checks"],
+  "intro": "Kubernetes doesn't know if your app is actually healthy unless you tell it how to check. A misconfigured probe is one of the most common causes of mysterious restarts and traffic drops in production.",
+  "steps": [
+    {
+      "prompt": "Check whether the 'web' pod has any probes configured that might be causing trouble.",
+      "expected_commands": ["kubectl describe pod web"],
+      "fake_output": "Name: web\nStatus: Running\nLiveness: http-get http://:8080/healthz delay=0s timeout=1s period=10s #success=1 #failure=3\nReadiness: http-get http://:8080/ready delay=5s timeout=1s period=10s #success=1 #failure=3\nEvents:\n  Warning  Unhealthy  kubelet  Liveness probe failed: Get \"http://10.244.0.5:8080/healthz\": dial tcp connect: connection refused",
+      "explanation": "describe shows the exact probe config plus a live Events entry showing it's currently failing — that combination is usually enough to diagnose a probe issue without touching anything else.",
+      "why": "'kubectl get pod web -o yaml' has the same probe spec but no live Events — describe is strictly better here since the failure is happening right now."
+    },
+    {
+      "prompt": "The liveness probe hits /healthz with no startup delay. See the pod's actual startup log to check if the app is even listening yet.",
+      "expected_commands": ["kubectl logs web"],
+      "fake_output": "2026-09-27 10:00:00 Starting server...\n2026-09-27 10:00:08 Server listening on :8080",
+      "explanation": "The app doesn't start listening until 8 seconds in, but the liveness probe has delay=0s — it starts checking immediately and fails for the first 8 seconds.",
+      "why": "This is the classic probe-timing bug: logs tell you WHEN the app actually became ready; comparing that against the probe's delay/period/failure-threshold tells you whether the probe config even makes sense for this app's real startup time."
+    },
+    {
+      "prompt": "The liveness probe only allows 3 failures 10s apart (30s total) before killing the container — but startup sometimes takes longer than that under load. Edit the deployment to fix the probe timing.",
+      "expected_commands": ["kubectl edit deployment web"],
+      "fake_output": "(opens the deployment spec in your default editor — you'd raise livenessProbe.initialDelaySeconds, save, and exit)",
+      "explanation": "There's no dedicated 'kubectl set probe' command — probe fields are edited directly in the pod template spec, same as any other field.",
+      "why": "You could also 'kubectl apply -f' an updated manifest — edit is faster for a single one-off field change like this, but apply -f is what you'd actually use in a real GitOps workflow so the change is captured in version control too."
+    },
+    {
+      "prompt": "After the fix rolls out, confirm the pod is passing its readiness check and receiving traffic.",
+      "expected_commands": ["kubectl get pod web"],
+      "fake_output": "NAME   READY   STATUS    RESTARTS   AGE\nweb    1/1     Running   0          45s",
+      "explanation": "READY 1/1 specifically means the readiness probe is passing — a pod can show STATUS Running with READY 0/1 if it's up but not yet considered ready to receive traffic.",
+      "why": "This distinction (Running vs Ready) is exactly what trips people up in real incidents: a pod can be 'Running' the whole time while still being pulled out of a Service's endpoints because readiness keeps failing."
+    }
+  ]
+}

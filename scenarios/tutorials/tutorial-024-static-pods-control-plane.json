@@ -1,0 +1,39 @@
+{
+  "id": "tutorial-024",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Static Pods & Control Plane Troubleshooting",
+  "difficulty": "advanced",
+  "tags": ["static-pods", "control-plane", "troubleshooting", "cka"],
+  "intro": "On a kubeadm cluster, the control plane itself (kube-apiserver, scheduler, controller-manager, etcd) runs as static pods managed directly by kubelet — not by the API server. When kubectl itself won't connect, this is where you look.",
+  "steps": [
+    {
+      "prompt": "kubectl commands are hanging entirely — you suspect the API server isn't running. List the static pod manifests kubelet reads directly.",
+      "expected_commands": ["ls /etc/kubernetes/manifests/"],
+      "fake_output": "etcd.yaml\nkube-apiserver.yaml\nkube-controller-manager.yaml\nkube-scheduler.yaml",
+      "explanation": "If kube-apiserver.yaml is missing or invalid, kubectl can't reach the cluster at all — and since kubectl itself depends on the API server, you can't use kubectl to check on the thing that would tell you why kubectl is broken.",
+      "why": "This is the one situation where you're not using kubectl to investigate a kubectl problem — you go straight to the node's filesystem, since kubelet reads these files independent of whether the API server is up."
+    },
+    {
+      "prompt": "Check the kube-apiserver static pod manifest for an obvious mistake, like a bad flag.",
+      "expected_commands": ["cat /etc/kubernetes/manifests/kube-apiserver.yaml"],
+      "fake_output": "spec:\n  containers:\n  - command:\n    - kube-apiserver\n    - --etcd-servers=https://127.0.0.1:2379\n    - --advertise-address=10.0.0.1\n    - --bad-flag-typo=true",
+      "explanation": "'--bad-flag-typo=true' isn't a real kube-apiserver flag — kubelet will keep restarting this static pod in a crash loop as long as it's there.",
+      "why": "A typo'd flag here is a classic self-inflicted outage during manual cluster maintenance — it's also exactly why you always back up a manifest before hand-editing it, so you can revert in seconds instead of debugging under pressure."
+    },
+    {
+      "prompt": "Since kubectl can't reach the API server, check the kubelet's own logs on this node instead to confirm it's actually retrying the static pod.",
+      "expected_commands": ["journalctl -u kubelet -n 50"],
+      "fake_output": "kubelet: E0927 10:00:05 Error: failed to start container \"kube-apiserver\": unknown flag: --bad-flag-typo\nkubelet: I0927 10:00:06 Restarting failed static pod kube-apiserver",
+      "explanation": "kubelet logs live in the system journal, not in anything kubectl can show you — this confirms kubelet is looping on the exact flag error from the manifest.",
+      "why": "This is the same shift as the manifest step: once the control plane itself is the thing that's broken, you're debugging at the systemd/kubelet layer on the actual node, not at the Kubernetes API layer."
+    },
+    {
+      "prompt": "Fix the typo by removing the bad flag from the manifest, then confirm the API server static pod recovers.",
+      "expected_commands": ["kubectl get pods -n kube-system"],
+      "fake_output": "NAME                       READY   STATUS    RESTARTS   AGE\nkube-apiserver-master      1/1     Running   0          15s",
+      "explanation": "As soon as you save a corrected manifest, kubelet picks up the change automatically and restarts the static pod — and once the API server is healthy again, kubectl starts working normally too.",
+      "why": "This closes the loop: you dropped down to file/journal-level debugging specifically because kubectl was unusable, and the fix at that lower level is what brings kubectl back."
+    }
+  ]
+}

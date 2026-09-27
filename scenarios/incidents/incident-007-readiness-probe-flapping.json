@@ -1,0 +1,43 @@
+{
+  "id": "incident-007",
+  "type": "incident",
+  "category": "kubernetes",
+  "title": "user-api flapping in and out of the load balancer",
+  "difficulty": "intermediate",
+  "tags": ["probes", "networking", "debugging"],
+  "intro": "Customers report intermittent 502s hitting user-api, but the pods all show as Running. Nothing looks obviously broken at first glance.",
+  "steps": [
+    {
+      "prompt": "Check the pods — confirm they really are all Running.",
+      "expected_commands": ["kubectl get pods -l app=user-api"],
+      "fake_output": "NAME                        READY   STATUS    RESTARTS   AGE\nuser-api-6b8d9f7c4-a1b2c    0/1     Running   0          2h\nuser-api-6b8d9f7c4-d3e4f    1/1     Running   0          2h\nuser-api-6b8d9f7c4-g5h6i    0/1     Running   0          2h",
+      "hint": "Look closely at the READY column, not just STATUS."
+    },
+    {
+      "prompt": "Two of three pods show READY 0/1 despite Running. Check the endpoints behind the user-api service — are those two even receiving traffic?",
+      "expected_commands": ["kubectl get endpoints user-api"],
+      "fake_output": "NAME       ENDPOINTS              AGE\nuser-api   10.244.1.12:8080       2h",
+      "hint": "Only READY pods get added to a Service's endpoints — compare this list against the pod count."
+    },
+    {
+      "prompt": "Only one pod's IP is in the endpoint list, confirming 2 of 3 are being skipped. Describe one of the not-ready pods to see why.",
+      "expected_commands": ["kubectl describe pod user-api-6b8d9f7c4-a1b2c"],
+      "fake_output": "Readiness: http-get http://:8080/ready delay=0s timeout=1s period=5s #success=1 #failure=1\nEvents:\n  Warning  Unhealthy  kubelet  Readiness probe failed: HTTP probe failed with statuscode: 503",
+      "hint": "The readiness probe itself is what's failing — that's a strong lead."
+    },
+    {
+      "prompt": "The probe fails intermittently with 503, not always. Check the pod's logs around the same time.",
+      "expected_commands": ["kubectl logs user-api-6b8d9f7c4-a1b2c"],
+      "fake_output": "10:14:58 GET /ready 200\n10:15:03 GET /ready 503 - db connection pool exhausted\n10:15:08 GET /ready 200",
+      "hint": "The app's own logs will show what /ready is actually checking when it fails."
+    },
+    {
+      "prompt": "The readiness check queries the database connection pool, and it's intermittently exhausted under load. Check how many replicas are actually configured versus available.",
+      "expected_commands": ["kubectl get deployment user-api"],
+      "fake_output": "NAME       READY   UP-TO-DATE   AVAILABLE   AGE\nuser-api   1/3     3            1          2h",
+      "hint": "Compare desired vs available — this tells you if the deployment is simply under-provisioned for current load."
+    }
+  ],
+  "resolution": "user-api's /ready endpoint checks its database connection pool as part of readiness, which is reasonable — but the pool size is too small for current traffic, so under load it intermittently reports itself unready, gets pulled from the Service's endpoints, and the remaining pods absorb even more load, making it worse (a self-reinforcing spiral). Two real fixes are needed: raise the connection pool size per pod, and scale up user-api's replica count so no single pod carries this much load. Restarting pods would NOT have fixed this — the pods were never actually broken, they were correctly reporting real backend pressure.",
+  "real_commands_used": ["kubectl get pods -l", "kubectl get endpoints", "kubectl describe pod", "kubectl logs", "kubectl get deployment"]
+}

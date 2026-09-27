@@ -1,0 +1,46 @@
+{
+  "id": "tutorial-025",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Cluster Upgrades with kubeadm",
+  "difficulty": "advanced",
+  "tags": ["kubeadm", "upgrades", "cka"],
+  "intro": "Upgrading a kubeadm cluster is a specific, ordered procedure — control plane first, one minor version at a time, then each worker node. Skipping steps or versions is how clusters break.",
+  "steps": [
+    {
+      "prompt": "Check what kubeadm thinks the current and available versions are before touching anything.",
+      "expected_commands": ["kubeadm upgrade plan"],
+      "fake_output": "[upgrade/versions] Cluster version: v1.29.4\n[upgrade/versions] kubeadm version: v1.30.1\nUpgrade to the latest version in the v1.30 series:\nCOMPONENT                 CURRENT   TARGET\nkube-apiserver             v1.29.4   v1.30.1\nkube-controller-manager    v1.29.4   v1.30.1\nkube-scheduler             v1.29.4   v1.30.1",
+      "explanation": "This is a dry-run — it tells you exactly what would change without touching anything, which is why it's always the first step.",
+      "why": "Kubernetes only officially supports upgrading one minor version at a time (1.29 to 1.30, not 1.29 to 1.31 directly) — 'upgrade plan' is what confirms you're not about to attempt an unsupported jump."
+    },
+    {
+      "prompt": "Apply the upgrade to the control plane node.",
+      "expected_commands": ["kubeadm upgrade apply v1.30.1"],
+      "fake_output": "[upgrade/successful] SUCCESS! Your cluster was upgraded to \"v1.30.1\". Enjoy!",
+      "explanation": "This upgrades the control plane components (kube-apiserver, controller-manager, scheduler, etcd if needed) on this node — kubelet itself is upgraded separately via the OS package manager, not by kubeadm.",
+      "why": "'kubeadm upgrade apply' is only run once, on the FIRST control plane node — additional control plane nodes use 'kubeadm upgrade node' instead, since they just need to join the already-upgraded configuration."
+    },
+    {
+      "prompt": "Before upgrading a worker node's kubelet, drain it so its pods reschedule elsewhere safely.",
+      "expected_commands": ["kubectl drain node-2 --ignore-daemonsets"],
+      "fake_output": "node/node-2 cordoned\nevicting pod default/web-abc\nnode/node-2 drained",
+      "explanation": "Same drain command from earlier tutorials — upgrading a node's kubelet means it'll restart, so anything still scheduled there would get disrupted mid-upgrade without this step.",
+      "why": "This is why cordon/drain matter for more than just manual maintenance — every real kubeadm upgrade procedure includes exactly this step for every single worker node, one at a time, never all at once."
+    },
+    {
+      "prompt": "After upgrading kubelet and kubeadm on that node's OS packages, tell kubeadm to update that node's local config to match the new control plane.",
+      "expected_commands": ["kubeadm upgrade node"],
+      "fake_output": "[upgrade] The configuration for this node was successfully updated!\n[upgrade] Now you should go ahead and upgrade the kubelet package",
+      "explanation": "This is the worker-node equivalent of 'kubeadm upgrade apply' — it updates the local kubelet configuration to match what the upgraded control plane expects.",
+      "why": "Every node except the very first control plane node uses 'kubeadm upgrade node', not 'apply' — 'apply' is specifically the one-time command that upgrades the cluster's actual configuration; every other node just needs to catch up to it."
+    },
+    {
+      "prompt": "Bring node-2 back into rotation now that its upgrade is complete.",
+      "expected_commands": ["kubectl uncordon node-2"],
+      "fake_output": "node/node-2 uncordoned",
+      "explanation": "Same as any other maintenance drain — uncordon re-enables scheduling, completing the per-node upgrade cycle.",
+      "why": "This is the last step of the per-node loop in a real upgrade: cordon/drain, upgrade kubelet+kubeadm, kubeadm upgrade node, uncordon — repeated for every worker node, one at a time, never in parallel."
+    }
+  ]
+}

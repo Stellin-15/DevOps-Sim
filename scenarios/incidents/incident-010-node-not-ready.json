@@ -1,0 +1,37 @@
+{
+  "id": "incident-010",
+  "type": "incident",
+  "category": "kubernetes",
+  "title": "node-3 suddenly shows NotReady",
+  "difficulty": "advanced",
+  "tags": ["nodes", "kubelet", "troubleshooting"],
+  "intro": "Monitoring paged: node-3 flipped to NotReady ten minutes ago. Every pod that was running on it is now Unknown or stuck Terminating.",
+  "steps": [
+    {
+      "prompt": "Confirm the node's status and see if there's a stated reason.",
+      "expected_commands": ["kubectl describe node node-3"],
+      "fake_output": "Conditions:\n  Type             Status   Reason\n  Ready            Unknown  NodeStatusUnknown\n  MemoryPressure   Unknown  NodeStatusUnknown\nEvents:\n  Warning  NodeNotReady  node-controller  Node node-3 status is now: NodeNotReady",
+      "hint": "describe node's Conditions section usually states why, or at least confirms the control plane has lost contact."
+    },
+    {
+      "prompt": "Everything shows Unknown, meaning the control plane hasn't heard from this node's kubelet recently — not a resource pressure issue. Check events specifically for node-3 for any other clues.",
+      "expected_commands": ["kubectl get events --field-selector involvedObject.name=node-3"],
+      "fake_output": "LAST SEEN   TYPE      REASON          MESSAGE\n12m         Normal    NodeReady       Node node-3 status is now: NodeReady\n2m          Warning   NodeNotReady    Node node-3 status is now: NodeNotReady",
+      "hint": "Filter events specifically to this node's name to cut out noise from everything else in the cluster."
+    },
+    {
+      "prompt": "No clear cause in events — this points at kubelet on node-3 itself having stopped heartbeating, not something the API server can see. Check what pods were running there and their current state.",
+      "expected_commands": ["kubectl get pods --field-selector spec.nodeName=node-3 -o wide"],
+      "fake_output": "NAME                    READY   STATUS      RESTARTS   AGE\nbilling-service-x7y8z   1/1     Unknown     0          3h\nemail-sender-a1b2c      1/1     Terminating 0          3h",
+      "hint": "Filtering pods by nodeName shows you exactly what's stranded on the unreachable node."
+    },
+    {
+      "prompt": "These pods are stuck because the control plane can't confirm they're actually dead. Your infra team confirms node-3 is physically powered off for hardware replacement — force-delete the stuck pod so it can be rescheduled elsewhere.",
+      "expected_commands": ["kubectl delete pod billing-service-x7y8z --grace-period=0 --force"],
+      "fake_output": "warning: Immediate deletion does not wait for confirmation that the running resource has been terminated. The resource may continue to run on the cluster indefinitely.\npod \"billing-service-x7y8z\" force deleted",
+      "hint": "Normal delete waits for kubelet to confirm termination — but kubelet on this node isn't responding, so a force delete is the only way to let the Deployment reschedule this pod elsewhere."
+    }
+  ],
+  "resolution": "node-3's kubelet stopped heartbeating to the control plane — in this case because the underlying host was powered off for hardware replacement without draining it first. Because the control plane never received a clean shutdown signal, it couldn't confirm the node's pods had actually stopped, leaving them stuck in Unknown/Terminating instead of being cleanly rescheduled. The force-delete was safe here only because the node's total failure was independently confirmed (it was physically off) — force-deleting pods on a node that might still be running is genuinely risky, since it can lead to the same pod (or its storage) running in two places at once. The process gap: node-3 should have been cordoned and drained BEFORE the hardware work started, which would have rescheduled everything cleanly with zero pages.",
+  "real_commands_used": ["kubectl describe node", "kubectl get events --field-selector", "kubectl get pods --field-selector -o wide", "kubectl delete pod --grace-period=0 --force"]
+}

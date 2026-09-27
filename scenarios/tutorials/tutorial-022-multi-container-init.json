@@ -1,0 +1,39 @@
+{
+  "id": "tutorial-022",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Multi-Container Pods & Init Containers",
+  "difficulty": "intermediate",
+  "tags": ["multi-container", "init-containers"],
+  "intro": "Not every pod runs one container. Init containers run and finish before the main app starts; sidecars run alongside it for the pod's whole life.",
+  "steps": [
+    {
+      "prompt": "The 'web' pod actually has two containers. Check the pod for its container names, not just its status.",
+      "expected_commands": ["kubectl get pod web -o jsonpath='{.spec.containers[*].name}'"],
+      "fake_output": "app log-shipper",
+      "explanation": "This pod runs 'app' (the actual service) alongside a 'log-shipper' sidecar that forwards logs somewhere external — both share the same pod, network, and lifecycle.",
+      "why": "Plain 'kubectl get pod web' only shows READY as an aggregate count (2/2), not which containers those actually are — jsonpath is how you pull out just the container names."
+    },
+    {
+      "prompt": "Get logs specifically from the 'log-shipper' sidecar, not the main app.",
+      "expected_commands": ["kubectl logs web -c log-shipper"],
+      "fake_output": "2026-09-27 10:00:01 Forwarding logs to collector.internal:9200\n2026-09-27 10:00:05 Shipped 42 log lines",
+      "explanation": "Without -c, 'kubectl logs' on a multi-container pod fails and asks you to specify one — it never guesses which container you meant.",
+      "why": "This is why every multi-container pod situation is different from earlier single-container tutorials — the moment there's more than one, -c stops being optional and becomes required for logs/exec both."
+    },
+    {
+      "prompt": "The pod is stuck Pending, and you suspect an init container is the problem. Describe the pod to check init container status.",
+      "expected_commands": ["kubectl describe pod web"],
+      "fake_output": "Init Containers:\n  wait-for-db:\n    State: Running\n    Ready: False\nContainers:\n  app:\n    State: Waiting\n    Reason: PodInitializing",
+      "explanation": "'wait-for-db' hasn't finished, so the main containers haven't even started yet — that's exactly what init containers are for: blocking pod startup until a precondition is met.",
+      "why": "The main container's 'Waiting: PodInitializing' isn't the actual problem — it's a symptom. The real cause is always upstream in the Init Containers section when you see that reason."
+    },
+    {
+      "prompt": "Check the 'wait-for-db' init container's own logs to see what it's actually waiting on.",
+      "expected_commands": ["kubectl logs web -c wait-for-db"],
+      "fake_output": "Waiting for db-service:5432...\nWaiting for db-service:5432...\nWaiting for db-service:5432...",
+      "explanation": "This confirms the init container itself is looping, waiting on the database service to become reachable — the actual root cause is upstream (the database), not this pod at all.",
+      "why": "Same -c flag as the sidecar step — init containers and regular containers use identical logs/exec syntax, the only difference is WHEN they run relative to the pod's main containers."
+    }
+  ]
+}

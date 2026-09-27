@@ -11,15 +11,22 @@ free-form sandbox. Everything runs locally, no real cluster, no network
 calls. All content is pre-written JSON; the game engine only knows how to
 read scenario JSON and fuzzy-match typed commands against it.
 
-The two source-of-truth design docs, both already in the repo, are:
+The source-of-truth docs, all already in the repo, are:
 - **SPEC.md** — full original spec: data model, matching rules, feedback
   rules, modes, build order (v1–v6), constraints.
 - **COMMANDS.md** — master reference of real kubectl (and helm) syntax,
   organized by category. Pull from here whenever writing new scenario JSON
   or extending which commands Sandbox mode understands, so the game always
   teaches syntax that matches the real tool.
+- **GAPS.md** — an honest, periodically-updated self-assessment of what
+  kube-sim does and doesn't prepare someone for (CKA exam readiness,
+  real production-incident readiness). Read it before adding content so
+  new scenarios target actual gaps rather than duplicating well-covered
+  ground. Update it, don't just add scenarios silently, whenever a pass
+  like this one closes gaps it names — future sessions should be able to
+  trust it's current.
 
-Don't duplicate content from those two files elsewhere — link to them.
+Don't duplicate content from these files elsewhere — link to them.
 
 ## Architecture (do not blur this line)
 
@@ -81,20 +88,38 @@ not bare `input()`.
       choice on exit, saved sessions live in `sandbox_data/saved/`)
 - [ ] v6 (optional) — `python game.py add-scenario` CLI scaffold
 
-Content: 20 tutorials, 5 incidents, all in `scenarios/`, all schema-valid
-per `tests/test_scenario_content.py`. Tutorials now cover every COMMANDS.md
-category except "Tooling & Shortcuts" (aliases/shell completion/
-`export KUBECONFIG` — deliberately skipped, see below) — tutorial-001
-through 006 were the original set (pods, deployments, services, scaling/
-rollouts, configmaps/secrets, logs/exec); 007–020 cover cluster/context/
-namespaces, replicasets/statefulsets/daemonsets, jobs/cronjobs, ingress/
-netpol, storage (pv/pvc/storageclass), RBAC/service accounts, resource
-quotas/HPA, labels/selectors/annotations, scheduling (taints/cordon/
-drain), events/diagnostics (explain, jsonpath, api-resources), apply/diff/
-manifests, CRDs, Helm, and kubeconfig/multi-cluster. Several steps
-deliberately combine multiple flags in one command (set-based label
-selectors, `--sort-by` + events, `autoscale` with three flags at once,
-`auth can-i --as=`) rather than teaching one flag at a time.
+Content: 29 tutorials, 10 incidents, all in `scenarios/`, all schema-valid
+per `tests/test_scenario_content.py`. Tutorials cover every COMMANDS.md
+category except "Tooling & Shortcuts" (see below), plus — per GAPS.md's
+gap analysis — Cluster Architecture/CKA topics COMMANDS.md never listed
+at all: probes, multi-container/init pods, etcd backup/restore, static
+pods, kubeadm bootstrap/upgrade, certificates, and cluster/pod security.
+
+- tutorial-001–006: the original set (pods, deployments, services,
+  scaling/rollouts, configmaps/secrets, logs/exec)
+- tutorial-007–020: cluster/context/namespaces, replicasets/
+  statefulsets/daemonsets, jobs/cronjobs, ingress/netpol, storage
+  (pv/pvc/storageclass), RBAC/service accounts, resource quotas/HPA,
+  labels/selectors/annotations, scheduling (taints/cordon/drain),
+  events/diagnostics (explain/jsonpath/api-resources), apply/diff/
+  manifests, CRDs, Helm, kubeconfig/multi-cluster
+- tutorial-021–029: probes, multi-container/init containers, etcd
+  backup/restore, static pods & control-plane troubleshooting, kubeadm
+  upgrades, certificates, cluster/pod security (SecurityContext, Pod
+  Security Admission), kubeadm bootstrap (init/join), Operators &
+  custom controllers (builds on tutorial-018's CRDs)
+- incident-006–010: ImagePullBackOff, a readiness-probe cascading
+  failure, a CoreDNS outage, a silently-broken HPA (missing
+  metrics-server), a NotReady node — chosen to cover common real
+  incidents and "silent failure" patterns GAPS.md flagged as under-taught
+
+Several steps deliberately combine multiple flags in one command
+(set-based label selectors, `--sort-by` + events, `autoscale` with three
+flags at once, `auth can-i --as=`) rather than teaching one flag at a
+time. Note tutorial-023/024/025/026/028 use non-kubectl commands
+(`etcdctl`, `kubeadm`, `journalctl`, `cat`, `ls`) — the engine doesn't
+care, since it has zero kubectl-specific logic (see Architecture above);
+this is a live proof of that design working as intended.
 
 "Tooling & Shortcuts" (aliases, `kubectl completion`, `export KUBECONFIG`)
 has no dedicated tutorial — those are shell configuration, not commands
@@ -149,10 +174,15 @@ something the generic checks don't cover.
 
 ## Likely next work
 
-1. More incident content — only 5 exist vs. 20 tutorials now; incidents
-   for the newer topics (RBAC denial, PVC stuck Pending, HPA not scaling,
-   Ingress misrouting) would pair naturally with the tutorials just added.
-2. Further Sandbox vocabulary: jobs/cronjobs, PVCs, HPA, RBAC objects are
+See GAPS.md's "still not covered" backlog for the authoritative list.
+As of this pass: dynamic storage/volume mount failures, RBAC-denial as
+an incident (not just a tutorial), PodDisruptionBudget-blocks-drain,
+admission controllers/webhooks. Also:
+
+1. Further Sandbox vocabulary: jobs/cronjobs, PVCs, HPA, RBAC objects are
    the next natural resources beyond pods/deployments/services/configmaps/
    secrets/nodes/events (already covered).
-3. v6 scenario-scaffolding CLI, once hand-authoring JSON gets tedious.
+2. v6 scenario-scaffolding CLI, once hand-authoring JSON gets tedious.
+3. Re-read GAPS.md periodically and update it — it's a living assessment,
+   not a one-time writeup, and it goes stale the moment new content lands
+   without a matching update.

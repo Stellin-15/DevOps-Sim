@@ -1,0 +1,39 @@
+{
+  "id": "tutorial-026",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Certificates & Authentication",
+  "difficulty": "advanced",
+  "tags": ["certificates", "tls", "authentication", "cka"],
+  "intro": "Every component in the cluster authenticates with TLS certificates, and they expire. A node going NotReady out of nowhere, months after everything was working fine, is a classic symptom of an expired kubelet client certificate.",
+  "steps": [
+    {
+      "prompt": "Check how much longer the cluster's certificates have before they expire.",
+      "expected_commands": ["kubeadm certs check-expiration"],
+      "fake_output": "CERTIFICATE                EXPIRES                  RESIDUAL TIME\napiserver                   Oct 15, 2026 10:00 UTC   17d\napiserver-kubelet-client     Oct 15, 2026 10:00 UTC   17d\nfront-proxy-client          Sep 28, 2026 10:00 UTC   1d",
+      "explanation": "kubeadm-managed certs default to a 1-year lifetime — 'front-proxy-client' with only 1 day left here is about to cause real problems if nobody acts.",
+      "why": "This is the single command that would have caught the incident before it happened — checking cert expiration proactively (e.g. via a scheduled job) is how real clusters avoid this becoming a 2am page."
+    },
+    {
+      "prompt": "Renew all of the cluster's certificates before front-proxy-client expires.",
+      "expected_commands": ["kubeadm certs renew all"],
+      "fake_output": "certs renewed for apiserver\ncerts renewed for apiserver-kubelet-client\ncerts renewed for front-proxy-client\n(renewed 9 certificates)",
+      "explanation": "This renews every kubeadm-managed certificate in place, extending each by another full lifetime from today.",
+      "why": "You could renew just the one about to expire with 'kubeadm certs renew front-proxy-client', but renewing all of them together is the standard practice — it resets the whole cluster onto one consistent expiration schedule instead of tracking several different dates."
+    },
+    {
+      "prompt": "The control plane static pods need to pick up the renewed certs. Restart them and confirm they came back healthy.",
+      "expected_commands": ["kubectl get pods -n kube-system"],
+      "fake_output": "NAME                             READY   STATUS    RESTARTS   AGE\nkube-apiserver-master            1/1     Running   1          30s\nkube-controller-manager-master   1/1     Running   1          30s",
+      "explanation": "Static pods pick up a manifest change automatically, but a plain cert renewal on disk doesn't change the manifest file itself — moving it out of /etc/kubernetes/manifests/ and back forces kubelet to recreate the pod and load the new certs.",
+      "why": "This is a slightly unintuitive step: the certs are already renewed on disk after step 2, but the running containers won't actually use them until they're restarted — the manifest move-out/move-back trick is the standard way to force that without an actual reboot."
+    },
+    {
+      "prompt": "Confirm the renewal worked by checking expiration again.",
+      "expected_commands": ["kubeadm certs check-expiration"],
+      "fake_output": "CERTIFICATE                EXPIRES                  RESIDUAL TIME\napiserver                   Sep 27, 2027 10:00 UTC   364d\nfront-proxy-client          Sep 27, 2027 10:00 UTC   364d",
+      "explanation": "Every certificate now shows roughly a full year of residual time again — the incident is resolved before it ever caused an outage.",
+      "why": "Checking again after the fix (not just assuming the renew command worked) is the same close-the-loop habit as confirming a rollout status or a pod's READY count after any other fix — never just trust that a fix command succeeded silently."
+    }
+  ]
+}

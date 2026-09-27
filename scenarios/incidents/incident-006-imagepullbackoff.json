@@ -1,0 +1,43 @@
+{
+  "id": "incident-006",
+  "type": "incident",
+  "category": "kubernetes",
+  "title": "ImagePullBackOff on checkout-service",
+  "difficulty": "beginner",
+  "tags": ["pods", "images", "debugging"],
+  "intro": "A fresh deploy of checkout-service just went out and pods aren't coming up. On-call again.",
+  "steps": [
+    {
+      "prompt": "Check what's happening with the checkout-service pods.",
+      "expected_commands": ["kubectl get pods"],
+      "fake_output": "NAME                               READY   STATUS             RESTARTS   AGE\ncheckout-service-5f6d7c8b9-p3k7x   0/1     ImagePullBackOff   0          3m",
+      "hint": "Start the same way you always do — see what's actually running."
+    },
+    {
+      "prompt": "Get more detail on why the image pull is failing.",
+      "expected_commands": ["kubectl describe pod checkout-service-5f6d7c8b9-p3k7x"],
+      "fake_output": "Events:\n  Warning  Failed  kubelet  Failed to pull image \"myregistry.io/checkout-service:v2.4.0\": rpc error: unauthorized: authentication required",
+      "hint": "describe's Events section spells out the exact pull error."
+    },
+    {
+      "prompt": "The registry is asking for authentication. Check if there's an image pull secret configured in this namespace.",
+      "expected_commands": ["kubectl get secrets"],
+      "fake_output": "NAME                    TYPE                             DATA   AGE\nregistry-creds          kubernetes.io/dockerconfigjson  1      90d\napp-secrets             Opaque                           2      90d",
+      "hint": "Look for a secret of type dockerconfigjson — that's what holds registry login credentials."
+    },
+    {
+      "prompt": "The secret exists. Check if the deployment is actually configured to use it as an imagePullSecret.",
+      "expected_commands": ["kubectl get deployment checkout-service -o yaml"],
+      "fake_output": "spec:\n  template:\n    spec:\n      containers:\n      - image: myregistry.io/checkout-service:v2.4.0\n      # no imagePullSecrets field present",
+      "hint": "Check the pod template spec for an imagePullSecrets field."
+    },
+    {
+      "prompt": "There it is — imagePullSecrets was never added to this deployment. Patch it in.",
+      "expected_commands": ["kubectl patch deployment checkout-service -p '{\"spec\":{\"template\":{\"spec\":{\"imagePullSecrets\":[{\"name\":\"registry-creds\"}]}}}}'"],
+      "fake_output": "deployment.apps/checkout-service patched",
+      "hint": "kubectl patch can inject a field into the spec without rewriting the whole manifest."
+    }
+  ],
+  "resolution": "The registry started requiring authentication as part of a security rollout, but checkout-service's deployment manifest was never updated with the existing registry-creds secret as an imagePullSecret — probably because other services in this environment already had it baked in from day one, and this one was copy-pasted before that convention existed. The fix ensures every future deploy of this image succeeds automatically. Worth auditing every other deployment's manifest for the same missing field before this repeats elsewhere.",
+  "real_commands_used": ["kubectl get pods", "kubectl describe pod", "kubectl get secrets", "kubectl get deployment -o yaml", "kubectl patch"]
+}
