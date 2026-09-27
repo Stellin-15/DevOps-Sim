@@ -1,0 +1,49 @@
+{
+  "id": "servers-incident-003",
+  "type": "incident",
+  "category": "servers",
+  "title": "Logins fail with 'token not yet valid' on one server only",
+  "difficulty": "intermediate",
+  "tags": ["time", "chrony", "ntp", "auth"],
+  "intro": "Users are randomly logged out, and the API logs 'JWT token not yet valid (nbf)'. The load balancer spreads users across api-01 to api-04, and every error comes from api-03. Its code and config match the others.",
+  "steps": [
+    {
+      "prompt": "Compare the clocks across the api group with an ad-hoc date command.",
+      "expected_commands": ["ansible api -i inventory.ini -m command -a \"date -u +%T\"", "ansible api -i inventory.ini -m command -a 'date -u +%T'", "ansible api -i inventory.ini -m command -a date"],
+      "fake_output": "api-01 | CHANGED | rc=0 >>\n11:02:14\napi-02 | CHANGED | rc=0 >>\n11:02:14\napi-03 | CHANGED | rc=0 >>\n10:58:41\napi-04 | CHANGED | rc=0 >>\n11:02:15",
+      "hint": "Run the same command everywhere and compare."
+    },
+    {
+      "prompt": "api-03 is 3.5 minutes slow, so tokens issued 'now' by others look like they're from the future. Check its sync status.",
+      "expected_commands": ["ansible api-03 -i inventory.ini -m command -a timedatectl", "ansible api-03 -i inventory.ini -m command -a \"timedatectl\""],
+      "fake_output": "api-03 | CHANGED | rc=0 >>\n System clock synchronized: no\n              NTP service: active",
+      "hint": "timedatectl shows sync status."
+    },
+    {
+      "prompt": "NTP is 'active' but not synchronized. Ask chrony what its sources look like on api-03.",
+      "expected_commands": ["ansible api-03 -i inventory.ini -m command -a \"chronyc sources\"", "ansible api-03 -i inventory.ini -m command -a 'chronyc sources'", "ansible api-03 -i inventory.ini -m command -a \"chronyc sources -v\""],
+      "fake_output": "api-03 | CHANGED | rc=0 >>\nMS Name/IP address         Stratum Poll Reach LastRx Last sample\n===============================================================================\n^? ntp.internal.example.com      0  10     0     -     +0ns[   +0ns] +/-    0ns",
+      "hint": "Look at Reach: 0 means no replies at all."
+    },
+    {
+      "prompt": "Reach 0: api-03 can't reach its time server. The others use the cloud time source 169.254.169.123. Check api-03's chrony config for which server it's told to use.",
+      "expected_commands": ["ansible api-03 -i inventory.ini -m command -a \"grep -E '^(server|pool)' /etc/chrony.conf\"", "ansible api-03 -i inventory.ini -m shell -a \"grep -E '^(server|pool)' /etc/chrony.conf\""],
+      "fake_output": "api-03 | CHANGED | rc=0 >>\nserver ntp.internal.example.com iburst",
+      "hint": "chrony's sources are 'server' or 'pool' lines in /etc/chrony.conf."
+    },
+    {
+      "prompt": "api-03 was built from an old image pointing at a decommissioned internal NTP server. Push the standard chrony role to api-03 with the playbook site.yml, tags 'chrony', limited to api-03.",
+      "expected_commands": ["ansible-playbook -i inventory.ini site.yml --tags chrony --limit api-03", "ansible-playbook -i inventory.ini site.yml -t chrony -l api-03", "ansible-playbook -i inventory.ini site.yml --limit api-03 --tags chrony"],
+      "fake_output": "TASK [chrony : Deploy chrony.conf] ***\nchanged: [api-03]\nRUNNING HANDLER [chrony : restart chronyd] ***\nchanged: [api-03]\nPLAY RECAP ***\napi-03 : ok=3 changed=2 failed=0",
+      "hint": "--tags and --limit together."
+    },
+    {
+      "prompt": "3.5 minutes would take chrony hours to slew away. Step the clock immediately on api-03.",
+      "expected_commands": ["ansible api-03 -i inventory.ini -b -m command -a \"chronyc makestep\"", "ansible api-03 -i inventory.ini -b -m command -a 'chronyc makestep'"],
+      "fake_output": "api-03 | CHANGED | rc=0 >>\n200 OK",
+      "hint": "chronyc makestep"
+    }
+  ],
+  "resolution": "api-03 was built from an older image whose chrony.conf pointed at an internal NTP server that has since been decommissioned. chronyd kept running (so 'NTP service: active' looked fine), but with Reach 0 it had nothing to sync to, and the clock drifted 3.5 minutes over a few weeks. JWTs carry 'nbf' (not before) and 'exp' (expires) claims, so a server whose clock is behind rejects fresh tokens as not yet valid, and only for users routed to that one host, which made it look random. The same drift breaks TLS certificate validation, Kerberos (5-minute tolerance), TOTP codes, and log timelines. Prevention: alert on 'clock not synchronized' and on offset (node_exporter's node_timex_offset_seconds), manage chrony.conf with configuration management so old images get corrected, and prefer the cloud's local time service.",
+  "real_commands_used": ["ansible -m command date", "timedatectl", "chronyc sources", "grep chrony.conf", "ansible-playbook --tags --limit", "chronyc makestep"]
+}

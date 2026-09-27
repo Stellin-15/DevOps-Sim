@@ -3,8 +3,8 @@
 A terminal-based game for learning real DevOps command-line skills by
 typing them, not memorizing them. Started as Kubernetes-only; now spans
 **Kubernetes, Docker, Linux, Terraform, Networking, CI/CD, Monitoring,
-MLOps, AWS, Azure, Google Cloud, and Security**, with Server Fleet Ops
-and big-tech SRE in progress. Runs entirely locally — no real infrastructure, no network calls,
+MLOps, AWS, Azure, Google Cloud, Security, and Server Fleet Ops**, with
+big-tech SRE in progress. Runs entirely locally — no real infrastructure, no network calls,
 no backend. Every command output you see is a pre-written simulated
 string.
 
@@ -331,7 +331,8 @@ the engine, loader, sandboxes, yaml_lab, career_path, mystery, or scenario conte
 | Azure | 10 | 6 | subscriptions, resource groups/locks, VMs (stop vs deallocate), Run Command/Bastion/az ssh, VNets/NSGs, UDRs/Network Watcher, RBAC/managed identity, Key Vault/storage, Monitor/KQL, AKS |
 | Google Cloud | 10 | 6 | configurations/projects/APIs, Compute Engine filters, IAP SSH/serial console, global VPCs, tag-based firewalls, Cloud NAT, IAM without keys/impersonation, Cloud Storage, logging/quotas, GKE/Workload Identity |
 | Security | 10 | 6 | nmap discovery/TLS checks, Trivy/kube-bench, Lynis/OpenSCAP CIS audits, SSH hardening, fail2ban, auditd, osquery/AIDE, secrets scanning, compromise triage; plus 2 hacked-server mysteries |
-| **Total** | **154** | **81** | + 22 Writing Labs |
+| Server Fleet Ops | 11 | 6 | Ansible (inventories, safe playbook runs, rolling serial updates, Vault/lint), Debian and RHEL patching with rollback, kernels and reboots, SSM Patch Manager, chrony, LVM growth, backups with real restore tests |
+| **Total** | **165** | **87** | + 22 Writing Labs |
 
 The three clouds use different names for the same ideas (security group
 vs NSG vs firewall rule; CloudTrail vs Activity Log vs Audit Logs). The
@@ -385,10 +386,10 @@ Mystery Incidents → new-topic content (tracing, SLOs, tcpdump/MTU, GitOps,
 supply chain, bisect, LLM serving, feature stores, strace, BuildKit,
 Terraform modules, and RBAC/PDB/storage incidents) → AWS category, VPC
 sandbox, and AWS mysteries → Azure and Google Cloud categories → Security
-category and hacked-server mysteries.
+category and hacked-server mysteries → Server Fleet Ops category.
 
 Next, in priority order (details in CLAUDE.md and GAPS.md):
-- **In progress:** Server Fleet Ops (Ansible, patching, backups); big-tech SRE practices;
+- **In progress:** big-tech SRE practices;
   Writing Labs for IAM policies, VPC Terraform, Ansible, and postmortems
 - A stats screen and a spaced-repetition review mode
 - Exam-specific gap passes for other certifications (CKAD, Terraform

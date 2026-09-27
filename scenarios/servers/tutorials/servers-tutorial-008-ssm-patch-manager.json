@@ -1,0 +1,46 @@
+{
+  "id": "servers-tutorial-008",
+  "type": "tutorial",
+  "category": "servers",
+  "title": "Patching a Cloud Fleet with AWS Systems Manager",
+  "difficulty": "intermediate",
+  "tags": ["aws", "ssm", "patching", "compliance"],
+  "intro": "In the cloud, fleet patching is often done with the provider's own tooling: AWS Systems Manager Patch Manager (Azure has Update Manager; GCP has VM Manager OS patch management). It scans against a patch baseline, installs in controlled batches, and reports compliance, with no SSH and no Ansible control node.",
+  "steps": [
+    {
+      "prompt": "Check the patch state of instance i-0a1b2c3d4e5f67890.",
+      "expected_commands": ["aws ssm describe-instance-patch-states --instance-ids i-0a1b2c3d4e5f67890"],
+      "fake_output": "InstanceId            PatchGroup  Installed  Missing  Failed  InstalledPendingReboot  OperationEndTime\ni-0a1b2c3d4e5f67890   web-prod    412        7        0       2                       2026-09-21T03:10:44Z",
+      "explanation": "7 patches missing; 2 installed but waiting for a reboot.",
+      "why": "'InstalledPendingReboot' is the Linux-kernel problem again: installed doesn't mean active. Compliance dashboards should count those as not done."
+    },
+    {
+      "prompt": "List which patches are missing on i-0a1b2c3d4e5f67890.",
+      "expected_commands": ["aws ssm describe-instance-patches --instance-id i-0a1b2c3d4e5f67890 --filters Key=State,Values=Missing"],
+      "fake_output": "Title                               Severity   State    \nopenssl-3.0.8-1.amzn2023.0.14       Important  Missing\nkernel-6.1.109-118.189.amzn2023     Critical   Missing\ncurl-8.5.0-1.amzn2023.0.4           Medium     Missing",
+      "explanation": "A critical kernel patch among them.",
+      "why": "Patch baselines decide what counts as 'approved' (for example security patches of Critical/Important severity, auto-approved 7 days after release). That delay is deliberate: it lets the wider world discover bad patches before your fleet installs them."
+    },
+    {
+      "prompt": "Scan (don't install) all instances in patch group web-prod.",
+      "expected_commands": ["aws ssm send-command --document-name AWS-RunPatchBaseline --targets Key=tag:PatchGroup,Values=web-prod --parameters Operation=Scan"],
+      "fake_output": "{\n  \"Command\": {\n    \"CommandId\": \"5f1e2d3c-4b5a-4968-8778-6a5b4c3d2e1f\",\n    \"DocumentName\": \"AWS-RunPatchBaseline\",\n    \"TargetCount\": 24,\n    \"Status\": \"Pending\"\n  }\n}",
+      "explanation": "A scan started on 24 instances.",
+      "why": "Scan and install are separate operations. Scanning is safe any time and feeds compliance reports; installs happen in maintenance windows."
+    },
+    {
+      "prompt": "Install on web-prod in controlled batches: at most 10% of instances at a time, stopping after 1 error.",
+      "expected_commands": ["aws ssm send-command --document-name AWS-RunPatchBaseline --targets Key=tag:PatchGroup,Values=web-prod --parameters Operation=Install --max-concurrency 10% --max-errors 1"],
+      "fake_output": "{\n  \"Command\": {\n    \"CommandId\": \"8a7b6c5d-4e3f-4a2b-9c1d-0e9f8a7b6c5d\",\n    \"MaxConcurrency\": \"10%\",\n    \"MaxErrors\": \"1\",\n    \"TargetCount\": 24\n  }\n}",
+      "explanation": "Patching runs about 3 instances at a time and halts at the first failure.",
+      "why": "--max-concurrency and --max-errors are SSM's equivalents of Ansible's serial and max_fail_percentage (servers-tutorial-003). Without them, all 24 instances patch and reboot at once. For zero-downtime patching of an Auto Scaling group, prefer replacing instances from a patched AMI (an instance refresh) over patching in place."
+    },
+    {
+      "prompt": "Check results per instance for command 8a7b6c5d-4e3f-4a2b-9c1d-0e9f8a7b6c5d.",
+      "expected_commands": ["aws ssm list-command-invocations --command-id 8a7b6c5d-4e3f-4a2b-9c1d-0e9f8a7b6c5d --details"],
+      "fake_output": "InstanceId            Status     \ni-0a1b2c3d4e5f67890   Success\ni-0b2c3d4e5f6789012   Success\ni-0c3d4e5f678901234   Failed    (Error: yum lock held by another process)\n(21 instances: not started, because max-errors 1 was reached)",
+      "explanation": "One failure stopped the rollout; 21 instances untouched.",
+      "why": "A package-manager lock usually means another update (for example dnf-automatic) was running at the same moment. Don't run two patching mechanisms on the same fleet, because they collide. Fix the cause, then resume."
+    }
+  ]
+}

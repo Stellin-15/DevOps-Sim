@@ -1,0 +1,53 @@
+{
+  "id": "servers-tutorial-007",
+  "type": "tutorial",
+  "category": "servers",
+  "title": "Kernels, /boot, Live Patching, and Planned Reboots",
+  "difficulty": "intermediate",
+  "tags": ["kernel", "reboot", "livepatch", "patching"],
+  "intro": "Kernel updates are the patches that need reboots, and reboots are where fleets get hurt. Know which kernel is running, keep /boot from filling up, use live patching to buy time, and reboot deliberately.",
+  "steps": [
+    {
+      "prompt": "Show the kernel that's actually running.",
+      "expected_commands": ["uname -r"],
+      "fake_output": "5.15.0-119-generic",
+      "explanation": "The running kernel is 5.15.0-119.",
+      "why": "The installed kernel and the running kernel differ until a reboot. Vulnerability scanners that check installed packages will call the host patched while it's still running the vulnerable kernel. Always check uname -r."
+    },
+    {
+      "prompt": "List installed kernel packages on this Ubuntu host.",
+      "expected_commands": ["dpkg -l 'linux-image-*' | grep ^ii", "dpkg -l linux-image-* | grep ^ii", "dpkg --list 'linux-image-*' | grep ^ii"],
+      "fake_output": "ii  linux-image-5.15.0-105-generic  5.15.0-105.115  amd64\nii  linux-image-5.15.0-112-generic  5.15.0-112.122  amd64\nii  linux-image-5.15.0-119-generic  5.15.0-119.129  amd64\nii  linux-image-5.15.0-122-generic  5.15.0-122.132  amd64\nii  linux-image-generic             5.15.0.122.122  amd64",
+      "explanation": "Four kernels installed; 122 is newest, 119 is running.",
+      "why": "Old kernels pile up in /boot, which is often a small separate partition. When it fills, the next kernel update fails halfway (servers-incident-004)."
+    },
+    {
+      "prompt": "Check free space on /boot.",
+      "expected_commands": ["df -h /boot"],
+      "fake_output": "Filesystem      Size  Used Avail Use% Mounted on\n/dev/sda2       488M  401M   51M  89% /boot",
+      "explanation": "89% full: one more kernel won't fit.",
+      "why": "Each kernel and its initramfs take roughly 80-120MB. Monitor /boot like any other filesystem; it's often left out of disk alerts."
+    },
+    {
+      "prompt": "Remove kernels (and other packages) that are no longer needed.",
+      "expected_commands": ["sudo apt autoremove --purge -y", "sudo apt autoremove --purge", "apt autoremove --purge -y"],
+      "fake_output": "The following packages will be REMOVED:\n  linux-image-5.15.0-105-generic* linux-modules-5.15.0-105-generic*\n  linux-image-5.15.0-112-generic* linux-modules-5.15.0-112-generic*\n0 upgraded, 0 newly installed, 4 to remove and 0 not upgraded.\nAfter this operation, 412 MB disk space will be freed.",
+      "explanation": "Old kernels removed; the running (119) and newest (122) stay.",
+      "why": "apt protects the running kernel and the newest one, so autoremove is safe here. Never remove the running kernel by hand. On RHEL, 'installonly_limit' in dnf.conf caps how many kernels are kept automatically."
+    },
+    {
+      "prompt": "This host is enrolled in Canonical Livepatch. Check whether the critical kernel fix is already applied live, without a reboot.",
+      "expected_commands": ["sudo canonical-livepatch status", "canonical-livepatch status", "sudo canonical-livepatch status --verbose"],
+      "fake_output": "last check: 12 minutes ago\nkernel: 5.15.0-119.129-generic\nserver check-in: succeeded\npatch state: ✓ all applicable livepatch modules inserted\npatch version: 112.1\ntier: updates (Free usage)\nfixes:\n  * CVE-2024-36971 (high)",
+      "explanation": "The high-severity CVE is patched in the running kernel.",
+      "why": "Live patching (Canonical Livepatch, RHEL kpatch) fixes critical kernel CVEs in memory. It buys time to schedule reboots properly; it doesn't replace them, because not every fix can be live-patched."
+    },
+    {
+      "prompt": "Schedule this host's reboot in 5 minutes with a message to logged-in users.",
+      "expected_commands": ["sudo shutdown -r +5 \"Rebooting for kernel update\"", "sudo shutdown -r +5 'Rebooting for kernel update'", "shutdown -r +5 \"Rebooting for kernel update\""],
+      "fake_output": "Reboot scheduled for Sun 2026-09-28 10:47:00 UTC, use 'shutdown -c' to cancel.\nBroadcast message from root@web-02: Rebooting for kernel update",
+      "explanation": "A reboot in 5 minutes; logged-in users are warned.",
+      "why": "A delayed reboot gives people a chance to save work and gives you a chance to cancel ('shutdown -c'). For a fleet, reboots belong in a rolling playbook: drain, reboot, verify, re-add (servers-tutorial-003)."
+    }
+  ]
+}

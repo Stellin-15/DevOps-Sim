@@ -1,0 +1,53 @@
+{
+  "id": "servers-tutorial-006",
+  "type": "tutorial",
+  "category": "servers",
+  "title": "Patching RHEL, Rocky, and Alma: Advisories, History, Undo",
+  "difficulty": "intermediate",
+  "tags": ["patching", "dnf", "rhel"],
+  "intro": "The Red Hat family has one feature Debian lacks: a transaction history you can undo. It also publishes structured security advisories (RHSA), so you can patch 'only security fixes' precisely.",
+  "steps": [
+    {
+      "prompt": "List the available security advisories for this host.",
+      "expected_commands": ["sudo dnf updateinfo list --security", "dnf updateinfo list --security", "dnf updateinfo list security"],
+      "fake_output": "RLSA-2026:4412 Important/Sec.  openssl-1:3.0.7-28.el9_4.x86_64\nRLSA-2026:4388 Moderate/Sec.   curl-7.76.1-29.el9_4.1.x86_64\nRLSA-2026:4351 Critical/Sec.   kernel-5.14.0-427.37.1.el9_4.x86_64",
+      "explanation": "Three advisories, one of them critical (the kernel).",
+      "why": "Advisories group fixes with a severity, so policies like 'critical within 72 hours, important within 30 days' can actually be measured. (RLSA is Rocky's name for RHSA; Alma uses ALSA.)"
+    },
+    {
+      "prompt": "Install only the security updates.",
+      "expected_commands": ["sudo dnf upgrade --security -y", "dnf upgrade --security -y", "sudo dnf update --security -y"],
+      "fake_output": "Upgrading:\n kernel      5.14.0-427.37.1.el9_4\n openssl     1:3.0.7-28.el9_4\n curl        7.76.1-29.el9_4.1\nTransaction Summary: Upgrade 3 Packages\nComplete!",
+      "explanation": "Security fixes applied; feature updates left alone.",
+      "why": "Security-only patching reduces risk on sensitive systems: fewer changes, fewer surprises. The trade-off is drift from the latest point release over time, so schedule full updates too, just less often."
+    },
+    {
+      "prompt": "See the history of dnf transactions on this host.",
+      "expected_commands": ["sudo dnf history", "dnf history", "sudo dnf history list"],
+      "fake_output": "ID | Command line               | Date and time    | Action(s) | Altered\n42 | upgrade --security -y      | 2026-09-28 09:14 | Upgrade   |    3\n41 | install nginx-1.24.0       | 2026-09-20 16:02 | Upgrade   |    2\n40 | upgrade -y                 | 2026-09-01 02:00 | Upgrade   |   57",
+      "explanation": "Transaction 42 is today's patch; 41 upgraded nginx last week.",
+      "why": "Every install, upgrade, and removal is recorded with its exact command. 'What changed on this box?' after an incident is answered here in seconds, the package-level equivalent of CloudTrail."
+    },
+    {
+      "prompt": "Transaction 41 (the nginx upgrade) turned out to break a module. Roll it back.",
+      "expected_commands": ["sudo dnf history undo 41 -y", "sudo dnf history undo 41", "dnf history undo 41 -y"],
+      "fake_output": "Downgrading:\n nginx        1:1.22.1-4.el9\n nginx-core   1:1.22.1-4.el9\nComplete!",
+      "explanation": "nginx is back to the previous version.",
+      "why": "An undo is only possible while the old package versions are still available in the repositories or cache. Keep enough repo history (or an internal mirror snapshot) for this to work. servers-incident-001 uses exactly this."
+    },
+    {
+      "prompt": "Stop nginx from being upgraded again until the module is fixed: lock its current version (dnf versionlock plugin).",
+      "expected_commands": ["sudo dnf versionlock add nginx", "dnf versionlock add nginx", "sudo dnf versionlock add nginx nginx-core"],
+      "fake_output": "Adding versionlock on: nginx-1:1.22.1-4.el9.*",
+      "explanation": "nginx is pinned to 1.22.1.",
+      "why": "The equivalent of 'apt-mark hold'. List locks with 'dnf versionlock list', and give each one an owner and expiry date in your tracking system, so it gets removed once the real fix ships."
+    },
+    {
+      "prompt": "Check whether the host needs a reboot after today's kernel update.",
+      "expected_commands": ["sudo needs-restarting -r", "needs-restarting -r", "sudo dnf needs-restarting -r"],
+      "fake_output": "Core libraries or services have been updated since boot-up:\n  * kernel\n  * openssl-libs\nReboot is required to fully utilize these updates.",
+      "explanation": "A reboot is needed for the new kernel.",
+      "why": "The exit code is 1 when a reboot is needed, which makes it easy to use in automation: patch the whole fleet, then reboot only the hosts that need it, in rolling batches (servers-tutorial-003)."
+    }
+  ]
+}

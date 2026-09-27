@@ -1,0 +1,43 @@
+{
+  "id": "servers-incident-006",
+  "type": "incident",
+  "category": "servers",
+  "title": "The disk died, and the backups don't restore",
+  "difficulty": "advanced",
+  "tags": ["backup", "disaster-recovery", "postgres", "restic"],
+  "intro": "db-02's data volume failed overnight, and the volume snapshot policy had been disabled by mistake months ago. 'No problem, we have nightly restic backups of /var/lib/postgresql.' You restore last night's backup to a new server, and postgres refuses to start.",
+  "steps": [
+    {
+      "prompt": "Check what the backup contains: list the files in the latest snapshot for host db-02, under /var/lib/postgresql.",
+      "expected_commands": ["restic ls latest --host db-02 /var/lib/postgresql", "restic -r $RESTIC_REPOSITORY ls latest --host db-02 /var/lib/postgresql"],
+      "fake_output": "/var/lib/postgresql/14/main/base/16384/2619\n/var/lib/postgresql/14/main/base/16384/2619_fsm\n/var/lib/postgresql/14/main/pg_wal/000000010000004A000000C1\n... (18,442 files)",
+      "hint": "restic ls <snapshot> [path]"
+    },
+    {
+      "prompt": "It's a copy of the live data directory. Read postgres's startup error on the restored server.",
+      "expected_commands": ["sudo journalctl -u postgresql -n 20", "journalctl -u postgresql -n 20", "sudo journalctl -u postgresql@14-main -n 20"],
+      "fake_output": "LOG:  database system was interrupted; last known up at 2026-09-28 01:59:12 UTC\nLOG:  invalid record length at 4A/C1D8E2A0: wanted 24, got 0\nPANIC:  could not locate a valid checkpoint record\npostgresql@14-main.service: Main process exited, code=dumped, status=6/ABRT",
+      "hint": "journalctl -u <service> shows why it failed."
+    },
+    {
+      "prompt": "The files were copied while postgres was writing to them, so data files and WAL come from different moments and there's no consistent checkpoint. Check whether any logical dumps exist in the repository instead: find files named *.dump in snapshots.",
+      "expected_commands": ["restic find '*.dump'", "restic find \"*.dump\"", "restic -r $RESTIC_REPOSITORY find '*.dump'"],
+      "fake_output": "Found matching entries in snapshot 3d2c1b0a from 2026-06-30 02:00:00\n/backup/pre-upgrade-db-02.dump\n(no newer matches)",
+      "hint": "restic find <pattern> searches all snapshots."
+    },
+    {
+      "prompt": "Only a June dump exists, taken before the version upgrade. Restore it to /tmp/restore so it can be loaded, then recover what you can.",
+      "expected_commands": ["restic restore 3d2c1b0a --target /tmp/restore --include /backup/pre-upgrade-db-02.dump", "restic -r $RESTIC_REPOSITORY restore 3d2c1b0a --target /tmp/restore --include /backup/pre-upgrade-db-02.dump"],
+      "fake_output": "Summary: Restored 1 files/dirs (1.9 GiB) in 0:17",
+      "hint": "restic restore <id> --target --include"
+    },
+    {
+      "prompt": "Load it into a fresh database shop on the new server.",
+      "expected_commands": ["pg_restore -d shop /tmp/restore/backup/pre-upgrade-db-02.dump", "sudo -u postgres pg_restore -d shop /tmp/restore/backup/pre-upgrade-db-02.dump", "pg_restore --dbname=shop /tmp/restore/backup/pre-upgrade-db-02.dump"],
+      "fake_output": "(restore completed: data as of 2026-06-30. Three months of data must be rebuilt from other systems: payment provider exports, order emails, the analytics warehouse.)",
+      "hint": "pg_restore -d <db> <dump>"
+    }
+  ],
+  "resolution": "The backups ran green every night for a year, and they were never usable. Copying a running PostgreSQL data directory produces files captured at different moments, so there's no consistent checkpoint to recover from. The job 'succeeded' because copying files succeeded. Nobody had ever tried a restore, so the gap was only discovered during a disaster, when the last good logical dump was three months old. What 'backups' must mean: a database-consistent method (pg_dump, or pgBackRest/WAL-G for physical backups with point-in-time recovery, or managed-database snapshots), regular automated restore tests that start the database and run sanity queries (servers-tutorial-011), and monitoring on the restore test, not the backup job. Also alert when a snapshot policy is disabled. The questions worth asking every team: when did you last restore, and how long did it take?",
+  "real_commands_used": ["restic ls", "journalctl -u postgresql", "restic find", "restic restore --include", "pg_restore"]
+}

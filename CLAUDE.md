@@ -340,7 +340,8 @@ Current per-category content depth (tutorials / incidents):
 - azure: 10 / 6
 - gcp: 10 / 6
 - security: 10 / 6 (+ 2 hacked-server mysteries on the Linux sandbox)
-- **total: 154 tutorials, 81 incidents, 22 Writing Labs, 12 Mystery Incidents (4 linux, 2 docker, 4 aws, 2 security)**
+- servers: 11 / 6 (fleet ops: Ansible, patching, time, LVM, backups)
+- **total: 165 tutorials, 87 incidents, 22 Writing Labs, 12 Mystery Incidents (4 linux, 2 docker, 4 aws, 2 security)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with
@@ -547,8 +548,9 @@ See GAPS.md's final 'Overall' part for the reasoning. In priority order:
    2. ✓ azure and gcp; GAPS.md Parts 10–11 include a cross-cloud map;
    3. ✓ security, plus hacked-server problems in linux_sandbox (a
       cryptominer with cron persistence, an SSH backdoor);
-   4. (next) servers;
-   5. sre;
+   4. ✓ servers (fleet ops);
+   5. (next) sre, where capacity planning must be sre-tutorial-004,
+      because servers-tutorial-010 already refers to it;
    6. Writing Labs (IAM policy, Terraform VPC, security group, Ansible
       rolling patch, GCP firewall, markdown postmortem) and career paths
       008–011.

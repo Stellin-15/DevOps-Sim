@@ -1,0 +1,46 @@
+{
+  "id": "servers-tutorial-005",
+  "type": "tutorial",
+  "category": "servers",
+  "title": "Patching Debian and Ubuntu Servers",
+  "difficulty": "beginner",
+  "tags": ["patching", "apt", "ubuntu", "unattended-upgrades"],
+  "intro": "Unpatched servers are how most breaches start. Patching is simple in principle, but running services keep old library versions in memory, some upgrades need reboots, and automatic updates need guard rails. Here's the full Debian/Ubuntu cycle.",
+  "steps": [
+    {
+      "prompt": "Refresh the package lists and list what can be upgraded.",
+      "expected_commands": ["sudo apt update && apt list --upgradable", "apt update && apt list --upgradable"],
+      "fake_output": "Hit:1 http://archive.ubuntu.com/ubuntu jammy InRelease\nGet:2 http://security.ubuntu.com/ubuntu jammy-security InRelease [129 kB]\nlibssl3/jammy-security 3.0.2-0ubuntu1.18 amd64 [upgradable from: 3.0.2-0ubuntu1.15]\nopenssh-server/jammy-security 1:8.9p1-3ubuntu0.10 amd64 [upgradable from: 1:8.9p1-3ubuntu0.6]\nlinux-image-generic/jammy-security 5.15.0.122.122 amd64 [upgradable from: 5.15.0.119.119]",
+      "explanation": "Security updates for OpenSSL, OpenSSH, and the kernel.",
+      "why": "Packages from the '-security' pocket are the ones that can't wait. The kernel upgrade will need a reboot; the others need service restarts."
+    },
+    {
+      "prompt": "Check what unattended-upgrades would install tonight, without installing anything.",
+      "expected_commands": ["sudo unattended-upgrade --dry-run --debug", "unattended-upgrade --dry-run --debug", "sudo unattended-upgrade --dry-run -d"],
+      "fake_output": "Allowed origins are: o=Ubuntu,a=jammy-security, o=UbuntuESMApps,a=jammy-apps-security\nPackages that will be upgraded: libssl3 openssh-server linux-image-generic\nOption --dry-run given, *not* performing real actions",
+      "explanation": "Only security-origin packages are allowed automatically.",
+      "why": "unattended-upgrades is on by default on Ubuntu, for security updates only. Know what it's set to do, in particular its Automatic-Reboot settings, because an unplanned fleet-wide reboot is servers-incident-002."
+    },
+    {
+      "prompt": "Hold back the postgresql-14 package so no upgrade touches the database until the planned maintenance window.",
+      "expected_commands": ["sudo apt-mark hold postgresql-14", "apt-mark hold postgresql-14"],
+      "fake_output": "postgresql-14 set on hold.",
+      "explanation": "Neither apt upgrade nor unattended-upgrades will change postgresql-14.",
+      "why": "Holds protect components where an unplanned restart or version change is costly, like databases. Track holds and review them: a hold 'for this week' that's forgotten becomes an unpatched database two years later. 'apt-mark showhold' lists them."
+    },
+    {
+      "prompt": "Apply the upgrades.",
+      "expected_commands": ["sudo apt upgrade -y", "apt upgrade -y", "sudo apt-get upgrade -y"],
+      "fake_output": "The following packages have been kept back:\n  postgresql-14\nThe following packages will be upgraded:\n  libssl3 linux-image-generic openssh-server\n3 upgraded, 0 newly installed, 0 to remove and 1 not upgraded.",
+      "explanation": "Everything except the held package.",
+      "why": "'kept back' is expected for the held package. It also appears when an upgrade needs new dependencies, where 'apt full-upgrade' (or dist-upgrade) is needed; review what it adds or removes first."
+    },
+    {
+      "prompt": "The new OpenSSL is installed, but running services still use the old copy in memory. List which services need a restart, in list mode.",
+      "expected_commands": ["sudo needrestart -r l", "needrestart -r l"],
+      "fake_output": "Pending kernel upgrade!\nRunning kernel version: 5.15.0-119-generic\nExpected kernel version: 5.15.0-122-generic\nServices to be restarted:\n systemctl restart nginx.service\n systemctl restart ssh.service\n systemctl restart app.service",
+      "explanation": "Three services still use the old OpenSSL, and the kernel needs a reboot.",
+      "why": "A library patch doesn't protect anything until the processes using it restart. That's the patching step most often skipped, which leaves the 'patched' server still vulnerable. /var/run/reboot-required existing means a reboot is pending."
+    }
+  ]
+}

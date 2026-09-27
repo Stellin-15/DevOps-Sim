@@ -1,0 +1,46 @@
+{
+  "id": "servers-tutorial-002",
+  "type": "tutorial",
+  "category": "servers",
+  "title": "Running Playbooks Safely: Check, Diff, Limit, Tags",
+  "difficulty": "intermediate",
+  "tags": ["ansible", "playbooks", "safety"],
+  "intro": "A playbook is a repeatable, reviewable recipe for your fleet, and a mistake in it runs on every host at once. Ansible has a dry-run workflow built in. Using it every time is what separates safe automation from fast outages.",
+  "steps": [
+    {
+      "prompt": "Validate site.yml's syntax against inventory.ini without running anything.",
+      "expected_commands": ["ansible-playbook -i inventory.ini site.yml --syntax-check"],
+      "fake_output": "playbook: site.yml",
+      "explanation": "The YAML and playbook structure parse cleanly.",
+      "why": "It catches indentation and structure errors in seconds, and belongs in CI on every pull request, together with ansible-lint (servers-tutorial-004)."
+    },
+    {
+      "prompt": "See exactly which hosts site.yml would touch.",
+      "expected_commands": ["ansible-playbook -i inventory.ini site.yml --list-hosts"],
+      "fake_output": "playbook: site.yml\n  play #1 (web): Configure web servers\tTAGS: []\n    pattern: ['web']\n    hosts (3):\n      web-01\n      web-02\n      web-03",
+      "explanation": "Three web hosts.",
+      "why": "Before any change, confirm the blast radius. Surprise hosts in this list, like a production group pulled in by a nested inventory, are exactly how the servers-incident-005 accident happened."
+    },
+    {
+      "prompt": "Dry-run the playbook and show the file changes it would make.",
+      "expected_commands": ["ansible-playbook -i inventory.ini site.yml --check --diff", "ansible-playbook -i inventory.ini site.yml --diff --check"],
+      "fake_output": "TASK [nginx : Deploy nginx.conf] ***\n--- before: /etc/nginx/nginx.conf\n+++ after: /home/alice/.ansible/tmp/nginx.conf\n@@ -12,1 +12,1 @@\n-    worker_connections 1024;\n+    worker_connections 4096;\nchanged: [web-01]\nchanged: [web-02]\nok: [web-03]\n\nPLAY RECAP ***\nweb-01 : ok=6 changed=1 unreachable=0 failed=0\nweb-02 : ok=6 changed=1 unreachable=0 failed=0\nweb-03 : ok=6 changed=0 unreachable=0 failed=0",
+      "explanation": "One config line would change on web-01 and web-02; web-03 is already correct.",
+      "why": "--check predicts changes without making them, and --diff shows the actual content. This is Ansible's 'terraform plan'. Caveat: tasks that depend on an earlier task's real result (such as installing a package, then configuring it) can't be fully predicted in check mode."
+    },
+    {
+      "prompt": "Apply it to a single canary host first: web-01 only.",
+      "expected_commands": ["ansible-playbook -i inventory.ini site.yml --limit web-01", "ansible-playbook -i inventory.ini site.yml -l web-01"],
+      "fake_output": "RUNNING HANDLER [nginx : reload nginx] ***\nchanged: [web-01]\n\nPLAY RECAP ***\nweb-01 : ok=7 changed=2 unreachable=0 failed=0",
+      "explanation": "The config changed and a handler reloaded nginx, on one host only.",
+      "why": "--limit narrows any playbook to a subset. Canary first: if the new config breaks something, it breaks one server behind a load balancer, not all of them. Handlers run only when a task reports a change, so nginx isn't reloaded for nothing."
+    },
+    {
+      "prompt": "Later, re-apply only the tasks tagged 'nginx' across the web group.",
+      "expected_commands": ["ansible-playbook -i inventory.ini site.yml --tags nginx", "ansible-playbook -i inventory.ini site.yml -t nginx"],
+      "fake_output": "PLAY RECAP ***\nweb-01 : ok=3 changed=0 unreachable=0 failed=0\nweb-02 : ok=3 changed=1 unreachable=0 failed=0\nweb-03 : ok=3 changed=0 unreachable=0 failed=0",
+      "explanation": "Only the nginx tasks ran; web-02 was brought in line.",
+      "why": "Tags let one big site.yml serve many purposes (a full build, or just 'push the nginx config'). A rerun reporting changed=0 on most hosts is the idempotency payoff: running it again is safe, and anything that does change was drift."
+    }
+  ]
+}

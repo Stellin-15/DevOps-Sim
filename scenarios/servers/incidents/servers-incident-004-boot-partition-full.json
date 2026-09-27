@@ -1,0 +1,49 @@
+{
+  "id": "servers-incident-004",
+  "type": "incident",
+  "category": "servers",
+  "title": "apt is broken: the kernel update failed halfway",
+  "difficulty": "intermediate",
+  "tags": ["patching", "apt", "boot", "kernel"],
+  "intro": "Patching web-07 fails: every apt command now ends with 'E: Sub-process /usr/bin/dpkg returned an error code (1)'. The host is still running, but it can't install anything, including security fixes, and it may not boot cleanly into a kernel.",
+  "steps": [
+    {
+      "prompt": "Try to let dpkg finish its interrupted work, and read the error.",
+      "expected_commands": ["sudo dpkg --configure -a", "dpkg --configure -a"],
+      "fake_output": "Setting up linux-image-5.15.0-122-generic (5.15.0-122.132) ...\nupdate-initramfs: Generating /boot/initrd.img-5.15.0-122-generic\ngzip: stdout: No space left on device\nE: mkinitramfs failure gzip 1\ndpkg: error processing package linux-image-5.15.0-122-generic (--configure)",
+      "hint": "dpkg --configure -a resumes half-installed packages."
+    },
+    {
+      "prompt": "No space left while writing the initramfs to /boot. Check /boot.",
+      "expected_commands": ["df -h /boot"],
+      "fake_output": "Filesystem      Size  Used Avail Use% Mounted on\n/dev/sda2       488M  488M     0 100% /boot",
+      "hint": "df -h /boot"
+    },
+    {
+      "prompt": "Find out which kernel is running (you must not remove that one).",
+      "expected_commands": ["uname -r"],
+      "fake_output": "5.15.0-119-generic",
+      "hint": "uname -r"
+    },
+    {
+      "prompt": "List the kernel images present in /boot.",
+      "expected_commands": ["ls -lh /boot/vmlinuz-*", "ls -lh /boot", "ls /boot"],
+      "fake_output": "-rw------- 1 root root 11M /boot/vmlinuz-5.15.0-97-generic\n-rw------- 1 root root 11M /boot/vmlinuz-5.15.0-101-generic\n-rw------- 1 root root 11M /boot/vmlinuz-5.15.0-105-generic\n-rw------- 1 root root 11M /boot/vmlinuz-5.15.0-112-generic\n-rw------- 1 root root 11M /boot/vmlinuz-5.15.0-119-generic\n-rw------- 1 root root 11M /boot/vmlinuz-5.15.0-122-generic",
+      "hint": "Kernels are /boot/vmlinuz-<version>."
+    },
+    {
+      "prompt": "apt can't run autoremove while dpkg is broken. Purge the oldest kernel, 5.15.0-97 (packages linux-image-5.15.0-97-generic and linux-modules-5.15.0-97-generic), directly with dpkg to free space.",
+      "expected_commands": ["sudo dpkg --purge linux-image-5.15.0-97-generic linux-modules-5.15.0-97-generic", "sudo dpkg --purge linux-image-5.15.0-97-generic", "dpkg --purge linux-image-5.15.0-97-generic"],
+      "fake_output": "Removing linux-image-5.15.0-97-generic (5.15.0-97.107) ...\nPurging configuration files for linux-image-5.15.0-97-generic ...\n(/boot: 41M freed)",
+      "hint": "dpkg --purge works even when apt's dependency state is broken."
+    },
+    {
+      "prompt": "Now let apt finish the kernel installation and remove the rest of the old kernels.",
+      "expected_commands": ["sudo apt -f install && sudo apt autoremove --purge -y", "sudo apt --fix-broken install && sudo apt autoremove --purge -y", "apt -f install && apt autoremove --purge -y"],
+      "fake_output": "Setting up linux-image-5.15.0-122-generic (5.15.0-122.132) ...\nupdate-initramfs: Generating /boot/initrd.img-5.15.0-122-generic\nThe following packages will be REMOVED:\n  linux-image-5.15.0-101-generic* linux-image-5.15.0-105-generic* linux-image-5.15.0-112-generic*\n(/boot: 43% used)",
+      "hint": "apt -f install fixes broken installs; then autoremove."
+    }
+  ],
+  "resolution": "/boot was a small 488MB partition, and six kernels had accumulated because nothing ever removed old ones. The kernel update filled it while building the new initramfs, leaving dpkg half-configured, and apt refuses to do anything while dpkg is broken. The catch-22 is that the normal cleanup (apt autoremove) is exactly what's blocked, so you free space with dpkg directly (never the running kernel), let 'apt -f install' finish, and then clean up properly. Why it matters: a half-installed kernel with a missing initramfs can leave the host unbootable at its next reboot. Prevention: autoremove as part of every patch run (and 'installonly_limit' on RHEL), monitoring /boot like any other filesystem, and larger /boot partitions (1GB) in new images.",
+  "real_commands_used": ["dpkg --configure -a", "df -h /boot", "uname -r", "ls /boot/vmlinuz-*", "dpkg --purge", "apt -f install", "apt autoremove --purge"]
+}

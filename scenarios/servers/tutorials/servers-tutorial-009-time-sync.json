@@ -1,0 +1,39 @@
+{
+  "id": "servers-tutorial-009",
+  "type": "tutorial",
+  "category": "servers",
+  "title": "Time Synchronization: chrony and Why Clocks Matter",
+  "difficulty": "beginner",
+  "tags": ["ntp", "chrony", "time", "linux"],
+  "intro": "TLS certificates, Kerberos, JWT tokens, TOTP two-factor codes, distributed databases, and log correlation all assume clocks agree to within seconds, or less. A server whose clock drifts produces some of the strangest-looking failures in operations. chrony is the standard time daemon on modern Linux.",
+  "steps": [
+    {
+      "prompt": "Show the system's time settings and whether it's synchronized.",
+      "expected_commands": ["timedatectl", "timedatectl status"],
+      "fake_output": "               Local time: Sun 2026-09-28 10:52:11 UTC\n           Universal time: Sun 2026-09-28 10:52:11 UTC\n                Time zone: Etc/UTC (UTC, +0000)\nSystem clock synchronized: yes\n              NTP service: active",
+      "explanation": "UTC, and synchronized.",
+      "why": "Run servers in UTC. Local time zones make log correlation across regions painful and create daylight-saving bugs twice a year. 'System clock synchronized: no' should be an alert."
+    },
+    {
+      "prompt": "Show chrony's view of how far off the clock is.",
+      "expected_commands": ["chronyc tracking"],
+      "fake_output": "Reference ID    : A9FEA97B (169.254.169.123)\nStratum         : 4\nSystem time     : 0.000012345 seconds fast of NTP time\nLast offset     : +0.000003118 seconds\nRMS offset      : 0.000021004 seconds\nLeap status     : Normal",
+      "explanation": "12 microseconds fast, synced to 169.254.169.123, the AWS Time Sync Service.",
+      "why": "Cloud providers offer local, highly accurate time sources (AWS 169.254.169.123, Google metadata.google.internal, the Azure host). Use them instead of public pool servers: they're lower latency and don't depend on internet egress."
+    },
+    {
+      "prompt": "List the time sources chrony uses, with details.",
+      "expected_commands": ["chronyc sources -v", "chronyc sources"],
+      "fake_output": "MS Name/IP address         Stratum Poll Reach LastRx Last sample\n===============================================================================\n^* 169.254.169.123               3   4   377    12   +1us[  +3us] +/-  301us\n^- 0.pool.ntp.org                2   6   377    40  +812us[ +814us] +/-   24ms",
+      "explanation": "The AWS source is selected (*); the public pool is a backup.",
+      "why": "Reach 377 (octal) means the last 8 polls all succeeded. A source stuck at Reach 0 means it can't be reached: often UDP port 123 blocked by a firewall, the classic cause of drift that begins after a 'firewall hardening' change."
+    },
+    {
+      "prompt": "On a VM that was paused for hours and is now 4 minutes behind, correct the clock immediately instead of slewing slowly.",
+      "expected_commands": ["sudo chronyc makestep", "chronyc makestep"],
+      "fake_output": "200 OK",
+      "explanation": "The clock jumped to the correct time.",
+      "why": "Normally chrony slews (speeds up or slows the clock gradually) so time never goes backwards, which some applications can't handle. For a large offset, slewing would take hours, so makestep jumps it once. Configure 'makestep 1 3' so this happens automatically at boot."
+    }
+  ]
+}

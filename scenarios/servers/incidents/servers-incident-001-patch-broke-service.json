@@ -1,0 +1,49 @@
+{
+  "id": "servers-incident-001",
+  "type": "incident",
+  "category": "servers",
+  "title": "Last night's automatic patching broke image uploads",
+  "difficulty": "intermediate",
+  "tags": ["patching", "dnf", "rollback", "rhel"],
+  "intro": "Since 02:00, image uploads on the shop return HTTP 500 from app-01 (Rocky Linux 9). Nobody deployed anything, but dnf-automatic runs nightly at 02:00.",
+  "steps": [
+    {
+      "prompt": "Check what dnf changed recently on app-01: show the transaction history.",
+      "expected_commands": ["sudo dnf history", "dnf history", "sudo dnf history list"],
+      "fake_output": "ID | Command line          | Date and time    | Action(s) | Altered\n57 | (dnf-automatic)       | 2026-09-28 02:00 | Upgrade   |   14\n56 | install php-gd        | 2026-08-11 15:20 | Install   |    1",
+      "hint": "dnf history lists every transaction."
+    },
+    {
+      "prompt": "Show what transaction 57 upgraded.",
+      "expected_commands": ["sudo dnf history info 57", "dnf history info 57"],
+      "fake_output": "Transaction ID : 57\nBegin time     : Sun 28 Sep 2026 02:00:14\nPackages Altered:\n    Upgrade  ImageMagick-libs-7.1.1.38-1.el9.x86_64 @epel\n    Upgraded ImageMagick-libs-6.9.13.10-1.el9.x86_64 @@System\n    Upgrade  openssl-libs-1:3.0.7-28.el9_4.x86_64 @baseos\n    ...",
+      "hint": "dnf history info <id>"
+    },
+    {
+      "prompt": "ImageMagick jumped a major version, from 6 to 7, from EPEL. Confirm in the app log that it's the cause: grep the last errors in /var/log/app/error.log.",
+      "expected_commands": ["tail -n 20 /var/log/app/error.log | grep -i error", "grep -i error /var/log/app/error.log | tail -5", "tail /var/log/app/error.log"],
+      "fake_output": "2026-09-28T02:04:11 ERROR upload: Imagick::readImageBlob(): no decode delegate for this image format `JPEG' @ error/constitute.c/ReadImage/741\n2026-09-28T02:05:40 ERROR upload: PHP Warning: PHP Startup: Unable to load dynamic library 'imagick.so' (libMagickWand-6.Q16.so.7: cannot open shared object file)",
+      "hint": "Look at the error log around 02:00."
+    },
+    {
+      "prompt": "The PHP extension was built against ImageMagick 6. Roll back transaction 57.",
+      "expected_commands": ["sudo dnf history undo 57 -y", "sudo dnf history undo 57", "dnf history undo 57 -y"],
+      "fake_output": "Downgrading:\n ImageMagick-libs   6.9.13.10-1.el9\n openssl-libs       1:3.0.7-27.el9\n ...\nComplete!",
+      "hint": "dnf history undo <id>"
+    },
+    {
+      "prompt": "The undo also reverted the OpenSSL security fix. Re-apply the security updates now, and lock ImageMagick at version 6 so it can't jump again.",
+      "expected_commands": ["sudo dnf versionlock add ImageMagick-libs && sudo dnf upgrade --security -y", "dnf versionlock add ImageMagick-libs && dnf upgrade --security -y"],
+      "fake_output": "Adding versionlock on: ImageMagick-libs-0:6.9.13.10-1.el9.*\nUpgrading:\n openssl-libs  1:3.0.7-28.el9_4\nComplete!",
+      "hint": "Lock first, then run the security-only upgrade."
+    },
+    {
+      "prompt": "Restart php-fpm so it loads the working library again.",
+      "expected_commands": ["sudo systemctl restart php-fpm", "systemctl restart php-fpm"],
+      "fake_output": "(no output: php-fpm restarted; uploads work again)",
+      "hint": "systemctl restart <service>"
+    }
+  ],
+  "resolution": "Automatic patching was set to install everything, including a major-version jump from a third-party repository (EPEL), with no staging step. ImageMagick 7 dropped the library the PHP imagick extension was linked against, so uploads broke at 02:00 with nobody watching. 'dnf history' made it a five-minute diagnosis, and 'history undo' a one-command rollback. But undo reverts a whole transaction, including the security fix that came with it, so the security updates had to be re-applied under a version lock. The better setup: automatic updates for security fixes only (dnf-automatic upgrade_type = security); major and third-party updates through a pipeline that patches staging first; and a smoke test after patching (upload an image), so failures show up at 02:05, not when customers complain.",
+  "real_commands_used": ["dnf history", "dnf history info", "grep error log", "dnf history undo", "dnf versionlock add", "dnf upgrade --security", "systemctl restart"]
+}

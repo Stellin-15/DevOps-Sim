@@ -1,0 +1,46 @@
+{
+  "id": "servers-tutorial-010",
+  "type": "tutorial",
+  "category": "servers",
+  "title": "Growing a Disk Without Downtime: Cloud Volume, Partition, LVM, Filesystem",
+  "difficulty": "intermediate",
+  "tags": ["lvm", "disk", "storage", "linux"],
+  "intro": "The database volume is 95% full. In the cloud you can grow the disk in seconds, but the operating system doesn't use the new space until you grow each layer: partition, LVM physical volume, logical volume, filesystem. All of it can be done online. This host's 100GB volume was just resized to 200GB in the cloud console.",
+  "steps": [
+    {
+      "prompt": "Look at the block device layers.",
+      "expected_commands": ["lsblk"],
+      "fake_output": "NAME                MAJ:MIN RM  SIZE RO TYPE MOUNTPOINTS\nnvme1n1             259:4    0  200G  0 disk\n└─nvme1n1p1         259:5    0  100G  0 part\n  └─vg_data-lv_pg   253:0    0  100G  0 lvm  /var/lib/postgresql",
+      "explanation": "The disk is 200G, but the partition and the logical volume are still 100G.",
+      "why": "Each layer must be grown, bottom up: disk, partition, PV, LV, filesystem. Skip one and 'df' stays unchanged, a very common confusion after resizing a cloud volume."
+    },
+    {
+      "prompt": "Grow partition 1 of /dev/nvme1n1 to fill the disk.",
+      "expected_commands": ["sudo growpart /dev/nvme1n1 1", "growpart /dev/nvme1n1 1"],
+      "fake_output": "CHANGED: partition=1 start=2048 old: size=209713119 end=209715167 new: size=419428319 end=419430367",
+      "explanation": "The partition now spans 200G.",
+      "why": "growpart (from cloud-utils) edits the partition table safely while it's in use. Note the space between device and partition number: 'growpart /dev/nvme1n1 1', not 'nvme1n1p1'."
+    },
+    {
+      "prompt": "Tell LVM the physical volume /dev/nvme1n1p1 got bigger.",
+      "expected_commands": ["sudo pvresize /dev/nvme1n1p1", "pvresize /dev/nvme1n1p1"],
+      "fake_output": "  Physical volume \"/dev/nvme1n1p1\" changed\n  1 physical volume(s) resized or updated / 0 physical volume(s) not resized",
+      "explanation": "The volume group vg_data now has 100G free.",
+      "why": "LVM's value is exactly this flexibility: logical volumes can grow, span several disks, or be snapshotted, independently of physical partitions. 'vgs' now shows the free space."
+    },
+    {
+      "prompt": "Grow the logical volume /dev/vg_data/lv_pg into all free space, resizing its filesystem in the same step.",
+      "expected_commands": ["sudo lvextend -r -l +100%FREE /dev/vg_data/lv_pg", "lvextend -r -l +100%FREE /dev/vg_data/lv_pg", "sudo lvextend -l +100%FREE -r /dev/vg_data/lv_pg"],
+      "fake_output": "  Size of logical volume vg_data/lv_pg changed from 100.00 GiB to 200.00 GiB.\n  Logical volume vg_data/lv_pg successfully resized.\nmeta-data=/dev/mapper/vg_data-lv_pg isize=512 agcount=4, agsize=6553600 blks\ndata blocks changed from 26214400 to 52428800",
+      "explanation": "The LV and its XFS filesystem are both 200G now.",
+      "why": "-r (--resizefs) runs the right filesystem tool for you: xfs_growfs for XFS, resize2fs for ext4. Without it you'd have to run that separately. XFS can only grow, never shrink, so don't over-allocate expecting to take space back."
+    },
+    {
+      "prompt": "Confirm the filesystem sees the new size.",
+      "expected_commands": ["df -h /var/lib/postgresql", "df -h"],
+      "fake_output": "Filesystem                 Size  Used Avail Use% Mounted on\n/dev/mapper/vg_data-lv_pg  200G   95G  105G  48% /var/lib/postgresql",
+      "explanation": "48% used, and postgres never stopped.",
+      "why": "Always verify at the top layer, because df is what the application sees. Then fix the real problem: alert at 80% with a growth forecast (predict_linear, sre-tutorial-004), not at 95%."
+    }
+  ]
+}

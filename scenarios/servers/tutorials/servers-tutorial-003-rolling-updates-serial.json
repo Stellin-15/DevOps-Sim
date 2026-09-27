@@ -1,0 +1,39 @@
+{
+  "id": "servers-tutorial-003",
+  "type": "tutorial",
+  "category": "servers",
+  "title": "Rolling Changes Across a Fleet: serial and Failure Limits",
+  "difficulty": "intermediate",
+  "tags": ["ansible", "rolling-update", "patching"],
+  "intro": "By default Ansible runs each task on every host in parallel, which is great for speed and catastrophic for a change that needs a restart. Rolling updates change a few hosts at a time and stop automatically when too many fail. The playbook patch.yml here uses 'serial' and 'max_fail_percentage'.",
+  "steps": [
+    {
+      "prompt": "Look at the play header in patch.yml, which controls batching.",
+      "expected_commands": ["head -12 patch.yml", "cat patch.yml", "head patch.yml"],
+      "fake_output": "- name: Patch web servers\n  hosts: web\n  become: true\n  serial: \"25%\"\n  max_fail_percentage: 0\n  pre_tasks:\n    - name: Take host out of the load balancer\n      ansible.builtin.command: /usr/local/bin/lb-drain {{ inventory_hostname }}\n  tasks:\n    - ansible.builtin.apt: {upgrade: dist, update_cache: true}\n    - ansible.builtin.reboot: {reboot_timeout: 600}",
+      "explanation": "25% of hosts per batch, and stop the whole run if any host in a batch fails.",
+      "why": "serial turns one big parallel run into sequential batches; the whole play (drain, patch, reboot, verify) completes on each batch before the next starts. max_fail_percentage: 0 means one failure stops everything, so a bad patch hits 25% of the fleet at most, never 100%."
+    },
+    {
+      "prompt": "Run patch.yml against the 8 web hosts in inventory.ini.",
+      "expected_commands": ["ansible-playbook -i inventory.ini patch.yml"],
+      "fake_output": "PLAY [Patch web servers] ***** (batch 1/4: web-01, web-02)\n...\nTASK [ansible.builtin.reboot] ***\nchanged: [web-01]\nchanged: [web-02]\nTASK [Verify health endpoint] ***\nok: [web-01]\nok: [web-02]\nPLAY [Patch web servers] ***** (batch 2/4: web-03, web-04)\n...\nTASK [Verify health endpoint] ***\nfatal: [web-04]: FAILED! => {\"status\": 502}\n\nNO MORE HOSTS LEFT *****\nPLAY RECAP ***\nweb-01 : ok=6 changed=3 failed=0\nweb-02 : ok=6 changed=3 failed=0\nweb-03 : ok=6 changed=3 failed=0\nweb-04 : ok=5 changed=3 failed=1",
+      "explanation": "Batch 2 failed a health check on web-04, and Ansible stopped: web-05 to web-08 were never touched.",
+      "why": "This is the design working. The fleet is 3 hosts patched and healthy, 1 broken (and out of the load balancer), and 4 untouched. Without serial, all 8 would have rebooted into the same failure at once."
+    },
+    {
+      "prompt": "Investigate web-04 only: check nginx's status with an ad-hoc command.",
+      "expected_commands": ["ansible web-04 -i inventory.ini -b -m command -a \"systemctl status nginx\"", "ansible web-04 -i inventory.ini -b -m command -a 'systemctl status nginx'", "ansible web-04 -i inventory.ini -b -m shell -a \"systemctl status nginx\""],
+      "fake_output": "web-04 | FAILED | rc=3 >>\n● nginx.service - A high performance web server\n     Active: failed (Result: exit-code)\n  nginx[912]: nginx: [emerg] unknown directive \"ssl_reject_handshake\" in /etc/nginx/sites-enabled/legacy:14",
+      "explanation": "web-04 has a leftover 'legacy' site config that the new nginx rejects.",
+      "why": "web-04 differs from its siblings: one extra config file. Rolling updates don't prevent drift, but they stop drift from turning into a fleet-wide outage. Fix the drift (remove the file through Ansible, not by hand), then rerun."
+    },
+    {
+      "prompt": "After fixing it, resume from web-04 onwards: rerun patch.yml limited to web-04 through web-08 (the pattern web-0[4:8]).",
+      "expected_commands": ["ansible-playbook -i inventory.ini patch.yml --limit 'web-0[4:8]'", "ansible-playbook -i inventory.ini patch.yml --limit \"web-0[4:8]\"", "ansible-playbook -i inventory.ini patch.yml -l 'web-0[4:8]'"],
+      "fake_output": "PLAY RECAP ***\nweb-04 : ok=6 changed=2 failed=0\nweb-05 : ok=6 changed=3 failed=0\nweb-06 : ok=6 changed=3 failed=0\nweb-07 : ok=6 changed=3 failed=0\nweb-08 : ok=6 changed=3 failed=0",
+      "explanation": "The rest of the fleet is patched, still in batches.",
+      "why": "Ansible also writes a retry file (patch.retry) listing failed hosts when retry_files_enabled is on, usable as '--limit @patch.retry'. Because playbooks are idempotent, simply rerunning the whole thing is also safe: already-patched hosts report ok and move on."
+    }
+  ]
+}

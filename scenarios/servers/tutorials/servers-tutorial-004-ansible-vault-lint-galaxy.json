@@ -1,0 +1,46 @@
+{
+  "id": "servers-tutorial-004",
+  "type": "tutorial",
+  "category": "servers",
+  "title": "Ansible in a Team: Vault, Lint, and Galaxy Roles",
+  "difficulty": "intermediate",
+  "tags": ["ansible", "secrets", "linting", "roles"],
+  "intro": "Once several people maintain the playbooks, three things matter: secrets can't be committed in plain text, style and correctness must be checked automatically, and shared roles must be pinned versions, not whatever is newest today.",
+  "steps": [
+    {
+      "prompt": "Encrypt the variables file group_vars/prod/secrets.yml with Ansible Vault.",
+      "expected_commands": ["ansible-vault encrypt group_vars/prod/secrets.yml"],
+      "fake_output": "New Vault password: \nConfirm New Vault password: \nEncryption successful",
+      "explanation": "The file is now AES-256 encrypted and safe to commit.",
+      "why": "Vault keeps secrets in the same repo as the code that uses them, encrypted. The vault password itself must live somewhere safer (a password manager, or --vault-password-file pointing at a CI secret). Many teams instead fetch secrets at runtime from HashiCorp Vault or a cloud secrets manager, so nothing sensitive is in Git at all."
+    },
+    {
+      "prompt": "View the encrypted file's contents without decrypting it on disk.",
+      "expected_commands": ["ansible-vault view group_vars/prod/secrets.yml"],
+      "fake_output": "Vault password: \ndb_password: \"S3cure-but-rotated-quarterly\"\napi_token: \"tok_live_...\"",
+      "explanation": "Shown in a pager; the file on disk stays encrypted.",
+      "why": "'view' and 'edit' never leave a decrypted copy lying around. 'decrypt' does, and a decrypted secrets file accidentally committed is exactly the leak Vault exists to prevent."
+    },
+    {
+      "prompt": "Run the playbook, supplying the vault password from a file ~/.vault_pass.",
+      "expected_commands": ["ansible-playbook -i inventory.ini site.yml --vault-password-file ~/.vault_pass"],
+      "fake_output": "PLAY RECAP ***\nweb-01 : ok=12 changed=0 failed=0\nweb-02 : ok=12 changed=0 failed=0",
+      "explanation": "Ansible decrypted the variables in memory while it ran.",
+      "why": "In CI, the password file comes from the pipeline's secret store. Mark tasks that use secrets with 'no_log: true', or the decrypted values can appear in logs when a task fails."
+    },
+    {
+      "prompt": "Lint the playbook site.yml for bad practices before merging.",
+      "expected_commands": ["ansible-lint site.yml"],
+      "fake_output": "no-changed-when: Commands should not change things if nothing needs doing.\nroles/app/tasks/main.yml:14 Task/Handler: Run migrations\n\nfqcn[action-core]: Use FQCN for builtin module actions (shell).\nroles/app/tasks/main.yml:22\n\nrisky-file-permissions: File permissions unset or incorrect.\nroles/app/tasks/main.yml:30\n\nFailed: 3 failure(s), 0 warning(s) on 41 files.",
+      "explanation": "Three findings: a command with no changed_when, a missing fully-qualified module name, and a file created without explicit permissions.",
+      "why": "ansible-lint catches things that run fine but are wrong: non-idempotent commands (always 'changed', which breaks --check), files with default permissions, and deprecated syntax. Run it in CI next to --syntax-check."
+    },
+    {
+      "prompt": "Install the pinned roles and collections listed in requirements.yml.",
+      "expected_commands": ["ansible-galaxy install -r requirements.yml", "ansible-galaxy collection install -r requirements.yml"],
+      "fake_output": "Starting galaxy role install process\n- geerlingguy.docker (7.4.1) was installed successfully\nStarting galaxy collection install process\n- community.general:9.4.0 was installed successfully",
+      "explanation": "Exact, pinned versions of shared roles and collections.",
+      "why": "Pin versions in requirements.yml exactly as you would pin Terraform providers or Python packages. An unpinned role changes under you, and the playbook that worked yesterday breaks today with no change in your repo."
+    }
+  ]
+}

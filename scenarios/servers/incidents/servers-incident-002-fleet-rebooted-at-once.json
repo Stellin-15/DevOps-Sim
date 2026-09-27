@@ -1,0 +1,43 @@
+{
+  "id": "servers-incident-002",
+  "type": "incident",
+  "category": "servers",
+  "title": "The whole web fleet rebooted at 04:00, all at once",
+  "difficulty": "intermediate",
+  "tags": ["patching", "unattended-upgrades", "reboot", "availability"],
+  "intro": "For about 3 minutes at 04:00 last night the site was completely down: all 12 web servers rebooted simultaneously. They came back by themselves. The reliability team wants to know why, and to make sure it never happens again.",
+  "steps": [
+    {
+      "prompt": "Confirm the reboot times across the web group: ask every web host for its last reboot record, with Ansible.",
+      "expected_commands": ["ansible web -i inventory.ini -m command -a \"last reboot -n 1\"", "ansible web -i inventory.ini -m shell -a \"last reboot | head -1\"", "ansible web -i inventory.ini -m command -a 'last reboot -n 1'"],
+      "fake_output": "web-01 | CHANGED | rc=0 >>\nreboot   system boot  5.15.0-122-generic Sun Sep 28 04:00   still running\nweb-02 | CHANGED | rc=0 >>\nreboot   system boot  5.15.0-122-generic Sun Sep 28 04:00   still running\n... (all 12 hosts: 04:00)",
+      "hint": "last reboot shows boot records."
+    },
+    {
+      "prompt": "All at 04:00, into a new kernel. Check the unattended-upgrades log on web-01.",
+      "expected_commands": ["ansible web-01 -i inventory.ini -b -m shell -a \"tail -5 /var/log/unattended-upgrades/unattended-upgrades.log\"", "ansible web-01 -i inventory.ini -b -m shell -a 'tail -5 /var/log/unattended-upgrades/unattended-upgrades.log'", "ansible web-01 -i inventory.ini -b -m command -a \"tail -5 /var/log/unattended-upgrades/unattended-upgrades.log\""],
+      "fake_output": "web-01 | CHANGED | rc=0 >>\n2026-09-28 03:12:40 INFO Packages that will be upgraded: linux-image-generic ...\n2026-09-28 03:19:02 INFO All upgrades installed\n2026-09-28 03:19:03 WARNING Found /var/run/reboot-required, rebooting at 04:00",
+      "hint": "unattended-upgrades logs under /var/log/unattended-upgrades/."
+    },
+    {
+      "prompt": "Find the reboot settings in the unattended-upgrades config on web-01.",
+      "expected_commands": ["ansible web-01 -i inventory.ini -m shell -a \"grep -i reboot /etc/apt/apt.conf.d/50unattended-upgrades\"", "ansible web-01 -i inventory.ini -m shell -a 'grep -i reboot /etc/apt/apt.conf.d/50unattended-upgrades'", "ansible web-01 -i inventory.ini -m command -a \"grep -i reboot /etc/apt/apt.conf.d/50unattended-upgrades\""],
+      "fake_output": "web-01 | CHANGED | rc=0 >>\nUnattended-Upgrade::Automatic-Reboot \"true\";\nUnattended-Upgrade::Automatic-Reboot-Time \"04:00\";",
+      "hint": "Search for 'Reboot' in 50unattended-upgrades."
+    },
+    {
+      "prompt": "Every host had the same template, so every host rebooted at the same minute. Turn automatic reboots off across the web group with the lineinfile module (set the Automatic-Reboot line to \"false\").",
+      "expected_commands": ["ansible web -i inventory.ini -b -m lineinfile -a \"path=/etc/apt/apt.conf.d/50unattended-upgrades regexp='^Unattended-Upgrade::Automatic-Reboot ' line='Unattended-Upgrade::Automatic-Reboot \\\"false\\\";'\""],
+      "fake_output": "web-01 | CHANGED => {\"changed\": true, \"msg\": \"line replaced\"}\n... (12 hosts changed)",
+      "hint": "lineinfile with regexp and line replaces a single line."
+    },
+    {
+      "prompt": "Reboots now happen through the rolling playbook, which only reboots hosts that need it, 25% at a time. Dry-run it on the web group with check and diff.",
+      "expected_commands": ["ansible-playbook -i inventory.ini reboot-if-needed.yml --check --diff", "ansible-playbook -i inventory.ini reboot-if-needed.yml --diff --check"],
+      "fake_output": "PLAY [Rolling reboot where required] ***** (serial: 25%)\nTASK [Check /var/run/reboot-required] ***\nok: [web-01] ...\nTASK [ansible.builtin.reboot] ***\nskipping: [web-01] ... (check mode)\nPLAY RECAP ***\n(12 hosts, 3 batches)",
+      "hint": "--check --diff for a dry run."
+    }
+  ],
+  "resolution": "Every server was built from the same image, with Automatic-Reboot set to \"true\" at a fixed time, 04:00. A kernel update on all 12 hosts therefore meant 12 simultaneous reboots: a self-inflicted full outage, even though every single host did exactly what it was configured to do. Correlated failure is the real enemy of availability; redundancy only helps if the copies don't fail together. Fixes: let unattended-upgrades install security updates but never reboot on its own, and handle reboots through a rolling process that drains each host, checks it's healthy, and limits concurrency (servers-tutorial-003). Where automatic reboots are acceptable, randomize them per host and ensure the load balancer can lose any one host. The general lesson applies to cron jobs, certificate renewals, and backups too: anything scheduled at the same minute across a fleet is a synchronized risk.",
+  "real_commands_used": ["ansible -m command 'last reboot'", "tail unattended-upgrades.log", "grep 50unattended-upgrades", "ansible -m lineinfile", "ansible-playbook --check --diff"]
+}

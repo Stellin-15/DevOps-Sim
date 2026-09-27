@@ -1,0 +1,53 @@
+{
+  "id": "servers-tutorial-011",
+  "type": "tutorial",
+  "category": "servers",
+  "title": "Backups You Can Actually Restore",
+  "difficulty": "intermediate",
+  "tags": ["backup", "restic", "postgres", "disaster-recovery"],
+  "intro": "Nobody needs backups; everybody needs restores. A backup is only real once it has been restored and checked. This tutorial uses restic (encrypted, deduplicated backups to S3 or any object store) plus a database-consistent dump, and ends with the step most teams skip: a test restore.",
+  "steps": [
+    {
+      "prompt": "Databases can't be backed up safely by copying their live data files. Dump the database 'shop' in PostgreSQL's custom format to /backup/shop.dump.",
+      "expected_commands": ["pg_dump -Fc shop > /backup/shop.dump", "pg_dump -Fc -f /backup/shop.dump shop", "sudo -u postgres pg_dump -Fc shop > /backup/shop.dump"],
+      "fake_output": "(no output: /backup/shop.dump written, 2.4GB)",
+      "explanation": "A consistent snapshot of the database, as of the moment the dump started.",
+      "why": "Copying /var/lib/postgresql while postgres runs produces files from different moments, which can fail to start or silently lose data on restore. pg_dump (or the database's own snapshot and backup tools) gives a consistent copy. Custom format (-Fc) is compressed and allows selective restores."
+    },
+    {
+      "prompt": "Back up /etc and /backup to the restic repository in $RESTIC_REPOSITORY.",
+      "expected_commands": ["restic backup /etc /backup", "restic -r $RESTIC_REPOSITORY backup /etc /backup"],
+      "fake_output": "Files:          14 new,  1203 changed, 18112 unmodified\nAdded to the repository: 412.117 MiB (398.020 MiB stored)\nprocessed 19329 files, 2.611 GiB in 0:41\nsnapshot 7f3c2a1b saved",
+      "explanation": "Only 412MiB of new data was uploaded, thanks to deduplication.",
+      "why": "restic encrypts client-side, deduplicates across snapshots, and writes to object storage. Keep backups in a different account or region from production, with object lock or versioning, so ransomware or a stolen admin credential can't delete production and its backups together."
+    },
+    {
+      "prompt": "List the snapshots in the repository.",
+      "expected_commands": ["restic snapshots", "restic -r $RESTIC_REPOSITORY snapshots"],
+      "fake_output": "ID        Time                 Host        Paths\n----------------------------------------------------\n1a2b3c4d  2026-09-26 02:00:04  db-01       /etc, /backup\n9e8f7a6b  2026-09-27 02:00:03  db-01       /etc, /backup\n7f3c2a1b  2026-09-28 10:58:51  db-01       /etc, /backup",
+      "explanation": "Nightly snapshots plus today's.",
+      "why": "Pair this with a retention policy ('restic forget --keep-daily 7 --keep-weekly 4 --prune'), or storage grows forever. The oldest snapshot you keep decides how far back you can recover, for example from corruption discovered two weeks late."
+    },
+    {
+      "prompt": "Verify the repository's integrity.",
+      "expected_commands": ["restic check", "restic -r $RESTIC_REPOSITORY check"],
+      "fake_output": "using temporary cache in /tmp/restic-check-cache-123\nload indexes\ncheck all packs\ncheck snapshots, trees and blobs\nno errors were found",
+      "explanation": "The repository's structure is intact.",
+      "why": "'check' validates the repository's structure; '--read-data' also reads back every byte, which is slower. Neither proves the backup contains what you need: only a restore does."
+    },
+    {
+      "prompt": "Do the restore test: restore the latest snapshot into /tmp/restore-test.",
+      "expected_commands": ["restic restore latest --target /tmp/restore-test", "restic -r $RESTIC_REPOSITORY restore latest --target /tmp/restore-test"],
+      "fake_output": "restoring <Snapshot 7f3c2a1b of [/etc /backup] at 2026-09-28 10:58:51> to /tmp/restore-test\nSummary: Restored 19329 files/dirs (2.611 GiB) in 0:38",
+      "explanation": "Files are back on disk.",
+      "why": "Restore to a scratch location, never over production, and time it: that duration is your real recovery time (RTO), which is often very different from what's written in the disaster-recovery plan."
+    },
+    {
+      "prompt": "Finally, prove the database dump is usable: restore /tmp/restore-test/backup/shop.dump into a scratch database shop_restore_test.",
+      "expected_commands": ["pg_restore -d shop_restore_test /tmp/restore-test/backup/shop.dump", "pg_restore --dbname=shop_restore_test /tmp/restore-test/backup/shop.dump", "sudo -u postgres pg_restore -d shop_restore_test /tmp/restore-test/backup/shop.dump"],
+      "fake_output": "(no output: restore completed)\n$ psql shop_restore_test -c 'SELECT count(*) FROM orders;'\n  count\n---------\n 1882461",
+      "explanation": "The restored database opens, and its row counts match expectations.",
+      "why": "This is the step that makes the backup real. Automate the whole restore test (restore, start, run sanity queries) weekly, and alert when it fails. Teams that don't only find out their backups are broken during the disaster (servers-incident-006)."
+    }
+  ]
+}

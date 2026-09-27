@@ -271,7 +271,8 @@ silently for weeks, and sshd StrictModes rejecting keys.
   (apt/dnf, targeted upgrades, `dnf provides`, ufw with source
   restrictions, and the real `nft list ruleset`).
 - SELinux/AppArmor (still missing).
-- LVM and resizing a filesystem on a grown cloud volume.
+- ~~LVM and resizing a filesystem on a grown cloud volume~~: **closed** by
+  servers-tutorial-010 (growpart, pvresize, `lvextend -r`, all online).
 - `tmux`/`screen` for surviving disconnects (mentioned, not practiced).
 
 ## Readiness verdict
@@ -808,7 +809,63 @@ It is not a security-engineer or penetration-testing curriculum.
 
 ---
 
-# Part 13 — Overall: will this make you proficient in DevOps?
+# Part 13 — Server Fleet Operations
+
+**Content:** 11 tutorials, 6 incidents.
+
+## Covered
+
+**Tutorials** (every section of `commands/servers.md`):
+- Ansible inventories and ad-hoc commands;
+- running playbooks safely (syntax check, list-hosts, check plus diff,
+  canary with --limit, tags);
+- rolling changes with `serial` and `max_fail_percentage`;
+- Ansible Vault, ansible-lint, and pinned Galaxy roles;
+- Debian/Ubuntu patching (security origins, holds, needrestart, reboot-required);
+- RHEL-family patching (advisories, security-only upgrades, `dnf history undo`,
+  versionlock, needs-restarting);
+- kernels and /boot, live patching, and planned reboots;
+- AWS SSM Patch Manager with concurrency and error limits;
+- time sync with chrony;
+- growing a disk online (growpart, pvresize, `lvextend -r`), which closes
+  the Linux LVM gap;
+- backups with restic, database-consistent dumps, and restore tests.
+
+**Incidents:**
+- automatic patching jumping a major version (undo, then re-apply security
+  fixes under a lock);
+- the whole fleet rebooting at the same minute;
+- clock drift from a dead NTP source breaking JWTs;
+- a full /boot breaking dpkg mid-kernel-install;
+- a playbook run against production through a default inventory (with a
+  table-level restore);
+- backups of a live data directory that never restored.
+
+## Still missing
+
+- Writing Ansible roles and playbooks yourself. Planned as a Writing Lab (a
+  rolling patch playbook) in step 7 of the current expansion.
+- Other configuration-management tools (Puppet, Chef, Salt), and image
+  pipelines (Packer golden images; immutable infrastructure as the
+  alternative to patching in place, mentioned in debriefs).
+- Windows Server fleets (WSUS, Group Policy), and hardware (RAID, IPMI/BMC,
+  firmware).
+- Point-in-time database recovery (pgBackRest, WAL-G) beyond logical dumps.
+
+## Readiness verdict
+
+This is the day-to-day work of an ops or infrastructure team:
+- patching safely and reversibly;
+- rebooting without correlated outages;
+- keeping clocks, disks, and kernels healthy;
+- having backups that are proven by restores.
+
+The biggest remaining step is writing your own Ansible roles against a few
+real VMs.
+
+---
+
+# Part 14 — Overall: will this make you proficient in DevOps?
 
 ## By the numbers
 
@@ -826,7 +883,8 @@ It is not a security-engineer or penetration-testing curriculum.
 | Azure | 10 | 6 | |
 | Google Cloud | 10 | 6 | |
 | Security | 10 | 6 | 2 hacked-server Mysteries (Linux sandbox) |
-| **Total** | **154** | **81** | 22 Writing Labs, 7 career paths, 4 sandboxes, 12 Mystery Incidents, Exam Mode |
+| Server Fleet Ops | 11 | 6 | |
+| **Total** | **165** | **87** | 22 Writing Labs, 7 career paths, 4 sandboxes, 12 Mystery Incidents, Exam Mode |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -838,7 +896,7 @@ command beats the alternatives — not just what it does.
 will know the commands, the failure modes, and — most importantly — the
 debugging method** (check the layer before guessing the fix; refused vs
 timeout; verify after every change; revoke before cleaning up; revert
-don't force-push). The 81 incidents are modeled on the kinds of problems
+don't force-push). The 87 incidents are modeled on the kinds of problems
 that genuinely trip up working engineers, and working through them
 builds judgment that command references alone never will.
 

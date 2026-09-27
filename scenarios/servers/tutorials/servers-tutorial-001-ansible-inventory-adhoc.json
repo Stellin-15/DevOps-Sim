@@ -1,0 +1,46 @@
+{
+  "id": "servers-tutorial-001",
+  "type": "tutorial",
+  "category": "servers",
+  "title": "Ansible Basics: Inventories and Ad-Hoc Commands",
+  "difficulty": "beginner",
+  "tags": ["ansible", "fleet", "automation"],
+  "intro": "With one server you SSH in. With fifty you need a tool that does the same thing everywhere, repeatably. Ansible is the most widely used: agentless (it just uses SSH), with an inventory listing your hosts in groups. Ad-hoc commands are its 'run this everywhere' mode.",
+  "steps": [
+    {
+      "prompt": "Show the inventory inventory.ini as a tree of groups and hosts.",
+      "expected_commands": ["ansible-inventory -i inventory.ini --graph"],
+      "fake_output": "@all:\n  |--@ungrouped:\n  |--@web:\n  |  |--web-01\n  |  |--web-02\n  |  |--web-03\n  |--@db:\n  |  |--db-01\n  |--@prod:\n  |  |--@web:\n  |  |--@db:",
+      "explanation": "Three web servers and one database, all inside the prod group.",
+      "why": "Always look at the inventory before running anything: the group you target decides how many machines you touch. Groups can nest (prod contains web and db), which is powerful and also how people accidentally hit more hosts than they meant to."
+    },
+    {
+      "prompt": "Check Ansible can reach and log in to every host (the ping module, not ICMP ping).",
+      "expected_commands": ["ansible all -i inventory.ini -m ping"],
+      "fake_output": "web-01 | SUCCESS => {\"changed\": false, \"ping\": \"pong\"}\nweb-02 | SUCCESS => {\"changed\": false, \"ping\": \"pong\"}\nweb-03 | UNREACHABLE! => {\"msg\": \"Failed to connect to the host via ssh: ssh: connect to host 10.0.1.33 port 22: Connection timed out\", \"unreachable\": true}\ndb-01 | SUCCESS => {\"changed\": false, \"ping\": \"pong\"}",
+      "explanation": "Three hosts are fine; web-03 is unreachable over SSH.",
+      "why": "The ping module checks the full path: SSH connection, login, and a working Python on the target. Run it first, so the real job doesn't fail halfway across the fleet because of one bad host."
+    },
+    {
+      "prompt": "Check disk usage of / on the web group only, using the shell module.",
+      "expected_commands": ["ansible web -i inventory.ini -m shell -a \"df -h / | tail -1\"", "ansible web -i inventory.ini -m shell -a 'df -h / | tail -1'"],
+      "fake_output": "web-01 | CHANGED | rc=0 >>\n/dev/nvme0n1p1   30G   12G   18G  40% /\nweb-02 | CHANGED | rc=0 >>\n/dev/nvme0n1p1   30G   28G  2.0G  94% /\nweb-03 | UNREACHABLE! => ...",
+      "explanation": "web-02 is at 94%: it's the odd one out.",
+      "why": "The shell module supports pipes; the command module is safer (no shell interpretation) but doesn't. Comparing one command across many hosts is the fastest way to find the outlier. (Ad-hoc shell always reports CHANGED, because Ansible can't know whether a shell command changed anything.)"
+    },
+    {
+      "prompt": "Restart nginx on web-01 only, with privilege escalation (-b), using the service module.",
+      "expected_commands": ["ansible web-01 -i inventory.ini -b -m service -a \"name=nginx state=restarted\"", "ansible web-01 -i inventory.ini -b -m service -a 'name=nginx state=restarted'", "ansible all -i inventory.ini --limit web-01 -b -m service -a \"name=nginx state=restarted\""],
+      "fake_output": "web-01 | CHANGED => {\"changed\": true, \"name\": \"nginx\", \"state\": \"started\"}",
+      "explanation": "nginx restarted on one host.",
+      "why": "Modules (service, apt, copy, user...) are idempotent: 'state=started' does nothing if it's already running, and reports changed:false. That's the core of configuration management: describe the desired state, not steps. 'restarted' is the one deliberately non-idempotent state."
+    },
+    {
+      "prompt": "Gather facts about the distribution of all hosts, filtering the setup module's output.",
+      "expected_commands": ["ansible all -i inventory.ini -m setup -a \"filter=ansible_distribution*\"", "ansible all -i inventory.ini -m setup -a 'filter=ansible_distribution*'"],
+      "fake_output": "web-01 | SUCCESS => {\"ansible_facts\": {\"ansible_distribution\": \"Ubuntu\", \"ansible_distribution_version\": \"22.04\"}}\nweb-02 | SUCCESS => {\"ansible_facts\": {\"ansible_distribution\": \"Ubuntu\", \"ansible_distribution_version\": \"20.04\"}}\ndb-01 | SUCCESS => {\"ansible_facts\": {\"ansible_distribution\": \"Ubuntu\", \"ansible_distribution_version\": \"22.04\"}}",
+      "explanation": "web-02 is still on Ubuntu 20.04, which is out of standard support.",
+      "why": "Facts are what playbooks branch on (when: ansible_distribution == 'Ubuntu'), and a quick fleet inventory. 'Which servers are on an old OS?' should be a one-command answer. Drift like web-02 is the norm without configuration management."
+    }
+  ]
+}

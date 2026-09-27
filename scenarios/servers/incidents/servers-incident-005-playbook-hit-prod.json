@@ -1,0 +1,43 @@
+{
+  "id": "servers-incident-005",
+  "type": "incident",
+  "category": "servers",
+  "title": "A test playbook ran against production",
+  "difficulty": "advanced",
+  "tags": ["ansible", "inventory", "safety", "change-management"],
+  "intro": "A developer ran 'ansible-playbook reset-demo-data.yml' to reset the staging database. It printed 'changed' for db-01, the production database. The shop's product catalog is now the demo catalog. You need to know what happened, restore production, and stop this from recurring.",
+  "steps": [
+    {
+      "prompt": "Check which inventory Ansible uses when none is given on the command line: look at the ansible.cfg in the repo.",
+      "expected_commands": ["cat ansible.cfg", "grep -i inventory ansible.cfg"],
+      "fake_output": "[defaults]\ninventory = ./inventories/prod/hosts.ini\nremote_user = deploy\nhost_key_checking = True",
+      "hint": "ansible.cfg in the current directory sets defaults."
+    },
+    {
+      "prompt": "The default inventory is prod. Check which hosts reset-demo-data.yml targets.",
+      "expected_commands": ["ansible-playbook reset-demo-data.yml --list-hosts"],
+      "fake_output": "playbook: reset-demo-data.yml\n  play #1 (db): Reset demo data\tTAGS: []\n    pattern: ['db']\n    hosts (1):\n      db-01",
+      "hint": "--list-hosts shows the blast radius."
+    },
+    {
+      "prompt": "The play targets the group 'db', which exists in both inventories. Restore production: find the most recent snapshot of db-01 from before the incident, in the restic repository.",
+      "expected_commands": ["restic snapshots --host db-01", "restic -r $RESTIC_REPOSITORY snapshots --host db-01"],
+      "fake_output": "ID        Time                 Host   Paths\n-----------------------------------------------\n9e8f7a6b  2026-09-28 02:00:03  db-01  /etc, /backup\n5c4d3e2f  2026-09-28 10:00:02  db-01  /etc, /backup",
+      "hint": "restic snapshots --host <name>"
+    },
+    {
+      "prompt": "The 10:00 hourly snapshot predates the 10:41 incident. Restore just the database dump from snapshot 5c4d3e2f into /tmp/restore.",
+      "expected_commands": ["restic restore 5c4d3e2f --target /tmp/restore --include /backup/shop.dump", "restic -r $RESTIC_REPOSITORY restore 5c4d3e2f --target /tmp/restore --include /backup/shop.dump"],
+      "fake_output": "restoring <Snapshot 5c4d3e2f of [/etc /backup] at 2026-09-28 10:00:02> to /tmp/restore\nSummary: Restored 1 files/dirs (2.4 GiB) in 0:21",
+      "hint": "--include restores only matching paths."
+    },
+    {
+      "prompt": "Restore only the catalog tables (products and categories) from the dump into the shop database, leaving orders placed since 10:00 untouched.",
+      "expected_commands": ["pg_restore -d shop --clean -t products -t categories /tmp/restore/backup/shop.dump", "pg_restore --dbname=shop --clean -t products -t categories /tmp/restore/backup/shop.dump", "sudo -u postgres pg_restore -d shop --clean -t products -t categories /tmp/restore/backup/shop.dump"],
+      "fake_output": "(no output: products and categories restored as of 10:00)",
+      "hint": "pg_restore -t <table> restores selected tables; --clean drops them first."
+    }
+  ],
+  "resolution": "Nothing was 'wrong' with any single piece. The repo's ansible.cfg defaulted to the production inventory, both inventories had a group called 'db', the playbook had no guard, and the developer had production credentials. Ansible did exactly what it was told. Restoring only the affected tables from the 10:00 snapshot kept the orders placed since then; a full restore would have lost 41 minutes of real sales. That table-level restore was only possible because backups were custom-format dumps, taken hourly. Prevention, from strongest to weakest: (1) people shouldn't be able to reach production from a laptop at all; production runs go through CI with an approval; (2) no default inventory in ansible.cfg, so every run must name one explicitly; (3) destructive playbooks assert the environment ('assert: that: env == \"staging\"') and ask for confirmation (pause); (4) distinct group names or credentials per environment. Also write the blameless postmortem. The Writing Labs include one.",
+  "real_commands_used": ["cat ansible.cfg", "ansible-playbook --list-hosts", "restic snapshots --host", "restic restore --include", "pg_restore -t --clean"]
+}
