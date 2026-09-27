@@ -46,6 +46,11 @@ Don't duplicate content from those two files elsewhere — link to them.
 - **game.py** — entry point / main menu (Learn, Incidents, Sandbox, Quit).
   `exit`/`quit` work at every prompt (menu choice, scenario step, sandbox
   command) — see `engine.read_input` / `engine.QUIT_COMMANDS`.
+- **progress.py** — reads/writes `progress.json` (completed scenarios per
+  type, attempt counts per scenario id). `game.py` loads it once at
+  startup, passes it into `choose_from_list` to render `[x]`/attempt-count
+  markers, and calls `record_attempt`/`mark_completed`/`save_progress`
+  after every `run_scenario` call via the `play()` helper.
 
 ## Known environment quirk
 
@@ -60,8 +65,9 @@ not bare `input()`.
 
 - [x] v1 — single hardcoded scenario, playable end to end
 - [x] v2 — JSON loading from `/scenarios/`, menu, tutorial/incident split
-- [ ] v3 — `progress.json` tracking (completed scenarios, attempt counts),
-      shown in the menu — **not built yet, next up**
+- [x] v3 — `progress.json` tracking (completed scenarios, attempt counts),
+      shown in the menu (`progress.py` + `game.py`'s `play()`/
+      `choose_from_list()`)
 - [x] v4 — hint escalation (nudge → hint after 2 wrong → reveal after 4)
 - [x] v5 — sandbox/freeform mode (built ahead of order, at the user's
       request — includes random cluster generation and a keep/discard
@@ -70,6 +76,17 @@ not bare `input()`.
 
 Content: 6 tutorials, 5 incidents, all in `scenarios/`, all schema-valid
 per `tests/test_scenario_content.py`.
+
+**Extension beyond the original SPEC.md schema**: every tutorial step also
+carries an optional `why` field, shown after `explanation` on a correct
+answer (prefixed "Why this way:"). Where `explanation` covers what the
+command did, `why` specifically compares it against other valid ways to do
+the same thing (e.g. `kubectl run` vs `kubectl apply -f`, `describe` vs
+`-o yaml`) — added at the user's request so tutorials teach judgment, not
+just syntax. Enforced for all tutorials by
+`test_scenario_content.py::test_tutorial_steps_have_why_field`. Incidents
+don't require it (SPEC.md already lets incidents save reasoning for the
+final `resolution` debrief instead).
 
 ## Testing
 
@@ -105,10 +122,9 @@ something the generic checks don't cover.
 
 ## Likely next work
 
-1. v3 progress tracking.
-2. Expand Sandbox's command vocabulary using COMMANDS.md as the source
+1. Expand Sandbox's command vocabulary using COMMANDS.md as the source
    list (deployments, services, configmaps/secrets, nodes, events are the
-   natural next additions beyond pods).
-3. More scenario content, especially incidents, pulling `expected_commands`
+   natural next additions beyond pods) — this is next up.
+2. More scenario content, especially incidents, pulling `expected_commands`
    phrasing straight from COMMANDS.md.
-4. v6 scenario-scaffolding CLI, once hand-authoring JSON gets tedious.
+3. v6 scenario-scaffolding CLI, once hand-authoring JSON gets tedious.

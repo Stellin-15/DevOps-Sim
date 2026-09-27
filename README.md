@@ -39,7 +39,9 @@ using the nginx image"). Type the kubectl command you think does that.
 
 - **Correct** → you see the simulated output, then an explanation (for
   tutorials) or you move straight to the next investigative step
-  (incidents).
+  (incidents). Tutorials also show a "Why this way" note — not just what
+  the command did, but why that command/flag was the right pick over
+  other valid ways to do the same thing.
 - **Wrong** → a short nudge. Miss twice and a hint appears. Miss four times
   and the game just shows you the expected command — this is a learning
   tool, not a test, so there's no penalty for getting stuck.
@@ -73,11 +75,13 @@ game.py             entry point / main menu
 engine.py           generic scenario runner + fuzzy command matching
                      (no kubectl-specific logic — reusable for any topic)
 scenario_loader.py  loads scenario JSON from scenarios/
+progress.py         reads/writes progress.json (completion + attempt counts)
 sandbox.py          random cluster generator + free-form command handling
 scenarios/
   tutorials/*.json  guided, single-concept scenarios
   incidents/*.json  investigative, multi-step production-incident scenarios
 tests/               pytest suite (see Testing, below)
+progress.json         local player progress (gitignored) — created on first play
 sandbox_data/        local runtime state (gitignored) — active + saved
                       sandbox cluster sessions
 SPEC.md              original design spec: data model, matching rules,
@@ -113,12 +117,11 @@ loader, sandbox, or scenario content.
 ## Status / roadmap
 
 Built so far: hardcoded single scenario → JSON-driven scenarios with a
-menu → hint escalation → sandbox mode. 6 tutorials and 5 incidents
-included.
+menu → hint escalation → sandbox mode → progress tracking. 6 tutorials
+(each step explaining both what a command does and why it's the right
+pick over alternatives) and 5 incidents included.
 
 Not yet built:
-- Progress tracking (`progress.json`) — mark scenarios complete, show
-  attempt counts in the menu
 - A CLI scaffold for authoring new scenario JSON
 - Broader sandbox command support (deployments, services,
   configmaps/secrets, nodes, events — see COMMANDS.md)

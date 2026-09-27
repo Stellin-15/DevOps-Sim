@@ -11,25 +11,29 @@
       "prompt": "Create a deployment named 'web' using the nginx image with 3 replicas.",
       "expected_commands": ["kubectl create deployment web --image=nginx --replicas=3"],
       "fake_output": "deployment.apps/web created",
-      "explanation": "Under the hood this creates a Deployment, which creates a ReplicaSet, which creates 3 Pods."
+      "explanation": "Under the hood this creates a Deployment, which creates a ReplicaSet, which creates 3 Pods.",
+      "why": "You could also write a YAML manifest and 'kubectl apply -f deployment.yaml' — that's the production-standard way since it's version-controllable and repeatable, but 'create deployment' is faster for quick setups, demos, and this tutorial."
     },
     {
       "prompt": "Check the deployment's status.",
       "expected_commands": ["kubectl get deployments", "kubectl get deploy"],
       "fake_output": "NAME   READY   UP-TO-DATE   AVAILABLE   AGE\nweb    3/3     3            3           10s",
-      "explanation": "READY 3/3 means all 3 desired replicas are up and healthy."
+      "explanation": "READY 3/3 means all 3 desired replicas are up and healthy.",
+      "why": "'deploy' is just the short alias for 'deployments' — kubectl accepts both everywhere, so use whichever you can type faster."
     },
     {
       "prompt": "See the actual pods it created.",
       "expected_commands": ["kubectl get pods"],
       "fake_output": "web-7d8f9c6b5-abcde   1/1   Running   0   10s\nweb-7d8f9c6b5-fghij   1/1   Running   0   10s\nweb-7d8f9c6b5-klmno   1/1   Running   0   10s",
-      "explanation": "Notice the pod names include a hash — that's the ReplicaSet's identifier, auto-generated."
+      "explanation": "Notice the pod names include a hash — that's the ReplicaSet's identifier, auto-generated.",
+      "why": "You could filter to just this deployment's pods with 'kubectl get pods -l app=web', but on a small cluster like this plain 'get pods' is simpler and shows the same thing."
     },
     {
       "prompt": "Delete one of the pods on purpose and see what happens (try 'kubectl delete pod web-7d8f9c6b5-abcde').",
       "expected_commands": ["kubectl delete pod web-7d8f9c6b5-abcde"],
       "fake_output": "pod \"web-7d8f9c6b5-abcde\" deleted\n\n(a few seconds later)\nweb-7d8f9c6b5-pqrst   1/1   Running   0   2s",
-      "explanation": "This is the self-healing reconciliation loop in action — the Deployment noticed 2/3 pods and created a new one to get back to 3."
+      "explanation": "This is the self-healing reconciliation loop in action — the Deployment noticed 2/3 pods and created a new one to get back to 3.",
+      "why": "Deleting a pod directly (instead of 'kubectl scale' or 'kubectl rollout restart') is being used here purely to demonstrate self-healing — in real operations you'd rarely delete a managed pod on purpose like this."
     }
   ]
 }

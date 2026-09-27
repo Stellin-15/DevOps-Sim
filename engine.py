@@ -72,6 +72,8 @@ def run_step(step: dict, step_num: int, total_steps: int) -> None:
             print(f"\n{step['fake_output']}")
             if step.get("explanation"):
                 print(f"\n{step['explanation']}")
+            if step.get("why"):
+                print(f"\nWhy this way: {step['why']}")
             return
 
         if attempts == 2 and step.get("hint"):

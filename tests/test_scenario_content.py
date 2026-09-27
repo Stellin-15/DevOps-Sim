@@ -72,6 +72,16 @@ def test_every_expected_command_matches_itself(scenario):
             )
 
 
+@pytest.mark.parametrize("scenario", load_tutorials(), ids=_id)
+def test_tutorial_steps_have_why_field(scenario):
+    """Tutorials should explain not just what a command did, but why that
+    command/flag was chosen over other valid ways to do the same thing."""
+    for i, step in enumerate(scenario["steps"]):
+        assert step.get("why", "").strip(), (
+            f"{scenario['id']} step {i} is missing a 'why' explanation"
+        )
+
+
 @pytest.mark.parametrize("scenario", ALL_SCENARIOS, ids=_id)
 def test_incident_scenarios_have_resolution_and_real_commands(scenario):
     if scenario["type"] == "incident":

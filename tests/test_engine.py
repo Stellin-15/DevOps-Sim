@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from engine import is_close, matches, normalize
+from engine import is_close, matches, normalize, run_scenario
 
 
 class TestNormalize:
@@ -83,3 +83,34 @@ class TestIsClose:
         # for a non-kubectl command, proving there's no hardcoded k8s logic.
         assert matches("docker ps -a", ["docker ps -a", "docker ps --all"])
         assert is_close("docker ps", ["docker ps -a"])
+
+
+class TestRunScenario:
+    def _scenario(self, why=None):
+        step = {
+            "prompt": "Do the thing.",
+            "expected_commands": ["do thing"],
+            "fake_output": "thing done",
+            "explanation": "This is why it matters.",
+        }
+        if why:
+            step["why"] = why
+        return {"title": "Test Scenario", "intro": "intro text", "steps": [step]}
+
+    def test_why_field_is_shown_on_correct_answer(self, monkeypatch, capsys):
+        monkeypatch.setattr("builtins.input", lambda _: "do thing")
+        run_scenario(self._scenario(why="Because reasons."))
+        assert "Why this way: Because reasons." in capsys.readouterr().out
+
+    def test_missing_why_field_prints_nothing_extra(self, monkeypatch, capsys):
+        monkeypatch.setattr("builtins.input", lambda _: "do thing")
+        run_scenario(self._scenario(why=None))
+        assert "Why this way" not in capsys.readouterr().out
+
+    def test_quit_mid_scenario_returns_false(self, monkeypatch):
+        monkeypatch.setattr("builtins.input", lambda _: "exit")
+        assert run_scenario(self._scenario()) is False
+
+    def test_completing_all_steps_returns_true(self, monkeypatch):
+        monkeypatch.setattr("builtins.input", lambda _: "do thing")
+        assert run_scenario(self._scenario()) is True

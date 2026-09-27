@@ -12,25 +12,29 @@
       "expected_commands": ["kubectl run my-first-pod --image=nginx", "kubectl run my-first-pod --image nginx"],
       "fake_output": "pod/my-first-pod created",
       "explanation": "kubectl run creates a single pod directly — no Deployment, no self-healing. Good for quick tests, not production.",
+      "why": "kubectl run is for one-off pods. For anything long-lived you'd use 'kubectl create deployment' or 'kubectl apply -f' instead, since only a Deployment notices when a pod dies and replaces it.",
       "hint": "Syntax: kubectl run <name> --image=<image>"
     },
     {
       "prompt": "Now check that it's running.",
       "expected_commands": ["kubectl get pods", "kubectl get pod my-first-pod"],
       "fake_output": "NAME            READY   STATUS    RESTARTS   AGE\nmy-first-pod    1/1     Running   0          5s",
-      "explanation": "kubectl get pods lists everything in the current namespace."
+      "explanation": "kubectl get pods lists everything in the current namespace.",
+      "why": "'kubectl get pod my-first-pod' (singular, named) works just as well and is more precise once you know the name — 'get pods' (plural) is better when you're scanning everything in the namespace."
     },
     {
       "prompt": "Look at the full details of the pod.",
       "expected_commands": ["kubectl describe pod my-first-pod"],
       "fake_output": "Name: my-first-pod\nStatus: Running\nIP: 10.244.0.5\nNode: node-1\nContainers:\n  nginx:\n    Image: nginx\n    State: Running",
-      "explanation": "describe gives you the full picture — events, IP, container status, node it's on."
+      "explanation": "describe gives you the full picture — events, IP, container status, node it's on.",
+      "why": "'kubectl get pod my-first-pod -o yaml' shows the same underlying object, but describe adds a human-readable Events section at the bottom — that's usually what you actually want when debugging."
     },
     {
       "prompt": "Clean up — delete the pod.",
       "expected_commands": ["kubectl delete pod my-first-pod"],
       "fake_output": "pod \"my-first-pod\" deleted",
-      "explanation": "Since this pod wasn't managed by a Deployment, deleting it is final — nothing recreates it."
+      "explanation": "Since this pod wasn't managed by a Deployment, deleting it is final — nothing recreates it.",
+      "why": "There's no gentler alternative for a bare pod like this. If it were managed by a Deployment, you'd scale it to 0 or delete the Deployment instead — deleting just the pod would get it recreated immediately."
     }
   ]
 }
