@@ -102,15 +102,20 @@ def _make_container(app: dict, problem, rng: random.Random, network: str) -> dic
     return c
 
 
-def generate_state(seed=None) -> dict:
+def generate_state(seed=None, assignments=None) -> dict:
+    """Random problems by default; mystery incidents pass explicit
+    assignments like {"web": "oom"} so the root cause is known."""
     rng = random.Random(seed)
     apps = rng.sample(APPS, k=rng.randint(4, 6))
-    # Only app containers break; the db/cache/proxy stay healthy so the
-    # problem is always in something the player's team would own.
-    breakable = [a["name"] for a in apps if a["name"] in ("web", "api", "worker")] or [apps[0]["name"]]
-    broken = rng.sample(breakable, k=min(len(breakable), rng.randint(1, 2)))
-    problems = rng.sample(PROBLEMS, k=len(broken))
-    assignments = dict(zip(broken, problems))
+    if assignments is not None:
+        present = {a["name"] for a in apps}
+        apps += [a for a in APPS if a["name"] in assignments and a["name"] not in present]
+    else:
+        # Only app containers break; the db/cache/proxy stay healthy so the
+        # problem is always in something the player's team would own.
+        breakable = [a["name"] for a in apps if a["name"] in ("web", "api", "worker")] or [apps[0]["name"]]
+        broken = rng.sample(breakable, k=min(len(breakable), rng.randint(1, 2)))
+        assignments = dict(zip(broken, rng.sample(PROBLEMS, k=len(broken))))
 
     containers = [_make_container(a, assignments.get(a["name"]), rng, "app-net") for a in apps]
 

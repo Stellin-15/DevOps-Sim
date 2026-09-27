@@ -16,6 +16,8 @@ def test_fresh_progress_shape():
         "incidents_completed": [],
         "yaml_labs_completed": [],
         "career_paths_completed": [],
+        "mysteries_completed": [],
+        "mystery_scores": {},
         "exam_history": [],
         "attempts": {},
     }

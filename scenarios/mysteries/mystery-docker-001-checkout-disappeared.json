@@ -1,0 +1,53 @@
+{
+  "id": "mystery-docker-001",
+  "type": "mystery",
+  "category": "docker",
+  "sandbox": "docker",
+  "title": "The Checkout Container Keeps Disappearing",
+  "difficulty": "beginner",
+  "tags": [
+    "docker",
+    "oom",
+    "memory"
+  ],
+  "setup": {
+    "seed": 4,
+    "assignments": {
+      "web": "oom"
+    }
+  },
+  "symptom": "Checkout is down. The on-call developer says the 'web' container 'just disappears' a few minutes after starting. They restarted it once; it vanished again. Find out why before anyone restarts it a third time.",
+  "goals": [],
+  "evidence": [
+    {
+      "description": "how the container exits",
+      "seen_any": [
+        "Exited (137)",
+        "OOMKilled"
+      ]
+    },
+    {
+      "description": "what it was doing when it died",
+      "seen_any": [
+        "catalog"
+      ]
+    }
+  ],
+  "question": {
+    "prompt": "Why does the web container keep disappearing?",
+    "options": [
+      "A code bug crashes it with a normal error",
+      "It exceeds its memory limit and is OOM-killed (exit 137) while loading the product catalog",
+      "Another container is holding port 8080",
+      "Its healthcheck fails, so Docker stops it"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 3,
+  "solution_commands": [
+    "docker ps -a",
+    "docker inspect web --format '{{{{.State.OOMKilled}}}}'",
+    "docker logs --tail 3 web"
+  ],
+  "debrief": "'docker ps' hid it because it had exited — 'docker ps -a' showed Exited (137), and 137 = 128 + 9 means SIGKILL. 'docker inspect --format {{.State.OOMKilled}}' confirmed the kernel killed it for exceeding its memory limit, and the last log line showed why: loading a 2.1GB catalog into a container with a much smaller limit. Restarting it a third time would have failed identically. Fix the design (stream or paginate the catalog) or raise the limit with real headroom — and note Docker healthchecks never stop containers on their own; that's an orchestrator's job."
+}

@@ -33,6 +33,8 @@ DEFAULT_PROGRESS = {
     "incidents_completed": [],
     "yaml_labs_completed": [],
     "career_paths_completed": [],
+    "mysteries_completed": [],
+    "mystery_scores": {},
     "exam_history": [],
     "attempts": {},
 }
@@ -42,6 +44,7 @@ COMPLETED_KEY = {
     "incident": "incidents_completed",
     "yaml_lab": "yaml_labs_completed",
     "career_path": "career_paths_completed",
+    "mystery": "mysteries_completed",
 }
 
 
@@ -85,6 +88,8 @@ def _fresh_progress() -> dict:
         "incidents_completed": [],
         "yaml_labs_completed": [],
         "career_paths_completed": [],
+        "mysteries_completed": [],
+        "mystery_scores": {},
         "exam_history": [],
         "attempts": {},
     }

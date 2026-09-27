@@ -59,8 +59,8 @@ Don't duplicate content from these files elsewhere — link to them.
 - **scenarios/** — content, not code. Layout:
   `scenarios/<category>/tutorials/*.json`,
   `scenarios/<category>/incidents/*.json` for each of the 8 categories;
-  `scenarios/yaml_labs/*.json` and `scenarios/career_paths/*.json` are
-  flat, not nested by category. Scenario ids are globally unique across
+  `scenarios/yaml_labs/*.json`, `scenarios/career_paths/*.json`, and
+  `scenarios/mysteries/*.json` are flat, not nested by category. Scenario ids are globally unique across
   every category (category-prefixed except Kubernetes' original
   unprefixed `tutorial-NNN`/`incident-NNN`) — this is what lets
   `progress.json` stay flat instead of nested per category (see
@@ -178,9 +178,31 @@ Don't duplicate content from these files elsewhere — link to them.
   the CKA's 66% pass mark, and reviews every miss. Results go to
   `progress["exam_history"]`; `best_percent()` shows the best score per
   category.
+- **mystery.py** — Mystery Incidents: a symptom and a seeded sandbox
+  state (`scenarios/mysteries/*.json`; `sandbox` picks linux or docker,
+  and `setup` feeds that module's `generate_state` a seed plus forced
+  `problems`/`assignments`). There is no step list, so the player runs
+  anything and then types `solve`. `solve` checks three things in order:
+  1. **goals**: state checks such as `service_active`, `disk_below`, and
+     `load_below_nproc` (see `_check`). Docker mysteries have none,
+     because that sandbox is read-only.
+  2. **evidence**: substrings that must have appeared in some command's
+     *output*. Typed commands don't count, so `echo batch.jar` can't
+     fake it. This exists because a goal-less mystery was winnable with
+     zero commands by guessing the multiple-choice answer.
+  3. **a root-cause question**: two tries allowed.
+
+  Score is 100, minus 20 per wrong answer, minus 15 per collateral kill
+  (`PROTECTED`: init, sshd, nginx), minus up to 30 for using more than
+  twice `expert_commands`. `solution_commands` may use `{stray_pid}`-style
+  placeholders (see `placeholders()`), because pids come from the seed.
+  `test_mystery.py` runs every mystery's stored solution against its
+  seeded state, proving it's solvable, that it meets the goals, and that
+  it finds the evidence.
 - **game.py** — entry point / main menu: Practice (category picker →
   Learn/Incidents within it), Career Paths, Writing Labs, Exam Mode,
-  Sandbox, Quit.
+  Mystery Incidents, Sandbox, Quit. Mystery best scores are kept in
+  `progress["mystery_scores"]`.
   `choose_category()` lists categories from `list_categories()` plus an
   "All categories" option (passes `category=None` through to the
   loaders). `exit`/`quit` work at every prompt — see `engine.read_input` /
@@ -253,7 +275,7 @@ Current per-category content depth (tutorials / incidents):
 - cicd: 10 / 6 (+3 Writing Labs: GitHub Actions)
 - monitoring: 10 / 6 (+2 Writing Labs: alert rules)
 - mlops: 10 / 6
-- **total: 101 tutorials, 51 incidents, 21 Writing Labs**
+- **total: 101 tutorials, 51 incidents, 21 Writing Labs, 6 Mystery Incidents (4 linux, 2 docker)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with
@@ -367,7 +389,7 @@ final `resolution` debrief instead).
 python -m pytest
 ```
 
-(`pytest.ini` points it at `tests/`.) Fifteen files:
+(`pytest.ini` points it at `tests/`.) Sixteen files:
 - `test_engine.py` — matching/normalization logic, proven kubectl-agnostic
 - `test_scenario_loader.py` — category-aware JSON loading (`list_categories`,
   category-filtered vs. aggregated `load_tutorials`/`load_incidents`,
@@ -408,6 +430,11 @@ python -m pytest
 - `test_linux_sandbox.py` — invariants over 200 seeds (exactly 2
   problems, df never above 100%) and each problem's full diagnose-and-
   fix workflow, including the rm-on-an-open-file trap
+- `test_mystery.py` — every mystery's schema; its goals start unmet;
+  its stored solution solves it and finds all the evidence; the evidence
+  isn't visible in the symptom. Also scoring maths and the full run loop:
+  wrong answers, collateral from killing sshd, `giveup`, and refusing a
+  guess made without investigating
 - `test_career_path.py` — the run loop: completes all steps, records each
   sub-scenario into `progress` as it goes, stops cleanly on quit, skips
   (doesn't crash on) a missing scenario id
@@ -436,19 +463,19 @@ exercise something the generic checks don't cover.
 
 See GAPS.md Part 9 for the reasoning. In priority order:
 
-1. **Mystery incidents** (next, per the agreed roadmap order: writing
-   labs ✓ → exam mode ✓ → sandboxes ✓ → mystery incidents → new-topic
-   content from GAPS.md → stats/spaced-repetition review → more cert
-   passes). Free-form diagnosis: a symptom, any command in any order,
-   scored on finding the root cause. The Linux sandbox's reactive
-   state model (hidden problems + actions that change state) is the
-   natural foundation — a mystery incident is roughly "a sandbox state
-   with one known root cause, a goal check, and a score".
+1. **New-topic content from GAPS.md** (next, per the agreed roadmap
+   order: writing labs ✓ → exam mode ✓ → sandboxes ✓ → mystery
+   incidents ✓ → new-topic content → stats/spaced-repetition review →
+   more cert passes). These are the topics each GAPS.md part lists as
+   missing: tracing/SLOs (monitoring), tcpdump/MTU (networking),
+   feature stores and LLM serving (mlops), GitOps and supply-chain
+   security (cicd), and shell scripting depth (linux).
 2. Per-category exam gap passes (like Part 1 did for the CKA): e.g.
    Terraform Associate, CKAD, AWS certs.
-3. Topics each GAPS.md part lists as missing: tracing/SLOs (monitoring),
-   tcpdump/MTU (networking), feature stores and LLM serving (mlops),
-   GitOps and supply-chain security (cicd), shell scripting (linux).
+3. More mysteries. A Kubernetes one needs the Kubernetes sandbox to
+   become reactive first, since it's read-only today. More Linux and
+   Docker ones need only JSON: a seed, problems, goals, evidence, a
+   question, and a stored solution.
 4. More sandboxes (Terraform state explorer, networking) — Kubernetes,
    Docker, and Linux exist; new ones only need generate_state() and
    handle_command() plus a SANDBOXES entry in game.py.

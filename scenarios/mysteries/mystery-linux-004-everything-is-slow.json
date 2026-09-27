@@ -1,0 +1,75 @@
+{
+  "id": "mystery-linux-004",
+  "type": "mystery",
+  "category": "linux",
+  "sandbox": "linux",
+  "title": "Everything Is Slow (and the Disk Alert Is Firing Too)",
+  "difficulty": "advanced",
+  "tags": [
+    "linux",
+    "performance",
+    "disk",
+    "triage"
+  ],
+  "setup": {
+    "seed": 33,
+    "problems": [
+      "runaway_cpu",
+      "disk_full"
+    ]
+  },
+  "symptom": "Every request to this server takes seconds instead of milliseconds, and — separately, or maybe not — the root filesystem alert started firing this morning. You have one shift to sort out both.",
+  "goals": [
+    {
+      "check": "load_below_nproc",
+      "description": "Load average is below the number of CPUs"
+    },
+    {
+      "check": "disk_below",
+      "percent": 80,
+      "description": "The root filesystem is below 80% used"
+    },
+    {
+      "check": "service_active",
+      "service": "worker",
+      "description": "The worker service is still running"
+    }
+  ],
+  "evidence": [
+    {
+      "description": "what is making requests slow",
+      "seen_any": [
+        "generate.py"
+      ]
+    },
+    {
+      "description": "what is using the disk",
+      "seen_any": [
+        "/var/log/worker",
+        "debug.log"
+      ]
+    }
+  ],
+  "question": {
+    "prompt": "What was making every request slow?",
+    "options": [
+      "The full disk was slowing all I/O",
+      "A report script was pegging every CPU core",
+      "The database was swapping",
+      "Network latency to the load balancer"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 8,
+  "solution_commands": [
+    "uptime",
+    "ps aux --sort=-%cpu | head -3",
+    "kill {runaway_pid}",
+    "df -h",
+    "du -sh /var/log/*",
+    "truncate -s 0 /var/log/worker/debug.log",
+    "df -h",
+    "uptime"
+  ],
+  "debrief": "Two unrelated problems at once — the realistic kind. Load average far above nproc plus 'ps --sort=-%cpu' pointed at a report script running '--all-time' on every core; the disk alert was the worker's runaway debug log again. The trap is assuming one root cause for every symptom: fixing only the disk would have left everything slow. Triage each symptom to its own evidence. Longer term: run heavy reports on a separate box (or at least with 'nice'), and set CPU and log-size limits so one job can't starve the rest."
+}

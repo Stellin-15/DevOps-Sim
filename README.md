@@ -44,6 +44,19 @@ string.
   reviewed with the correct command, and your best score per category is
   remembered. The rest of the game is forgiving on purpose; this is the
   part that tells you whether it stuck.
+- **Mystery Incidents**: real on-call conditions. You get only a
+  symptom ("postgres just dies, nothing in its logs") and a live Linux
+  or Docker sandbox. There are no steps and no hints, and any command
+  works in any order.
+  - **Solving it.** When you think you've fixed it, type `solve`. The
+    game checks three things:
+    1. the system really is fixed;
+    2. you actually *saw* the evidence, so you can't win by guessing;
+    3. you can name the root cause.
+  - **Scoring.** You're scored against an experienced engineer's command
+    count. Careless fixes cost points: `kill -9` on sshd locks you out.
+  - **Debrief.** Afterwards you get a debrief, plus one efficient path
+    through the problem. Type `giveup` at any time to see the answer.
 - **Sandbox** — no scoring, no steps: a randomly generated broken
   environment to explore with real commands. Three to pick from:
   - **Kubernetes** — a cluster of Deployments, Services, and pods (some
@@ -167,8 +180,8 @@ own prompt. It's the closest thing here to actual exam conditions.
 ## Project structure
 
 ```
-game.py             entry point / main menu (category picker, career
-                     paths, YAML labs, sandbox)
+game.py             entry point / main menu (practice, career paths,
+                     writing labs, exam, mysteries, sandboxes)
 engine.py           generic scenario runner + fuzzy command matching
                      (zero tool-specific logic — works identically for
                      kubectl, docker, terraform, git, plain shell...)
@@ -177,6 +190,8 @@ scenario_loader.py  category-aware loading: list_categories(),
                      load_yaml_labs(), load_career_paths(),
                      load_all_scenarios_by_id()
 exam.py             Exam Mode: random timed questions, scoring, history
+mystery.py          Mystery Incidents: symptom-only, free-form diagnosis
+                     on a seeded sandbox; goals + evidence + root cause
 career_path.py       chains existing scenarios across categories into
                      one continuous playthrough
 progress.py         reads/writes progress.json (completion + attempt
@@ -186,10 +201,8 @@ sandbox.py          Kubernetes sandbox (random cluster)
 docker_sandbox.py   Docker sandbox (random broken host)
 linux_sandbox.py    Linux sandbox (random broken server; reacts to fixes)
 sandbox_common.py   shared sandbox loop, pipes, tables, save/discard
-                     (Kubernetes-only)
 yaml_lab.py         Writing Labs runner: real file editing + validation
 lab_formats.py      parsers for YAML, Dockerfile, HCL, and bash lab files
-                     (Kubernetes-only)
 scenarios/
   kubernetes/tutorials/*.json, incidents/*.json
   docker/tutorials/*.json, incidents/*.json
@@ -198,6 +211,7 @@ scenarios/
   yaml_labs/*.json   manifest-editing labs (not nested by category)
   career_paths/*.json  ordered lists of existing scenario ids spanning
                      2+ categories (not nested by category)
+  mysteries/*.json   symptom + sandbox seed + goals + evidence + question
 tests/               pytest suite (see Testing, below)
 progress.json         local player progress (gitignored) — created on first play
 sandbox_data/        local runtime state (gitignored) — active + saved
@@ -254,6 +268,21 @@ scenario ids in play order], "resolution"}`. No new scenario content
 needed — just a sensible ordering of ids that already exist, spanning at
 least two categories.
 
+**Mystery incident**: drop a JSON file into `scenarios/mysteries/` with
+`type: "mystery"`, a `sandbox` (`linux` or `docker`), and `setup` (a
+`seed` plus forced `problems` for linux or `assignments` for docker). It
+also needs:
+- a `symptom`;
+- `goals` (state checks such as `service_active`, `disk_below`, and
+  `load_below_nproc`; leave empty for docker);
+- `evidence` (`{"description", "seen_any": [...]}`, text that must
+  appear in some command's output before `solve` is accepted);
+- a multiple-choice `question`;
+- `expert_commands`, `solution_commands`, and a `debrief`.
+
+The tests run `solution_commands` against the seeded state to prove the
+mystery is solvable and that the solution finds the evidence.
+
 Any of the above is picked up automatically — no code changes needed. Run
 the test suite afterward; the parametrized content tests validate new
 files against the schema automatically, and include self-consistency
@@ -273,7 +302,7 @@ file against its schema, including self-consistency checks (every
 tutorial/incident's own listed commands match under the real matcher;
 every YAML lab's own solution passes its own validate spec; every career
 path's steps all resolve to real scenarios). Run this after any change to
-the engine, loader, sandbox, yaml_lab, career_path, or scenario content.
+the engine, loader, sandboxes, yaml_lab, career_path, mystery, or scenario content.
 
 ## What's in it
 
@@ -293,6 +322,11 @@ Plus **6 Career Paths** chaining scenarios across categories: ship a
 feature end to end, a production incident chain, ML model from laptop to
 production, security hardening layer by layer, building a platform from
 zero, and "The Worst On-Call Night" (seven incidents, seven layers).
+
+Plus **6 Mystery Incidents**, symptom only: an API down after a deploy,
+a disk alert that won't clear, a database that keeps dying, a slow
+server that has two unrelated problems, a container that "disappears",
+and a worker the dashboard wrongly reports as "running".
 
 Every tutorial step explains not just what the command does but *why*
 it beats the alternatives. Every incident ends with a debrief of the real
@@ -316,15 +350,18 @@ Built so far: hardcoded single scenario → JSON-driven scenarios with a
 menu → hint escalation → sandbox → progress tracking → full Kubernetes
 coverage → CKA gap-filling → Writing Labs → multi-category architecture →
 Career Paths → all 8 categories expanded to full depth → Dockerfile,
-Terraform, and bash Writing Labs → Exam Mode → Docker and Linux sandboxes.
+Terraform, and bash Writing Labs → Exam Mode → Docker and Linux sandboxes →
+Mystery Incidents.
 
 Next, in priority order (details in CLAUDE.md and GAPS.md):
-- **Mystery incidents** (next up) — free-form diagnosis: a symptom, any
-  command in any order, scored on finding the root cause
+- **New-topic content** (next up): topics each GAPS.md part lists as
+  missing, such as tracing/SLOs, tcpdump/MTU, feature stores, LLM
+  serving, GitOps, and shell scripting depth
+- A stats screen and a spaced-repetition review mode
 - Exam-specific gap passes for other certifications (CKAD, Terraform
   Associate, AWS)
-- Topics each GAPS.md part lists as missing (tracing/SLOs, tcpdump,
-  feature stores, LLM serving, GitOps, shell scripting)
+- More mysteries, including Kubernetes ones (these need a reactive
+  Kubernetes sandbox)
 - More sandboxes (Kubernetes, Docker, and Linux exist; Terraform and
   networking would be next)
 - A CLI scaffold for authoring new scenario JSON

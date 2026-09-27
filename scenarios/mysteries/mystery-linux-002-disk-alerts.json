@@ -1,0 +1,60 @@
+{
+  "id": "mystery-linux-002",
+  "type": "mystery",
+  "category": "linux",
+  "sandbox": "linux",
+  "title": "The Disk Alert That Won't Stop",
+  "difficulty": "intermediate",
+  "tags": [
+    "linux",
+    "disk",
+    "logs"
+  ],
+  "setup": {
+    "seed": 7,
+    "problems": [
+      "disk_full"
+    ]
+  },
+  "symptom": "The root filesystem alert has been firing for an hour. A teammate already cleared /tmp — no change. Writes are starting to fail.",
+  "goals": [
+    {
+      "check": "disk_below",
+      "percent": 80,
+      "description": "The root filesystem is below 80% used"
+    },
+    {
+      "check": "service_active",
+      "service": "worker",
+      "description": "The worker service is still running"
+    }
+  ],
+  "evidence": [
+    {
+      "description": "what is actually using the space",
+      "seen_any": [
+        "/var/log/worker",
+        "debug.log"
+      ]
+    }
+  ],
+  "question": {
+    "prompt": "What was the root cause?",
+    "options": [
+      "The PostgreSQL data directory grew",
+      "The worker's debug log grew without limit — and because the worker holds it open, deleting the file alone frees nothing",
+      "Old Docker images filled the disk",
+      "Millions of small temp files in /tmp"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 5,
+  "solution_commands": [
+    "df -h",
+    "du -sh /var/log/*",
+    "ls -lh /var/log/worker",
+    "truncate -s 0 /var/log/worker/debug.log",
+    "df -h"
+  ],
+  "debrief": "du walked the tree to /var/log/worker/debug.log: a debug-level log that nobody turned off. Truncating it frees the space immediately even though the worker keeps it open. If you rm'd it instead, df didn't move — the kernel only frees blocks when the last open handle closes, which is why 'lsof +L1' and restarting the worker were needed (linux-incident-002 is this exact trap). Permanent fixes: set the worker back to info-level logging, add logrotate, and alert at 80% instead of discovering it at 97%."
+}

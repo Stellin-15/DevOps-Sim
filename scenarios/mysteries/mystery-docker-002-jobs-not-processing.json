@@ -1,0 +1,53 @@
+{
+  "id": "mystery-docker-002",
+  "type": "mystery",
+  "category": "docker",
+  "sandbox": "docker",
+  "title": "Background Jobs Stopped Being Processed",
+  "difficulty": "intermediate",
+  "tags": [
+    "docker",
+    "restart-loop",
+    "config"
+  ],
+  "setup": {
+    "seed": 9,
+    "assignments": {
+      "worker": "restart_loop"
+    }
+  },
+  "symptom": "Since this morning's release, background jobs pile up and never get processed. The team dashboard shows the worker container as 'running', so everyone assumed the queue itself was broken.",
+  "goals": [],
+  "evidence": [
+    {
+      "description": "what the container is actually doing",
+      "seen_any": [
+        "Restarting",
+        "RestartCount"
+      ]
+    },
+    {
+      "description": "why",
+      "seen_any": [
+        "config.yml"
+      ]
+    }
+  ],
+  "question": {
+    "prompt": "Why aren't jobs being processed?",
+    "options": [
+      "The job queue is empty",
+      "The worker is stuck in a restart loop: it exits immediately because /etc/app/config.yml is missing from the new image",
+      "The worker is being OOM-killed",
+      "The database is down"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 3,
+  "solution_commands": [
+    "docker ps",
+    "docker inspect worker --format '{{{{.RestartCount}}}}'",
+    "docker logs --tail 3 worker"
+  ],
+  "debrief": "The dashboard said 'running' because with restart=always, Docker restarts the worker the instant it dies — 'docker ps' shows the truth as Restarting, and the restart count was in the hundreds. The logs gave the exact reason: the config file isn't in the new image. A restart policy hides a crash loop unless someone checks restart counts; alert on them. The fix is in the build (the Dockerfile stopped copying the config, or it should come from a mounted volume or env vars), not in restarting anything."
+}

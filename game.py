@@ -6,6 +6,7 @@ import random
 
 import career_path
 import exam
+import mystery
 import progress as progress_module
 import docker_sandbox
 import linux_sandbox
@@ -17,6 +18,7 @@ from scenario_loader import (
     load_career_paths,
     load_all_scenarios_by_id,
     load_incidents,
+    load_mysteries,
     load_tutorials,
     load_yaml_labs,
 )
@@ -147,6 +149,25 @@ def exam_menu(progress: dict) -> None:
     progress_module.save_progress(progress)
 
 
+def mystery_menu(progress: dict) -> None:
+    mysteries = load_mysteries()
+    for m in mysteries:
+        best = progress.get("mystery_scores", {}).get(m["id"])
+        m["_display_title"] = m["title"] + (f"  (best: {best}/100)" if best is not None else "")
+    listing = [{**m, "title": m["_display_title"]} for m in mysteries]
+    chosen = choose_from_list(listing, "Mystery Incidents", "mystery", progress)
+    if not chosen:
+        return
+    mystery_def = next(m for m in mysteries if m["id"] == chosen["id"])
+    outcome = mystery.run_mystery(mystery_def)
+    progress_module.record_attempt(progress, mystery_def["id"])
+    if outcome["solved"]:
+        progress_module.mark_completed(progress, mystery_def["id"], "mystery")
+        scores = progress.setdefault("mystery_scores", {})
+        scores[mystery_def["id"]] = max(scores.get(mystery_def["id"], 0), outcome["score"])
+    progress_module.save_progress(progress)
+
+
 SANDBOXES = [
     ("Kubernetes — a random cluster with broken pods", sandbox.run_sandbox),
     ("Docker — a host with crashed, OOM-killed, or unhealthy containers", docker_sandbox.run_sandbox),
@@ -175,7 +196,8 @@ def main_menu_loop() -> None:
         print("  2. Career Paths (chained scenarios across categories)")
         print("  3. Writing Labs (write real config files and scripts in your own editor)")
         print("  4. Exam Mode (timed, no hints, scored)")
-        print("  5. Sandbox (Kubernetes, Docker, or Linux — explore freely)")
+        print("  5. Mystery Incidents (just a symptom — find and fix it your way)")
+        print("  6. Sandbox (Kubernetes, Docker, or Linux — explore freely)")
         print("  q. Quit")
 
         choice = read_input("\nChoose: ").lower()
@@ -194,6 +216,8 @@ def main_menu_loop() -> None:
         elif choice == "4":
             exam_menu(progress)
         elif choice == "5":
+            mystery_menu(progress)
+        elif choice == "6":
             sandbox_menu()
         else:
             print("Invalid choice.")

@@ -1,0 +1,62 @@
+{
+  "id": "mystery-linux-003",
+  "type": "mystery",
+  "category": "linux",
+  "sandbox": "linux",
+  "title": "The Database Keeps Dying",
+  "difficulty": "advanced",
+  "tags": [
+    "linux",
+    "memory",
+    "oom",
+    "postgres"
+  ],
+  "setup": {
+    "seed": 21,
+    "problems": [
+      "memory_hog"
+    ]
+  },
+  "symptom": "The app team says postgres 'just dies' — no errors in its own logs, it's simply gone. It died again 20 minutes ago. Restarting it has been tried; it doesn't stay up.",
+  "goals": [
+    {
+      "check": "service_active",
+      "service": "postgres",
+      "description": "PostgreSQL is running (and stays up)"
+    }
+  ],
+  "evidence": [
+    {
+      "description": "what is killing postgres",
+      "seen_any": [
+        "Out of memory",
+        "oom"
+      ]
+    },
+    {
+      "description": "why that happens",
+      "seen_any": [
+        "batch.jar"
+      ]
+    }
+  ],
+  "question": {
+    "prompt": "What was the root cause?",
+    "options": [
+      "A bug in this PostgreSQL version",
+      "The disk filled up",
+      "A batch job consumed most of the RAM, so the kernel's OOM killer chose postgres",
+      "Someone ran 'systemctl stop postgres' by mistake"
+    ],
+    "answer": 2
+  },
+  "expert_commands": 5,
+  "solution_commands": [
+    "systemctl --failed",
+    "dmesg -T | grep -i 'out of memory'",
+    "ps aux --sort=-%mem | head -3",
+    "kill {hog_pid}",
+    "systemctl restart postgres"
+  ],
+  "debrief": "A process that vanishes with nothing in its own logs was usually killed from outside — and dmesg recorded the OOM killer doing it. 'ps aux --sort=-%mem' showed the real culprit: a java batch job with an 8GB heap on a machine that can't afford it. Restarting postgres alone just fed it back to the OOM killer. Fixes: size the batch job's heap to the machine, move batch work off the database host, and protect postgres with OOMScoreAdjust (linux-incident-003 walks through the same pattern)."
+}

@@ -11,7 +11,7 @@ SCENARIOS_DIR = BASE_DIR / "scenarios"
 # Folders under scenarios/ that hold category subfolders (tutorials/incidents
 # within each), as opposed to flat scenario-per-file folders like yaml_labs
 # and career_paths.
-NON_CATEGORY_DIRS = {"yaml_labs", "career_paths"}
+NON_CATEGORY_DIRS = {"yaml_labs", "career_paths", "mysteries"}
 
 
 def _load_json_files(folder: Path) -> list:
@@ -59,6 +59,10 @@ def load_incidents(category: str = None) -> list:
 
 def load_yaml_labs() -> list:
     return _load_json_files(SCENARIOS_DIR / "yaml_labs")
+
+
+def load_mysteries() -> list:
+    return _load_json_files(SCENARIOS_DIR / "mysteries")
 
 
 def load_career_paths() -> list:

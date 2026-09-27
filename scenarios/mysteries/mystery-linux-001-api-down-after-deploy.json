@@ -1,0 +1,61 @@
+{
+  "id": "mystery-linux-001",
+  "type": "mystery",
+  "category": "linux",
+  "sandbox": "linux",
+  "title": "The API Went Down After the 3am Deploy",
+  "difficulty": "intermediate",
+  "tags": [
+    "linux",
+    "systemd",
+    "ports"
+  ],
+  "setup": {
+    "seed": 11,
+    "problems": [
+      "failed_service"
+    ]
+  },
+  "symptom": "It's 3:40am. Monitoring says the API on port 8080 has refused every connection since the 3am deploy. The deploy pipeline reported success. Nobody else is online.",
+  "goals": [
+    {
+      "check": "service_active",
+      "service": "app",
+      "description": "The API service (app) is running"
+    }
+  ],
+  "evidence": [
+    {
+      "description": "why the service fails when it starts",
+      "seen_any": [
+        "EADDRINUSE"
+      ]
+    },
+    {
+      "description": "what else is involved",
+      "seen_any": [
+        "(\"node\",pid=",
+        "old-api"
+      ]
+    }
+  ],
+  "question": {
+    "prompt": "What was the root cause?",
+    "options": [
+      "The new release has a bug that crashes it on startup",
+      "An old process from a previous deploy was still holding port 8080, so the new service couldn't bind to it",
+      "The disk was full, so the service couldn't write its PID file",
+      "A firewall rule was blocking port 8080"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 5,
+  "solution_commands": [
+    "systemctl --failed",
+    "journalctl -u app",
+    "ss -tulnp | grep 8080",
+    "kill {stray_pid}",
+    "systemctl restart app"
+  ],
+  "debrief": "The journal's EADDRINUSE said it plainly: something else already owned port 8080. 'ss -tulnp' named the owner — a leftover node process from an old manual deploy in someone's home directory. The pipeline's 'success' only meant files were copied; nothing checked the service actually came up. Two lessons: a deploy isn't done until a health check passes, and 'connection refused' means the host answered but nothing that should be listening is — look at who IS listening."
+}

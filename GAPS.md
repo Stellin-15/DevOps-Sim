@@ -100,6 +100,12 @@ all, so they're easy to skip even after CKA-level prep:
   unresponsive. A game can explain this in a resolution debrief; it can't
   fully substitute for the instinct that comes from having been burned by
   it once.
+- **Scripted incidents lead you by the hand.** Every incident here is a
+  sequence of prompts, and each prompt hints at what to check next. Real
+  on-call starts with only a symptom and a blank terminal. Mystery
+  Incidents (see Part 9) practice exactly that, but so far only on the
+  Linux and Docker sandboxes. **A Kubernetes mystery doesn't exist
+  yet**: the Kubernetes sandbox is read-only, so there's nothing to fix.
 - **Escalation and communication** aren't practiced here at all — a huge
   part of real incident response is knowing when to page someone else,
   what to say in a status update, and how to hand off. Out of scope for
@@ -162,6 +168,9 @@ on-call rotation, shadowed, before being the primary responder.*
 **Content:** 10 tutorials, 5 incidents, 3 Writing Labs, and a Sandbox (a random
 host with OOM-killed, crashed, restart-looping, or unhealthy containers
 and dangling images/volumes to find with real docker commands and pipes).
+Two Mystery Incidents (an OOM kill, and a restart loop that the
+dashboard reports as "running") run on it. The Docker sandbox is
+read-only, so these are diagnosis-only: you can't fix anything in them.
 
 ## Covered
 
@@ -210,6 +219,9 @@ memory hog that got postgres OOM-killed) that you must find AND fix with
 kill / systemctl restart / rm / truncate. It models real consequences —
 deleting a log a process still holds open frees nothing until you restart
 that process — which unscripted practice needs and scripted steps can't give.
+Four Mystery Incidents run on that sandbox. Each is a symptom only, which
+you diagnose and fix any way you like, and each is scored against an
+expert's command count.
 
 ## Covered
 
@@ -491,14 +503,14 @@ gaps relative to what current MLOps roles ask for.
 | Category | Tutorials | Incidents | Extra |
 |---|---|---|---|
 | Kubernetes | 29 | 10 | 9 Writing Labs, Sandbox |
-| Docker | 10 | 5 | 3 Writing Labs (Dockerfile, Compose), Sandbox |
-| Linux | 12 | 6 | 2 Writing Labs (bash), interactive Sandbox |
+| Docker | 10 | 5 | 3 Writing Labs (Dockerfile, Compose), Sandbox, 2 Mysteries |
+| Linux | 12 | 6 | 2 Writing Labs (bash), interactive Sandbox, 4 Mysteries |
 | Terraform | 10 | 6 | 2 Writing Labs (HCL) |
 | Networking | 10 | 6 | |
 | CI/CD | 10 | 6 | 3 Writing Labs (Actions) |
 | Monitoring | 10 | 6 | 2 Writing Labs (alert rules) |
 | MLOps | 10 | 6 | |
-| **Total** | **101** | **51** | 21 Writing Labs, 6 career paths, 3 sandboxes, Exam Mode |
+| **Total** | **101** | **51** | 21 Writing Labs, 6 career paths, 3 sandboxes, 6 Mystery Incidents, Exam Mode |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -527,9 +539,15 @@ that no amount of additional scenario content can fully close:
    the same files for a real project is still the final test.
 2. **Real systems misbehave in unscripted ways.** Every simulated output
    here was written in advance. A real cluster, a real cloud account, and
-   real traffic produce errors nobody predicted. Pair this game with a
-   homelab (kind/minikube, a free-tier cloud account) where things break
-   for real.
+   real traffic produce errors nobody predicted. **Partly addressed**:
+   Mystery Incidents give you only a symptom and a live sandbox. There is
+   no prompt telling you what to check next, you can take any path, your
+   fixes change the state, and careless fixes cost points (killing sshd
+   or init counts as collateral damage). You can't win by guessing: you
+   must have actually seen the evidence before you're allowed to answer.
+   The outputs are still simulated, though, and there are only 6
+   mysteries, none of them Kubernetes. Pair this game with a homelab
+   (kind/minikube, a free-tier cloud account) where things break for real.
 3. **Cloud-provider fundamentals** (IAM, VPCs, managed services) are a
    prerequisite for Terraform, networking, and CI/CD work, and are out of
    scope for a CLI game.
@@ -549,12 +567,15 @@ that no amount of additional scenario content can fully close:
 4. Complete the Writing Labs for each category.
 5. Play all six Career Paths to practice switching layers mid-problem —
    especially "The Worst On-Call Night".
-6. Rebuild each incident for real on a local cluster/VM — break it on
+6. Play every Mystery Incident, then replay it to aim for 100. Scoring
+   near the expert's command count means you went straight to the right
+   layer instead of wandering.
+7. Rebuild each incident for real on a local cluster/VM — break it on
    purpose, then fix it with the same commands.
-7. Write the artifacts yourself for one small real project, end to end:
+8. Write the artifacts yourself for one small real project, end to end:
    a Dockerfile, a Terraform module, a GitHub Actions workflow, alert
    rules, and a bash deploy script — the Writing Labs are practice for
    this, not a replacement.
-8. For certification goals, see Part 1 (CKA); similar exam-specific gap
+9. For certification goals, see Part 1 (CKA); similar exam-specific gap
    passes haven't been done for other certs (e.g. Terraform Associate,
    AWS) yet.

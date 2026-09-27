@@ -40,9 +40,11 @@ def _svc(name, desc, port=None, pid=None):
             "killed_by_oom": False}
 
 
-def generate_state(seed=None) -> dict:
+def generate_state(seed=None, problems=None) -> dict:
+    """Random 2 problems by default; mystery incidents pass an explicit
+    list so the root cause is known in advance."""
     rng = random.Random(seed)
-    problems = rng.sample(PROBLEMS, k=2)
+    problems = list(problems) if problems is not None else rng.sample(PROBLEMS, k=2)
     nproc = rng.choice([2, 4])
     mem_total = rng.choice([4096, 8192])
 
