@@ -1,0 +1,37 @@
+{
+  "id": "mlops-incident-005",
+  "type": "incident",
+  "category": "mlops",
+  "title": "Model Server Crashes Every Morning at 9am",
+  "difficulty": "intermediate",
+  "tags": ["mlops", "serving", "memory", "kubernetes"],
+  "intro": "The recommendation model server restarts several times every weekday around 9am, then is fine the rest of the day. Users see empty recommendation widgets during those minutes.",
+  "steps": [
+    {
+      "prompt": "Check the pods' restart counts and status.",
+      "expected_commands": ["kubectl get pods -l app=recs-model"],
+      "fake_output": "NAME                         READY  STATUS   RESTARTS      AGE\nrecs-model-7d8f9c6b5-x2z9k   1/1    Running  14 (3h ago)   6d\nrecs-model-7d8f9c6b5-a1b2c   1/1    Running  12 (3h ago)   6d",
+      "hint": "Many restarts, all around the same time."
+    },
+    {
+      "prompt": "Find out why the last container instance terminated.",
+      "expected_commands": ["kubectl describe pod recs-model-7d8f9c6b5-x2z9k", "kubectl get pod recs-model-7d8f9c6b5-x2z9k -o jsonpath='{.status.containerStatuses[0].lastState}'"],
+      "fake_output": "Last State:  Terminated\n  Reason:    OOMKilled\n  Exit Code: 137\nLimits:\n  memory: 2Gi",
+      "hint": "Exit code 137 means killed by SIGKILL."
+    },
+    {
+      "prompt": "OOMKilled at a 2Gi limit. Check the logs from before the last crash for clues about what happens at 9am.",
+      "expected_commands": ["kubectl logs recs-model-7d8f9c6b5-x2z9k --previous", "kubectl logs recs-model-7d8f9c6b5-x2z9k --previous --tail=50"],
+      "fake_output": "INFO batch received size=32\nINFO batch received size=32\nINFO batch received size=512 (morning digest job)\nINFO batch received size=512",
+      "hint": "--previous shows the logs of the container that crashed."
+    },
+    {
+      "prompt": "A 9am email-digest job sends 512-item batches instead of the usual 32. Check the model server's config for a batch size cap.",
+      "expected_commands": ["kubectl get configmap recs-model-config -o yaml"],
+      "fake_output": "data:\n  MAX_BATCH_SIZE: \"0\"   # 0 = unlimited\n  MODEL_PATH: /models/recs/v12",
+      "hint": "Is there any limit on how large a batch can be?"
+    }
+  ],
+  "resolution": "Normal traffic sends small batches, but a scheduled morning email-digest job sends batches 16x larger. Memory needed for inference scales with batch size, and with no cap configured (MAX_BATCH_SIZE=0), those batches pushed the server past its 2Gi limit — the kernel OOM-killed it, it restarted, and got hit again. The fix: cap the server-side batch size (e.g. 64) so large client requests are split into chunks, and size the memory limit from load-testing the realistic maximum batch rather than typical traffic. Also worth separating the batch digest job onto its own model deployment (or a batch-inference pipeline), so bulk offline workloads can never take out the real-time path users see.",
+  "real_commands_used": ["kubectl get pods", "kubectl describe pod", "kubectl logs --previous", "kubectl get configmap -o yaml"]
+}

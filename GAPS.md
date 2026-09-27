@@ -112,13 +112,13 @@ covering the Cluster Architecture domain that was previously almost
 entirely absent, plus the probes/multi-container/security gaps in
 Workloads and cluster security.
 
-**Explicitly out of scope: Kubeflow.** It's an ML platform (pipelines,
-notebooks, training jobs) that happens to run *on* Kubernetes, not a core
-Kubernetes/CKA skill — closer to "an application you'd deploy" than "how
-the cluster works." It's not on the CKA, and faking realistic Kubeflow
-output here would teach a false sense of familiarity with a genuinely
-large, separate ecosystem. If that's the actual goal, it needs its own
-dedicated resource, not a few kube-sim tutorials.
+**Kubeflow — out of scope for the CKA, covered separately in MLOps.** It's
+an ML platform that runs *on* Kubernetes, not a core Kubernetes/CKA skill,
+so it isn't part of this Kubernetes assessment. The MLOps category (Part
+8) now covers it at the level most engineers actually need — finding your
+way around KServe InferenceServices and Kubeflow components as ordinary
+Kubernetes workloads and CRDs, and running model canaries. Deep Kubeflow
+Pipelines authoring still needs dedicated resources.
 
 **Incidents** (006–010): ImagePullBackOff, a readiness-probe cascading
 failure, a CoreDNS outage, a silently-nonfunctional HPA (missing
@@ -138,8 +138,8 @@ plane being the actual outage).
 - More YAML Labs — only 5 exist (pod-from-scratch, broken-deployment-fix,
   multi-container/init, NetworkPolicy, PVC); StatefulSet, Ingress, HPA,
   and RBAC (Role/RoleBinding) manifests would be natural next labs
-- Kubeflow and other on-top-of-Kubernetes application platforms —
-  deliberately out of scope, see above
+- Kubeflow at an operator level now lives in the MLOps category (Part 8);
+  deep Kubeflow Pipelines authoring remains out of scope
 
 ---
 
@@ -412,3 +412,116 @@ Strong on the Prometheus/logging operator skills that most on-call
 rotations rely on, and on the specific ways monitoring systems fail.
 Tracing and SLO-based alerting are the major missing pieces for a
 modern observability practice.
+
+---
+
+# Part 8 — MLOps
+
+**Content:** 10 tutorials, 6 incidents.
+
+## Covered
+
+Every section of `commands/mlops.md`: reproducible environments (venv,
+exact pins and why they matter more for pickled models, pip freeze,
+poetry lock, conda export), GPUs (nvidia-smi and reading the sawtooth
+data-loader bottleneck, CSV queries, GPU capacity and allocation on
+Kubernetes nodes), MLflow (UI, runs, MLproject reproduction, serving a
+logged artifact), DVC (remotes, pointer files, push, status, dag/repro),
+model serving (TF Serving, versioned model directories, readiness for
+slow-loading models, exposing on Kubernetes), KServe/Kubeflow at an
+operator level, profiling training code (pandas memory/dtypes, cProfile,
+memory_profiler, notebook-to-script), monitoring models in production
+(prediction-score distributions as label-free drift signals, unseen
+categories), and model canary rollouts on KServe. Incidents cover the
+failures specific to ML systems: silent data drift, training/serving
+skew (a units mismatch), GPU hoarding by idle notebooks, pickle/library
+version mismatch between notebook and serving, batch-size-driven OOM,
+and an unreproducible model trained on unversioned data.
+
+## Still missing
+
+- Feature stores (Feast) — the real systemic fix for training/serving
+  skew, mentioned in resolutions but not practiced.
+- Distributed training (multi-GPU/multi-node, NCCL issues), and LLM-
+  specific serving (vLLM, KV-cache memory, quantization, token-based
+  autoscaling) — an increasingly large share of real MLOps work.
+- Model registries' promotion workflows (staging → production approval).
+- Writing pipeline definitions (Kubeflow Pipelines / Airflow / Argo
+  Workflows DAGs).
+- Evaluation and data-validation tooling (Great Expectations, Evidently).
+
+## Readiness verdict
+
+Covers the operational side of MLOps well — the parts where ML meets
+DevOps infrastructure, and the distinctive "nothing errors but the model
+is wrong" failure mode. LLM serving and feature stores are the biggest
+gaps relative to what current MLOps roles ask for.
+
+---
+
+# Part 9 — Overall: will this make you proficient in DevOps?
+
+## By the numbers
+
+| Category | Tutorials | Incidents | Extra |
+|---|---|---|---|
+| Kubernetes | 29 | 10 | 5 YAML Labs, Sandbox |
+| Docker | 10 | 5 | |
+| Linux | 12 | 6 | |
+| Terraform | 10 | 6 | |
+| Networking | 10 | 6 | |
+| CI/CD | 10 | 6 | |
+| Monitoring | 10 | 6 | |
+| MLOps | 10 | 6 | |
+| **Total** | **101** | **51** | 5 labs, 2 career paths |
+
+Every command section of every `commands/*.md` reference is now covered
+by at least one tutorial, and every tutorial step explains *why* that
+command beats the alternatives — not just what it does.
+
+## Honest verdict
+
+**Completing everything here will make you a strong DevOps operator: you
+will know the commands, the failure modes, and — most importantly — the
+debugging method** (check the layer before guessing the fix; refused vs
+timeout; verify after every change; revoke before cleaning up; revert
+don't force-push). The 51 incidents are modeled on the kinds of problems
+that genuinely trip up working engineers, and working through them
+builds judgment that command references alone never will.
+
+**It will not, on its own, make you fully proficient**, for four reasons
+that no amount of additional scenario content can fully close:
+
+1. **Authoring vs. operating.** The game drills operating existing
+   systems. Real proficiency also means *writing* them: Dockerfiles,
+   Terraform modules, pipeline YAML, alert rules, bash scripts. YAML Labs
+   prove the model works (real files, real validation) — extending it to
+   Dockerfiles, workflow files, alert rules, and HCL is the single
+   highest-value next step for this project.
+2. **Real systems misbehave in unscripted ways.** Every simulated output
+   here was written in advance. A real cluster, a real cloud account, and
+   real traffic produce errors nobody predicted. Pair this game with a
+   homelab (kind/minikube, a free-tier cloud account) where things break
+   for real.
+3. **Cloud-provider fundamentals** (IAM, VPCs, managed services) are a
+   prerequisite for Terraform, networking, and CI/CD work, and are out of
+   scope for a CLI game.
+4. **The human side of operations** — incident command, communication
+   during an outage, blameless post-mortems, and knowing when to escalate
+   — isn't practiced here at all.
+
+## Recommended path to real proficiency
+
+1. Play every tutorial in each category in order (the `why` notes are
+   the point, not the syntax).
+2. Play every incident without hints first; read every resolution even
+   when you solved it.
+3. Play both Career Paths to practice switching layers mid-problem.
+4. Rebuild each incident for real on a local cluster/VM — break it on
+   purpose, then fix it with the same commands.
+5. Write the artifacts yourself: a Dockerfile, a Terraform module, a
+   GitHub Actions workflow, alert rules, and a bash deploy script for one
+   small real project, end to end.
+6. For certification goals, see Part 1 (CKA); similar exam-specific gap
+   passes haven't been done for other certs (e.g. Terraform Associate,
+   AWS) yet.

@@ -1,0 +1,46 @@
+{
+  "id": "mlops-tutorial-004",
+  "type": "tutorial",
+  "category": "mlops",
+  "title": "Experiment Tracking and Model Registry with MLflow",
+  "difficulty": "intermediate",
+  "tags": ["mlops", "mlflow", "experiments", "registry"],
+  "intro": "Six months from now, someone will ask 'which data and hyperparameters produced the model in production?'. Experiment tracking is how you answer that in seconds instead of never.",
+  "steps": [
+    {
+      "prompt": "Launch the MLflow UI locally to browse runs.",
+      "expected_commands": ["mlflow ui", "mlflow ui --port 5000"],
+      "fake_output": "[INFO] Starting gunicorn 21.2.0\n[INFO] Listening at: http://127.0.0.1:5000",
+      "explanation": "Every logged run — params, metrics, artifacts — is browsable at localhost:5000.",
+      "why": "For a team, point everyone at one shared tracking server (MLFLOW_TRACKING_URI) instead of local mlruns/ folders, or experiments stay trapped on individual laptops."
+    },
+    {
+      "prompt": "List all runs in experiment 1 from the terminal.",
+      "expected_commands": ["mlflow runs list --experiment-id 1"],
+      "fake_output": "Date                 Name          ID\n2026-09-27 10:14:02  lr-0.01       a1b2c3d4e5\n2026-09-27 09:02:44  lr-0.1        f6a7b8c9d0\n2026-09-26 17:30:11  baseline      1122334455",
+      "explanation": "Each run has a unique ID that ties metrics, params, and the model artifact together.",
+      "why": "Run IDs are what make a model traceable: a production model that references run a1b2c3d4e5 can always be traced back to its exact code, data, and hyperparameters."
+    },
+    {
+      "prompt": "Reproduce a training run from this project's MLproject file with a specific learning rate.",
+      "expected_commands": ["mlflow run . -P learning_rate=0.01", "mlflow run . -p learning_rate=0.01"],
+      "fake_output": "=== Created directory /tmp/tmpx for downloading remote URIs ===\n=== Running command 'python train.py --learning_rate 0.01' ===\n=== Run (ID 'b2c3d4e5f6') succeeded ===",
+      "explanation": "The MLproject file defines the entry point, environment, and parameters, so anyone can rerun it identically.",
+      "why": "Being able to rerun training from a single command is what separates a reproducible project from a pile of notebooks."
+    },
+    {
+      "prompt": "Serve the model from run a1b2c3d4e5 locally on port 5001 to sanity-check it.",
+      "expected_commands": ["mlflow models serve -m runs:/a1b2c3d4e5/model -p 5001", "mlflow models serve -m runs:/a1b2c3d4e5/model --port 5001"],
+      "fake_output": "[INFO] Listening at: http://127.0.0.1:5001\n(POST /invocations to score)",
+      "explanation": "The exact logged artifact is now behind a REST endpoint.",
+      "why": "Testing the logged artifact — not the in-memory model from your notebook — catches serialization and dependency problems before deployment."
+    },
+    {
+      "prompt": "Send a test prediction to the served model.",
+      "expected_commands": ["curl -X POST http://localhost:5001/invocations -H \"Content-Type: application/json\" -d '{\"inputs\": [[120.5, 3, 0]]}'", "curl -X POST http://localhost:5001/invocations -H 'Content-Type: application/json' -d '{\"inputs\": [[120.5, 3, 0]]}'"],
+      "fake_output": "{\"predictions\": [0.07]}",
+      "explanation": "A 7% fraud probability for this transaction.",
+      "why": "A quick smoke test with a known input and known expected output is the ML equivalent of a health check — worth automating in CI for every candidate model."
+    }
+  ]
+}

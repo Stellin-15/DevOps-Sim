@@ -1,0 +1,46 @@
+{
+  "id": "mlops-tutorial-003",
+  "type": "tutorial",
+  "category": "mlops",
+  "title": "Working with GPUs",
+  "difficulty": "intermediate",
+  "tags": ["mlops", "gpu", "nvidia", "kubernetes"],
+  "intro": "GPUs are the most expensive resource in most ML platforms. Knowing whether they're actually being used — and whether your workload can even see them — saves real money and debugging time.",
+  "steps": [
+    {
+      "prompt": "Check the GPUs on this training machine: utilization, memory, and which processes are using them.",
+      "expected_commands": ["nvidia-smi"],
+      "fake_output": "| GPU  Name        | Memory-Usage        | GPU-Util |\n|  0   A100-SXM4   | 38012MiB / 40960MiB |   23%    |\n| Processes: PID 4821  python train.py  38000MiB |",
+      "explanation": "Memory is nearly full, but compute utilization is only 23%.",
+      "why": "Full memory with low utilization is a classic sign the GPU is waiting on something else — usually the data loader. The fix is often more DataLoader workers or faster storage, not a bigger GPU."
+    },
+    {
+      "prompt": "Watch GPU usage refresh every second while training runs.",
+      "expected_commands": ["nvidia-smi -l 1", "watch -n 1 nvidia-smi"],
+      "fake_output": "(refreshing) GPU-Util: 95% ... 12% ... 97% ... 8% ... 96%",
+      "explanation": "Utilization swings between near-full and nearly idle.",
+      "why": "That sawtooth pattern confirms the input pipeline is the bottleneck: the GPU finishes each batch, then idles while the next one loads. Averaged metrics hide this; watching it live makes it obvious."
+    },
+    {
+      "prompt": "Get just utilization and memory as CSV, for logging or scripting.",
+      "expected_commands": ["nvidia-smi --query-gpu=utilization.gpu,memory.used --format=csv"],
+      "fake_output": "utilization.gpu [%], memory.used [MiB]\n23 %, 38012 MiB",
+      "explanation": "Machine-readable output with just the fields you asked for.",
+      "why": "This is how you'd feed GPU stats into a monitoring system if the NVIDIA DCGM exporter isn't available — dcgm-exporter plus Prometheus is the standard production approach."
+    },
+    {
+      "prompt": "Check how many GPUs each Kubernetes node advertises to the scheduler.",
+      "expected_commands": ["kubectl get nodes -o json | jq '.items[].status.capacity.\"nvidia.com/gpu\"'", "kubectl get nodes -o custom-columns=NAME:.metadata.name,GPU:.status.capacity.nvidia\\.com/gpu"],
+      "fake_output": "\"8\"\n\"8\"\nnull\nnull",
+      "explanation": "Two nodes have 8 GPUs each; the others have none (null).",
+      "why": "Pods request GPUs via 'resources.limits: nvidia.com/gpu: 1'. If a GPU node shows null here, the NVIDIA device plugin isn't running on it, and no pod can ever be scheduled onto its GPUs."
+    },
+    {
+      "prompt": "Check how many GPUs on gpu-node-1 are already allocated to pods.",
+      "expected_commands": ["kubectl describe node gpu-node-1 | grep -A5 \"nvidia.com/gpu\"", "kubectl describe node gpu-node-1"],
+      "fake_output": "Capacity:\n  nvidia.com/gpu:  8\nAllocatable:\n  nvidia.com/gpu:  8\nAllocated resources:\n  nvidia.com/gpu   8   8",
+      "explanation": "All 8 GPUs are allocated — a new GPU pod will stay Pending until one frees up.",
+      "why": "GPUs aren't shared between pods by default — a pod holding a GPU holds all of it, even if idle. Idle notebooks and finished-but-not-deleted jobs silently hoarding GPUs is extremely common (see mlops-incident-003)."
+    }
+  ]
+}

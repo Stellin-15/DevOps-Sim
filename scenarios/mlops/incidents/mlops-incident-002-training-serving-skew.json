@@ -1,0 +1,37 @@
+{
+  "id": "mlops-incident-002",
+  "type": "incident",
+  "category": "mlops",
+  "title": "A Great Model Offline, Useless in Production",
+  "difficulty": "advanced",
+  "tags": ["mlops", "skew", "features", "debugging"],
+  "intro": "The new churn model scored 0.91 AUC in offline evaluation. Two days after deploying it, the retention team says its predictions look random. The service shows no errors and normal latency.",
+  "steps": [
+    {
+      "prompt": "Confirm the serving infrastructure is healthy first — check error rate and latency.",
+      "expected_commands": ["curl http://localhost:8000/metrics | grep model_", "curl -s http://localhost:8000/metrics | grep model_"],
+      "fake_output": "model_requests_total 92110\nmodel_prediction_errors_total 0\nmodel_prediction_latency_seconds_sum 3401.2",
+      "hint": "Rule out the boring explanations first."
+    },
+    {
+      "prompt": "Infrastructure is fine. Log the exact feature vector the SERVING code builds for one known customer (id 1042).",
+      "expected_commands": ["kubectl exec deploy/churn-model -- python debug_features.py --customer 1042", "kubectl exec -it deploy/churn-model -- python debug_features.py --customer 1042"],
+      "fake_output": "tenure_months: 26\nmonthly_spend: 4799.0\nsupport_tickets_90d: 3",
+      "hint": "Compare what serving sees against what training saw for the same customer."
+    },
+    {
+      "prompt": "Now get the same customer's features from the TRAINING dataset.",
+      "expected_commands": ["python -c \"import pandas as pd; print(pd.read_parquet('train_features.parquet').query('customer_id == 1042').T)\""],
+      "fake_output": "tenure_months          26\nmonthly_spend       47.99\nsupport_tickets_90d     3",
+      "hint": "Look for any feature that differs."
+    },
+    {
+      "prompt": "monthly_spend is 4799.0 in serving vs 47.99 in training — a factor of 100. Search the serving code for where it's computed.",
+      "expected_commands": ["grep -rn monthly_spend serving/", "grep -rn \"monthly_spend\" serving/"],
+      "fake_output": "serving/features.py:31:    monthly_spend = billing_api.get(customer_id)['amount_cents']",
+      "hint": "Check the units."
+    }
+  ],
+  "resolution": "Classic training/serving skew: the training pipeline computed monthly_spend in dollars from the data warehouse, while the separately-written serving code read it from the billing API — in cents. Every customer's spend looked 100x larger to the production model than anything it had seen in training, so predictions were effectively noise. Nothing errored, because the inputs were perfectly valid numbers — just wrong ones. Fixing the units solves this instance; the systemic fix is making training and serving share ONE feature-computation code path (a shared library or a feature store), plus logging live feature distributions and comparing them against training distributions automatically. A quick range check (monthly_spend 100x above anything in training) would have caught this on day one.",
+  "real_commands_used": ["curl /metrics | grep", "kubectl exec python", "pandas read_parquet query", "grep -rn"]
+}

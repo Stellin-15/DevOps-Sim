@@ -1,0 +1,37 @@
+{
+  "id": "mlops-incident-006",
+  "type": "incident",
+  "category": "mlops",
+  "title": "Nobody Can Reproduce Last Month's Model",
+  "difficulty": "intermediate",
+  "tags": ["mlops", "dvc", "reproducibility", "data"],
+  "intro": "An auditor asks you to reproduce the credit-risk model currently in production. Retraining from the tagged commit gives noticeably different results — AUC 0.84 instead of the recorded 0.88.",
+  "steps": [
+    {
+      "prompt": "Check out the exact commit the production model was trained from.",
+      "expected_commands": ["git checkout model-v12", "git checkout tags/model-v12"],
+      "fake_output": "HEAD is now at 4d5e6f7 train model v12",
+      "hint": "The model was tagged when it was released."
+    },
+    {
+      "prompt": "Fetch the data version that commit points to.",
+      "expected_commands": ["dvc pull"],
+      "fake_output": "A       data/applications.csv\n1 file added",
+      "hint": "dvc pull fetches the data referenced by the checked-out .dvc files."
+    },
+    {
+      "prompt": "Check whether the data now in your workspace matches what's tracked.",
+      "expected_commands": ["dvc status"],
+      "fake_output": "Data and pipelines are up to date.",
+      "hint": "This confirms you have exactly the data version that commit references."
+    },
+    {
+      "prompt": "The data matches the commit — yet results differ. Check the MLflow run that produced v12 to see what data hash it actually logged.",
+      "expected_commands": ["mlflow runs list --experiment-id 3", "mlflow runs describe --run-id 9a8b7c6d"],
+      "fake_output": "params:\n  data_path: data/applications.csv\n  data_md5: 7f1e...   (this workspace: 2c9a...)\n  git_dirty: true",
+      "hint": "Compare the logged data hash against the one you have now, and check git_dirty."
+    }
+  ],
+  "resolution": "The production model was trained from a 'dirty' workspace: the data scientist had locally modified applications.csv (filtering out some rows) without running 'dvc add' and committing — so the commit's DVC pointer references the ORIGINAL data, but the model was trained on an unversioned local edit. The logged data hash and git_dirty=true flag in MLflow proved it. That exact dataset is now lost, and the model can't be reproduced — a real compliance problem for a regulated credit model. The fixes are procedural and enforceable: training pipelines should refuse to run (or refuse to register models) when 'git status' or 'dvc status' shows uncommitted changes, always log the data hash and git commit with every run, and train production models only via the pipeline, never from a laptop.",
+  "real_commands_used": ["git checkout", "dvc pull", "dvc status", "mlflow runs describe"]
+}

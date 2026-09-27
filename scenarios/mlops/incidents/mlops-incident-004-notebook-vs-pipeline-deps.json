@@ -1,0 +1,37 @@
+{
+  "id": "mlops-incident-004",
+  "type": "incident",
+  "category": "mlops",
+  "title": "The Model Loads in the Notebook, Crashes in the Pipeline",
+  "difficulty": "intermediate",
+  "tags": ["mlops", "dependencies", "python", "reproducibility"],
+  "intro": "A data scientist trained a model in their notebook and saved it with pickle. The serving container crashes on startup when loading it. 'It loads fine on my machine.'",
+  "steps": [
+    {
+      "prompt": "Check the serving pod's logs for the startup error.",
+      "expected_commands": ["kubectl logs deploy/risk-model", "kubectl logs -l app=risk-model --tail=50"],
+      "fake_output": "Traceback (most recent call last):\n  File \"serve.py\", line 12, in <module>\n    model = pickle.load(f)\nAttributeError: Can't get attribute '_RemainderColsList' on <module 'sklearn.compose._column_transformer'>",
+      "hint": "The error mentions a scikit-learn internal."
+    },
+    {
+      "prompt": "An internal scikit-learn class is missing — a version mismatch. Check the version inside the serving image.",
+      "expected_commands": ["kubectl exec deploy/risk-model -- pip show scikit-learn", "kubectl exec deploy/risk-model -- python -c \"import sklearn; print(sklearn.__version__)\""],
+      "fake_output": "Name: scikit-learn\nVersion: 1.3.2",
+      "hint": "Now compare against the training environment."
+    },
+    {
+      "prompt": "Check the scikit-learn version in the data scientist's notebook environment.",
+      "expected_commands": ["pip show scikit-learn", "python -c \"import sklearn; print(sklearn.__version__)\""],
+      "fake_output": "Name: scikit-learn\nVersion: 1.5.1",
+      "hint": "Trained with one version, served with another."
+    },
+    {
+      "prompt": "Capture the notebook environment's exact dependency versions to rebuild the serving image from.",
+      "expected_commands": ["pip freeze > requirements.txt"],
+      "fake_output": "(no output — requirements.txt written with scikit-learn==1.5.1 and 84 other pins)",
+      "hint": "Serving must match training exactly."
+    }
+  ],
+  "resolution": "The model was pickled under scikit-learn 1.5.1 but the serving image installed 1.3.2 (from an old, loosely-pinned requirements file). Pickle stores references to library-internal classes, so a model can only reliably be loaded by the same library version that saved it — here it failed loudly, but version mismatches can also load 'successfully' and silently produce different predictions, which is far worse. The fix is rebuilding serving from the training environment's exact pins. Systemically: log the full environment (pip freeze or a lock file) as an artifact alongside every model in MLflow, build serving images from that logged environment, prefer portable formats (ONNX, skops) over raw pickle where possible, and add a CI check that loads each candidate model in the actual serving image and scores a known input before deployment.",
+  "real_commands_used": ["kubectl logs", "kubectl exec pip show", "pip show", "pip freeze"]
+}

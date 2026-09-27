@@ -1,0 +1,53 @@
+{
+  "id": "mlops-tutorial-005",
+  "type": "tutorial",
+  "category": "mlops",
+  "title": "Versioning Data with DVC",
+  "difficulty": "intermediate",
+  "tags": ["mlops", "dvc", "data", "reproducibility"],
+  "intro": "Git versions code, but a 20GB dataset doesn't belong in git. DVC versions data alongside code: git stores small pointer files, the data itself lives in cloud storage.",
+  "steps": [
+    {
+      "prompt": "Initialize DVC in this git repository.",
+      "expected_commands": ["dvc init"],
+      "fake_output": "Initialized DVC repository.\nYou can now commit the changes to git.",
+      "explanation": "Creates a .dvc/ directory with DVC's configuration, tracked by git.",
+      "why": "DVC layers on top of git rather than replacing it — so code and the exact data it was trained on move together in the same commit history."
+    },
+    {
+      "prompt": "Configure an S3 bucket as the default remote storage for data.",
+      "expected_commands": ["dvc remote add -d storage s3://ml-data/dvcstore"],
+      "fake_output": "Setting 'storage' as a default remote.",
+      "explanation": "-d makes it the default remote for push and pull.",
+      "why": "Without a shared remote, data only exists on the machine that added it — the same 'trapped on a laptop' problem experiment tracking solves for metrics."
+    },
+    {
+      "prompt": "Start tracking the training dataset with DVC.",
+      "expected_commands": ["dvc add data/transactions.csv"],
+      "fake_output": "To track the changes with git, run:\n\tgit add data/transactions.csv.dvc data/.gitignore",
+      "explanation": "DVC creates a small .dvc pointer file (containing the data's hash) and gitignores the real file.",
+      "why": "The pointer file is what goes into git. Checking out an old commit gives you the old pointer; 'dvc pull' then fetches exactly that version of the data."
+    },
+    {
+      "prompt": "Upload the data to the remote.",
+      "expected_commands": ["dvc push"],
+      "fake_output": "1 file pushed",
+      "explanation": "The actual data is now in S3, addressed by its content hash.",
+      "why": "Committing the .dvc file without running dvc push is the classic mistake — teammates get a pointer to data that doesn't exist in the remote."
+    },
+    {
+      "prompt": "Check whether your local data matches what the current pointers say.",
+      "expected_commands": ["dvc status"],
+      "fake_output": "data/transactions.csv.dvc:\n\tchanged outs:\n\t\tmodified:           data/transactions.csv",
+      "explanation": "The local file was changed since it was last tracked — it no longer matches the committed version.",
+      "why": "Training on locally-modified data that nobody versioned is how 'we can't reproduce last month's model' happens (see mlops-incident-006). dvc status before training catches it."
+    },
+    {
+      "prompt": "Show the pipeline's dependency graph from data prep through training to evaluation.",
+      "expected_commands": ["dvc dag"],
+      "fake_output": "+----------+\n| prepare  |\n+----------+\n      *\n+----------+\n|  train   |\n+----------+\n      *\n+----------+\n| evaluate |\n+----------+",
+      "explanation": "Stages defined in dvc.yaml, and how outputs of one feed into the next.",
+      "why": "'dvc repro' uses this graph to rerun only the stages whose inputs changed — like make, but for data pipelines. Change the data and repro reruns everything downstream; change only evaluation code and it skips training."
+    }
+  ]
+}

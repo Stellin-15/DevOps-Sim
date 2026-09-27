@@ -1,0 +1,39 @@
+{
+  "id": "mlops-tutorial-007",
+  "type": "tutorial",
+  "category": "mlops",
+  "title": "Recognizing KServe and Kubeflow",
+  "difficulty": "advanced",
+  "tags": ["mlops", "kserve", "kubeflow", "kubernetes"],
+  "intro": "Many production ML platforms add their own custom resources on top of Kubernetes. You don't need to be a Kubeflow expert, but you do need to find your way around one — and it's all just kubectl and CRDs underneath.",
+  "steps": [
+    {
+      "prompt": "List the KServe InferenceServices (model deployments) in the current namespace.",
+      "expected_commands": ["kubectl get inferenceservice", "kubectl get isvc"],
+      "fake_output": "NAME          URL                                     READY  PREV  LATEST\nfraud-model   http://fraud-model.ml.example.com       True   90    10",
+      "explanation": "One model, with 90% of traffic on the previous revision and 10% on the latest — a canary in progress.",
+      "why": "An InferenceService is a custom resource (see tutorial-018 on CRDs) that KServe's operator turns into deployments, autoscaling, and routing. Same get/describe verbs as any built-in resource."
+    },
+    {
+      "prompt": "Get the full details of the fraud-model InferenceService.",
+      "expected_commands": ["kubectl describe inferenceservice fraud-model", "kubectl describe isvc fraud-model"],
+      "fake_output": "Spec:\n  Predictor:\n    Model:\n      Model Format: sklearn\n      Storage Uri:  s3://models/fraud/v7\n    Canary Traffic Percent: 10\nStatus:\n  Conditions:\n    Type: Ready  Status: True",
+      "explanation": "The model artifact lives in S3; KServe pulls and serves it.",
+      "why": "The Storage Uri is what to check first when a new model version misbehaves — it tells you exactly which artifact is live."
+    },
+    {
+      "prompt": "Check that the Kubeflow platform components are healthy.",
+      "expected_commands": ["kubectl get pods -n kubeflow"],
+      "fake_output": "NAME                                   READY  STATUS\nml-pipeline-7d8f9c6b5-x2z9k            1/1    Running\nml-pipeline-ui-6b8d9f7c4-a1b2c          1/1    Running\nmetadata-grpc-deployment-5f6d7c8b9      0/1    CrashLoopBackOff",
+      "explanation": "The metadata service is crash-looping — pipeline runs will fail to record lineage.",
+      "why": "Kubeflow is a collection of ordinary Kubernetes workloads. When 'Kubeflow is broken', debugging it uses exactly the skills from the Kubernetes category: get pods, logs, describe."
+    },
+    {
+      "prompt": "Submit a compiled pipeline definition.",
+      "expected_commands": ["kubectl apply -f pipeline.yaml"],
+      "fake_output": "pipelinerun.tekton.dev/train-and-evaluate-x7k2 created",
+      "explanation": "The pipeline's steps (fetch data, train, evaluate, register) run as pods.",
+      "why": "Pipelines make training repeatable and auditable in the same way CI makes builds repeatable — the training run is defined as code, not as a sequence of notebook cells someone ran once."
+    }
+  ]
+}

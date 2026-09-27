@@ -1,0 +1,46 @@
+{
+  "id": "mlops-tutorial-006",
+  "type": "tutorial",
+  "category": "mlops",
+  "title": "Serving a Model as a Service",
+  "difficulty": "intermediate",
+  "tags": ["mlops", "serving", "docker", "kubernetes"],
+  "intro": "A trained model only creates value once other systems can call it. Here's the path from a saved model directory to a load-balanced service on Kubernetes.",
+  "steps": [
+    {
+      "prompt": "Serve a saved TensorFlow model locally with TensorFlow Serving, mounting ./model into the container.",
+      "expected_commands": ["docker run -p 8501:8501 -v $(pwd)/model:/models/model tensorflow/serving", "docker run -d -p 8501:8501 -v $(pwd)/model:/models/model tensorflow/serving"],
+      "fake_output": "I tensorflow_serving/model_servers/server.cc:430] Running gRPC ModelServer at 0.0.0.0:8500\nI ...server.cc:450] Exporting HTTP/REST API at:localhost:8501",
+      "explanation": "The model is served over REST on 8501 (and gRPC on 8500).",
+      "why": "Dedicated model servers (TF Serving, TorchServe, Triton) handle batching, versioning, and GPU scheduling for you. Wrapping a model in a hand-written Flask app works, but you end up reimplementing those features badly."
+    },
+    {
+      "prompt": "Send a prediction request.",
+      "expected_commands": ["curl -X POST http://localhost:8501/v1/models/model:predict -d '{\"instances\": [[1,2,3]]}'", "curl -X POST http://localhost:8501/v1/models/model:predict -d '{\"instances\": [[1, 2, 3]]}'"],
+      "fake_output": "{\"predictions\": [[0.93]]}",
+      "explanation": "The model returns a score for the one input instance.",
+      "why": "Keep a few known input/output pairs and check them after every deployment. A model that loads and responds can still return garbage — only a known-answer test catches that."
+    },
+    {
+      "prompt": "Check which model versions the server has loaded.",
+      "expected_commands": ["curl http://localhost:8501/v1/models/model"],
+      "fake_output": "{\"model_version_status\": [{\"version\": \"3\", \"state\": \"AVAILABLE\"}]}",
+      "explanation": "Version 3 is loaded and serving.",
+      "why": "TF Serving watches numbered subdirectories (model/1, model/2, model/3) and serves the latest. Keeping old versions on disk means rollback is just removing the newest directory."
+    },
+    {
+      "prompt": "Deploy the model server to Kubernetes from its manifest.",
+      "expected_commands": ["kubectl apply -f model-deployment.yaml"],
+      "fake_output": "deployment.apps/model-server created",
+      "explanation": "The same container, now as a managed, self-healing Deployment.",
+      "why": "Give model servers a readiness probe that only passes once the model has finished loading — large models can take minutes, and sending traffic before then causes errors on every new pod."
+    },
+    {
+      "prompt": "Expose it inside the cluster on port 8501.",
+      "expected_commands": ["kubectl expose deployment model-server --port=8501"],
+      "fake_output": "service/model-server exposed",
+      "explanation": "Other services can now call http://model-server:8501.",
+      "why": "From here, the model is just another service — it gets the same scaling, monitoring, and rollout tooling as everything else. That's the core idea of MLOps."
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "id": "mlops-tutorial-010",
+  "type": "tutorial",
+  "category": "mlops",
+  "title": "Canary Rollout of a New Model Version",
+  "difficulty": "advanced",
+  "tags": ["mlops", "canary", "kserve", "deployment"],
+  "intro": "A new model can look better offline and still be worse in production. Canary rollouts let real traffic decide — safely — exactly like a canary code deploy.",
+  "steps": [
+    {
+      "prompt": "Update fraud-model to the v8 artifact, sending only 10% of traffic to it.",
+      "expected_commands": ["kubectl patch isvc fraud-model --type merge -p '{\"spec\":{\"predictor\":{\"canaryTrafficPercent\":10,\"model\":{\"storageUri\":\"s3://models/fraud/v8\"}}}}'", "kubectl patch inferenceservice fraud-model --type merge -p '{\"spec\":{\"predictor\":{\"canaryTrafficPercent\":10,\"model\":{\"storageUri\":\"s3://models/fraud/v8\"}}}}'"],
+      "fake_output": "inferenceservice.serving.kserve.io/fraud-model patched",
+      "explanation": "v7 keeps 90% of traffic; v8 gets 10%.",
+      "why": "A model with better offline metrics can still fail in production — different data, latency, edge cases. Limiting exposure to 10% caps the damage while you gather evidence."
+    },
+    {
+      "prompt": "Confirm the traffic split is in effect.",
+      "expected_commands": ["kubectl get isvc fraud-model", "kubectl get inferenceservice fraud-model"],
+      "fake_output": "NAME          READY  PREV  LATEST  URL\nfraud-model   True   90    10      http://fraud-model.ml.example.com",
+      "explanation": "PREV (v7) 90%, LATEST (v8) 10%.",
+      "why": "Verify the split before trusting any comparison — a misapplied patch that sent 100% or 0% to v8 invalidates everything you conclude next."
+    },
+    {
+      "prompt": "Compare latency between the two revisions.",
+      "expected_commands": ["sum by (revision) (rate(model_prediction_latency_seconds_sum[15m])) / sum by (revision) (rate(model_prediction_latency_seconds_count[15m]))"],
+      "fake_output": "{revision=\"fraud-model-predictor-00007\"}  0.049\n{revision=\"fraud-model-predictor-00008\"}  0.051",
+      "explanation": "Latency is essentially identical.",
+      "why": "Compare the SAME metric split by revision, over the same window — the canary is only meaningful as a relative comparison, not against a fixed number."
+    },
+    {
+      "prompt": "Compare the positive-prediction rate between revisions — a big divergence would be a red flag.",
+      "expected_commands": ["sum by (revision) (rate(model_positive_predictions_total[1h])) / sum by (revision) (rate(model_requests_total[1h]))"],
+      "fake_output": "{revision=\"fraud-model-predictor-00007\"}  0.041\n{revision=\"fraud-model-predictor-00008\"}  0.044",
+      "explanation": "Similar rates — v8 isn't behaving wildly differently.",
+      "why": "For models, 'no errors' isn't enough: the distribution of outputs must also be sane. Once ground-truth labels arrive (e.g. confirmed fraud), compare precision/recall per revision too."
+    },
+    {
+      "prompt": "Metrics look healthy. Promote v8 to 100% of traffic.",
+      "expected_commands": ["kubectl patch isvc fraud-model --type merge -p '{\"spec\":{\"predictor\":{\"canaryTrafficPercent\":100}}}'", "kubectl patch inferenceservice fraud-model --type merge -p '{\"spec\":{\"predictor\":{\"canaryTrafficPercent\":100}}}'"],
+      "fake_output": "inferenceservice.serving.kserve.io/fraud-model patched",
+      "explanation": "v8 now serves all traffic; v7 remains available as a rollback target.",
+      "why": "Rolling back is just setting canaryTrafficPercent back to 0 — the model-serving equivalent of the blue-green selector switch in cicd-tutorial-009."
+    }
+  ]
+}

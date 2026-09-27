@@ -1,0 +1,53 @@
+{
+  "id": "mlops-tutorial-002",
+  "type": "tutorial",
+  "category": "mlops",
+  "title": "Reproducible Python Environments",
+  "difficulty": "beginner",
+  "tags": ["mlops", "python", "dependencies", "reproducibility"],
+  "intro": "'It worked in my notebook' is the ML version of 'works on my machine'. Pinning the exact environment a model was trained in is the first step to being able to reproduce — or even load — it later.",
+  "steps": [
+    {
+      "prompt": "Create an isolated virtual environment called venv for this project.",
+      "expected_commands": ["python -m venv venv", "python3 -m venv venv"],
+      "fake_output": "(no output — venv/ created)",
+      "explanation": "A self-contained Python installation, separate from the system Python and other projects.",
+      "why": "Installing packages globally means every project shares (and fights over) one set of versions. One venv per project keeps upgrades in one from silently breaking another."
+    },
+    {
+      "prompt": "Activate it.",
+      "expected_commands": ["source venv/bin/activate", ". venv/bin/activate"],
+      "fake_output": "(venv) you@laptop:~/fraud-model$",
+      "explanation": "Your prompt shows (venv); 'python' and 'pip' now refer to the environment's copies.",
+      "why": "Forgetting to activate is the most common reason 'I installed it but it says module not found' — pip installed into a different Python than the one running your script."
+    },
+    {
+      "prompt": "Install the project's pinned dependencies.",
+      "expected_commands": ["pip install -r requirements.txt", "python -m pip install -r requirements.txt"],
+      "fake_output": "Collecting scikit-learn==1.5.1\nCollecting pandas==2.2.2\n...\nSuccessfully installed pandas-2.2.2 scikit-learn-1.5.1 ...",
+      "explanation": "Exact versions from requirements.txt are installed.",
+      "why": "Pickled scikit-learn models often won't load — or worse, silently behave differently — under a different library version than they were trained with. Exact pins (==) matter far more for ML than for typical web apps."
+    },
+    {
+      "prompt": "After adding a package, record the exact versions of everything installed.",
+      "expected_commands": ["pip freeze > requirements.txt"],
+      "fake_output": "(no output — requirements.txt updated)",
+      "explanation": "Every installed package, including transitive dependencies, pinned with ==.",
+      "why": "pip freeze captures everything, which is great for reproducibility but noisy. Tools like pip-tools (requirements.in → requirements.txt) or poetry.lock separate 'what I asked for' from 'exactly what got resolved'."
+    },
+    {
+      "prompt": "For a project using Poetry instead, resolve and lock dependencies after editing pyproject.toml.",
+      "expected_commands": ["poetry lock"],
+      "fake_output": "Resolving dependencies... (4.2s)\nWriting lock file",
+      "explanation": "poetry.lock records the exact resolved versions and hashes.",
+      "why": "Commit the lock file. Training and serving environments built from the same lock file are one of the simplest defenses against training/serving skew caused by library differences."
+    },
+    {
+      "prompt": "A data-science teammate uses conda (common for CUDA/scientific stacks). Export their exact environment to share it.",
+      "expected_commands": ["conda env export > environment.yml"],
+      "fake_output": "(no output — environment.yml written)",
+      "explanation": "Includes conda and pip packages, and non-Python dependencies like the CUDA toolkit.",
+      "why": "conda manages non-Python libraries (CUDA, MKL) that pip can't — a big reason it's popular for GPU work. Add --no-builds for an export that's more portable across operating systems."
+    }
+  ]
+}

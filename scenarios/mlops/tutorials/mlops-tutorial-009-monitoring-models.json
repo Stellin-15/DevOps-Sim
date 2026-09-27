@@ -1,0 +1,46 @@
+{
+  "id": "mlops-tutorial-009",
+  "type": "tutorial",
+  "category": "mlops",
+  "title": "Monitoring Models in Production",
+  "difficulty": "advanced",
+  "tags": ["mlops", "monitoring", "prometheus", "drift"],
+  "intro": "A model can be up, fast, and error-free while giving increasingly wrong answers. Monitoring a model means watching both the service (like any API) and the predictions themselves.",
+  "steps": [
+    {
+      "prompt": "Check the model server's raw metrics endpoint.",
+      "expected_commands": ["curl http://localhost:8000/metrics", "curl -s http://localhost:8000/metrics"],
+      "fake_output": "model_requests_total 184213\nmodel_prediction_errors_total 12\nmodel_prediction_latency_seconds_sum 9021.4\nmodel_prediction_latency_seconds_count 184213\nmodel_prediction_score_bucket{le=\"0.5\"} 176002",
+      "explanation": "Request counts, errors, latency, and a histogram of prediction scores.",
+      "why": "The score histogram is the ML-specific part: tracking the distribution of what the model outputs is one of the cheapest early-warning signals for drift, since it needs no ground-truth labels."
+    },
+    {
+      "prompt": "Compute average prediction latency over the last 5 minutes.",
+      "expected_commands": ["rate(model_prediction_latency_seconds_sum[5m]) / rate(model_prediction_latency_seconds_count[5m])"],
+      "fake_output": "{}  0.049",
+      "explanation": "About 49ms per prediction.",
+      "why": "Dividing the rate of _sum by the rate of _count is the standard way to get an average from a Prometheus summary or histogram — the same pattern works for any latency metric."
+    },
+    {
+      "prompt": "Check what fraction of predictions are flagged as fraud (score > 0.5) — a sudden change here often means input data changed.",
+      "expected_commands": ["1 - (rate(model_prediction_score_bucket{le=\"0.5\"}[1h]) / rate(model_prediction_score_count[1h]))"],
+      "fake_output": "{}  0.114",
+      "explanation": "11.4% of predictions are positive — historically this has been ~4%.",
+      "why": "Nearly triple the usual positive rate, with zero errors. That's either a real fraud wave or drift — and either way, it needs a human to look before business reports notice weeks later (see mlops-incident-001)."
+    },
+    {
+      "prompt": "Check the model server pod's resource usage.",
+      "expected_commands": ["kubectl top pod -l app=fraud-model", "kubectl top pods -l app=fraud-model"],
+      "fake_output": "NAME                         CPU(cores)  MEMORY(bytes)\nfraud-model-7d8f9c6b5-x2z9k  1840m       3810Mi",
+      "explanation": "Close to its 4Gi memory limit.",
+      "why": "Model servers often grow memory with batch size and loaded model versions. Knowing the headroom lets you set limits that survive peak batches (see mlops-incident-005)."
+    },
+    {
+      "prompt": "Scan recent model server logs for warnings about unexpected inputs.",
+      "expected_commands": ["kubectl logs -l app=fraud-model --tail=100 | grep -i warn", "kubectl logs -l app=fraud-model --tail=100"],
+      "fake_output": "WARN unknown category 'crypto_exchange' for feature merchant_type, using default\nWARN unknown category 'crypto_exchange' for feature merchant_type, using default",
+      "explanation": "A merchant category the model never saw in training is now appearing constantly.",
+      "why": "Unseen categories are silently mapped to a default — which can badly skew predictions without a single error. Logging and counting these is a simple, powerful drift detector."
+    }
+  ]
+}

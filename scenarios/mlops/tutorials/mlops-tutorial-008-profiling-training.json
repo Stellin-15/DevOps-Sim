@@ -1,0 +1,39 @@
+{
+  "id": "mlops-tutorial-008",
+  "type": "tutorial",
+  "category": "mlops",
+  "title": "Profiling and Debugging Training Code",
+  "difficulty": "intermediate",
+  "tags": ["mlops", "python", "profiling", "data"],
+  "intro": "Training that takes 9 hours instead of 2, or dies halfway through out of memory, is usually a code or data problem — not a hardware one. Measure before you buy bigger machines.",
+  "steps": [
+    {
+      "prompt": "Get a quick overview of the dataset: columns, types, null counts, and memory use.",
+      "expected_commands": ["python -c \"import pandas as pd; print(pd.read_csv('data.csv').info())\"", "python -c \"import pandas as pd; pd.read_csv('data.csv').info()\""],
+      "fake_output": "RangeIndex: 48210931 entries\n #  Column           Non-Null Count     Dtype\n 0  amount           48210931 non-null  float64\n 1  merchant_id      48210931 non-null  object\n 2  country          31022004 non-null  object\nmemory usage: 11.3 GB",
+      "explanation": "merchant_id is stored as 'object' (Python strings) and 'country' has 17 million nulls.",
+      "why": "Converting low-cardinality string columns to 'category' dtype often cuts memory by 5-10x. The nulls matter too: if serving code fills missing country differently than training did, that's training/serving skew waiting to happen."
+    },
+    {
+      "prompt": "Profile where training time actually goes, sorted by cumulative time.",
+      "expected_commands": ["python -m cProfile -s cumtime train.py", "python -m cProfile -s cumulative train.py", "python -m cProfile train.py"],
+      "fake_output": "   ncalls  cumtime  filename:lineno(function)\n        1   6204.1  train.py:12(main)\n  4810000   4890.7  features.py:44(compute_features)\n     1200    980.2  model.py:30(fit_batch)",
+      "explanation": "79% of the time is in compute_features — called 4.8 million times, once per row — not in the model at all.",
+      "why": "Per-row Python loops over data are the most common ML training bottleneck. Vectorizing compute_features with pandas/numpy operations typically makes it 50-100x faster — no GPU required."
+    },
+    {
+      "prompt": "Profile memory line by line to find what's blowing up RAM.",
+      "expected_commands": ["python -m memory_profiler train.py"],
+      "fake_output": "Line   Mem usage   Increment   Line Contents\n  18    2210 MiB     0.0 MiB   df = load()\n  19   13840 MiB  11630 MiB   df_all = pd.concat([df] * 5)\n  20   25310 MiB  11470 MiB   features = df_all.copy()",
+      "explanation": "Two lines each add ~11GB — an unnecessary duplication and a full copy.",
+      "why": "Accidental copies are the classic cause of OOM-killed training jobs (exit code 137). Line-level memory profiling finds them in one run, instead of guessing."
+    },
+    {
+      "prompt": "Convert the exploratory notebook into a plain Python script that can run in a pipeline.",
+      "expected_commands": ["jupyter nbconvert --to script notebook.ipynb"],
+      "fake_output": "[NbConvertApp] Converting notebook notebook.ipynb to script\n[NbConvertApp] Writing 8412 bytes to notebook.py",
+      "explanation": "Every code cell becomes part of a .py file, in order.",
+      "why": "Notebooks are great for exploration but terrible for production: cells run out of order, hidden state lingers. Converting is step one; refactoring into testable functions with a proper entry point is the real work."
+    }
+  ]
+}
