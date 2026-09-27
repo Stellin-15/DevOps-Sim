@@ -1,0 +1,43 @@
+{
+  "id": "cicd-incident-006",
+  "type": "incident",
+  "category": "cicd",
+  "title": "A Week of Work Vanished After a Rebase",
+  "difficulty": "intermediate",
+  "tags": ["cicd", "git", "recovery"],
+  "intro": "A developer rebased their feature branch, hit conflicts, 'resolved' them in a panic, and force-pushed. Now five commits of their feature are simply gone from the branch.",
+  "steps": [
+    {
+      "prompt": "Look at the branch's current history.",
+      "expected_commands": ["git log --oneline -10", "git log --oneline"],
+      "fake_output": "a9b8c7d (HEAD -> feature/reports) resolve conflicts\n9f8e7d6 (origin/main) release v2.4.0",
+      "hint": "Only one commit left on top of main."
+    },
+    {
+      "prompt": "Check the reflog on the developer's machine for where the branch was before the rebase.",
+      "expected_commands": ["git reflog", "git reflog show feature/reports"],
+      "fake_output": "a9b8c7d HEAD@{0}: rebase (finish): returning to refs/heads/feature/reports\n...\n5e6f7a8 HEAD@{14}: commit: reports: export to CSV\n4d5e6f7 HEAD@{15}: commit: reports: date filters",
+      "hint": "The reflog records where HEAD was before the rebase started."
+    },
+    {
+      "prompt": "Create a rescue branch at the pre-rebase commit so nothing can be lost while you sort things out.",
+      "expected_commands": ["git branch rescue-reports 5e6f7a8", "git checkout -b rescue-reports 5e6f7a8"],
+      "fake_output": "(no output — branch created)",
+      "hint": "A branch pointing at the old commit keeps all of its history alive."
+    },
+    {
+      "prompt": "Confirm the rescue branch contains all five commits.",
+      "expected_commands": ["git log --oneline rescue-reports -8", "git log --oneline rescue-reports"],
+      "fake_output": "5e6f7a8 reports: export to CSV\n4d5e6f7 reports: date filters\n3c4d5e6 reports: pagination\n2b3c4d5 reports: query builder\n1a2b3c4 reports: scaffold\n9f8e7d6 release v2.4.0",
+      "hint": "All five feature commits should be visible."
+    },
+    {
+      "prompt": "Restore the remote feature branch from the rescue branch, safely.",
+      "expected_commands": ["git push --force-with-lease origin rescue-reports:feature/reports"],
+      "fake_output": " + a9b8c7d...5e6f7a8 rescue-reports -> feature/reports (forced update)",
+      "hint": "--force-with-lease refuses to overwrite if someone else pushed in the meantime."
+    }
+  ],
+  "resolution": "During conflict resolution the developer effectively discarded their own commits, then force-pushed that result over the remote. The commits weren't actually deleted — git keeps them in the reflog for about 90 days — so creating a branch at the pre-rebase commit rescued everything in minutes. Two habits prevent the panic entirely: create a backup branch before any big rebase ('git branch backup-before-rebase'), and use 'git push --force-with-lease' instead of '--force', which refuses to overwrite remote work you haven't seen. If a rebase goes wrong partway through, 'git rebase --abort' returns you to exactly where you started.",
+  "real_commands_used": ["git log --oneline", "git reflog", "git branch", "git push --force-with-lease"]
+}

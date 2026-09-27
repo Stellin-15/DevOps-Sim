@@ -1,0 +1,46 @@
+{
+  "id": "cicd-tutorial-009",
+  "type": "tutorial",
+  "category": "cicd",
+  "title": "Deployment Strategies in Practice",
+  "difficulty": "advanced",
+  "tags": ["cicd", "deployment", "kubernetes", "canary", "blue-green"],
+  "intro": "Rolling, blue-green, and canary aren't just interview vocabulary — each is a concrete set of commands with a different rollback story. Here's what each looks like on Kubernetes.",
+  "steps": [
+    {
+      "prompt": "Rolling: update the 'shop' deployment's image to v2.4.0 and let Kubernetes replace pods gradually.",
+      "expected_commands": ["kubectl set image deployment/shop shop=acme/shop:v2.4.0"],
+      "fake_output": "deployment.apps/shop image updated",
+      "explanation": "Old and new versions run side by side during the rollout.",
+      "why": "The default and simplest strategy. Its limitation: during rollout both versions serve traffic at once, so the new version must be compatible with the old (API contracts, database schema)."
+    },
+    {
+      "prompt": "Blue-green: the new 'shop-green' deployment is running and verified. Switch the Service's traffic from blue to green all at once.",
+      "expected_commands": ["kubectl patch service shop -p '{\"spec\":{\"selector\":{\"app\":\"shop\",\"color\":\"green\"}}}'", "kubectl patch svc shop -p '{\"spec\":{\"selector\":{\"app\":\"shop\",\"color\":\"green\"}}}'"],
+      "fake_output": "service/shop patched",
+      "explanation": "All traffic moves to green instantly; blue keeps running untouched.",
+      "why": "The rollback story is the selling point: patch the selector back to blue and you've rolled back in one second — no redeploy. The cost is running two full copies of the environment."
+    },
+    {
+      "prompt": "Canary: scale a small 'shop-canary' deployment (new version) to 1 replica alongside the 9-replica stable deployment, both behind the same Service.",
+      "expected_commands": ["kubectl scale deployment shop-canary --replicas=1"],
+      "fake_output": "deployment.apps/shop-canary scaled",
+      "explanation": "With 1 of 10 pods on the new version, roughly 10% of traffic hits the canary.",
+      "why": "Replica ratios give a coarse split. Service meshes (Istio, Linkerd) or Argo Rollouts allow exact percentages and automatic promotion or rollback based on error-rate metrics."
+    },
+    {
+      "prompt": "Compare the canary's error rate against stable before promoting — check the canary pods' logs for errors.",
+      "expected_commands": ["kubectl logs -l app=shop,track=canary --since=15m | grep -c ERROR", "kubectl logs -l track=canary --since=15m | grep -c ERROR"],
+      "fake_output": "47",
+      "explanation": "47 errors in 15 minutes from one pod — far worse than stable.",
+      "why": "The whole point of a canary is that this decision is based on data. In mature setups this comparison is automated with metrics, not grep — but the logic is identical."
+    },
+    {
+      "prompt": "The canary is bad. Abort it by scaling it to zero.",
+      "expected_commands": ["kubectl scale deployment shop-canary --replicas=0"],
+      "fake_output": "deployment.apps/shop-canary scaled",
+      "explanation": "100% of traffic is back on the stable version; only ~10% of users saw errors, for 15 minutes.",
+      "why": "That limited blast radius is exactly what canaries buy you. The same bug in a straight rolling deploy would have hit everyone."
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "id": "cicd-tutorial-004",
+  "type": "tutorial",
+  "category": "cicd",
+  "title": "Undoing Things Safely: revert, reset, and reflog",
+  "difficulty": "intermediate",
+  "tags": ["cicd", "git", "rollback"],
+  "intro": "Git has several ways to undo, and choosing the wrong one on a shared branch turns a small mistake into a team-wide problem. Here's which one to use when.",
+  "steps": [
+    {
+      "prompt": "Commit b7c8d9e on main broke production. Undo it in a way that's safe on a shared branch.",
+      "expected_commands": ["git revert b7c8d9e"],
+      "fake_output": "[main 3e4f5a6] Revert \"feat: new pricing engine\"\n 3 files changed, 8 insertions(+), 41 deletions(-)",
+      "explanation": "A NEW commit that undoes b7c8d9e's changes. History is preserved; nothing is rewritten.",
+      "why": "revert is the right tool for anything already pushed: everyone's history stays consistent, the CI pipeline deploys it like any other commit, and there's a clear record of what was undone and why."
+    },
+    {
+      "prompt": "On your local-only experiment branch, throw away the last 2 commits entirely.",
+      "expected_commands": ["git reset --hard HEAD~2"],
+      "fake_output": "HEAD is now at a1b2c3d release v2.3.0",
+      "explanation": "The branch pointer moves back 2 commits and the working directory matches — those commits (and any uncommitted changes) are gone from the branch.",
+      "why": "reset --hard rewrites history and discards uncommitted work. Fine on a private branch; on main, it breaks everyone who already pulled. Rule of thumb: pushed = revert, not pushed = reset is okay."
+    },
+    {
+      "prompt": "Oops — one of those 2 commits was actually needed. Find it in the reflog.",
+      "expected_commands": ["git reflog"],
+      "fake_output": "a1b2c3d HEAD@{0}: reset: moving to HEAD~2\ne4f5a6b HEAD@{1}: commit: add discount codes\nc3d4e5f HEAD@{2}: commit: fix cart total rounding",
+      "explanation": "The reflog records every position HEAD has been at — including commits no branch points to anymore.",
+      "why": "This is git's safety net: 'deleted' commits aren't really gone for ~90 days. Knowing reflog exists turns a panic moment into a 30-second recovery."
+    },
+    {
+      "prompt": "Restore the needed commit e4f5a6b onto your branch.",
+      "expected_commands": ["git cherry-pick e4f5a6b", "git reset --hard e4f5a6b"],
+      "fake_output": "[experiment 5b6c7d8] add discount codes\n 2 files changed, 30 insertions(+)",
+      "explanation": "The commit is back.",
+      "why": "cherry-pick brings back just that one commit; 'git reset --hard e4f5a6b' moves the branch back to that point entirely. Choose based on whether you want one commit or the whole previous state."
+    }
+  ]
+}

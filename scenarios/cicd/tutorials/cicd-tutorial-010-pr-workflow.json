@@ -1,0 +1,46 @@
+{
+  "id": "cicd-tutorial-010",
+  "type": "tutorial",
+  "category": "cicd",
+  "title": "The Pull Request Review Workflow",
+  "difficulty": "beginner",
+  "tags": ["cicd", "github", "pull-requests", "review"],
+  "intro": "Reviewing a teammate's pull request well means actually running it, checking CI, and merging cleanly — all doable from the terminal.",
+  "steps": [
+    {
+      "prompt": "List open pull requests.",
+      "expected_commands": ["gh pr list"],
+      "fake_output": "#51  feat: saved carts           feature/saved-carts  about 2 hours ago\n#49  chore: bump eslint to v9     deps/eslint9         about 1 day ago",
+      "explanation": "Open PRs with their branches.",
+      "why": "A quick daily look keeps reviews from piling up — slow reviews are one of the biggest drags on delivery speed."
+    },
+    {
+      "prompt": "Check out PR #51 locally to test it yourself.",
+      "expected_commands": ["gh pr checkout 51"],
+      "fake_output": "Switched to branch 'feature/saved-carts'",
+      "explanation": "The PR's branch is fetched and checked out.",
+      "why": "Reading a diff shows what changed; running the code shows whether it works. For anything non-trivial, actually running it catches things review alone misses."
+    },
+    {
+      "prompt": "Check the status of the CI checks on PR #51.",
+      "expected_commands": ["gh pr checks 51", "gh pr checks"],
+      "fake_output": "build   pass  1m10s\ntest    pass  2m44s\nlint    pass  22s\ndeploy-preview  pass  3m01s  https://pr-51.preview.acme.dev",
+      "explanation": "All checks green, plus a preview environment URL.",
+      "why": "Branch protection should REQUIRE these checks before merging — relying on people to remember to look is how broken code reaches main."
+    },
+    {
+      "prompt": "Approve the PR with a comment.",
+      "expected_commands": ["gh pr review 51 --approve -b \"Tested locally, LGTM\"", "gh pr review 51 --approve --body \"Tested locally, LGTM\"", "gh pr review 51 --approve"],
+      "fake_output": "✓ Approved pull request #51",
+      "explanation": "Recorded as a formal approval.",
+      "why": "Saying how you reviewed ('tested locally') helps the author and future readers understand how thoroughly it was checked."
+    },
+    {
+      "prompt": "Squash-merge it and delete the branch.",
+      "expected_commands": ["gh pr merge 51 --squash --delete-branch", "gh pr merge 51 -s -d"],
+      "fake_output": "✓ Squashed and merged pull request #51 (feat: saved carts)\n✓ Deleted branch feature/saved-carts",
+      "explanation": "The PR's commits become one commit on main, titled after the PR.",
+      "why": "Squash merging keeps main's history to one commit per change — which makes 'git revert' of a whole feature a single clean operation during an incident."
+    }
+  ]
+}

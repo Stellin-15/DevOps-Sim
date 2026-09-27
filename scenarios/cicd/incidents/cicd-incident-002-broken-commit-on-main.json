@@ -1,0 +1,37 @@
+{
+  "id": "cicd-incident-002",
+  "type": "incident",
+  "category": "cicd",
+  "title": "A Bad Merge Is Deploying to Production Right Now",
+  "difficulty": "beginner",
+  "tags": ["cicd", "git", "rollback"],
+  "intro": "Checkout started returning 500s two minutes after a PR merged to main. The pipeline auto-deploys main. A teammate suggests 'just git reset --hard to the previous commit and force push'.",
+  "steps": [
+    {
+      "prompt": "Identify the most recent commits on main.",
+      "expected_commands": ["git log --oneline -5", "git log --oneline"],
+      "fake_output": "b7c8d9e (HEAD -> main, origin/main) feat: new pricing engine (#58)\na1b2c3d fix: typo in footer (#57)\n9f8e7d6 release v2.4.0",
+      "hint": "Find the merge that lines up with when errors started."
+    },
+    {
+      "prompt": "Revert the offending merge with a new commit — never rewrite main's history.",
+      "expected_commands": ["git revert b7c8d9e", "git revert --no-edit b7c8d9e"],
+      "fake_output": "[main 3e4f5a6] Revert \"feat: new pricing engine (#58)\"\n 3 files changed, 8 insertions(+), 41 deletions(-)",
+      "hint": "revert creates an undo commit that goes through the normal pipeline."
+    },
+    {
+      "prompt": "Push the revert to trigger the deploy pipeline.",
+      "expected_commands": ["git push origin main", "git push"],
+      "fake_output": "   b7c8d9e..3e4f5a6  main -> main",
+      "hint": "A normal push — no force needed."
+    },
+    {
+      "prompt": "Watch the deploy run to make sure the revert actually ships.",
+      "expected_commands": ["gh run watch"],
+      "fake_output": "✓ build   in 58s\n✓ test    in 1m40s\n✓ deploy  in 1m12s\n✓ Run Deploy completed with 'success'",
+      "hint": "Confirm the rollback reached production before declaring it fixed."
+    }
+  ],
+  "resolution": "The pricing-engine merge broke checkout; reverting it restored service in about four minutes through the normal pipeline. The teammate's suggestion (reset --hard + force push) would have been worse in every way: it rewrites shared history, breaks every clone that already pulled the bad commit, bypasses branch protection that usually blocks force-pushes, and leaves no record of what happened. revert is auditable, fast, and safe. When the fix is ready, the author can 'revert the revert' or open a new PR. Even faster options exist for later: 'kubectl rollout undo' rolls back the running deployment instantly without waiting on a pipeline, and feature flags let you turn off new code without deploying at all.",
+  "real_commands_used": ["git log --oneline", "git revert", "git push", "gh run watch"]
+}

@@ -1,0 +1,43 @@
+{
+  "id": "cicd-incident-005",
+  "type": "incident",
+  "category": "cicd",
+  "title": "The Pipeline Deployed, But the Old Code Is Still Running",
+  "difficulty": "intermediate",
+  "tags": ["cicd", "docker", "kubernetes", "images"],
+  "intro": "The deploy pipeline is green and says it deployed the fix for the login bug. Users still hit the bug. Half the pods seem fixed, half don't.",
+  "steps": [
+    {
+      "prompt": "Check which image the deployment's pods are configured to run.",
+      "expected_commands": ["kubectl get deployment web -o jsonpath='{.spec.template.spec.containers[0].image}'", "kubectl describe deployment web"],
+      "fake_output": "acme/web:latest",
+      "hint": "Look at the image tag."
+    },
+    {
+      "prompt": "The tag is ':latest'. Check the actual image digest each running pod is using.",
+      "expected_commands": ["kubectl get pods -l app=web -o jsonpath='{range .items[*]}{.metadata.name}{\"\\t\"}{.status.containerStatuses[0].imageID}{\"\\n\"}{end}'", "kubectl describe pods -l app=web"],
+      "fake_output": "web-7f9d-a1b2\tacme/web@sha256:9a8b...  (new)\nweb-7f9d-c3d4\tacme/web@sha256:1f2e...  (old)\nweb-7f9d-e5f6\tacme/web@sha256:1f2e...  (old)",
+      "hint": "Same tag, different digests — the tag points at different content on different nodes."
+    },
+    {
+      "prompt": "Check the pull policy that decides whether nodes re-download ':latest'.",
+      "expected_commands": ["kubectl get deployment web -o jsonpath='{.spec.template.spec.containers[0].imagePullPolicy}'"],
+      "fake_output": "IfNotPresent",
+      "hint": "IfNotPresent means a node that already has 'acme/web:latest' cached never pulls the new one."
+    },
+    {
+      "prompt": "Deploy the fix by an immutable tag — the pipeline builds acme/web:3f9a2c1 (the commit SHA).",
+      "expected_commands": ["kubectl set image deployment/web web=acme/web:3f9a2c1"],
+      "fake_output": "deployment.apps/web image updated",
+      "hint": "A unique tag per build forces every node to pull the exact image."
+    },
+    {
+      "prompt": "Confirm the rollout completes on every pod.",
+      "expected_commands": ["kubectl rollout status deployment web", "kubectl rollout status deployment/web"],
+      "fake_output": "deployment \"web\" successfully rolled out",
+      "hint": "Verify all pods moved to the new image."
+    }
+  ],
+  "resolution": "The pipeline pushed a new image to the same mutable ':latest' tag. Because the pod spec didn't change (still 'acme/web:latest'), Kubernetes had no reason to roll anything; pods restarted for other reasons landed on nodes where IfNotPresent reused whatever ':latest' was cached — sometimes new, sometimes weeks old. The result was a fleet running a random mix of versions, with a green pipeline hiding it. The fix is immutable tags: tag every image with the git commit SHA (or a version), deploy by that tag, and never reuse a tag for different content. It also makes rollbacks meaningful — 'roll back to 3f9a2c0' names an exact artifact, while 'roll back to latest' means nothing.",
+  "real_commands_used": ["kubectl get deployment -o jsonpath", "kubectl get pods -o jsonpath", "kubectl set image", "kubectl rollout status"]
+}

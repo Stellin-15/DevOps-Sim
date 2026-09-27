@@ -321,3 +321,49 @@ Strong practical troubleshooting foundation — the refused/timeout
 distinction and layer-by-layer method taught here resolve the majority of
 real "can't connect" incidents. Cloud-provider networking and packet
 capture are the next things to learn on real infrastructure.
+
+---
+
+# Part 6 — CI/CD
+
+**Content:** 10 tutorials, 6 incidents.
+
+## Covered
+
+Every command section of `commands/cicd.md`: git essentials (status,
+diff, log, fetch vs pull, stash), merge vs rebase vs cherry-pick (and the
+never-rebase-shared-branches rule, --force-with-lease), undoing safely
+(revert for pushed work, reset for local, reflog as the safety net),
+tags/SemVer/releases (annotated tags, describe, immutable published
+versions, gh release), driving GitHub Actions from the CLI (workflow run
+with inputs, run watch, --log-failed, rerun --failed), pipeline secrets
+(environment-scoped secrets, OIDC over static keys, gitleaks), reproducing
+CI failures locally (--no-cache, running tests in the CI image, act),
+deployment strategies as real commands (rolling, blue-green via Service
+selector, canary via replica ratio with data-driven abort), and the PR
+review loop. Incidents: reverting a bad merge instead of force-pushing,
+diagnosing a flaky test, responding to a leaked cloud key (revoke →
+investigate → clean up), mutable `:latest` tags deploying mixed versions,
+and recovering commits lost to a bad rebase.
+
+## Still missing
+
+- **Writing pipeline YAML** — the biggest gap, same as elsewhere. You
+  recognize workflow structure here but never author one. A "Pipeline
+  Lab" (write a real .github/workflows file, validated like YAML Labs:
+  triggers, jobs, `needs`, caching, matrix builds) would close it — and
+  the YAML Lab engine could validate it with no new code, only content.
+- GitLab CI and Jenkins are recognized in commands/cicd.md but not
+  practiced — GitHub Actions is used throughout as the representative.
+- GitOps (Argo CD / Flux), artifact repositories, SBOMs and supply-chain
+  security (signing images with cosign, SLSA provenance).
+- Database migrations in a deploy pipeline (expand/contract pattern) —
+  one of the hardest real-world CD problems.
+- `git bisect` for finding which commit introduced a regression.
+
+## Readiness verdict
+
+Good grounding in the day-to-day operational side of CI/CD — git hygiene,
+pipeline debugging, safe rollbacks, and secret handling. Authoring and
+designing pipelines is the next skill to build, and needs hands-on YAML
+writing that this game only partially supports today.

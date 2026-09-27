@@ -1,0 +1,53 @@
+{
+  "id": "cicd-tutorial-005",
+  "type": "tutorial",
+  "category": "cicd",
+  "title": "Tags, Versions, and Releases",
+  "difficulty": "beginner",
+  "tags": ["cicd", "git", "releases", "semver"],
+  "intro": "Most release pipelines trigger on a version tag. Tags mark exactly which commit became v2.4.0 — so you can rebuild it, roll back to it, or audit it months later.",
+  "steps": [
+    {
+      "prompt": "List existing version tags.",
+      "expected_commands": ["git tag -l", "git tag", "git tag --list"],
+      "fake_output": "v2.2.0\nv2.3.0\nv2.3.1",
+      "explanation": "Semantic versions: MAJOR.MINOR.PATCH.",
+      "why": "SemVer carries meaning: bump PATCH for fixes, MINOR for backward-compatible features, MAJOR for breaking changes. Consumers and automation (dependency bots, changelogs) rely on it."
+    },
+    {
+      "prompt": "Create an annotated tag v2.4.0 with a release message.",
+      "expected_commands": ["git tag -a v2.4.0 -m \"release 2.4.0\"", "git tag -a v2.4.0 -m 'release 2.4.0'"],
+      "fake_output": "(no output — tag created)",
+      "explanation": "Annotated tags store who tagged, when, and a message — lightweight tags (git tag v2.4.0) are just a pointer.",
+      "why": "Use annotated tags for releases: they carry metadata, can be signed, and are what 'git describe' uses by default."
+    },
+    {
+      "prompt": "Push the tag to trigger the release pipeline.",
+      "expected_commands": ["git push origin v2.4.0"],
+      "fake_output": " * [new tag]         v2.4.0 -> v2.4.0",
+      "explanation": "Tags aren't pushed by a normal 'git push' — they must be pushed explicitly.",
+      "why": "Release workflows commonly trigger on 'on: push: tags: [\"v*\"]'. Forgetting to push the tag is the usual reason 'the release pipeline never ran'."
+    },
+    {
+      "prompt": "Show how the current commit relates to the most recent tag — useful for generating build version strings.",
+      "expected_commands": ["git describe --tags"],
+      "fake_output": "v2.4.0-3-g9f8e7d6",
+      "explanation": "3 commits after v2.4.0, at commit 9f8e7d6.",
+      "why": "Pipelines often stamp builds with this string so every artifact is traceable to an exact commit, even between releases."
+    },
+    {
+      "prompt": "You tagged the wrong commit as v2.4.1 and already pushed it. Delete the tag locally and on the remote.",
+      "expected_commands": ["git tag -d v2.4.1 && git push origin --delete v2.4.1", "git tag -d v2.4.1 && git push --delete origin v2.4.1"],
+      "fake_output": "Deleted tag 'v2.4.1' (was 1a2b3c4)\n - [deleted]         v2.4.1",
+      "explanation": "Both the local and remote copies are removed.",
+      "why": "Do this only if nothing has consumed the tag yet. If a v2.4.1 artifact was already published, re-using that version for different code is worse than the mistake itself — release v2.4.2 instead. Published versions should be immutable."
+    },
+    {
+      "prompt": "Create a GitHub release from the v2.4.0 tag with auto-generated release notes.",
+      "expected_commands": ["gh release create v2.4.0 --generate-notes"],
+      "fake_output": "https://github.com/acme/shop/releases/tag/v2.4.0",
+      "explanation": "Release notes are generated from merged PRs since the previous release.",
+      "why": "Consistent PR titles (the conventional-commit style from cicd-tutorial-001) are what make generated notes readable rather than a list of 'fix stuff'."
+    }
+  ]
+}

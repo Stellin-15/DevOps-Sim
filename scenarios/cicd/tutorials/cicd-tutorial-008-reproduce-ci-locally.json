@@ -1,0 +1,39 @@
+{
+  "id": "cicd-tutorial-008",
+  "type": "tutorial",
+  "category": "cicd",
+  "title": "Reproducing CI Failures Locally",
+  "difficulty": "intermediate",
+  "tags": ["cicd", "debugging", "docker"],
+  "intro": "'It passes on my machine but fails in CI' almost always means CI's environment differs from yours. The fix is making your local run look like CI's, not pushing commits blindly to see what happens.",
+  "steps": [
+    {
+      "prompt": "Rebuild the CI image from scratch, exactly as CI does (CI runners usually have no warm cache).",
+      "expected_commands": ["docker build --no-cache -t myapp:ci .", "docker build --no-cache -t myapp ."],
+      "fake_output": "Step 4/8 : RUN npm ci\nnpm ERR! `npm ci` can only install packages when your package.json and package-lock.json are in sync.",
+      "explanation": "Reproduced: package-lock.json is out of sync with package.json.",
+      "why": "Your local build reused a cached layer from before the mismatch was introduced, so it passed. --no-cache matches CI's cold start and surfaces the real error."
+    },
+    {
+      "prompt": "After fixing the lockfile, run the test suite inside the same image CI uses, deleting the container afterwards.",
+      "expected_commands": ["docker run --rm myapp:ci npm test", "docker run --rm myapp npm test"],
+      "fake_output": "PASS src/cart.test.js\nPASS src/api.test.js\nTests: 84 passed, 84 total",
+      "explanation": "Tests pass in the exact environment CI will use.",
+      "why": "Running tests in the CI image (same OS, same Node version, same dependencies) removes 'my laptop has a different version of X' as a variable."
+    },
+    {
+      "prompt": "Check which Node version CI's workflow uses versus your local one.",
+      "expected_commands": ["grep -n node-version .github/workflows/ci.yml", "grep node-version .github/workflows/ci.yml"],
+      "fake_output": "18:          node-version: 18",
+      "explanation": "CI runs Node 18.",
+      "why": "Compare against 'node --version' locally. Pinning the runtime version in one place (an .nvmrc or engines field that CI also reads) prevents drift between local and CI."
+    },
+    {
+      "prompt": "Run the GitHub Actions workflow itself locally using 'act', to test workflow YAML changes without pushing.",
+      "expected_commands": ["act -j test", "act push -j test", "act"],
+      "fake_output": "[CI/test] 🚀  Start image=catthehacker/ubuntu:act-latest\n[CI/test]   ✅  Success - Main actions/checkout@v4\n[CI/test]   ✅  Success - Main Run npm test\n[CI/test] 🏁  Job succeeded",
+      "explanation": "act runs workflow jobs in local Docker containers that approximate GitHub's runners.",
+      "why": "Great for iterating on workflow syntax and step logic without 20 'fix ci' commits. It's an approximation, though — GitHub-hosted secrets, some actions, and exact runner images differ, so the real run is still the final word."
+    }
+  ]
+}

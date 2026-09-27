@@ -1,0 +1,53 @@
+{
+  "id": "cicd-tutorial-002",
+  "type": "tutorial",
+  "category": "cicd",
+  "title": "Git Essentials for Pipeline Work",
+  "difficulty": "beginner",
+  "tags": ["cicd", "git", "basics"],
+  "intro": "Every pipeline is triggered by git, and every pipeline investigation starts with 'what exactly changed?'. These are the commands that answer it.",
+  "steps": [
+    {
+      "prompt": "See what's changed in your working directory and what's staged.",
+      "expected_commands": ["git status"],
+      "fake_output": "On branch feature/cart\nChanges to be committed:\n\tmodified:   src/cart.js\nChanges not staged for commit:\n\tmodified:   .github/workflows/ci.yml\nUntracked files:\n\t.env",
+      "explanation": "One file staged, one modified but unstaged, and an untracked .env.",
+      "why": "Run this before every commit. That untracked .env almost certainly contains secrets — seeing it here is your chance to add it to .gitignore instead of committing it with a careless 'git add .'."
+    },
+    {
+      "prompt": "See the exact line changes in the unstaged workflow file.",
+      "expected_commands": ["git diff .github/workflows/ci.yml", "git diff"],
+      "fake_output": "-        run: npm test\n+        run: npm test -- --passWithNoTests",
+      "explanation": "Someone changed the test step to pass even when no tests are found.",
+      "why": "That's the kind of quiet change that makes a pipeline 'green' while testing nothing. Reviewing diffs to CI config deserves extra scrutiny for exactly this reason. Use 'git diff --staged' to see what's already staged."
+    },
+    {
+      "prompt": "Show the last 10 commits as one line each.",
+      "expected_commands": ["git log --oneline -10", "git log --oneline -n 10", "git log --oneline"],
+      "fake_output": "e4f5a6b (HEAD -> feature/cart) add discount codes\nc3d4e5f fix cart total rounding\na1b2c3d (origin/main, main) release v2.3.0",
+      "explanation": "Two commits on the feature branch on top of main.",
+      "why": "The short hashes here are what pipelines report ('build failed on c3d4e5f'), and what you pass to revert, cherry-pick, and checkout. --graph adds a branch diagram, useful for understanding merges."
+    },
+    {
+      "prompt": "Download the latest changes from the remote without modifying your working branch.",
+      "expected_commands": ["git fetch", "git fetch origin"],
+      "fake_output": "From github.com:acme/shop\n   a1b2c3d..9f8e7d6  main -> origin/main",
+      "explanation": "origin/main moved forward; your local branches are untouched.",
+      "why": "'git pull' = fetch + merge in one step, which can surprise you with a merge you didn't intend. Fetching first lets you inspect incoming changes (git log main..origin/main) before integrating them."
+    },
+    {
+      "prompt": "You need to switch branches urgently to fix a bug, but you have uncommitted work. Set it aside temporarily.",
+      "expected_commands": ["git stash", "git stash push"],
+      "fake_output": "Saved working directory and index state WIP on feature/cart: e4f5a6b add discount codes",
+      "explanation": "Your changes are saved on a stack; the working directory is now clean.",
+      "why": "Committing half-finished work just to switch branches pollutes history. Stash is the clean temporary shelf. Add -u to include untracked files."
+    },
+    {
+      "prompt": "The urgent fix is done. Bring your stashed work back.",
+      "expected_commands": ["git stash pop"],
+      "fake_output": "On branch feature/cart\nChanges not staged for commit:\n\tmodified:   .github/workflows/ci.yml\nDropped refs/stash@{0}",
+      "explanation": "Changes restored and removed from the stash stack.",
+      "why": "'pop' applies and deletes; 'apply' applies but keeps a copy in the stash. If pop hits a conflict, the stash is kept so you don't lose anything."
+    }
+  ]
+}

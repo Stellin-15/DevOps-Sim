@@ -1,0 +1,46 @@
+{
+  "id": "cicd-tutorial-006",
+  "type": "tutorial",
+  "category": "cicd",
+  "title": "Driving GitHub Actions from the Terminal",
+  "difficulty": "intermediate",
+  "tags": ["cicd", "github-actions", "gh"],
+  "intro": "You can monitor, trigger, and debug pipelines entirely from the terminal — faster than clicking through the web UI, and scriptable.",
+  "steps": [
+    {
+      "prompt": "List the workflows defined in this repository.",
+      "expected_commands": ["gh workflow list"],
+      "fake_output": "NAME          STATE   ID\nCI            active  48213\nDeploy        active  48214\nNightly Scan  active  48215",
+      "explanation": "Each .github/workflows/*.yml file is a workflow.",
+      "why": "The names here are what you pass to 'gh workflow run' and 'gh run list --workflow'."
+    },
+    {
+      "prompt": "Manually trigger the Deploy workflow for the staging environment.",
+      "expected_commands": ["gh workflow run Deploy -f environment=staging", "gh workflow run deploy.yml -f environment=staging"],
+      "fake_output": "✓ Created workflow_dispatch event for deploy.yml at main",
+      "explanation": "-f passes an input defined under 'on: workflow_dispatch: inputs:'.",
+      "why": "Only works if the workflow declares a workflow_dispatch trigger. Manual triggers with inputs are the standard pattern for 'deploy this to that environment' buttons."
+    },
+    {
+      "prompt": "Watch the run you just started, live, until it finishes.",
+      "expected_commands": ["gh run watch"],
+      "fake_output": "✓ build   in 1m12s\n✓ test    in 2m03s\n* deploy  (running)\n...\n✓ Run Deploy (9876543) completed with 'success'",
+      "explanation": "Streams job status updates in your terminal.",
+      "why": "Add --exit-status to make the command's exit code reflect the run result — handy for chaining: 'gh run watch --exit-status && ./smoke-test.sh'."
+    },
+    {
+      "prompt": "A CI run (ID 9876500) failed. View only the logs from the failed steps.",
+      "expected_commands": ["gh run view 9876500 --log-failed"],
+      "fake_output": "test  Run npm test  FAIL src/cart.test.js\n  ● applies discount › rounds to 2 decimals\n    Expected: 19.99\n    Received: 19.990000000000002",
+      "explanation": "Straight to the failing assertion — a floating-point rounding bug.",
+      "why": "--log-failed skips thousands of lines of passing-step output. It's usually the first command to run after any red build."
+    },
+    {
+      "prompt": "The failure was a known flaky network test. Re-run only the jobs that failed.",
+      "expected_commands": ["gh run rerun 9876500 --failed"],
+      "fake_output": "✓ Requested rerun (failed jobs) of run 9876500",
+      "explanation": "Only failed jobs run again, reusing successful jobs' results.",
+      "why": "Faster and cheaper than re-running everything. But re-running flaky tests until they pass hides real problems — if a test needs rerunning regularly, fix or quarantine it (see cicd-incident-003)."
+    }
+  ]
+}

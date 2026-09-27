@@ -1,0 +1,37 @@
+{
+  "id": "cicd-incident-003",
+  "type": "incident",
+  "category": "cicd",
+  "title": "The Pipeline Fails Randomly About One Run in Three",
+  "difficulty": "intermediate",
+  "tags": ["cicd", "testing", "flaky"],
+  "intro": "Developers have started habitually clicking 're-run' on red builds. Nobody trusts CI anymore. You've been asked to find out what's going on.",
+  "steps": [
+    {
+      "prompt": "Look at recent runs of the CI workflow on main.",
+      "expected_commands": ["gh run list --workflow=ci.yml --branch main", "gh run list --workflow ci.yml", "gh run list"],
+      "fake_output": "STATUS   TITLE                    BRANCH  ELAPSED\n✓        fix: typo                main    3m02s\nX        chore: deps              main    2m51s\n✓        chore: deps (rerun)      main    3m05s\nX        feat: wishlist           main    2m49s",
+      "hint": "Same commits passing on re-run means the failures aren't about the code change."
+    },
+    {
+      "prompt": "Check the failed step's logs on the most recent failure (run 9877110).",
+      "expected_commands": ["gh run view 9877110 --log-failed"],
+      "fake_output": "FAIL src/orders.test.js\n  ● order expiry › marks order expired after 1s\n    Expected: \"expired\"\n    Received: \"pending\"\n    (test took 1.004s on a shared runner)",
+      "hint": "Look at what the test depends on."
+    },
+    {
+      "prompt": "Search the other recent failures to see if it's always the same test.",
+      "expected_commands": ["gh run view 9876988 --log-failed | grep FAIL", "gh run view 9876988 --log-failed"],
+      "fake_output": "FAIL src/orders.test.js\n  ● order expiry › marks order expired after 1s",
+      "hint": "The same test failing intermittently across unrelated commits is the signature of a flaky test."
+    },
+    {
+      "prompt": "Find the test in the code.",
+      "expected_commands": ["grep -n \"marks order expired\" src/orders.test.js", "grep -rn \"marks order expired\" src"],
+      "fake_output": "41:  it('marks order expired after 1s', async () => {\n42:    const order = createOrder({ ttlMs: 1000 });\n43:    await sleep(1000);\n44:    expect(order.status).toBe('expired');",
+      "hint": "Real sleeps and exact timing on shared CI hardware are a classic cause of flakiness."
+    }
+  ],
+  "resolution": "One test depended on real wall-clock timing: it slept exactly 1000ms and expected a 1000ms timer to have fired. On a fast laptop that works; on busy shared CI runners, scheduling jitter makes it lose the race about a third of the time. The fix is controlling time instead of waiting for it — fake timers (jest.useFakeTimers / advanceTimersByTime) make the test deterministic and instant. The bigger damage was cultural: once people reflexively re-run red builds, real failures get re-run and merged too. Treat flaky tests as bugs: quarantine them immediately (skip with a linked ticket), fix them quickly, and track flaky-test rates so CI stays trustworthy.",
+  "real_commands_used": ["gh run list", "gh run view --log-failed", "grep -rn"]
+}
