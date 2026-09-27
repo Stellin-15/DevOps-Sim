@@ -1,0 +1,43 @@
+{
+  "id": "azure-incident-001",
+  "type": "incident",
+  "category": "azure",
+  "title": "The allow rule is right there, so why is HTTPS blocked? (NSG priority)",
+  "difficulty": "intermediate",
+  "tags": ["azure", "nsg", "networking", "firewall"],
+  "intro": "At 09:41 the web tier stopped receiving traffic. The rule 'Allow-HTTPS' (443 from Internet) is still in nsg-web, unchanged. bob says his change 'only added a rule to block a scanner'.",
+  "steps": [
+    {
+      "prompt": "Ask Network Watcher whether inbound TCP from 203.0.113.9:50000 to vm-web-01 (10.20.1.4:443) in rg-web-prod is allowed.",
+      "expected_commands": ["az network watcher test-ip-flow --resource-group rg-web-prod --vm vm-web-01 --direction Inbound --protocol TCP --local 10.20.1.4:443 --remote 203.0.113.9:50000", "az network watcher test-ip-flow -g rg-web-prod --vm vm-web-01 --direction Inbound --protocol TCP --local 10.20.1.4:443 --remote 203.0.113.9:50000"],
+      "fake_output": "{\n  \"access\": \"Deny\",\n  \"ruleName\": \"securityRules/Block-Scanner\"\n}",
+      "hint": "IP flow verify names the rule that decided."
+    },
+    {
+      "prompt": "Denied by Block-Scanner, bob's new rule. List the rules of nsg-web (rg-web-prod) to see it next to Allow-HTTPS.",
+      "expected_commands": ["az network nsg rule list --resource-group rg-web-prod --nsg-name nsg-web --output table", "az network nsg rule list -g rg-web-prod --nsg-name nsg-web -o table"],
+      "fake_output": "Name          Priority  Direction  Access  Protocol  SourceAddressPrefix  DestinationPortRange\n------------  --------  ---------  ------  --------  -------------------  --------------------\nBlock-Scanner 90        Inbound    Deny    *         *                    *\nAllow-HTTPS   100       Inbound    Allow   Tcp       Internet             443",
+      "hint": "Compare the priorities, and look at the source of the Deny rule."
+    },
+    {
+      "prompt": "Block-Scanner (priority 90, evaluated first) denies source '*', which is everyone, instead of the scanner's IP. Fix it so it only blocks 192.0.2.66: update Block-Scanner's source prefix in nsg-web.",
+      "expected_commands": ["az network nsg rule update --resource-group rg-web-prod --nsg-name nsg-web --name Block-Scanner --source-address-prefixes 192.0.2.66", "az network nsg rule update -g rg-web-prod --nsg-name nsg-web -n Block-Scanner --source-address-prefixes 192.0.2.66"],
+      "fake_output": "{\n  \"name\": \"Block-Scanner\",\n  \"priority\": 90,\n  \"access\": \"Deny\",\n  \"sourceAddressPrefix\": \"192.0.2.66\"\n}",
+      "hint": "az network nsg rule update ... --source-address-prefixes <ip>"
+    },
+    {
+      "prompt": "Re-run the same IP flow verify from 203.0.113.9:50000 to 10.20.1.4:443 on vm-web-01.",
+      "expected_commands": ["az network watcher test-ip-flow --resource-group rg-web-prod --vm vm-web-01 --direction Inbound --protocol TCP --local 10.20.1.4:443 --remote 203.0.113.9:50000", "az network watcher test-ip-flow -g rg-web-prod --vm vm-web-01 --direction Inbound --protocol TCP --local 10.20.1.4:443 --remote 203.0.113.9:50000"],
+      "fake_output": "{\n  \"access\": \"Allow\",\n  \"ruleName\": \"securityRules/Allow-HTTPS\"\n}",
+      "hint": "Same command as the first step."
+    },
+    {
+      "prompt": "Check the scanner itself is still blocked: test from 192.0.2.66:50000 to 10.20.1.4:443.",
+      "expected_commands": ["az network watcher test-ip-flow --resource-group rg-web-prod --vm vm-web-01 --direction Inbound --protocol TCP --local 10.20.1.4:443 --remote 192.0.2.66:50000", "az network watcher test-ip-flow -g rg-web-prod --vm vm-web-01 --direction Inbound --protocol TCP --local 10.20.1.4:443 --remote 192.0.2.66:50000"],
+      "fake_output": "{\n  \"access\": \"Deny\",\n  \"ruleName\": \"securityRules/Block-Scanner\"\n}",
+      "hint": "Test both what should be allowed and what should be blocked."
+    }
+  ],
+  "resolution": "NSG rules are evaluated by priority, lowest first, and the first match wins. Allow-HTTPS was 'right there' but never reached, because Block-Scanner at priority 90 matched first. That was fine in principle (deny rules for specific bad actors belong above allow rules), but its source was left as '*' (probably the portal's default), so it denied the entire internet. IP flow verify found the exact rule in one command. Verify firewall changes both ways: that legitimate traffic still passes and that the blocked traffic is really blocked. Better still, manage NSGs in Terraform or Bicep so a change like this shows a readable diff ('source: 192.0.2.66' vs '*') in code review before it's applied.",
+  "real_commands_used": ["az network watcher test-ip-flow", "az network nsg rule list", "az network nsg rule update --source-address-prefixes"]
+}

@@ -1,0 +1,39 @@
+{
+  "id": "azure-tutorial-009",
+  "type": "tutorial",
+  "category": "azure",
+  "title": "Azure Monitor: Activity Log, Metrics, and KQL",
+  "difficulty": "intermediate",
+  "tags": ["azure", "monitoring", "kql", "logs"],
+  "intro": "Azure's observability has three parts. The Activity Log records who changed what (like AWS CloudTrail). Metrics are numbers over time. Log Analytics stores logs you query with KQL (Kusto Query Language), a pipe-based query language used across Azure, Sentinel, and Defender. KQL is worth learning properly.",
+  "steps": [
+    {
+      "prompt": "Show the last hour of changes in rg-web-prod from the Activity Log.",
+      "expected_commands": ["az monitor activity-log list --resource-group rg-web-prod --offset 1h --output table", "az monitor activity-log list -g rg-web-prod --offset 1h -o table"],
+      "fake_output": "Caller              OperationName                                   Status     EventTimestamp\n------------------  ----------------------------------------------  ---------  --------------------\nbob@contoso.com     Microsoft.Network/networkSecurityGroups/write   Succeeded  2026-09-28T09:41:07Z\npipeline-sp         Microsoft.Web/sites/write                       Succeeded  2026-09-28T09:12:55Z",
+      "explanation": "bob changed an NSG at 09:41; a pipeline deployed the web app at 09:12.",
+      "why": "'What changed just before it broke?' comes first in every investigation. The Activity Log keeps 90 days; export it to Log Analytics for longer retention and for joining with other logs."
+    },
+    {
+      "prompt": "Get vm-web-01's CPU at 5-minute intervals. Its resource id is /subscriptions/33333333-dddd-4eee-8fff-444444444444/resourceGroups/rg-web-prod/providers/Microsoft.Compute/virtualMachines/vm-web-01.",
+      "expected_commands": ["az monitor metrics list --resource /subscriptions/33333333-dddd-4eee-8fff-444444444444/resourceGroups/rg-web-prod/providers/Microsoft.Compute/virtualMachines/vm-web-01 --metric \"Percentage CPU\" --interval PT5M"],
+      "fake_output": "Timestamp             Average\n2026-09-28T09:35:00Z  22.4\n2026-09-28T09:40:00Z  24.1\n2026-09-28T09:45:00Z  3.2\n2026-09-28T09:50:00Z  2.9",
+      "explanation": "CPU dropped from about 24% to 3% right after 09:41: traffic stopped arriving.",
+      "why": "Intervals use ISO 8601 durations (PT5M = 5 minutes). A sudden drop, not a spike, lines up with bob's NSG change at 09:41 and points straight at it."
+    },
+    {
+      "prompt": "Query Log Analytics workspace 8b2c4d6e-1f3a-4b5c-9d7e-0a1b2c3d4e5f with KQL: count failed requests (resultCode 5xx) per 5 minutes from AppRequests over the last hour.",
+      "expected_commands": ["az monitor log-analytics query --workspace 8b2c4d6e-1f3a-4b5c-9d7e-0a1b2c3d4e5f --analytics-query \"AppRequests | where TimeGenerated > ago(1h) and ResultCode startswith '5' | summarize count() by bin(TimeGenerated, 5m)\"", "az monitor log-analytics query -w 8b2c4d6e-1f3a-4b5c-9d7e-0a1b2c3d4e5f --analytics-query \"AppRequests | where TimeGenerated > ago(1h) and ResultCode startswith '5' | summarize count() by bin(TimeGenerated, 5m)\""],
+      "fake_output": "TimeGenerated         count_\n2026-09-28T09:35:00Z  0\n2026-09-28T09:40:00Z  1\n2026-09-28T09:45:00Z  0\n(the few requests that arrive still succeed; the rest never reach the app)",
+      "explanation": "No wave of errors. Requests aren't failing in the app, they're not getting there.",
+      "why": "KQL reads left to right like a shell pipeline: table | where | summarize | render. 'summarize count() by bin(TimeGenerated, 5m)' is the pattern you'll use most. Here the lack of errors confirms the NSG theory: blocked traffic never shows up in application logs at all."
+    },
+    {
+      "prompt": "List the alert rules that are configured, to see why nobody got paged.",
+      "expected_commands": ["az monitor metrics alert list --output table", "az monitor metrics alert list -o table"],
+      "fake_output": "Name                 Severity  Enabled  Condition\n-------------------  --------  -------  ----------------------------------\nvm-web-cpu-high      2         True     avg Percentage CPU > 85\nappgw-5xx-high       1         True     total ResponseStatus 5xx > 50",
+      "explanation": "Alerts exist for high CPU and many 5xx errors, but nothing fires when traffic simply stops.",
+      "why": "This is a classic monitoring gap: every alert watches for too much of something, and none watches for too little. Add a 'requests per minute below normal' alert, or better, an external availability test that probes the site from outside Azure."
+    }
+  ]
+}

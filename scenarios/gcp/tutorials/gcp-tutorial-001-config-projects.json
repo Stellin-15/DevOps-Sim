@@ -1,0 +1,46 @@
+{
+  "id": "gcp-tutorial-001",
+  "type": "tutorial",
+  "category": "gcp",
+  "title": "gcloud Basics: Accounts, Projects, and Configurations",
+  "difficulty": "beginner",
+  "tags": ["gcp", "gcloud", "projects"],
+  "intro": "In Google Cloud, the project is the unit of billing, access, and resource isolation (like an AWS account or Azure subscription), grouped under folders and an organisation. gcloud 'configurations' bundle an account, project, and default region, so switching environments is one command instead of three.",
+  "steps": [
+    {
+      "prompt": "Show the active gcloud configuration: account, project, and defaults.",
+      "expected_commands": ["gcloud config list"],
+      "fake_output": "[compute]\nregion = europe-west1\nzone = europe-west1-b\n[core]\naccount = alice@example.com\nproject = shop-dev-381204\n\nYour active configuration is: [dev]",
+      "explanation": "You're alice, in the project shop-dev-381204, using the 'dev' configuration.",
+      "why": "Project IDs are globally unique and permanent, and often carry a numeric suffix. Always check the project before acting: it's GCP's version of 'which account am I in?'."
+    },
+    {
+      "prompt": "List all your named configurations.",
+      "expected_commands": ["gcloud config configurations list"],
+      "fake_output": "NAME  IS_ACTIVE  ACCOUNT            PROJECT            COMPUTE_DEFAULT_ZONE\ndev   True       alice@example.com  shop-dev-381204    europe-west1-b\nprod  False      alice@example.com  shop-prod-217733   europe-west1-b",
+      "explanation": "One configuration per environment.",
+      "why": "Configurations beat running 'gcloud config set project' back and forth: each environment keeps its own account, project, and zone, so you can't half-switch (new project, old zone). You can also select one for a single command with --configuration=prod."
+    },
+    {
+      "prompt": "Activate the prod configuration.",
+      "expected_commands": ["gcloud config configurations activate prod"],
+      "fake_output": "Activated [prod].",
+      "explanation": "All gcloud commands now target shop-prod-217733.",
+      "why": "Like 'az account set', this is global for your user and affects every terminal. In scripts, pass --project explicitly instead of relying on whatever configuration someone left active."
+    },
+    {
+      "prompt": "List the APIs enabled in the current project.",
+      "expected_commands": ["gcloud services list --enabled"],
+      "fake_output": "NAME                                 TITLE\ncompute.googleapis.com               Compute Engine API\ncontainer.googleapis.com             Kubernetes Engine API\nlogging.googleapis.com               Cloud Logging API\nstorage.googleapis.com               Cloud Storage API",
+      "explanation": "Four APIs are enabled. Anything else (Cloud SQL, Secret Manager...) must be enabled before use.",
+      "why": "GCP services are off per project until enabled, which is a common first error ('SERVICE_DISABLED'; see gcp-incident-003). Enabling APIs belongs in Terraform (google_project_service), so a new environment doesn't fail on its first deploy."
+    },
+    {
+      "prompt": "Set up Application Default Credentials, so local code and tools like Terraform can authenticate as you.",
+      "expected_commands": ["gcloud auth application-default login"],
+      "fake_output": "Credentials saved to file: [/home/alice/.config/gcloud/application_default_credentials.json]\nThese credentials will be used by any library that requests Application Default Credentials (ADC).",
+      "explanation": "SDKs and Terraform on this machine now pick up your identity automatically.",
+      "why": "gcloud's own login and ADC are separate: 'gcloud auth login' is for the CLI, 'application-default login' is for code. Confusing the two causes endless 'could not find default credentials' errors. In production, code uses the attached service account or Workload Identity instead, never a key file."
+    }
+  ]
+}

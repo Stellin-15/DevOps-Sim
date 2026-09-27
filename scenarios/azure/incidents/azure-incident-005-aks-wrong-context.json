@@ -1,0 +1,43 @@
+{
+  "id": "azure-incident-005",
+  "type": "incident",
+  "category": "azure",
+  "title": "The staging test ran against production (kubeconfig context)",
+  "difficulty": "intermediate",
+  "tags": ["azure", "aks", "kubernetes", "kubeconfig"],
+  "intro": "A developer ran a load-test cleanup script that scales every deployment in the 'shop' namespace to zero, 'on staging'. Five minutes later, production checkout is down. They're certain they ran 'az aks get-credentials' for staging this morning.",
+  "steps": [
+    {
+      "prompt": "On the developer's machine, see which context kubectl is currently using.",
+      "expected_commands": ["kubectl config current-context"],
+      "fake_output": "aks-prod",
+      "hint": "kubectl config current-context"
+    },
+    {
+      "prompt": "List all contexts to understand how it got there.",
+      "expected_commands": ["kubectl config get-contexts"],
+      "fake_output": "CURRENT   NAME          CLUSTER       AUTHINFO                                NAMESPACE\n          aks-staging   aks-staging   clusterUser_rg-aks-stg_aks-staging\n*         aks-prod      aks-prod      clusterUser_rg-aks-prod_aks-prod        shop",
+      "hint": "The * marks the current context."
+    },
+    {
+      "prompt": "They fetched staging in the morning, then ran 'az aks get-credentials' for prod at lunch to check a dashboard, which made prod current. Restore production first: check the deployments in shop on aks-prod.",
+      "expected_commands": ["kubectl get deployments -n shop --context aks-prod", "kubectl get deploy -n shop --context aks-prod"],
+      "fake_output": "NAME       READY   UP-TO-DATE   AVAILABLE   AGE\ncart       0/0     0            0           210d\ncheckout   0/0     0            0           210d\ncatalog    0/0     0            0           210d",
+      "hint": "Pass --context explicitly during an incident, so there's no ambiguity."
+    },
+    {
+      "prompt": "Everything is at 0. The HPA minimums are in Git: checkout needs 6. Scale checkout back to 6 replicas in shop on aks-prod.",
+      "expected_commands": ["kubectl scale deployment checkout --replicas=6 -n shop --context aks-prod", "kubectl scale deploy checkout --replicas=6 -n shop --context aks-prod"],
+      "fake_output": "deployment.apps/checkout scaled",
+      "hint": "kubectl scale ... --context aks-prod"
+    },
+    {
+      "prompt": "Once cart and catalog are restored too, switch the developer's kubectl back to aks-staging.",
+      "expected_commands": ["kubectl config use-context aks-staging"],
+      "fake_output": "Switched to context \"aks-staging\".",
+      "hint": "kubectl config use-context <name>"
+    }
+  ],
+  "resolution": "'az aks get-credentials' merges the cluster into ~/.kube/config and silently makes it the current context. One lunchtime look at prod meant the afternoon's 'staging' script ran against production, with nothing on screen to say so. Restoring was quick because the desired replica counts were in Git (or re-apply the manifests; with an HPA, its minimum takes over once replicas are above zero). Prevention, in order of strength: (1) the people who run destructive scripts shouldn't hold prod write credentials at all; production should change only through a pipeline or GitOps (cicd-tutorial-011); (2) scripts should demand an explicit --context and refuse to run against a context named *prod*; (3) show the current context in the shell prompt (kube-ps1 or starship); (4) keep separate kubeconfig files per environment, selected with KUBECONFIG, instead of one merged file.",
+  "real_commands_used": ["kubectl config current-context", "kubectl config get-contexts", "kubectl get deployments --context", "kubectl scale --context", "kubectl config use-context"]
+}

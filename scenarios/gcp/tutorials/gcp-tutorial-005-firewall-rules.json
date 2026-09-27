@@ -1,0 +1,46 @@
+{
+  "id": "gcp-tutorial-005",
+  "type": "tutorial",
+  "category": "gcp",
+  "title": "GCP Firewall Rules: Network Tags and Service Accounts",
+  "difficulty": "intermediate",
+  "tags": ["gcp", "firewall", "networking", "security"],
+  "intro": "GCP VPC firewall rules belong to the network (not to subnets or VMs). They're stateful, and they select which VMs they apply to by network tag or by service account. Every network has two implied rules: allow all egress, and deny all ingress.",
+  "steps": [
+    {
+      "prompt": "List prod-vpc's firewall rules as a table of name, direction, priority, source ranges, allowed ports, and target tags.",
+      "expected_commands": ["gcloud compute firewall-rules list --filter=\"network=prod-vpc\" --format=\"table(name,direction,priority,sourceRanges.list(),allowed[].map().firewall_rule().list(),targetTags.list())\""],
+      "fake_output": "NAME               DIRECTION  PRIORITY  SRC_RANGES       ALLOW    TARGET_TAGS\nallow-https-web    INGRESS    1000      0.0.0.0/0        tcp:443  web\nallow-iap-ssh      INGRESS    1000      35.235.240.0/20  tcp:22\nallow-internal     INGRESS    65534     10.0.0.0/8       all",
+      "explanation": "HTTPS to VMs tagged 'web', SSH from IAP to every VM (no target tags), and all internal traffic.",
+      "why": "An empty TARGET_TAGS column means the rule applies to every VM in the network, which is easy to miss. The long --format is worth saving as an alias: the default output hides the target column."
+    },
+    {
+      "prompt": "Allow the load balancer's health checkers (130.211.0.0/22 and 35.191.0.0/16) to reach port 8080 on VMs tagged 'api': create rule allow-hc-api on prod-vpc.",
+      "expected_commands": ["gcloud compute firewall-rules create allow-hc-api --network prod-vpc --allow tcp:8080 --source-ranges 130.211.0.0/22,35.191.0.0/16 --target-tags api", "gcloud compute firewall-rules create allow-hc-api --network=prod-vpc --allow=tcp:8080 --source-ranges=130.211.0.0/22,35.191.0.0/16 --target-tags=api"],
+      "fake_output": "Creating firewall...done.\nNAME          NETWORK   DIRECTION  PRIORITY  ALLOW     DENY  DISABLED\nallow-hc-api  prod-vpc  INGRESS    1000      tcp:8080        False",
+      "explanation": "Health checks can now reach the API VMs.",
+      "why": "Google's load balancers probe backends from those two fixed ranges. Missing this rule is the #1 reason GCP backends show UNHEALTHY while the app is fine: the GCP version of aws-incident-003."
+    },
+    {
+      "prompt": "Add the 'api' network tag to worker-1 (europe-west1-b) so it matches the new rule.",
+      "expected_commands": ["gcloud compute instances add-tags worker-1 --zone europe-west1-b --tags api", "gcloud compute instances add-tags worker-1 --zone=europe-west1-b --tags=api"],
+      "fake_output": "Updating instances: [worker-1]...done.",
+      "explanation": "worker-1 now matches rules that target 'api'.",
+      "why": "The catch with tags: anyone with permission to edit a VM can add a tag and open a firewall path for it. For security-sensitive rules, target a service account instead (--target-service-accounts), since changing a VM's service account needs stronger permissions."
+    },
+    {
+      "prompt": "Block one abusive range, 192.0.2.0/24, from the whole network, ahead of the allow rules: create deny-abuser on prod-vpc with priority 100.",
+      "expected_commands": ["gcloud compute firewall-rules create deny-abuser --network prod-vpc --action deny --rules all --source-ranges 192.0.2.0/24 --priority 100", "gcloud compute firewall-rules create deny-abuser --network=prod-vpc --action=deny --rules=all --source-ranges=192.0.2.0/24 --priority=100"],
+      "fake_output": "Creating firewall...done.\nNAME         NETWORK   DIRECTION  PRIORITY  ALLOW  DENY  DISABLED\ndeny-abuser  prod-vpc  INGRESS    100              all   False",
+      "explanation": "Priority 100 is evaluated before the allow rules at 1000.",
+      "why": "Lower number means higher priority (0-65535), the same as Azure NSGs. At equal priority, deny wins over allow. Default rules sit at 65535, so anything you add overrides them."
+    },
+    {
+      "prompt": "Find out who created the allow-internal rule: search the audit logs for firewall insert operations.",
+      "expected_commands": ["gcloud logging read 'protoPayload.methodName=\"v1.compute.firewalls.insert\"' --limit 5", "gcloud logging read \"protoPayload.methodName=v1.compute.firewalls.insert\" --limit 5"],
+      "fake_output": "timestamp: '2025-02-11T10:04:33Z'\nprotoPayload:\n  authenticationInfo:\n    principalEmail: terraform@shop-prod-217733.iam.gserviceaccount.com\n  resourceName: projects/shop-prod-217733/global/firewalls/allow-internal",
+      "explanation": "Terraform created it, so the change should be traceable to a commit.",
+      "why": "Cloud Audit Logs (Admin Activity) record every configuration change, on by default and free, the equivalent of CloudTrail and the Azure Activity Log. A rule not created by your IaC service account is a sign of manual drift."
+    }
+  ]
+}

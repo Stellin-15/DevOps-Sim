@@ -621,7 +621,116 @@ Terraform, then break it on purpose.
 
 ---
 
-# Part 10 — Overall: will this make you proficient in DevOps?
+# Part 10 — Azure
+
+**Content:** 10 tutorials, 6 incidents.
+
+## Covered
+
+**Tutorials** (every section of `commands/azure.md`):
+- login, subscriptions, and CLI defaults;
+- resource groups, tags, and delete locks;
+- VMs, including the stopped vs *deallocated* billing trap, and resizing;
+- Run Command, `az ssh vm` with Entra ID, Bastion, and boot diagnostics;
+- VNets and NSGs (priorities, service tags, NIC- vs subnet-level NSGs,
+  effective rules, IP flow verify);
+- UDRs and hub-and-spoke firewall routing, with effective routes and next hop;
+- RBAC scopes and managed identities, with control plane vs data plane;
+- Key Vault and storage network rules;
+- Activity Log, metrics, and KQL;
+- AKS credentials, node pools, and upgrades.
+
+**Incidents:**
+- a Deny rule with source '*' shadowing an allow;
+- a UDR pointing at a non-existent firewall IP;
+- a managed identity holding Contributor but no data-plane role;
+- a deallocated VM that lost its dynamic IP;
+- a merged kubeconfig that sent a staging script to prod;
+- a storage firewall flipped to Deny before the app subnet was allowed.
+
+## Still missing
+
+- An Azure sandbox. The AWS sandbox teaches the same layered-network
+  reasoning, but NSGs and UDRs aren't practiced hands-on.
+- Bicep and ARM templates (Terraform is the IaC representative).
+- App Service, Functions, Azure SQL, Cosmos DB, and Front Door/Application
+  Gateway operations.
+- Entra ID administration (conditional access, PIM), and Azure Policy authoring.
+- AZ-104 / AZ-400 exam breadth.
+
+## Readiness verdict
+
+A solid operator's foundation for an Azure shop: you can find resources,
+debug network paths with Network Watcher, and avoid the classic cost and
+identity traps. Practise on a free account, above all the NSG and route
+debugging, which here is scripted rather than live.
+
+---
+
+# Part 11 — Google Cloud
+
+**Content:** 10 tutorials, 6 incidents.
+
+## Covered
+
+**Tutorials** (every section of `commands/gcp.md`):
+- gcloud configurations, projects, APIs, and Application Default Credentials;
+- Compute Engine `--filter`/`--format`, TERMINATED meaning *stopped*, and the
+  default service account risk;
+- SSH through IAP with `--troubleshoot`, the serial console, and IAP TCP tunnels;
+- global VPCs with regional subnets, and Private Google Access;
+- firewall rules by network tag or service account, LB health-check ranges,
+  and audit logs;
+- Cloud Router and Cloud NAT, including NAT port exhaustion;
+- IAM bindings, service accounts without keys, impersonation, and the
+  Policy Troubleshooter;
+- Cloud Storage public access prevention;
+- Logging queries and quotas;
+- GKE credentials, Spot pools, Workload Identity, and release channels.
+
+**Incidents:**
+- a firewall rule targeting a tag the VM doesn't have;
+- private VMs in a region with no Cloud NAT;
+- a disabled API mistaken for a permissions problem;
+- a firewall cleanup that deleted the IAP rule;
+- a leaked service-account key with attacker persistence;
+- an autoscaler blocked by a machine-family quota.
+
+## Still missing
+
+- A GCP sandbox (see Azure above).
+- Cloud Run, Cloud SQL, BigQuery, Pub/Sub, and Cloud Load Balancing internals.
+- Shared VPC and VPC Service Controls, and organisation policy authoring.
+- Professional Cloud Architect / DevOps Engineer exam breadth.
+
+## Readiness verdict
+
+Enough to operate GCP projects confidently. You'll understand what makes
+GCP networking different (a global VPC, tag-based firewalls, and regional
+NAT) and follow its keyless IAM best practices.
+
+## Cross-cloud map
+
+The three clouds use different names for the same ideas:
+
+| Concept | AWS | Azure | Google Cloud |
+|---|---|---|---|
+| Account boundary | Account (in an Organization) | Subscription (in a tenant) | Project (in an Organization) |
+| VM | EC2 instance | Virtual Machine | Compute Engine instance |
+| Private network | VPC (regional) | VNet (regional) | VPC network (**global**) |
+| Subnet | Per availability zone | Per region (zone chosen per resource) | Per region |
+| Instance firewall | Security group (stateful, allow-only) | NSG (stateful, priorities, allow + deny) | Firewall rule (stateful, network-wide, by tag or SA) |
+| Subnet firewall | NACL (**stateless**) | NSG on the subnet | (none; hierarchical policies at the org level) |
+| Outbound for private VMs | NAT gateway + route | NAT gateway or firewall + UDR | Cloud Router + Cloud NAT (regional) |
+| Workload identity | Instance profile / IRSA | Managed identity | Attached service account / Workload Identity |
+| "Who changed what" | CloudTrail | Activity Log | Cloud Audit Logs |
+| Shell without SSH | SSM Session Manager | Run Command / Bastion | IAP tunnel / serial console |
+| Console of a dead VM | get-console-output | Boot diagnostics | Serial port output |
+| Block public buckets | S3 Block Public Access | Storage network rules / private endpoint | Public access prevention |
+
+---
+
+# Part 12 — Overall: will this make you proficient in DevOps?
 
 ## By the numbers
 
@@ -636,7 +745,9 @@ Terraform, then break it on purpose.
 | Monitoring | 12 | 6 | 2 Writing Labs (alert rules) |
 | MLOps | 12 | 7 | |
 | AWS | 11 | 7 | Sandbox (VPC), 4 Mysteries |
-| **Total** | **124** | **63** | 22 Writing Labs, 7 career paths, 4 sandboxes, 10 Mystery Incidents, Exam Mode |
+| Azure | 10 | 6 | |
+| Google Cloud | 10 | 6 | |
+| **Total** | **144** | **75** | 22 Writing Labs, 7 career paths, 4 sandboxes, 10 Mystery Incidents, Exam Mode |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -648,7 +759,7 @@ command beats the alternatives — not just what it does.
 will know the commands, the failure modes, and — most importantly — the
 debugging method** (check the layer before guessing the fix; refused vs
 timeout; verify after every change; revoke before cleaning up; revert
-don't force-push). The 63 incidents are modeled on the kinds of problems
+don't force-push). The 75 incidents are modeled on the kinds of problems
 that genuinely trip up working engineers, and working through them
 builds judgment that command references alone never will.
 
@@ -676,8 +787,9 @@ that no amount of additional scenario content can fully close:
    (kind/minikube, a free-tier cloud account) where things break for real.
 3. **Cloud-provider fundamentals** (IAM, VPCs, managed services).
    **Partly addressed.** The AWS category (Part 9) and its VPC sandbox
-   teach networking layers, IAM, and incident response. Azure and GCP
-   are next in the current expansion. Managed databases, serverless, and
+   teach networking layers, IAM, and incident response. Azure (Part 10)
+   and Google Cloud (Part 11) cover the same ground on each platform,
+   with a cross-cloud map. Managed databases, serverless, and
    multi-account networking still need a real account.
 4. **The human side of operations** — incident command, communication
    during an outage, blameless post-mortems, and knowing when to escalate

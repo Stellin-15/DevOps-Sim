@@ -3,7 +3,7 @@
 A terminal-based game for learning real DevOps command-line skills by
 typing them, not memorizing them. Started as Kubernetes-only; now spans
 **Kubernetes, Docker, Linux, Terraform, Networking, CI/CD, Monitoring,
-MLOps, and AWS**, with Azure, Google Cloud, Security, Server Fleet Ops,
+MLOps, AWS, Azure, and Google Cloud**, with Security, Server Fleet Ops,
 and big-tech SRE in progress. Runs entirely locally — no real infrastructure, no network calls,
 no backend. Every command output you see is a pre-written simulated
 string.
@@ -328,7 +328,14 @@ the engine, loader, sandboxes, yaml_lab, career_path, mystery, or scenario conte
 | Monitoring | 12 | 6 | PromQL, golden signals, tracing (OTel/Jaeger), SLOs and burn-rate alerts, Prometheus ops, alerting/Alertmanager, journald, Elasticsearch, Loki, Grafana API; plus 2 alert-rule Writing Labs |
 | MLOps | 12 | 7 | environments, GPUs, MLflow, DVC, serving, KServe/Kubeflow, profiling, model monitoring, model canaries, LLM serving (vLLM), feature stores (Feast) |
 | AWS | 11 | 7 | profiles/identity, EC2, SSM vs SSH, VPC anatomy, security groups vs NACLs, IAM, S3, CloudWatch/CloudTrail, ALB/ASG, EKS/ECR, cost; plus a VPC Sandbox |
-| **Total** | **124** | **63** | + 22 Writing Labs |
+| Azure | 10 | 6 | subscriptions, resource groups/locks, VMs (stop vs deallocate), Run Command/Bastion/az ssh, VNets/NSGs, UDRs/Network Watcher, RBAC/managed identity, Key Vault/storage, Monitor/KQL, AKS |
+| Google Cloud | 10 | 6 | configurations/projects/APIs, Compute Engine filters, IAP SSH/serial console, global VPCs, tag-based firewalls, Cloud NAT, IAM without keys/impersonation, Cloud Storage, logging/quotas, GKE/Workload Identity |
+| **Total** | **144** | **75** | + 22 Writing Labs |
+
+The three clouds use different names for the same ideas (security group
+vs NSG vs firewall rule; CloudTrail vs Activity Log vs Audit Logs). The
+cross-cloud map at the end of GAPS.md Part 11 lines them up side by
+side.
 
 Plus **7 Career Paths** chaining scenarios across categories: ship a
 feature end to end, a production incident chain, ML model from laptop to
@@ -372,10 +379,10 @@ Terraform, and bash Writing Labs → Exam Mode → Docker and Linux sandboxes �
 Mystery Incidents → new-topic content (tracing, SLOs, tcpdump/MTU, GitOps,
 supply chain, bisect, LLM serving, feature stores, strace, BuildKit,
 Terraform modules, and RBAC/PDB/storage incidents) → AWS category, VPC
-sandbox, and AWS mysteries.
+sandbox, and AWS mysteries → Azure and Google Cloud categories.
 
 Next, in priority order (details in CLAUDE.md and GAPS.md):
-- **In progress:** Azure and Google Cloud categories; a Security category
+- **In progress:** a Security category
   (scanning, hardening, endpoint security) with hacked-server mysteries;
   Server Fleet Ops (Ansible, patching, backups); big-tech SRE practices;
   Writing Labs for IAM policies, VPC Terraform, Ansible, and postmortems

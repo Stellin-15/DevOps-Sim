@@ -1,0 +1,43 @@
+{
+  "id": "azure-incident-002",
+  "type": "incident",
+  "category": "azure",
+  "title": "Every app VM lost internet access at once (a route to nowhere)",
+  "difficulty": "advanced",
+  "tags": ["azure", "routing", "udr", "firewall"],
+  "intro": "Since last night's network maintenance, every VM in snet-app times out calling external APIs (package mirrors, the payment provider). VMs in snet-web are fine. The hub firewall team says 'our firewall is healthy and nothing is being denied'.",
+  "steps": [
+    {
+      "prompt": "Check the next hop for traffic from vm-app-01 (10.20.2.4) to the payment API at 20.50.1.10, in rg-web-prod.",
+      "expected_commands": ["az network watcher show-next-hop --resource-group rg-web-prod --vm vm-app-01 --source-ip 10.20.2.4 --dest-ip 20.50.1.10", "az network watcher show-next-hop -g rg-web-prod --vm vm-app-01 --source-ip 10.20.2.4 --dest-ip 20.50.1.10"],
+      "fake_output": "{\n  \"nextHopIpAddress\": \"10.0.0.5\",\n  \"nextHopType\": \"VirtualAppliance\",\n  \"routeTableId\": \".../routeTables/rt-app\"\n}",
+      "hint": "show-next-hop tells you where Azure sends the packet."
+    },
+    {
+      "prompt": "Traffic goes to 10.0.0.5. Find the hub firewall fw-hub's (rg-network-hub) actual private IP.",
+      "expected_commands": ["az network firewall show --resource-group rg-network-hub --name fw-hub --query \"ipConfigurations[0].privateIPAddress\"", "az network firewall show -g rg-network-hub -n fw-hub --query ipConfigurations[0].privateIPAddress"],
+      "fake_output": "\"10.0.0.4\"",
+      "hint": "The firewall's private IP is under ipConfigurations."
+    },
+    {
+      "prompt": "The firewall is at 10.0.0.4, but rt-app points at 10.0.0.5, an address where nothing exists. List the routes in rt-app (rg-web-prod).",
+      "expected_commands": ["az network route-table route list --resource-group rg-web-prod --route-table-name rt-app --output table", "az network route-table route list -g rg-web-prod --route-table-name rt-app -o table"],
+      "fake_output": "Name          AddressPrefix  NextHopType       NextHopIpAddress\n------------  -------------  ----------------  ----------------\nto-firewall   0.0.0.0/0      VirtualAppliance  10.0.0.5",
+      "hint": "Look at NextHopIpAddress."
+    },
+    {
+      "prompt": "Who changed it? Check the Activity Log for rg-web-prod over the last 24 hours.",
+      "expected_commands": ["az monitor activity-log list --resource-group rg-web-prod --offset 24h --output table", "az monitor activity-log list -g rg-web-prod --offset 24h -o table"],
+      "fake_output": "Caller           OperationName                                 Status     EventTimestamp\n---------------  --------------------------------------------  ---------  --------------------\nnetops-pipeline  Microsoft.Network/routeTables/routes/write    Succeeded  2026-09-27T23:10:44Z",
+      "hint": "--offset 24h looks back one day."
+    },
+    {
+      "prompt": "The maintenance pipeline wrote the route from a template that still had the old firewall's IP. Fix the route to-firewall in rt-app to point at 10.0.0.4.",
+      "expected_commands": ["az network route-table route update --resource-group rg-web-prod --route-table-name rt-app --name to-firewall --next-hop-ip-address 10.0.0.4", "az network route-table route update -g rg-web-prod --route-table-name rt-app -n to-firewall --next-hop-ip-address 10.0.0.4"],
+      "fake_output": "{\n  \"name\": \"to-firewall\",\n  \"nextHopIpAddress\": \"10.0.0.4\",\n  \"nextHopType\": \"VirtualAppliance\"\n}",
+      "hint": "route update ... --next-hop-ip-address <ip>"
+    }
+  ],
+  "resolution": "A user-defined route to a 'VirtualAppliance' next hop is followed blindly. Azure doesn't check that anything exists at that IP, so a wrong address silently black-holes traffic. The firewall team was right: their firewall was healthy and denied nothing, because no traffic ever reached it. That 'nothing in the logs' was itself the clue that the problem was before the firewall. Only snet-app was affected because only its route table had the bad route. The pipeline rendered the route from an outdated template holding the old firewall's IP. Durable fixes: reference the firewall's IP from its resource (a Terraform/Bicep output) instead of a hardcoded string; add a post-deploy check that probes the internet from each spoke; and remember that show-next-hop plus effective routes answer 'where does the packet go' in seconds.",
+  "real_commands_used": ["az network watcher show-next-hop", "az network firewall show", "az network route-table route list", "az monitor activity-log list", "az network route-table route update"]
+}

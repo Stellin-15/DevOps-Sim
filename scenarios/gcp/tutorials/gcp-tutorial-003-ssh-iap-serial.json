@@ -1,0 +1,46 @@
+{
+  "id": "gcp-tutorial-003",
+  "type": "tutorial",
+  "category": "gcp",
+  "title": "Getting In: gcloud compute ssh, IAP Tunnels, and the Serial Console",
+  "difficulty": "intermediate",
+  "tags": ["gcp", "ssh", "iap", "troubleshooting"],
+  "intro": "'gcloud compute ssh' manages SSH keys for you. For VMs with no external IP, Identity-Aware Proxy (IAP) tunnels SSH through Google's edge, so nothing is exposed to the internet. When SSH is broken entirely, the serial port output shows what the VM is doing.",
+  "steps": [
+    {
+      "prompt": "SSH into web-1 in europe-west1-b.",
+      "expected_commands": ["gcloud compute ssh web-1 --zone europe-west1-b", "gcloud compute ssh web-1 --zone=europe-west1-b"],
+      "fake_output": "Updating project ssh metadata...done.\nWarning: Permanently added 'compute.482910381204' (ED25519) to the list of known hosts.\nalice@web-1:~$",
+      "explanation": "gcloud generated a key, pushed it to the VM, and connected.",
+      "why": "Pushing keys into project metadata works, but with OS Login (enable-oslogin=TRUE) SSH access is controlled by IAM roles instead (roles/compute.osLogin), and removed automatically when someone leaves. OS Login is the enterprise default."
+    },
+    {
+      "prompt": "worker-1 (europe-west1-b) has no external IP. SSH to it through IAP.",
+      "expected_commands": ["gcloud compute ssh worker-1 --zone europe-west1-b --tunnel-through-iap", "gcloud compute ssh worker-1 --zone=europe-west1-b --tunnel-through-iap"],
+      "fake_output": "External IP address was not found; defaulting to using IAP tunneling.\nalice@worker-1:~$",
+      "explanation": "Connected through IAP with no public IP and no bastion host.",
+      "why": "IAP authorises each connection with IAM (roles/iap.tunnelResourceAccessor) and logs it. The VM's firewall only needs to allow SSH from IAP's range, 35.235.240.0/20, not from the internet. Forgetting that rule is gcp-incident-004."
+    },
+    {
+      "prompt": "SSH to worker-1 fails for a colleague. Let gcloud diagnose the connection.",
+      "expected_commands": ["gcloud compute ssh worker-1 --zone europe-west1-b --troubleshoot", "gcloud compute ssh worker-1 --zone=europe-west1-b --troubleshoot", "gcloud compute ssh worker-1 --zone europe-west1-b --tunnel-through-iap --troubleshoot"],
+      "fake_output": "---- Checking network connectivity ----\nNo firewall rule allows ingress from 35.235.240.0/20 on port 22 for this VM.\n---- Checking user permissions ----\nUser is missing roles/iap.tunnelResourceAccessor.\n---- Checking VM status ----\nVM is RUNNING. Guest agent is healthy.",
+      "explanation": "Two problems: no firewall rule for IAP, and a missing IAM role.",
+      "why": "--troubleshoot checks the network path, IAM, the VM and the guest environment in one go, and names what's wrong. Use it before debugging SSH by hand."
+    },
+    {
+      "prompt": "A third VM, cache-1 in europe-west1-b, won't answer at all. Read its serial port output.",
+      "expected_commands": ["gcloud compute instances get-serial-port-output cache-1 --zone europe-west1-b", "gcloud compute instances get-serial-port-output cache-1 --zone=europe-west1-b"],
+      "fake_output": "[  OK  ] Started Google Compute Engine Guest Agent.\n[    3.412] EXT4-fs error (device sda1): ext4_lookup:1601: inode #2: comm systemd: deleted inode referenced\n[FAILED] Failed to start File System Check on /dev/sda1.\nGive root password for maintenance (or press Control-D to continue):",
+      "explanation": "The root filesystem check failed, and the VM is waiting at a maintenance prompt.",
+      "why": "The serial console output works when the network and SSH don't, like 'aws ec2 get-console-output' and Azure boot diagnostics. The same failures show up on every cloud: fstab, filesystem errors, full disks, kernel panics."
+    },
+    {
+      "prompt": "Reach a private web UI on worker-1's port 8080 from your laptop, tunnelled through IAP to local port 8080.",
+      "expected_commands": ["gcloud compute start-iap-tunnel worker-1 8080 --local-host-port=localhost:8080 --zone europe-west1-b", "gcloud compute start-iap-tunnel worker-1 8080 --local-host-port=localhost:8080 --zone=europe-west1-b"],
+      "fake_output": "Testing if tunnel connection works.\nTesting if tunnel connection works...done.\nListening on port [8080].",
+      "explanation": "http://localhost:8080 on your laptop now reaches worker-1:8080 privately.",
+      "why": "IAP tunnels work for any TCP port, not just SSH. It's the safe way to reach admin UIs (a queue dashboard, a database admin tool) without exposing them."
+    }
+  ]
+}

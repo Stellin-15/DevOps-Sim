@@ -1,0 +1,39 @@
+{
+  "id": "gcp-tutorial-009",
+  "type": "tutorial",
+  "category": "gcp",
+  "title": "Cloud Logging, Audit Logs, and Quotas",
+  "difficulty": "intermediate",
+  "tags": ["gcp", "logging", "quotas", "observability"],
+  "intro": "Cloud Logging collects logs from VMs, containers, and every Google service, and holds the audit logs of who changed what. 'gcloud logging read' uses the same query language as the console's Logs Explorer. Quotas are the other thing every GCP operator hits sooner or later.",
+  "steps": [
+    {
+      "prompt": "Read ERROR-or-worse log entries from Compute Engine VMs over the last hour, 20 at most.",
+      "expected_commands": ["gcloud logging read 'resource.type=\"gce_instance\" AND severity>=ERROR' --limit 20 --freshness 1h", "gcloud logging read \"resource.type=gce_instance AND severity>=ERROR\" --limit 20 --freshness 1h"],
+      "fake_output": "timestamp: '2026-09-28T10:14:02Z'\nseverity: ERROR\nresource: {type: gce_instance, labels: {instance_id: '8812736450192837465'}}\ntextPayload: 'worker: failed to fetch https://pypi.org/simple/requests/: Connection timed out'",
+      "explanation": "A worker VM can't reach pypi.org.",
+      "why": "Filters combine resource type, severity, labels, and text. --freshness limits the time range, which matters for speed and cost on busy projects. 'Connection timed out' from a private VM usually means there's no Cloud NAT in that region (gcp-incident-002)."
+    },
+    {
+      "prompt": "Who deleted a VM recently? Search the audit logs for instance delete operations, 5 at most.",
+      "expected_commands": ["gcloud logging read 'protoPayload.methodName=\"v1.compute.instances.delete\"' --limit 5", "gcloud logging read \"protoPayload.methodName=v1.compute.instances.delete\" --limit 5"],
+      "fake_output": "timestamp: '2026-09-27T17:40:11Z'\nprotoPayload:\n  authenticationInfo: {principalEmail: dave@example.com}\n  methodName: v1.compute.instances.delete\n  resourceName: projects/shop-prod-217733/zones/europe-west1-b/instances/cache-2",
+      "explanation": "dave deleted cache-2 yesterday afternoon.",
+      "why": "Admin Activity audit logs are always on, free, and kept for 400 days. Data Access logs (who READ data) are off by default for most services and must be enabled explicitly, which you'll want for sensitive data before an incident, not after."
+    },
+    {
+      "prompt": "Check the CPU quota and usage in europe-west1.",
+      "expected_commands": ["gcloud compute regions describe europe-west1 --format=\"table(quotas.metric,quotas.limit,quotas.usage)\"", "gcloud compute regions describe europe-west1"],
+      "fake_output": "METRIC             LIMIT  USAGE\nCPUS               200    196\nIN_USE_ADDRESSES   16     9\nSSD_TOTAL_GB       4096   3100\nN2_CPUS            200    192",
+      "explanation": "196 of 200 CPUs are in use: the next scale-up will fail.",
+      "why": "Quotas cap resources per region and per project, both as a safety net against runaway spend and for capacity planning. An autoscaler that can't create VMs because of quota fails quietly (gcp-incident-006). Check quotas before big launches and request increases days ahead."
+    },
+    {
+      "prompt": "Enable the Secret Manager API in the current project, since the next deploy needs it.",
+      "expected_commands": ["gcloud services enable secretmanager.googleapis.com"],
+      "fake_output": "Operation \"operations/acf.p2-482910381204-7d1c2b3a\" finished successfully.",
+      "explanation": "Secret Manager can now be used in this project.",
+      "why": "Enabling an API can take a minute to propagate, and newly enabled services sometimes create their own service agents. Enable APIs as part of the environment's Terraform so every environment matches."
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "id": "azure-tutorial-002",
+  "type": "tutorial",
+  "category": "azure",
+  "title": "Resource Groups: Azure's Unit of Lifecycle",
+  "difficulty": "beginner",
+  "tags": ["azure", "resource-groups", "tags"],
+  "intro": "Every Azure resource lives in exactly one resource group. Groups are how you organise, grant access to, and delete things together. Deleting a group deletes everything in it, which is powerful for cleaning up a test environment and catastrophic when aimed at the wrong group.",
+  "steps": [
+    {
+      "prompt": "List all resource groups in the current subscription as a table.",
+      "expected_commands": ["az group list --output table", "az group list -o table"],
+      "fake_output": "Name              Location     Status\n----------------  -----------  ---------\nrg-web-prod       westeurope   Succeeded\nrg-data-prod      westeurope   Succeeded\nrg-network-hub    westeurope   Succeeded\nrg-demo-2023      eastus       Succeeded\nNetworkWatcherRG  westeurope   Succeeded",
+      "explanation": "Five groups, including an old rg-demo-2023 and the NetworkWatcherRG Azure creates automatically.",
+      "why": "A good naming convention (rg-<app>-<env>) makes the list readable. Groups usually mirror the lifecycle: things that are created and deleted together (one app's environment) share a group."
+    },
+    {
+      "prompt": "List what's inside rg-demo-2023 before deciding anything about it.",
+      "expected_commands": ["az resource list --resource-group rg-demo-2023 --output table", "az resource list -g rg-demo-2023 -o table"],
+      "fake_output": "Name              ResourceGroup  Location  Type\n----------------  -------------  --------  ---------------------------------\nvm-demo-01        rg-demo-2023   eastus    Microsoft.Compute/virtualMachines\nvm-demo-01_OsDisk rg-demo-2023   eastus    Microsoft.Compute/disks\npip-demo-01       rg-demo-2023   eastus    Microsoft.Network/publicIPAddresses\nsqldemo2023       rg-demo-2023   eastus    Microsoft.Sql/servers",
+      "explanation": "An old demo VM, its disk, a public IP, and a SQL server, all still billing.",
+      "why": "Always look inside before deleting. The SQL server may hold data someone still needs, or it may be the thing a forgotten customer demo still uses."
+    },
+    {
+      "prompt": "Find who owns it: show the tags on rg-demo-2023.",
+      "expected_commands": ["az group show --name rg-demo-2023 --query tags", "az group show -n rg-demo-2023 --query tags"],
+      "fake_output": "{\n  \"owner\": \"sales-engineering\",\n  \"expires\": \"2023-12-31\"\n}",
+      "explanation": "It was tagged to expire at the end of 2023.",
+      "why": "Tags like owner and expires turn cleanup from guesswork into policy. Azure Policy can require tags at creation, and a scheduled job can report or delete groups past their 'expires' date."
+    },
+    {
+      "prompt": "Protect the production group rg-web-prod from accidental deletion with a CanNotDelete lock named no-delete.",
+      "expected_commands": ["az lock create --name no-delete --resource-group rg-web-prod --lock-type CanNotDelete", "az lock create -n no-delete -g rg-web-prod --lock-type CanNotDelete"],
+      "fake_output": "{\n  \"level\": \"CanNotDelete\",\n  \"name\": \"no-delete\",\n  \"notes\": null\n}",
+      "explanation": "Nothing in rg-web-prod can be deleted until the lock is removed, even by an Owner.",
+      "why": "Locks guard against the fat-finger scenario (deleting the wrong group) that RBAC can't prevent, because the person who makes the mistake usually has the permission. Removing the lock is a separate, deliberate step."
+    },
+    {
+      "prompt": "After sales-engineering confirms, delete rg-demo-2023 without waiting for it to finish.",
+      "expected_commands": ["az group delete --name rg-demo-2023 --yes --no-wait", "az group delete -n rg-demo-2023 --yes --no-wait", "az group delete --name rg-demo-2023 --no-wait --yes"],
+      "fake_output": "(no output: deletion started in the background and takes several minutes)",
+      "explanation": "The group and everything in it is being deleted.",
+      "why": "--yes skips the confirmation prompt, so only use it after you've checked the name. There's no recycle bin for most resource types. --no-wait returns immediately; check progress with 'az group show'."
+    }
+  ]
+}

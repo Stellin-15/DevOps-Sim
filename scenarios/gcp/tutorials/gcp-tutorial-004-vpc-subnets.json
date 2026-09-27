@@ -1,0 +1,39 @@
+{
+  "id": "gcp-tutorial-004",
+  "type": "tutorial",
+  "category": "gcp",
+  "title": "GCP VPCs: Global Networks and Regional Subnets",
+  "difficulty": "intermediate",
+  "tags": ["gcp", "vpc", "networking"],
+  "intro": "GCP networking differs from AWS and Azure in one big way: a VPC network is global, and subnets are regional. One VPC can span every region with no peering. There are no route tables per subnet, and no NAT or internet gateways as separate objects you attach.",
+  "steps": [
+    {
+      "prompt": "List the VPC networks in the project.",
+      "expected_commands": ["gcloud compute networks list"],
+      "fake_output": "NAME      SUBNET_MODE  BGP_ROUTING_MODE  IPV4_RANGE  GATEWAY_IPV4\ndefault   AUTO         REGIONAL\nprod-vpc  CUSTOM       GLOBAL",
+      "explanation": "The auto-mode 'default' network, and a custom-mode prod-vpc.",
+      "why": "Auto mode creates a subnet in every region, with fixed ranges that overlap across projects, which makes peering impossible later. Production uses custom mode, where you choose the ranges. Many organisations block the default network with an org policy."
+    },
+    {
+      "prompt": "List prod-vpc's subnets.",
+      "expected_commands": ["gcloud compute networks subnets list --network prod-vpc", "gcloud compute networks subnets list --network=prod-vpc"],
+      "fake_output": "NAME          REGION        NETWORK   RANGE          STACK_TYPE\npublic-ew1    europe-west1  prod-vpc  10.10.0.0/20   IPV4_ONLY\nprivate-ew1   europe-west1  prod-vpc  10.20.0.0/20   IPV4_ONLY\nprivate-use1  us-east1      prod-vpc  10.30.0.0/20   IPV4_ONLY",
+      "explanation": "Subnets in two regions of the same network. VMs in both can talk over internal IPs directly.",
+      "why": "'public' and 'private' are just names here: in GCP a VM is internet-facing only if it has an external IP (and the firewall allows it). Subnet design is about IP ranges and regions, not routing."
+    },
+    {
+      "prompt": "Create a subnet private-ew4 in europe-west4 on prod-vpc with range 10.40.0.0/20, with Private Google Access enabled.",
+      "expected_commands": ["gcloud compute networks subnets create private-ew4 --network prod-vpc --region europe-west4 --range 10.40.0.0/20 --enable-private-ip-google-access", "gcloud compute networks subnets create private-ew4 --network=prod-vpc --region=europe-west4 --range=10.40.0.0/20 --enable-private-ip-google-access"],
+      "fake_output": "Created [https://www.googleapis.com/compute/v1/projects/shop-prod-217733/regions/europe-west4/subnetworks/private-ew4].\nNAME         REGION        NETWORK   RANGE          STACK_TYPE\nprivate-ew4  europe-west4  prod-vpc  10.40.0.0/20   IPV4_ONLY",
+      "explanation": "A new regional subnet. VMs without external IPs in it can still reach Google APIs (Cloud Storage, BigQuery...).",
+      "why": "Private Google Access is GCP's equivalent of AWS gateway endpoints: private VMs reach Google services without NAT or public IPs. Without it, a private VM can't even pull from Artifact Registry. Turn it on for every private subnet."
+    },
+    {
+      "prompt": "List the routes of prod-vpc.",
+      "expected_commands": ["gcloud compute routes list --filter=\"network=prod-vpc\"", "gcloud compute routes list --filter='network=prod-vpc'", "gcloud compute routes list --filter=network=prod-vpc"],
+      "fake_output": "NAME                          NETWORK   DEST_RANGE    NEXT_HOP                  PRIORITY\ndefault-route-4f2c8e1a7b3d    prod-vpc  0.0.0.0/0     default-internet-gateway  1000\ndefault-route-r-10.10.0.0-20  prod-vpc  10.10.0.0/20  prod-vpc                  0\ndefault-route-r-10.20.0.0-20  prod-vpc  10.20.0.0/20  prod-vpc                  0",
+      "explanation": "Subnet routes plus one default route to the internet gateway for the whole network.",
+      "why": "Routes belong to the network, not to subnets. The default internet route only works for VMs with an external IP. Private VMs need Cloud NAT (gcp-tutorial-006), and deleting the default route cuts off both, including Private Google Access."
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "id": "gcp-incident-003",
+  "type": "incident",
+  "category": "gcp",
+  "title": "The first deploy to the new project fails with PERMISSION_DENIED",
+  "difficulty": "beginner",
+  "tags": ["gcp", "apis", "terraform", "iam"],
+  "intro": "A new project, shop-staging-590127, was created for a staging environment. The Terraform apply that worked in dev fails immediately with: 'Error 403: Secret Manager API has not been used in project 590127 before or it is disabled.' The engineer's first instinct is to grant themselves Owner.",
+  "steps": [
+    {
+      "prompt": "Check which APIs are enabled in shop-staging-590127.",
+      "expected_commands": ["gcloud services list --enabled --project shop-staging-590127", "gcloud services list --enabled --project=shop-staging-590127"],
+      "fake_output": "NAME                       TITLE\ncompute.googleapis.com     Compute Engine API\noslogin.googleapis.com     Cloud OS Login API",
+      "hint": "services list --enabled --project <id>"
+    },
+    {
+      "prompt": "Compare with dev: list enabled APIs in shop-dev-381204.",
+      "expected_commands": ["gcloud services list --enabled --project shop-dev-381204", "gcloud services list --enabled --project=shop-dev-381204"],
+      "fake_output": "NAME                                 TITLE\ncompute.googleapis.com               Compute Engine API\ncontainer.googleapis.com             Kubernetes Engine API\nsecretmanager.googleapis.com         Secret Manager API\nsqladmin.googleapis.com              Cloud SQL Admin API\nartifactregistry.googleapis.com      Artifact Registry API",
+      "hint": "Same command, other project."
+    },
+    {
+      "prompt": "Enable the four missing APIs in shop-staging-590127 in one command: container, secretmanager, sqladmin, and artifactregistry.",
+      "expected_commands": ["gcloud services enable container.googleapis.com secretmanager.googleapis.com sqladmin.googleapis.com artifactregistry.googleapis.com --project shop-staging-590127", "gcloud services enable container.googleapis.com secretmanager.googleapis.com sqladmin.googleapis.com artifactregistry.googleapis.com --project=shop-staging-590127"],
+      "fake_output": "Operation \"operations/acat.p2-590127-3b1c9e2a\" finished successfully.",
+      "hint": "services enable accepts several API names."
+    },
+    {
+      "prompt": "Terraform itself should do this next time. Show the plan output for the new google_project_service resources, from the staging workspace: run terraform plan.",
+      "expected_commands": ["terraform plan"],
+      "fake_output": "  # google_project_service.apis[\"container.googleapis.com\"] will be created\n  # google_project_service.apis[\"secretmanager.googleapis.com\"] will be created\n  ...\nPlan: 4 to add, 0 to change, 0 to destroy.\n(These already exist now; import them or they'll simply be adopted on apply.)",
+      "hint": "terraform plan"
+    }
+  ],
+  "resolution": "'PERMISSION_DENIED' or 'has not been used in project ... or it is disabled' on a brand-new project almost always means the API is off, not that you lack permissions. GCP APIs are disabled per project by default, and the error message says so explicitly. Granting yourself Owner would not have helped, and would have left a dangerous grant behind. Dev worked because someone enabled APIs there by hand months ago, so the difference was invisible in the Terraform code. Comparing enabled services between a working and a broken project found it immediately. Fix it for good by managing APIs in Terraform (google_project_service with for_each over a list), so every new project gets exactly the APIs its code needs, and set disable_on_destroy = false so destroying a module doesn't switch off an API other things depend on.",
+  "real_commands_used": ["gcloud services list --enabled --project", "gcloud services enable", "terraform plan"]
+}

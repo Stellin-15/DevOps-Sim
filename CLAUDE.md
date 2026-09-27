@@ -311,7 +311,9 @@ Current per-category content depth (tutorials / incidents):
 - monitoring: 12 / 6 (+2 Writing Labs: alert rules)
 - mlops: 12 / 7
 - aws: 11 / 7 (+ AWS VPC sandbox, 4 mysteries)
-- **total: 124 tutorials, 63 incidents, 22 Writing Labs, 10 Mystery Incidents (4 linux, 2 docker, 4 aws)**
+- azure: 10 / 6
+- gcp: 10 / 6
+- **total: 144 tutorials, 75 incidents, 22 Writing Labs, 10 Mystery Incidents (4 linux, 2 docker, 4 aws)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with
@@ -515,8 +517,9 @@ See GAPS.md's final 'Overall' part for the reasoning. In priority order:
    category's scenarios from its file. Remaining steps, in order:
    1. ✓ aws, with the `aws_sandbox.py` VPC sandbox, sandbox-agnostic
       mysteries, and 4 AWS mysteries;
-   2. azure and gcp (next);
-   3. security, plus hacked-server problems in linux_sandbox (a
+   2. ✓ azure and gcp; GAPS.md Parts 10–11 include a cross-cloud map;
+   3. (next) security, as below;
+      security, plus hacked-server problems in linux_sandbox (a
       cryptominer with cron persistence, an SSH backdoor);
    4. servers;
    5. sre;

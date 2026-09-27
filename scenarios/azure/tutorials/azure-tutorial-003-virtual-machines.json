@@ -1,0 +1,46 @@
+{
+  "id": "azure-tutorial-003",
+  "type": "tutorial",
+  "category": "azure",
+  "title": "Azure VMs: Finding, Inspecting, and Stopping (Properly)",
+  "difficulty": "beginner",
+  "tags": ["azure", "vm", "compute"],
+  "intro": "Azure Virtual Machines are the equivalent of EC2 instances. The CLI patterns carry over, but there's one Azure-specific trap that costs companies real money: a VM that's 'stopped' is still billed unless it's 'deallocated'.",
+  "steps": [
+    {
+      "prompt": "List VMs in all groups, with their power state and public IPs (the -d flag adds those details), as a table.",
+      "expected_commands": ["az vm list -d --output table", "az vm list -d -o table", "az vm list --show-details --output table"],
+      "fake_output": "Name        ResourceGroup  PowerState      PublicIps     Location\n----------  -------------  --------------  ------------  ----------\nvm-web-01   rg-web-prod    VM running      20.61.14.8    westeurope\nvm-web-02   rg-web-prod    VM running      20.61.14.9    westeurope\nvm-batch-01 rg-data-prod   VM stopped                    westeurope",
+      "explanation": "Two web VMs are running; vm-batch-01 is 'stopped'.",
+      "why": "Without -d (--show-details) the list has no power state or IPs, because it needs extra API calls per VM. 'VM stopped' is the important word here: see the next steps."
+    },
+    {
+      "prompt": "Check vm-batch-01's detailed status in rg-data-prod.",
+      "expected_commands": ["az vm get-instance-view --resource-group rg-data-prod --name vm-batch-01 --query instanceView.statuses", "az vm get-instance-view -g rg-data-prod -n vm-batch-01 --query instanceView.statuses"],
+      "fake_output": "[\n  {\"code\": \"ProvisioningState/succeeded\"},\n  {\"code\": \"PowerState/stopped\", \"displayStatus\": \"VM stopped\"}\n]",
+      "explanation": "PowerState/stopped: the OS is shut down, but the VM still holds its compute allocation.",
+      "why": "Stopping from inside the OS ('sudo shutdown') or with 'az vm stop' leaves the VM allocated on a host, and you keep paying for its compute. Only PowerState/deallocated stops compute billing."
+    },
+    {
+      "prompt": "Deallocate vm-batch-01 in rg-data-prod so it stops costing compute.",
+      "expected_commands": ["az vm deallocate --resource-group rg-data-prod --name vm-batch-01", "az vm deallocate -g rg-data-prod -n vm-batch-01"],
+      "fake_output": "(no output: vm-batch-01 is now PowerState/deallocated)",
+      "explanation": "The compute allocation is released; you now pay only for its disks.",
+      "why": "The trade-off: a deallocated VM loses its dynamic public IP (it may get a different one on start) and its temporary disk. If anything depends on the IP, make it static first. azure-incident-004 is exactly that failure."
+    },
+    {
+      "prompt": "See which VM sizes are available in westeurope, to plan a resize.",
+      "expected_commands": ["az vm list-sizes --location westeurope --output table", "az vm list-sizes -l westeurope -o table"],
+      "fake_output": "Name              NumberOfCores  MemoryInMb\n----------------  -------------  ----------\nStandard_B2s      2              4096\nStandard_D4s_v5   4              16384\nStandard_E8s_v5   8              65536\n...",
+      "explanation": "B-series is burstable and cheap, D is general purpose, E is memory-optimised.",
+      "why": "Size families map to workloads, the same idea as AWS's t/m/r families. B-series 'burstable' VMs run out of CPU credits under sustained load and get throttled, which is a common cause of mysteriously slow servers."
+    },
+    {
+      "prompt": "Resize vm-web-02 in rg-web-prod to Standard_D4s_v5.",
+      "expected_commands": ["az vm resize --resource-group rg-web-prod --name vm-web-02 --size Standard_D4s_v5", "az vm resize -g rg-web-prod -n vm-web-02 --size Standard_D4s_v5"],
+      "fake_output": "(the VM restarts on the new size; about 2 minutes)",
+      "explanation": "vm-web-02 now has 4 cores and 16GB.",
+      "why": "A resize restarts the VM, so do one instance at a time behind a load balancer. If the new size isn't available on the current hardware cluster, you must deallocate first. For fleets, use a VM Scale Set and roll out a new model instead of resizing by hand."
+    }
+  ]
+}

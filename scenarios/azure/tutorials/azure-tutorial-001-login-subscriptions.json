@@ -1,0 +1,46 @@
+{
+  "id": "azure-tutorial-001",
+  "type": "tutorial",
+  "category": "azure",
+  "title": "Signing In: Tenants, Subscriptions, and Defaults",
+  "difficulty": "beginner",
+  "tags": ["azure", "cli", "subscriptions"],
+  "intro": "Azure's hierarchy is tenant (your organisation's Entra ID directory) → management groups → subscriptions (billing and access boundaries, like AWS accounts) → resource groups → resources. The CLI always acts on one 'current' subscription, and running a command in the wrong one is the classic Azure mistake.",
+  "steps": [
+    {
+      "prompt": "Sign in from a terminal on a server without a browser, using the device-code flow.",
+      "expected_commands": ["az login --use-device-code"],
+      "fake_output": "To sign in, use a web browser to open the page https://microsoft.com/devicelogin and enter the code F7KQ2X9LM to authenticate.\n[\n  {\"name\": \"Contoso-Dev\", \"isDefault\": true, \"state\": \"Enabled\"},\n  {\"name\": \"Contoso-Prod\", \"isDefault\": false, \"state\": \"Enabled\"}\n]",
+      "explanation": "You signed in on another device, and the CLI now has access to two subscriptions.",
+      "why": "Device code works over SSH and in containers where no browser can open. In automation, never use a person's login: pipelines should use a service principal with workload identity federation (OIDC), and Azure VMs should use a managed identity ('az login --identity')."
+    },
+    {
+      "prompt": "List your subscriptions as a table.",
+      "expected_commands": ["az account list --output table", "az account list -o table"],
+      "fake_output": "Name           CloudName    SubscriptionId                        TenantId                              State    IsDefault\n-------------  -----------  ------------------------------------  ------------------------------------  -------  -----------\nContoso-Dev    AzureCloud   11111111-aaaa-4bbb-8ccc-222222222222  9f8e7d6c-5b4a-4321-9876-0fedcba98765  Enabled  True\nContoso-Prod   AzureCloud   33333333-dddd-4eee-8fff-444444444444  9f8e7d6c-5b4a-4321-9876-0fedcba98765  Enabled  False",
+      "explanation": "Dev is the current default; Prod is also available.",
+      "why": "'--output table' (-o table) is the fastest human-readable view. Use -o tsv with --query when scripting. Check IsDefault before every session: it's Azure's version of 'which AWS profile am I on?'."
+    },
+    {
+      "prompt": "Switch the CLI to the Contoso-Prod subscription by name.",
+      "expected_commands": ["az account set --subscription Contoso-Prod", "az account set --subscription \"Contoso-Prod\"", "az account set -s Contoso-Prod"],
+      "fake_output": "(no output: Contoso-Prod is now the default subscription)",
+      "explanation": "Every command from now on targets production.",
+      "why": "This changes a global setting in ~/.azure that affects every terminal on the machine, not just this one. For a single command, prefer passing --subscription explicitly. Scripts should always pass it, never rely on whatever the default happens to be."
+    },
+    {
+      "prompt": "Confirm which subscription and identity you're now using.",
+      "expected_commands": ["az account show", "az account show -o table", "az account show --output table"],
+      "fake_output": "{\n  \"name\": \"Contoso-Prod\",\n  \"id\": \"33333333-dddd-4eee-8fff-444444444444\",\n  \"user\": {\"name\": \"alice@contoso.com\", \"type\": \"user\"},\n  \"isDefault\": true\n}",
+      "explanation": "Prod, as alice@contoso.com.",
+      "why": "Azure's equivalent of 'aws sts get-caller-identity'. Make it a habit before any write command."
+    },
+    {
+      "prompt": "Set default values so you don't repeat them: resource group rg-web-prod and location westeurope.",
+      "expected_commands": ["az configure --defaults group=rg-web-prod location=westeurope"],
+      "fake_output": "(no output: -g and -l are now optional for commands that need them)",
+      "explanation": "Commands like 'az vm list' now default to rg-web-prod.",
+      "why": "Defaults save typing, but they can also surprise you when you forget they're set. See them with 'az configure --list-defaults' and clear them with 'az configure --defaults group='."
+    }
+  ]
+}

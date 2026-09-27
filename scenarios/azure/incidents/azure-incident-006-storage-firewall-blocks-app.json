@@ -1,0 +1,43 @@
+{
+  "id": "azure-incident-006",
+  "type": "incident",
+  "category": "azure",
+  "title": "Uploads fail with 403 after a security hardening ticket",
+  "difficulty": "intermediate",
+  "tags": ["azure", "storage", "networking", "security"],
+  "intro": "Since this morning, user avatar uploads fail. The app logs show '403 AuthorizationFailure: This request is not authorized to perform this operation.' from the storage account stwebprod001. The app's credentials haven't changed. A security ticket 'restrict public network access to storage' was closed at 08:30.",
+  "steps": [
+    {
+      "prompt": "Check stwebprod001's network rules.",
+      "expected_commands": ["az storage account show --name stwebprod001 --query networkRuleSet", "az storage account show -n stwebprod001 --query networkRuleSet"],
+      "fake_output": "{\n  \"defaultAction\": \"Deny\",\n  \"ipRules\": [{\"ipAddressOrRange\": \"198.51.100.0/24\"}],\n  \"virtualNetworkRules\": []\n}",
+      "hint": "defaultAction and the allow lists decide which networks can reach the account."
+    },
+    {
+      "prompt": "Deny by default, and only the office range is allowed. The app runs on vm-app-01 in snet-app, which isn't listed. Check whether snet-app (vnet-web-prod, rg-web-prod) has the Microsoft.Storage service endpoint.",
+      "expected_commands": ["az network vnet subnet show --resource-group rg-web-prod --vnet-name vnet-web-prod --name snet-app --query serviceEndpoints", "az network vnet subnet show -g rg-web-prod --vnet-name vnet-web-prod -n snet-app --query serviceEndpoints"],
+      "fake_output": "[]",
+      "hint": "A VNet rule on a storage account requires the subnet to have the Microsoft.Storage service endpoint."
+    },
+    {
+      "prompt": "Enable the Microsoft.Storage service endpoint on snet-app.",
+      "expected_commands": ["az network vnet subnet update --resource-group rg-web-prod --vnet-name vnet-web-prod --name snet-app --service-endpoints Microsoft.Storage", "az network vnet subnet update -g rg-web-prod --vnet-name vnet-web-prod -n snet-app --service-endpoints Microsoft.Storage"],
+      "fake_output": "{\n  \"serviceEndpoints\": [{\"service\": \"Microsoft.Storage\", \"provisioningState\": \"Succeeded\"}]\n}",
+      "hint": "subnet update --service-endpoints Microsoft.Storage"
+    },
+    {
+      "prompt": "Allow snet-app on stwebprod001 (rg-web-prod).",
+      "expected_commands": ["az storage account network-rule add --resource-group rg-web-prod --account-name stwebprod001 --vnet-name vnet-web-prod --subnet snet-app", "az storage account network-rule add -g rg-web-prod --account-name stwebprod001 --vnet-name vnet-web-prod --subnet snet-app"],
+      "fake_output": "{\n  \"virtualNetworkRules\": [{\"virtualNetworkResourceId\": \".../subnets/snet-app\", \"action\": \"Allow\", \"state\": \"Succeeded\"}]\n}",
+      "hint": "network-rule add --vnet-name --subnet"
+    },
+    {
+      "prompt": "Test from the app VM itself: use Run Command on vm-app-01 (rg-web-prod) to check which address stwebprod001.blob.core.windows.net resolves to.",
+      "expected_commands": ["az vm run-command invoke --resource-group rg-web-prod --name vm-app-01 --command-id RunShellScript --scripts \"nslookup stwebprod001.blob.core.windows.net\"", "az vm run-command invoke -g rg-web-prod -n vm-app-01 --command-id RunShellScript --scripts 'nslookup stwebprod001.blob.core.windows.net'"],
+      "fake_output": "[stdout]\nName:    blob.ams07prdstr02a.store.core.windows.net\nAddress: 20.60.222.4\nAliases: stwebprod001.blob.core.windows.net\n(uploads succeed again: the traffic arrives tagged with snet-app's service endpoint)",
+      "hint": "Run Command runs a script on the VM without SSH."
+    }
+  ],
+  "resolution": "The hardening itself was right: flipping the storage account's default action to Deny cut it off from the whole internet. But the ticket was done in the wrong order and only accounted for the office. The app reaches storage from snet-app, which had neither a service endpoint nor an allow rule, so its requests were refused with an AuthorizationFailure 403, easily mistaken for a credentials problem. The order that avoids the outage: inventory the real clients first (the storage account's diagnostic logs show caller IPs), add their allow rules, and only then flip the default to Deny. A private endpoint is stronger than service endpoints: the account gets a private IP in the VNet and public access can be disabled entirely, but DNS must resolve to that private IP (privatelink.blob.core.windows.net), a classic follow-up mistake. The last step checks resolution for exactly that reason.",
+  "real_commands_used": ["az storage account show --query networkRuleSet", "az network vnet subnet show --query serviceEndpoints", "az network vnet subnet update --service-endpoints", "az storage account network-rule add", "az vm run-command invoke"]
+}

@@ -1,0 +1,43 @@
+{
+  "id": "gcp-incident-006",
+  "type": "incident",
+  "category": "gcp",
+  "title": "Black Friday: the autoscaler wants more VMs but none appear",
+  "difficulty": "intermediate",
+  "tags": ["gcp", "quotas", "autoscaling", "capacity"],
+  "intro": "Traffic is 4x normal. The managed instance group web-mig (europe-west1) has target size 40, but only 25 instances exist and latency is climbing. No errors in the application logs.",
+  "steps": [
+    {
+      "prompt": "Describe the managed instance group web-mig in europe-west1 and look at its status and current actions.",
+      "expected_commands": ["gcloud compute instance-groups managed describe web-mig --region europe-west1", "gcloud compute instance-groups managed describe web-mig --region=europe-west1"],
+      "fake_output": "targetSize: 40\ncurrentActions:\n  creating: 15\n  none: 25\nstatus:\n  isStable: false",
+      "hint": "The MIG shows what it's trying to do in currentActions."
+    },
+    {
+      "prompt": "15 instances are stuck 'creating'. List the MIG's errors (web-mig, europe-west1).",
+      "expected_commands": ["gcloud compute instance-groups managed list-errors web-mig --region europe-west1", "gcloud compute instance-groups managed list-errors web-mig --region=europe-west1"],
+      "fake_output": "INSTANCE_URL  ACTION  ERROR_CODE      ERROR_MESSAGE\n...web-mig-x7p2  CREATING  QUOTA_EXCEEDED  Quota 'N2_CPUS' exceeded. Limit: 200.0 in region europe-west1.\n...web-mig-k3d9  CREATING  QUOTA_EXCEEDED  Quota 'N2_CPUS' exceeded. Limit: 200.0 in region europe-west1.",
+      "hint": "list-errors shows why instance creation fails."
+    },
+    {
+      "prompt": "Confirm the regional quota usage in europe-west1.",
+      "expected_commands": ["gcloud compute regions describe europe-west1 --format=\"table(quotas.metric,quotas.limit,quotas.usage)\"", "gcloud compute regions describe europe-west1"],
+      "fake_output": "METRIC    LIMIT  USAGE\nCPUS      400    212\nN2_CPUS   200    200",
+      "hint": "regions describe shows quota limits and usage."
+    },
+    {
+      "prompt": "The general CPU quota has room, but the N2-family quota is full. The fastest mitigation: switch the MIG to a new template web-tmpl-e2 that uses E2 machines (already created). Set it as web-mig's template (europe-west1).",
+      "expected_commands": ["gcloud compute instance-groups managed set-instance-template web-mig --template web-tmpl-e2 --region europe-west1", "gcloud compute instance-groups managed set-instance-template web-mig --template=web-tmpl-e2 --region=europe-west1"],
+      "fake_output": "Updated [https://www.googleapis.com/compute/v1/projects/shop-prod-217733/regions/europe-west1/instanceGroupManagers/web-mig].",
+      "hint": "set-instance-template <mig> --template <template> --region <region>"
+    },
+    {
+      "prompt": "Watch the group until it's stable: wait-until web-mig (europe-west1) is stable.",
+      "expected_commands": ["gcloud compute instance-groups managed wait-until web-mig --stable --region europe-west1", "gcloud compute instance-groups managed wait-until web-mig --stable --region=europe-west1"],
+      "fake_output": "Waiting for group to become stable, current operations: creating: 15\n...\nGroup is stable",
+      "hint": "wait-until --stable blocks until the MIG finishes."
+    }
+  ],
+  "resolution": "Autoscaling can only use capacity that quotas allow, and when it hits a quota it fails quietly: the target size goes up, instances sit in 'creating', and the application logs show nothing, because the new servers never exist. GCP has overall quotas (CPUS) and per-machine-family quotas (N2_CPUS, C2_CPUS...), and the family quota ran out first. New instances in the group use the E2-based template, which draws on a different quota; existing N2 instances keep running until they're recycled. Request the quota increase too, but increases are reviewed and can take hours or days: exactly why capacity planning before a known peak means checking quotas weeks ahead (gcp-tutorial-009). Also add an alert on MIG errors or 'target size minus actual size', so this pages someone before latency does.",
+  "real_commands_used": ["gcloud compute instance-groups managed describe", "gcloud compute instance-groups managed list-errors", "gcloud compute regions describe", "gcloud compute instance-groups managed set-instance-template", "gcloud compute instance-groups managed wait-until --stable"]
+}

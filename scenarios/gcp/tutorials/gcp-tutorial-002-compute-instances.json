@@ -1,0 +1,46 @@
+{
+  "id": "gcp-tutorial-002",
+  "type": "tutorial",
+  "category": "gcp",
+  "title": "Compute Engine: Listing, Filtering, and Formatting VMs",
+  "difficulty": "beginner",
+  "tags": ["gcp", "compute-engine", "vm"],
+  "intro": "Compute Engine VMs are zonal resources. gcloud's --filter and --format flags are its superpower, and learning them once pays off in every gcloud command, the same way --query does for the AWS CLI.",
+  "steps": [
+    {
+      "prompt": "List all VM instances in the project.",
+      "expected_commands": ["gcloud compute instances list"],
+      "fake_output": "NAME        ZONE            MACHINE_TYPE  INTERNAL_IP  EXTERNAL_IP    STATUS\nweb-1       europe-west1-b  e2-medium     10.10.0.2    34.76.120.15   RUNNING\nweb-2       europe-west1-c  e2-medium     10.10.0.3    34.76.120.16   RUNNING\nworker-1    europe-west1-b  n2-standard-8 10.20.0.5                   RUNNING\nold-jenkins us-central1-a   n1-standard-4 10.128.0.9   35.192.44.1    TERMINATED",
+      "explanation": "Four VMs across two regions. old-jenkins is TERMINATED (stopped) in us-central1.",
+      "why": "In GCP, TERMINATED means stopped, not deleted, unlike AWS where 'terminated' means gone. A stopped VM doesn't bill for compute, but its disks and any reserved static IP still cost money."
+    },
+    {
+      "prompt": "Show only RUNNING VMs whose label env is prod.",
+      "expected_commands": ["gcloud compute instances list --filter=\"status=RUNNING AND labels.env=prod\"", "gcloud compute instances list --filter='status=RUNNING AND labels.env=prod'"],
+      "fake_output": "NAME    ZONE            MACHINE_TYPE  INTERNAL_IP  EXTERNAL_IP   STATUS\nweb-1   europe-west1-b  e2-medium     10.10.0.2    34.76.120.15  RUNNING\nweb-2   europe-west1-c  e2-medium     10.10.0.3    34.76.120.16  RUNNING",
+      "explanation": "The two prod web servers.",
+      "why": "--filter supports AND/OR/NOT, comparisons, and ':' for 'contains'. Labels are GCP's tags: the key to cost reports and to automation that targets groups of resources."
+    },
+    {
+      "prompt": "Print a compact table of name, zone (just its short name), and internal IP only.",
+      "expected_commands": ["gcloud compute instances list --format=\"table(name,zone.basename(),networkInterfaces[0].networkIP)\"", "gcloud compute instances list --format='table(name,zone.basename(),networkInterfaces[0].networkIP)'"],
+      "fake_output": "NAME         ZONE            NETWORK_IP\nweb-1        europe-west1-b  10.10.0.2\nweb-2        europe-west1-c  10.10.0.3\nworker-1     europe-west1-b  10.20.0.5\nold-jenkins  us-central1-a   10.128.0.9",
+      "explanation": "Exactly the columns you asked for.",
+      "why": "--format projects fields from the full resource (see 'describe' for field names), and basename() trims the long URL GCP uses for zones. Use --format='value(name)' to get plain values for scripts."
+    },
+    {
+      "prompt": "Show the full configuration of worker-1 in europe-west1-b.",
+      "expected_commands": ["gcloud compute instances describe worker-1 --zone europe-west1-b", "gcloud compute instances describe worker-1 --zone=europe-west1-b"],
+      "fake_output": "name: worker-1\nmachineType: .../machineTypes/n2-standard-8\nnetworkInterfaces:\n- network: .../networks/prod-vpc\n  subnetwork: .../subnetworks/private-ew1\n  networkIP: 10.20.0.5\nserviceAccounts:\n- email: 482910381204-compute@developer.gserviceaccount.com\n  scopes:\n  - https://www.googleapis.com/auth/cloud-platform\ntags:\n  items:\n  - worker",
+      "explanation": "worker-1 has no external IP, the network tag 'worker', and runs as the Compute Engine default service account.",
+      "why": "Two things to notice. Network tags (not labels) are what firewall rules target. And the default compute service account historically had the broad Editor role on the project, so any code on this VM could modify almost anything. Give each workload its own minimal service account."
+    },
+    {
+      "prompt": "Stop old-jenkins in us-central1-a.",
+      "expected_commands": ["gcloud compute instances stop old-jenkins --zone us-central1-a", "gcloud compute instances stop old-jenkins --zone=us-central1-a"],
+      "fake_output": "Stopping instance(s) old-jenkins...done.",
+      "explanation": "(It was already stopped; the command is idempotent.)",
+      "why": "Most gcloud commands on zonal resources need --zone, unless a default zone is set. A VM with the same name can exist in different zones, so the zone is part of its identity."
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "id": "azure-incident-003",
+  "type": "incident",
+  "category": "azure",
+  "title": "The app can't read its secrets after moving to managed identity",
+  "difficulty": "intermediate",
+  "tags": ["azure", "key-vault", "managed-identity", "rbac"],
+  "intro": "The orders app on vm-app-01 was migrated from a client secret to its managed identity 'to get rid of secrets'. It now fails at startup: 'Caller is not authorized to perform action on resource ... Action: Microsoft.KeyVault/vaults/secrets/getSecret/action'. The platform team insists 'we gave it Contributor on the resource group'.",
+  "steps": [
+    {
+      "prompt": "Get the principal id of vm-app-01's system-assigned identity (rg-web-prod).",
+      "expected_commands": ["az vm identity show --resource-group rg-web-prod --name vm-app-01 --query principalId", "az vm identity show -g rg-web-prod -n vm-app-01 --query principalId"],
+      "fake_output": "\"5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b\"",
+      "hint": "az vm identity show returns the identity's principalId."
+    },
+    {
+      "prompt": "List every role assignment of principal 5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b.",
+      "expected_commands": ["az role assignment list --assignee 5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b --all --output table", "az role assignment list --assignee 5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b --all -o table"],
+      "fake_output": "Principal                             Role         Scope\n------------------------------------  -----------  --------------------------------------------------------------------\n5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b  Contributor  /subscriptions/33333333-dddd-4eee-8fff-444444444444/resourceGroups/rg-web-prod",
+      "hint": "Use --all so assignments at every scope are shown."
+    },
+    {
+      "prompt": "Contributor is a control-plane role. Check which permission model the vault kv-web-prod uses.",
+      "expected_commands": ["az keyvault show --name kv-web-prod --query properties.enableRbacAuthorization", "az keyvault show -n kv-web-prod --query properties.enableRbacAuthorization"],
+      "fake_output": "true",
+      "hint": "enableRbacAuthorization true means data access is decided by Azure RBAC roles, not vault access policies."
+    },
+    {
+      "prompt": "The vault uses RBAC, so the identity needs a data-plane role. Assign 'Key Vault Secrets User' to 5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b at the vault's scope /subscriptions/33333333-dddd-4eee-8fff-444444444444/resourceGroups/rg-web-prod/providers/Microsoft.KeyVault/vaults/kv-web-prod.",
+      "expected_commands": ["az role assignment create --assignee 5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b --role \"Key Vault Secrets User\" --scope /subscriptions/33333333-dddd-4eee-8fff-444444444444/resourceGroups/rg-web-prod/providers/Microsoft.KeyVault/vaults/kv-web-prod"],
+      "fake_output": "{\n  \"roleDefinitionName\": \"Key Vault Secrets User\",\n  \"scope\": \".../vaults/kv-web-prod\"\n}",
+      "hint": "az role assignment create --assignee --role --scope"
+    },
+    {
+      "prompt": "Now remove the over-broad Contributor assignment from 5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b on /subscriptions/33333333-dddd-4eee-8fff-444444444444/resourceGroups/rg-web-prod. The app never needed it.",
+      "expected_commands": ["az role assignment delete --assignee 5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b --role Contributor --scope /subscriptions/33333333-dddd-4eee-8fff-444444444444/resourceGroups/rg-web-prod"],
+      "fake_output": "(no output: the Contributor assignment was removed)",
+      "hint": "az role assignment delete with the same assignee, role, and scope."
+    }
+  ],
+  "resolution": "Azure splits permissions into the control plane (manage resources: 'actions') and the data plane (use their contents: 'dataActions'). Contributor on the resource group let the VM's identity reconfigure the vault, and delete every VM in the group, but not read a single secret, because getSecret is a data action. On an RBAC-model vault that needs a data role such as Key Vault Secrets User. The error message named the exact data action, which is the clue. Removing Contributor matters as much as adding the right role: 'give it Contributor to make it work' is how an app compromise becomes a whole-environment compromise. Also expect a few minutes' delay after a role assignment; restarting the app immediately and seeing another 403 doesn't mean the fix is wrong.",
+  "real_commands_used": ["az vm identity show", "az role assignment list --assignee --all", "az keyvault show --query properties.enableRbacAuthorization", "az role assignment create", "az role assignment delete"]
+}

@@ -1,0 +1,46 @@
+{
+  "id": "azure-tutorial-005",
+  "type": "tutorial",
+  "category": "azure",
+  "title": "VNets, Subnets, and Network Security Groups",
+  "difficulty": "intermediate",
+  "tags": ["azure", "vnet", "nsg", "networking"],
+  "intro": "An Azure Virtual Network (VNet) is the equivalent of an AWS VPC. Its firewall is the Network Security Group (NSG), which can attach to a subnet, a NIC, or both. NSG rules are stateful like AWS security groups, but they include explicit Deny rules and are evaluated by priority, lowest number first.",
+  "steps": [
+    {
+      "prompt": "List the subnets of the VNet vnet-web-prod in rg-web-prod as a table.",
+      "expected_commands": ["az network vnet subnet list --resource-group rg-web-prod --vnet-name vnet-web-prod --output table", "az network vnet subnet list -g rg-web-prod --vnet-name vnet-web-prod -o table"],
+      "fake_output": "Name          AddressPrefix  NetworkSecurityGroup  RouteTable\n------------  -------------  --------------------  -----------\nsnet-web      10.20.1.0/24   nsg-web               \nsnet-app      10.20.2.0/24   nsg-app               rt-app\nAzureBastionSubnet 10.20.250.0/26",
+      "explanation": "Web and app subnets, each with an NSG, plus the specially named AzureBastionSubnet.",
+      "why": "Some Azure services require exact subnet names (AzureBastionSubnet, GatewaySubnet, AzureFirewallSubnet). Unlike AWS, an Azure subnet isn't tied to one availability zone; zones are chosen per resource."
+    },
+    {
+      "prompt": "List the rules in nsg-web (rg-web-prod) as a table.",
+      "expected_commands": ["az network nsg rule list --resource-group rg-web-prod --nsg-name nsg-web --output table", "az network nsg rule list -g rg-web-prod --nsg-name nsg-web -o table"],
+      "fake_output": "Name             Priority  Direction  Access  Protocol  SourceAddressPrefix  DestinationPortRange\n---------------  --------  ---------  ------  --------  -------------------  --------------------\nAllow-HTTPS      100       Inbound    Allow   Tcp       Internet             443\nAllow-SSH-Office 110       Inbound    Allow   Tcp       198.51.100.0/24      22",
+      "explanation": "HTTPS from the internet and SSH from the office. ('Internet' is a service tag.)",
+      "why": "This list shows only custom rules. Every NSG also has hidden default rules at priorities 65000-65500: allow within the VNet, allow from the Azure load balancer, and deny everything else. Add '--include-default' to see them. Service tags like Internet, VirtualNetwork and AzureLoadBalancer save you from maintaining IP lists."
+    },
+    {
+      "prompt": "Allow the app subnet 10.20.2.0/24 to reach port 5432 on the web tier: add rule Allow-App-Postgres at priority 120 to nsg-web.",
+      "expected_commands": ["az network nsg rule create --resource-group rg-web-prod --nsg-name nsg-web --name Allow-App-Postgres --priority 120 --direction Inbound --access Allow --protocol Tcp --source-address-prefixes 10.20.2.0/24 --destination-port-ranges 5432", "az network nsg rule create -g rg-web-prod --nsg-name nsg-web -n Allow-App-Postgres --priority 120 --direction Inbound --access Allow --protocol Tcp --source-address-prefixes 10.20.2.0/24 --destination-port-ranges 5432"],
+      "fake_output": "{\n  \"access\": \"Allow\",\n  \"priority\": 120,\n  \"provisioningState\": \"Succeeded\"\n}",
+      "explanation": "The rule is in place at priority 120.",
+      "why": "Leave gaps between priorities (100, 110, 120...) so you can insert rules later without renumbering. Priority order is everything: a Deny at 100 beats an Allow at 200, which is the trap in azure-incident-001."
+    },
+    {
+      "prompt": "An NSG can be on both the subnet and the NIC, and traffic must pass both. See the effective rules actually applied to vm-web-01's NIC, nic-vm-web-01, in rg-web-prod.",
+      "expected_commands": ["az network nic list-effective-nsg --resource-group rg-web-prod --name nic-vm-web-01", "az network nic list-effective-nsg -g rg-web-prod -n nic-vm-web-01"],
+      "fake_output": "Association: subnet snet-web (nsg-web)\n  Allow-HTTPS        100  Inbound  Allow  443\n  Allow-SSH-Office   110  Inbound  Allow  22\n  Allow-App-Postgres 120  Inbound  Allow  5432\nAssociation: networkInterface nic-vm-web-01 (nsg-vm-web-01)\n  Deny-All-Inbound   100  Inbound  Deny   *",
+      "explanation": "A second NSG on the NIC denies all inbound traffic, so nothing gets in despite the subnet rules.",
+      "why": "Effective rules are the truth for one NIC: they combine the subnet NSG, the NIC NSG, and the defaults. When the subnet NSG looks correct but traffic still fails, a forgotten NIC-level NSG is a very common cause."
+    },
+    {
+      "prompt": "Ask Network Watcher directly: would inbound TCP from 203.0.113.9:50000 to vm-web-01's 10.20.1.4:443 be allowed? (vm-web-01, rg-web-prod)",
+      "expected_commands": ["az network watcher test-ip-flow --resource-group rg-web-prod --vm vm-web-01 --direction Inbound --protocol TCP --local 10.20.1.4:443 --remote 203.0.113.9:50000", "az network watcher test-ip-flow -g rg-web-prod --vm vm-web-01 --direction Inbound --protocol TCP --local 10.20.1.4:443 --remote 203.0.113.9:50000"],
+      "fake_output": "{\n  \"access\": \"Deny\",\n  \"ruleName\": \"networkInterface/securityRules/Deny-All-Inbound\"\n}",
+      "explanation": "Denied, and it names the exact rule responsible.",
+      "why": "IP flow verify evaluates the real effective rules for one packet and names the rule that decided it. That removes the guesswork from 'which of my three NSGs is blocking this?'. AWS's equivalent is Reachability Analyzer."
+    }
+  ]
+}

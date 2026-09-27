@@ -1,0 +1,43 @@
+{
+  "id": "gcp-incident-001",
+  "type": "incident",
+  "category": "gcp",
+  "title": "New web VM unreachable although a firewall rule 'allows it'",
+  "difficulty": "beginner",
+  "tags": ["gcp", "firewall", "network-tags"],
+  "intro": "web-3 was just created in europe-west1-d from a copied command. It has an external IP, nginx is running, and the firewall rule allow-https-web opens 443 to the world. Yet https://35.205.9.40 times out, while web-1 and web-2 work.",
+  "steps": [
+    {
+      "prompt": "Show the network tags of web-3 (europe-west1-d).",
+      "expected_commands": ["gcloud compute instances describe web-3 --zone europe-west1-d --format=\"value(tags.items)\"", "gcloud compute instances describe web-3 --zone europe-west1-d", "gcloud compute instances describe web-3 --zone=europe-west1-d"],
+      "fake_output": "http-server;https-server",
+      "hint": "Firewall rules select VMs by network tag."
+    },
+    {
+      "prompt": "Show which tags the rule allow-https-web targets.",
+      "expected_commands": ["gcloud compute firewall-rules describe allow-https-web --format=\"value(targetTags)\"", "gcloud compute firewall-rules describe allow-https-web"],
+      "fake_output": "web",
+      "hint": "firewall-rules describe <name>"
+    },
+    {
+      "prompt": "The rule targets 'web'; web-3 only has the console's default http-server/https-server tags (which only match the default network's rules). Compare with web-1 in europe-west1-b.",
+      "expected_commands": ["gcloud compute instances describe web-1 --zone europe-west1-b --format=\"value(tags.items)\"", "gcloud compute instances describe web-1 --zone europe-west1-b", "gcloud compute instances describe web-1 --zone=europe-west1-b"],
+      "fake_output": "web",
+      "hint": "Same command for web-1."
+    },
+    {
+      "prompt": "Add the 'web' tag to web-3 (europe-west1-d).",
+      "expected_commands": ["gcloud compute instances add-tags web-3 --zone europe-west1-d --tags web", "gcloud compute instances add-tags web-3 --zone=europe-west1-d --tags=web"],
+      "fake_output": "Updating instances: [web-3]...done.",
+      "hint": "instances add-tags <vm> --zone <zone> --tags <tag>"
+    },
+    {
+      "prompt": "Verify from outside: request https://35.205.9.40 with a 5-second limit, printing only the HTTP status code.",
+      "expected_commands": ["curl -s -o /dev/null -w '%{http_code}' -m 5 https://35.205.9.40", "curl -s -o /dev/null -w \"%{http_code}\" -m 5 https://35.205.9.40", "curl -m 5 https://35.205.9.40"],
+      "fake_output": "200",
+      "hint": "curl -s -o /dev/null -w '%{http_code}' prints just the status."
+    }
+  ],
+  "resolution": "GCP firewall rules don't attach to VMs; they select VMs by network tag (or service account). web-3 was created with the console's 'Allow HTTPS traffic' checkbox, which adds the https-server tag. That tag only matches the default-allow-https rule on the auto-created 'default' network, not the custom rule on prod-vpc, which targets 'web'. So nothing allowed 443 to this VM, and the implied deny-all ingress dropped it: a timeout, not a refusal. Comparing a working VM with the broken one found the difference in two commands. Prevention: create VMs from an instance template or Terraform module, where tags are defined once, never from a copied console command; and for security-relevant rules, consider targeting service accounts, which are harder to set by accident.",
+  "real_commands_used": ["gcloud compute instances describe --format value(tags.items)", "gcloud compute firewall-rules describe", "gcloud compute instances add-tags", "curl -w '%{http_code}'"]
+}

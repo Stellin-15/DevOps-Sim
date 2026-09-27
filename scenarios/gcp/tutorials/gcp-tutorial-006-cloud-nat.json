@@ -1,0 +1,46 @@
+{
+  "id": "gcp-tutorial-006",
+  "type": "tutorial",
+  "category": "gcp",
+  "title": "Cloud Router and Cloud NAT: Outbound Access for Private VMs",
+  "difficulty": "intermediate",
+  "tags": ["gcp", "nat", "networking"],
+  "intro": "A GCP VM with no external IP can't reach the internet, even though the network has a default route. Cloud NAT fixes that. It's a managed, regional service configured on a Cloud Router, with no NAT VM or gateway appliance to run.",
+  "steps": [
+    {
+      "prompt": "List the Cloud Routers in the project.",
+      "expected_commands": ["gcloud compute routers list"],
+      "fake_output": "NAME          REGION        NETWORK\nrouter-use1   us-east1      prod-vpc",
+      "explanation": "There's a router in us-east1, but none in europe-west1, where the private workers run.",
+      "why": "Cloud NAT is regional: each region with private VMs needs its own router and NAT configuration. 'NAT works in one region but not another' is almost always a missing router."
+    },
+    {
+      "prompt": "Create a Cloud Router router-ew1 on prod-vpc in europe-west1.",
+      "expected_commands": ["gcloud compute routers create router-ew1 --network prod-vpc --region europe-west1", "gcloud compute routers create router-ew1 --network=prod-vpc --region=europe-west1"],
+      "fake_output": "Creating router [router-ew1]...done.\nNAME        REGION        NETWORK\nrouter-ew1  europe-west1  prod-vpc",
+      "explanation": "A router exists in europe-west1.",
+      "why": "Cloud Router is a control-plane object (it also speaks BGP for VPNs and Interconnect). Here it's just the anchor that NAT configuration hangs off, not a device in the data path."
+    },
+    {
+      "prompt": "Add a NAT configuration nat-ew1 to router-ew1 (europe-west1), with automatically allocated external IPs, covering all subnet ranges.",
+      "expected_commands": ["gcloud compute routers nats create nat-ew1 --router router-ew1 --region europe-west1 --auto-allocate-nat-external-ips --nat-all-subnet-ip-ranges", "gcloud compute routers nats create nat-ew1 --router=router-ew1 --region=europe-west1 --auto-allocate-nat-external-ips --nat-all-subnet-ip-ranges"],
+      "fake_output": "Creating NAT [nat-ew1] in router [router-ew1]...done.",
+      "explanation": "Private VMs in europe-west1 can now reach the internet.",
+      "why": "Auto-allocated IPs are simplest, but if a partner has to allowlist your outbound IPs, reserve static addresses (--nat-external-ip-pool) so they never change. Cloud NAT has no single-VM bottleneck, so there's no NAT instance to size, patch, or make highly available."
+    },
+    {
+      "prompt": "Check the port mappings NAT has given worker-1's interface, via router-ew1 in europe-west1.",
+      "expected_commands": ["gcloud compute routers get-nat-mapping-info router-ew1 --region europe-west1", "gcloud compute routers get-nat-mapping-info router-ew1 --region=europe-west1"],
+      "fake_output": "instanceName: worker-1\ninterfaceNatMappings:\n- natIpPortRanges:\n  - 34.140.22.8:1024-1087\n  numTotalNatPorts: 64\n  sourceAliasIpRange: ''\n  sourceVirtualIp: 10.20.0.5",
+      "explanation": "worker-1 is allocated 64 source ports on NAT IP 34.140.22.8.",
+      "why": "Each VM gets a block of NAT ports (64 by default). A VM that opens many concurrent connections to the same destination (a scraper, a busy API client) runs out and gets dropped connections: 'OUT_OF_RESOURCES' in the NAT logs. Raise --min-ports-per-vm or enable dynamic port allocation when that happens."
+    },
+    {
+      "prompt": "From worker-1 (europe-west1-b), check which public IP the internet sees, through IAP SSH running 'curl -s ifconfig.me'.",
+      "expected_commands": ["gcloud compute ssh worker-1 --zone europe-west1-b --tunnel-through-iap --command 'curl -s ifconfig.me'", "gcloud compute ssh worker-1 --zone=europe-west1-b --tunnel-through-iap --command=\"curl -s ifconfig.me\""],
+      "fake_output": "34.140.22.8",
+      "explanation": "Outbound traffic leaves through the NAT IP.",
+      "why": "--command runs one command over SSH and returns, which is handy for quick checks. Seeing the NAT IP proves the whole path works, rather than trusting that the config looks right."
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "id": "azure-incident-004",
+  "type": "incident",
+  "category": "azure",
+  "title": "The demo site died over the weekend (auto-shutdown and a dynamic IP)",
+  "difficulty": "beginner",
+  "tags": ["azure", "vm", "public-ip", "dns"],
+  "intro": "Monday 08:00: the customer demo at demo.contoso.com doesn't load. The VM vm-demo-02 (rg-demo) is running. Someone already restarted it. DNS for demo.contoso.com hasn't been touched in months.",
+  "steps": [
+    {
+      "prompt": "Resolve demo.contoso.com to see where DNS sends visitors.",
+      "expected_commands": ["dig +short demo.contoso.com", "nslookup demo.contoso.com", "dig demo.contoso.com +short"],
+      "fake_output": "20.73.41.18",
+      "hint": "dig +short prints just the answer."
+    },
+    {
+      "prompt": "Check vm-demo-02's (rg-demo) current public IP.",
+      "expected_commands": ["az vm show --resource-group rg-demo --name vm-demo-02 -d --query publicIps", "az vm show -g rg-demo -n vm-demo-02 -d --query publicIps", "az vm list-ip-addresses --resource-group rg-demo --name vm-demo-02 --output table"],
+      "fake_output": "\"20.73.52.203\"",
+      "hint": "az vm show -d includes publicIps."
+    },
+    {
+      "prompt": "DNS points at the old IP. Find out why it changed: look at vm-demo-02's operations in the Activity Log for the last 3 days (rg-demo).",
+      "expected_commands": ["az monitor activity-log list --resource-group rg-demo --offset 72h --output table", "az monitor activity-log list -g rg-demo --offset 72h -o table", "az monitor activity-log list --resource-group rg-demo --offset 3d --output table"],
+      "fake_output": "Caller                        OperationName                                       EventTimestamp\n----------------------------  --------------------------------------------------  --------------------\nMicrosoft.DevTestLab          Microsoft.Compute/virtualMachines/deallocate/action  2026-09-25T19:00:02Z\nalice@contoso.com             Microsoft.Compute/virtualMachines/start/action       2026-09-28T07:52:11Z",
+      "hint": "Look for deallocate and start operations."
+    },
+    {
+      "prompt": "An auto-shutdown schedule deallocated the VM on Friday at 19:00. Deallocation released the dynamic public IP, and the restart got a new one. Check the SKU and allocation method of its IP resource pip-demo-02.",
+      "expected_commands": ["az network public-ip show --resource-group rg-demo --name pip-demo-02 --query \"{sku:sku.name, allocation:publicIPAllocationMethod}\"", "az network public-ip show -g rg-demo -n pip-demo-02"],
+      "fake_output": "{\n  \"allocation\": \"Dynamic\",\n  \"sku\": \"Basic\"\n}",
+      "hint": "Look at publicIPAllocationMethod."
+    },
+    {
+      "prompt": "Make the IP static so it survives deallocation: update pip-demo-02's allocation method to Static.",
+      "expected_commands": ["az network public-ip update --resource-group rg-demo --name pip-demo-02 --allocation-method Static", "az network public-ip update -g rg-demo -n pip-demo-02 --allocation-method Static"],
+      "fake_output": "{\n  \"ipAddress\": \"20.73.52.203\",\n  \"publicIPAllocationMethod\": \"Static\"\n}",
+      "hint": "--allocation-method Static keeps the current address from now on."
+    }
+  ],
+  "resolution": "Deallocating a VM stops compute billing (see azure-tutorial-003), but a Basic-SKU dynamic public IP is released with it, and the VM gets a new address when it starts again. The DevTest Labs auto-shutdown schedule deallocated vm-demo-02 on Friday evening, so Monday's restart came up on a new IP while DNS still pointed at the old one, which may even belong to another customer by now. The fix has two parts: make the IP Static (it's now kept across deallocations), then update the DNS A record to 20.73.52.203. Better still, give the demo an Azure-provided DNS label on the public IP, or put it behind a load balancer or Front Door with a stable address. Note that Basic-SKU public IPs are being retired in favour of Standard, which is always static.",
+  "real_commands_used": ["dig +short", "az vm show -d --query publicIps", "az monitor activity-log list", "az network public-ip show", "az network public-ip update --allocation-method Static"]
+}

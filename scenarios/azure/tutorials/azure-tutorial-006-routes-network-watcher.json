@@ -1,0 +1,46 @@
+{
+  "id": "azure-tutorial-006",
+  "type": "tutorial",
+  "category": "azure",
+  "title": "Routing in Azure: System Routes, UDRs, and Next Hop",
+  "difficulty": "advanced",
+  "tags": ["azure", "routing", "udr", "network-watcher"],
+  "intro": "Azure routes traffic with built-in system routes: the VNet, the internet, and peered VNets. User-defined routes (UDRs) override them, typically to force all traffic through a central firewall in a hub VNet ('hub-and-spoke', the standard enterprise layout). UDRs are powerful and easy to get wrong.",
+  "steps": [
+    {
+      "prompt": "List the route tables in the subscription.",
+      "expected_commands": ["az network route-table list --output table", "az network route-table list -o table"],
+      "fake_output": "Name     ResourceGroup   Location    DisableBgpRoutePropagation\n-------  --------------  ----------  ----------------------------\nrt-app   rg-web-prod     westeurope  True\nrt-data  rg-data-prod    westeurope  True",
+      "explanation": "Two custom route tables.",
+      "why": "A route table does nothing until it's associated with a subnet (see 'az network vnet subnet list'). BGP propagation off means routes learned from VPN or ExpressRoute gateways are ignored in these subnets, a setting that often explains 'we can't reach on-prem from here'."
+    },
+    {
+      "prompt": "List the routes in rt-app (rg-web-prod).",
+      "expected_commands": ["az network route-table route list --resource-group rg-web-prod --route-table-name rt-app --output table", "az network route-table route list -g rg-web-prod --route-table-name rt-app -o table"],
+      "fake_output": "Name           AddressPrefix  NextHopType       NextHopIpAddress\n-------------  -------------  ----------------  ----------------\nto-firewall    0.0.0.0/0      VirtualAppliance  10.0.0.4",
+      "explanation": "All internet-bound traffic from snet-app goes to 10.0.0.4, the Azure Firewall in the hub.",
+      "why": "Forced tunnelling through a firewall gives central egress filtering and logging, which is why enterprises do it. The cost: if that appliance is down or misconfigured, every spoke subnet loses internet access at once."
+    },
+    {
+      "prompt": "See the effective routes for vm-app-01's NIC, nic-vm-app-01, in rg-web-prod: system routes and UDRs combined.",
+      "expected_commands": ["az network nic show-effective-route-table --resource-group rg-web-prod --name nic-vm-app-01 --output table", "az network nic show-effective-route-table -g rg-web-prod -n nic-vm-app-01 -o table"],
+      "fake_output": "Source    State    Address Prefix   Next Hop Type      Next Hop IP\n--------  -------  ---------------  -----------------  -------------\nDefault   Active   10.20.0.0/16     VnetLocal\nDefault   Active   10.0.0.0/16      VNetPeering\nDefault   Invalid  0.0.0.0/0        Internet\nUser      Active   0.0.0.0/0        VirtualAppliance   10.0.0.4",
+      "explanation": "The default internet route is marked Invalid because the user route for 0.0.0.0/0 overrides it.",
+      "why": "Effective routes show the decision, not just the configuration. The longest prefix wins; for equal prefixes a user route beats BGP, which beats system routes. 'Invalid' marks a route that has been overridden."
+    },
+    {
+      "prompt": "Ask Network Watcher what the next hop is for traffic from vm-app-01 (10.20.2.4) to 8.8.8.8, in rg-web-prod.",
+      "expected_commands": ["az network watcher show-next-hop --resource-group rg-web-prod --vm vm-app-01 --source-ip 10.20.2.4 --dest-ip 8.8.8.8", "az network watcher show-next-hop -g rg-web-prod --vm vm-app-01 --source-ip 10.20.2.4 --dest-ip 8.8.8.8"],
+      "fake_output": "{\n  \"nextHopIpAddress\": \"10.0.0.4\",\n  \"nextHopType\": \"VirtualAppliance\",\n  \"routeTableId\": \"/subscriptions/33333333-dddd-4eee-8fff-444444444444/resourceGroups/rg-web-prod/providers/Microsoft.Network/routeTables/rt-app\"\n}",
+      "explanation": "The traffic goes to the firewall because of rt-app.",
+      "why": "Next hop plus IP flow verify (azure-tutorial-005) answer the two questions behind every Azure 'can't connect': where the packet goes, and whether it's allowed. After that, only the destination itself is left to check."
+    },
+    {
+      "prompt": "Confirm the firewall at 10.0.0.4 is actually healthy: show the provisioning state of the Azure Firewall fw-hub in rg-network-hub.",
+      "expected_commands": ["az network firewall show --resource-group rg-network-hub --name fw-hub --query provisioningState", "az network firewall show -g rg-network-hub -n fw-hub --query provisioningState"],
+      "fake_output": "\"Succeeded\"",
+      "explanation": "The firewall is provisioned and running.",
+      "why": "When forced tunnelling is in place, 'no internet from the spoke' is usually the firewall's rules (an application or network rule collection not allowing the destination), not the route. Check the firewall's logs for denied flows next. azure-incident-002 covers the version where the next hop itself was wrong."
+    }
+  ]
+}

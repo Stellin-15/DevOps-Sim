@@ -1,0 +1,46 @@
+{
+  "id": "gcp-tutorial-010",
+  "type": "tutorial",
+  "category": "gcp",
+  "title": "GKE: Google Kubernetes Engine Operations",
+  "difficulty": "intermediate",
+  "tags": ["gcp", "gke", "kubernetes"],
+  "intro": "Kubernetes started at Google as the open-source successor to its internal Borg system, and GKE is Google's managed version. Once connected it's plain kubectl. The GKE-specific parts are credentials, node pools, Workload Identity (pod-level GCP permissions without keys), and upgrades.",
+  "steps": [
+    {
+      "prompt": "List the GKE clusters in the project.",
+      "expected_commands": ["gcloud container clusters list"],
+      "fake_output": "NAME       LOCATION      MASTER_VERSION       NUM_NODES  STATUS\nprod-gke   europe-west1  1.30.4-gke.1348000  9          RUNNING\ndev-gke    europe-west1  1.31.1-gke.1146000  3          RUNNING",
+      "explanation": "Two regional clusters. Dev runs a newer version.",
+      "why": "A regional cluster (location = a region) replicates the control plane and spreads nodes across zones. A zonal cluster is cheaper but its control plane lives in one zone. Production should be regional."
+    },
+    {
+      "prompt": "Get credentials for prod-gke in europe-west1.",
+      "expected_commands": ["gcloud container clusters get-credentials prod-gke --region europe-west1", "gcloud container clusters get-credentials prod-gke --region=europe-west1"],
+      "fake_output": "Fetching cluster endpoint and auth data.\nkubeconfig entry generated for prod-gke.",
+      "explanation": "kubectl now points at prod-gke (and it became the current context).",
+      "why": "Like AKS and EKS, this switches your current context. The kubeconfig uses the gke-gcloud-auth-plugin, so your Kubernetes identity is your gcloud identity. Double-check with 'kubectl config current-context' before running anything destructive."
+    },
+    {
+      "prompt": "List the node pools of prod-gke (europe-west1).",
+      "expected_commands": ["gcloud container node-pools list --cluster prod-gke --region europe-west1", "gcloud container node-pools list --cluster=prod-gke --region=europe-west1"],
+      "fake_output": "NAME          MACHINE_TYPE   DISK_SIZE_GB  NODE_VERSION\ndefault-pool  e2-standard-4  100           1.30.4-gke.1348000\nspot-batch    n2-standard-8  100           1.30.4-gke.1348000",
+      "explanation": "A regular pool and a Spot pool for batch jobs.",
+      "why": "Spot VMs cost 60-90% less but can be reclaimed at any time, which is fine for retryable batch work and wrong for stateful services. Use taints so only workloads that tolerate interruption land on Spot nodes."
+    },
+    {
+      "prompt": "Workload Identity: allow the Kubernetes service account orders/orders-api to act as the Google service account orders-api@shop-prod-217733.iam.gserviceaccount.com. Grant roles/iam.workloadIdentityUser to member serviceAccount:shop-prod-217733.svc.id.goog[orders/orders-api].",
+      "expected_commands": ["gcloud iam service-accounts add-iam-policy-binding orders-api@shop-prod-217733.iam.gserviceaccount.com --role roles/iam.workloadIdentityUser --member \"serviceAccount:shop-prod-217733.svc.id.goog[orders/orders-api]\"", "gcloud iam service-accounts add-iam-policy-binding orders-api@shop-prod-217733.iam.gserviceaccount.com --role=roles/iam.workloadIdentityUser --member=\"serviceAccount:shop-prod-217733.svc.id.goog[orders/orders-api]\""],
+      "fake_output": "Updated IAM policy for serviceAccount [orders-api@shop-prod-217733.iam.gserviceaccount.com].\nbindings:\n- members:\n  - serviceAccount:shop-prod-217733.svc.id.goog[orders/orders-api]\n  role: roles/iam.workloadIdentityUser",
+      "explanation": "Pods using the orders-api Kubernetes service account can now get tokens as the Google service account, with no key file.",
+      "why": "Without Workload Identity, pods either use the node's service account (every pod on the node shares the same permissions) or a mounted JSON key (a secret to leak). This is GKE's equivalent of EKS IRSA/Pod Identity and AKS workload identity. Finish by annotating the Kubernetes SA with iam.gke.io/gcp-service-account."
+    },
+    {
+      "prompt": "Check the upgrade status of GKE release channels for europe-west1: show the server config's channel versions.",
+      "expected_commands": ["gcloud container get-server-config --region europe-west1 --format=\"yaml(channels)\"", "gcloud container get-server-config --region europe-west1", "gcloud container get-server-config --region=europe-west1"],
+      "fake_output": "channels:\n- channel: REGULAR\n  defaultVersion: 1.30.4-gke.1348000\n- channel: STABLE\n  defaultVersion: 1.29.8-gke.1211000\n- channel: RAPID\n  defaultVersion: 1.31.1-gke.1146000",
+      "explanation": "Which versions each release channel currently delivers.",
+      "why": "Enrolled in a release channel, GKE upgrades clusters automatically. Your job becomes controlling when (maintenance windows and exclusions) and making sure workloads survive node drains (PodDisruptionBudgets, readiness probes). Dev on RAPID and prod on REGULAR gives you early warning of breaking changes."
+    }
+  ]
+}

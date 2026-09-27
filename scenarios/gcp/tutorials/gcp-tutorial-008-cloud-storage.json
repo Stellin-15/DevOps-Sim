@@ -1,0 +1,46 @@
+{
+  "id": "gcp-tutorial-008",
+  "type": "tutorial",
+  "category": "gcp",
+  "title": "Cloud Storage: gcloud storage, Access, and Public Access Prevention",
+  "difficulty": "beginner",
+  "tags": ["gcp", "cloud-storage", "security"],
+  "intro": "Cloud Storage is GCP's object store (the equivalent of S3 and Azure Blob). 'gcloud storage' replaced the older gsutil and is much faster for large transfers. As on every cloud, the security essentials are uniform access control and preventing public access.",
+  "steps": [
+    {
+      "prompt": "List the buckets in the project.",
+      "expected_commands": ["gcloud storage ls"],
+      "fake_output": "gs://shop-prod-217733-tfstate/\ngs://shop-prod-assets/\ngs://shop-prod-exports/",
+      "explanation": "Three buckets, including Terraform state, which is the most sensitive one here.",
+      "why": "Bucket names are global across all of Google Cloud, which is why they're usually prefixed with the project ID. Terraform state can contain secrets in plain text, so its bucket deserves the strictest access."
+    },
+    {
+      "prompt": "Show the configuration of gs://shop-prod-exports.",
+      "expected_commands": ["gcloud storage buckets describe gs://shop-prod-exports"],
+      "fake_output": "name: shop-prod-exports\nlocation: EUROPE-WEST1\nuniform_bucket_level_access: false\npublic_access_prevention: inherited\nversioning_enabled: false",
+      "explanation": "Fine-grained ACLs are still possible (uniform access is off), and public access isn't explicitly prevented.",
+      "why": "With uniform bucket-level access off, individual objects can carry their own ACLs, including 'allUsers', which bucket-level IAM reviews never show. Uniform access makes IAM the only access control."
+    },
+    {
+      "prompt": "Check who has access to gs://shop-prod-exports.",
+      "expected_commands": ["gcloud storage buckets get-iam-policy gs://shop-prod-exports"],
+      "fake_output": "bindings:\n- members:\n  - projectViewer:shop-prod-217733\n  role: roles/storage.legacyBucketReader\n- members:\n  - allUsers\n  role: roles/storage.objectViewer",
+      "explanation": "allUsers has objectViewer: anyone on the internet can read every export.",
+      "why": "allUsers means the internet; allAuthenticatedUsers means anyone with any Google account, which is just as public. Neither belongs on a bucket holding exports. This is the same breach as aws-incident-002, on a different cloud."
+    },
+    {
+      "prompt": "Enforce public access prevention on gs://shop-prod-exports.",
+      "expected_commands": ["gcloud storage buckets update gs://shop-prod-exports --public-access-prevention"],
+      "fake_output": "Updating gs://shop-prod-exports/...\n  Completed 1",
+      "explanation": "The allUsers binding stops working immediately, and no public access can be granted again.",
+      "why": "Public access prevention overrides IAM grants to allUsers and allAuthenticatedUsers, the equivalent of S3 Block Public Access. Enforce it organisation-wide with the storage.publicAccessPrevention org policy. Then remove the binding itself so the policy reads truthfully."
+    },
+    {
+      "prompt": "Copy the local ./reports directory into gs://shop-prod-exports/reports/, only transferring changed files.",
+      "expected_commands": ["gcloud storage rsync ./reports gs://shop-prod-exports/reports --recursive", "gcloud storage rsync ./reports gs://shop-prod-exports/reports/ --recursive", "gcloud storage rsync --recursive ./reports gs://shop-prod-exports/reports"],
+      "fake_output": "Copying file://./reports/2026-09.csv to gs://shop-prod-exports/reports/2026-09.csv\n  Completed files 1/1 | 4.2MiB/4.2MiB",
+      "explanation": "Only the new file was uploaded.",
+      "why": "rsync compares checksums and copies only what changed, which is right for repeated syncs. Adding --delete-unmatched-destination-objects mirrors deletions too, which is as dangerous as 'aws s3 sync --delete' if the source path is wrong."
+    }
+  ]
+}

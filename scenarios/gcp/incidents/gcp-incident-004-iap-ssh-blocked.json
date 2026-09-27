@@ -1,0 +1,37 @@
+{
+  "id": "gcp-incident-004",
+  "type": "incident",
+  "category": "gcp",
+  "title": "After a firewall cleanup, nobody can SSH into anything",
+  "difficulty": "intermediate",
+  "tags": ["gcp", "iap", "firewall", "ssh"],
+  "intro": "A security review deleted all firewall rules allowing port 22 'from anywhere'. Since then, 'gcloud compute ssh --tunnel-through-iap' fails for every VM with 'failed to connect to backend'. The on-call engineer needs to get onto db-1 (europe-west1-b) right now.",
+  "steps": [
+    {
+      "prompt": "Diagnose SSH to db-1 (europe-west1-b) through IAP.",
+      "expected_commands": ["gcloud compute ssh db-1 --zone europe-west1-b --tunnel-through-iap --troubleshoot", "gcloud compute ssh db-1 --zone=europe-west1-b --tunnel-through-iap --troubleshoot"],
+      "fake_output": "---- Checking network connectivity ----\nNo ingress firewall rule allows traffic from the IAP range 35.235.240.0/20 to port 22 on db-1.\n---- Checking user permissions ----\nUser has roles/iap.tunnelResourceAccessor. OK.",
+      "hint": "--troubleshoot checks network, IAM, and VM."
+    },
+    {
+      "prompt": "List the remaining ingress rules on prod-vpc that allow port 22.",
+      "expected_commands": ["gcloud compute firewall-rules list --filter=\"network=prod-vpc AND allowed[].ports:22\"", "gcloud compute firewall-rules list --filter='network=prod-vpc AND allowed[].ports:22'", "gcloud compute firewall-rules list --filter=\"network=prod-vpc\""],
+      "fake_output": "Listed 0 items.",
+      "hint": "Filter on network and allowed ports."
+    },
+    {
+      "prompt": "The cleanup also deleted the IAP rule (source 35.235.240.0/20), because it 'looked like' an SSH rule. Recreate it on prod-vpc as allow-iap-ssh, TCP 22 from 35.235.240.0/20 only.",
+      "expected_commands": ["gcloud compute firewall-rules create allow-iap-ssh --network prod-vpc --direction INGRESS --allow tcp:22 --source-ranges 35.235.240.0/20", "gcloud compute firewall-rules create allow-iap-ssh --network=prod-vpc --direction=INGRESS --allow=tcp:22 --source-ranges=35.235.240.0/20", "gcloud compute firewall-rules create allow-iap-ssh --network prod-vpc --allow tcp:22 --source-ranges 35.235.240.0/20"],
+      "fake_output": "Creating firewall...done.\nNAME           NETWORK   DIRECTION  PRIORITY  ALLOW   DENY  DISABLED\nallow-iap-ssh  prod-vpc  INGRESS    1000      tcp:22        False",
+      "hint": "firewall-rules create ... --allow tcp:22 --source-ranges 35.235.240.0/20"
+    },
+    {
+      "prompt": "Connect to db-1 (europe-west1-b) through IAP.",
+      "expected_commands": ["gcloud compute ssh db-1 --zone europe-west1-b --tunnel-through-iap", "gcloud compute ssh db-1 --zone=europe-west1-b --tunnel-through-iap"],
+      "fake_output": "alice@db-1:~$",
+      "hint": "Same SSH command, without --troubleshoot."
+    }
+  ],
+  "resolution": "The security review had the right goal: port 22 open to 0.0.0.0/0 is an invitation to brute-force attacks. But it deleted every port-22 rule by pattern, including the one rule that made SSH safe: allowing only Google's IAP range 35.235.240.0/20. With IAP, the VM never accepts SSH from the internet; Google's proxy authenticates each user with IAM and then connects from that range. Without the rule, even correctly authorised users can't reach anything. Lessons: firewall cleanups should classify rules by source range, not by port, since 0.0.0.0/0 is the danger and 35.235.240.0/20 is the fix; give the IAP rule a name and description that say why it must stay; and keep a break-glass path, such as the serial console (with its own IAM control), that doesn't depend on the firewall at all.",
+  "real_commands_used": ["gcloud compute ssh --tunnel-through-iap --troubleshoot", "gcloud compute firewall-rules list --filter", "gcloud compute firewall-rules create --source-ranges 35.235.240.0/20"]
+}

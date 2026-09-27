@@ -1,0 +1,46 @@
+{
+  "id": "azure-tutorial-010",
+  "type": "tutorial",
+  "category": "azure",
+  "title": "AKS: Azure Kubernetes Service Operations",
+  "difficulty": "intermediate",
+  "tags": ["azure", "aks", "kubernetes"],
+  "intro": "AKS is Azure's managed Kubernetes. Once you're connected, it's ordinary kubectl (see the Kubernetes category). The Azure-specific parts are getting credentials safely, node pools, and upgrades, which Azure performs but you have to plan.",
+  "steps": [
+    {
+      "prompt": "List the AKS clusters in the subscription.",
+      "expected_commands": ["az aks list --output table", "az aks list -o table"],
+      "fake_output": "Name          Location    ResourceGroup  KubernetesVersion  ProvisioningState\n------------  ----------  -------------  -----------------  -----------------\naks-prod      westeurope  rg-aks-prod    1.29.7             Succeeded\naks-staging   westeurope  rg-aks-stg     1.30.3             Succeeded",
+      "explanation": "Prod is one minor version behind staging.",
+      "why": "Running staging a version ahead of prod, and upgrading staging first, is the standard way to catch API removals before they hit production."
+    },
+    {
+      "prompt": "Get credentials for aks-staging (rg-aks-stg). Only staging for now.",
+      "expected_commands": ["az aks get-credentials --resource-group rg-aks-stg --name aks-staging", "az aks get-credentials -g rg-aks-stg -n aks-staging"],
+      "fake_output": "Merged \"aks-staging\" as current context in /home/alice/.kube/config",
+      "explanation": "A context for aks-staging was added AND made current.",
+      "why": "'as current context' is the warning to notice. get-credentials silently switches kubectl to the cluster you just fetched, and it's the start of azure-incident-005. Check with 'kubectl config current-context' after every get-credentials."
+    },
+    {
+      "prompt": "List the node pools of aks-prod (rg-aks-prod).",
+      "expected_commands": ["az aks nodepool list --resource-group rg-aks-prod --cluster-name aks-prod --output table", "az aks nodepool list -g rg-aks-prod --cluster-name aks-prod -o table"],
+      "fake_output": "Name      OsType  VmSize            Count  Mode    OrchestratorVersion\n--------  ------  ----------------  -----  ------  -------------------\nsystem    Linux   Standard_D4s_v5   3      System  1.29.7\nworkload  Linux   Standard_D8s_v5   6      User    1.29.7\ngpu       Linux   Standard_NC6s_v3  0      User    1.29.7",
+      "explanation": "A system pool for cluster components, a workload pool, and a GPU pool scaled to zero.",
+      "why": "Keep system components (CoreDNS, metrics-server) on a small dedicated System pool so a runaway application can't starve them. A pool scaled to 0 costs nothing until the cluster autoscaler needs it."
+    },
+    {
+      "prompt": "Check which Kubernetes versions aks-prod (rg-aks-prod) can upgrade to.",
+      "expected_commands": ["az aks get-upgrades --resource-group rg-aks-prod --name aks-prod --output table", "az aks get-upgrades -g rg-aks-prod -n aks-prod -o table"],
+      "fake_output": "Name     ResourceGroup  MasterVersion  Upgrades\n-------  -------------  -------------  --------------\ndefault  rg-aks-prod    1.29.7         1.30.3, 1.30.4",
+      "explanation": "One minor version up is available: 1.30.",
+      "why": "Kubernetes upgrades go one minor version at a time. Before upgrading, check for deprecated APIs your manifests still use (tools like kubent or pluto), and set a PodDisruptionBudget for critical apps so node drains stay graceful (see incident-012 for a PDB that blocks forever)."
+    },
+    {
+      "prompt": "Upgrade aks-prod (rg-aks-prod) to 1.30.4, control plane and node pools together.",
+      "expected_commands": ["az aks upgrade --resource-group rg-aks-prod --name aks-prod --kubernetes-version 1.30.4", "az aks upgrade -g rg-aks-prod -n aks-prod --kubernetes-version 1.30.4"],
+      "fake_output": "Kubernetes may be unavailable during cluster upgrades.\nAre you sure you want to perform this operation? (y/N): y\nSince control-plane-only argument is not specified, this will upgrade the control plane AND all nodepools to version 1.30.4. Continue? (y/N): y\n(upgrade in progress: nodes are surged, cordoned, drained, and replaced one by one)",
+      "explanation": "AKS upgrades the control plane, then replaces nodes using a surge (an extra node at a time by default).",
+      "why": "Node pools upgrade with a surge-and-drain: a new node is added, an old one drained and removed. Increasing max-surge speeds up big pools at the cost of temporary extra capacity. Upgrade staging first, and schedule prod upgrades in AKS maintenance windows."
+    }
+  ]
+}

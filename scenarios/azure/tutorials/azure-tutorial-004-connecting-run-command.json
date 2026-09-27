@@ -1,0 +1,46 @@
+{
+  "id": "azure-tutorial-004",
+  "type": "tutorial",
+  "category": "azure",
+  "title": "Getting Into Azure VMs: Bastion, az ssh, and Run Command",
+  "difficulty": "intermediate",
+  "tags": ["azure", "vm", "ssh", "bastion"],
+  "intro": "Like AWS, the modern Azure answer to 'how do I log in to a server?' avoids open SSH ports: Azure Bastion, Entra ID-based SSH (az ssh vm), and Run Command for one-off scripts. And when nothing can connect, boot diagnostics show the console.",
+  "steps": [
+    {
+      "prompt": "Run 'df -h' on vm-web-01 in rg-web-prod without logging in, using Run Command.",
+      "expected_commands": ["az vm run-command invoke --resource-group rg-web-prod --name vm-web-01 --command-id RunShellScript --scripts \"df -h\"", "az vm run-command invoke -g rg-web-prod -n vm-web-01 --command-id RunShellScript --scripts 'df -h'"],
+      "fake_output": "{\n  \"value\": [{\n    \"code\": \"ProvisioningState/succeeded\",\n    \"message\": \"Enable succeeded: \\n[stdout]\\nFilesystem      Size  Used Avail Use% Mounted on\\n/dev/sda1        30G   29G  1.0G  97% /\\n\"\n  }]\n}",
+      "explanation": "The root disk is 97% full, found without SSH access.",
+      "why": "Run Command goes through the Azure VM agent, so it works with no network path to the VM at all. It's the Azure equivalent of AWS SSM send-command. It needs the agent to be healthy, so a VM that's hung or out of disk may not answer."
+    },
+    {
+      "prompt": "Open an SSH session to vm-web-01 in rg-web-prod using your Entra ID identity instead of a key file.",
+      "expected_commands": ["az ssh vm --resource-group rg-web-prod --name vm-web-01", "az ssh vm -g rg-web-prod -n vm-web-01"],
+      "fake_output": "Welcome to Ubuntu 22.04.4 LTS\nalice@contoso.com@vm-web-01:~$",
+      "explanation": "Logged in as your Entra ID user, using a short-lived certificate.",
+      "why": "With the AADSSHLoginForLinux extension, access is granted by Azure RBAC roles (Virtual Machine Administrator/User Login) instead of copied keys. Leaving the company revokes access automatically, which key files never do."
+    },
+    {
+      "prompt": "For a VM with no public IP, go through Azure Bastion: connect to the VM with resource id /subscriptions/33333333-dddd-4eee-8fff-444444444444/resourceGroups/rg-data-prod/providers/Microsoft.Compute/virtualMachines/vm-batch-01 via the bastion bas-hub in rg-network-hub, with Entra ID auth.",
+      "expected_commands": ["az network bastion ssh --name bas-hub --resource-group rg-network-hub --target-resource-id /subscriptions/33333333-dddd-4eee-8fff-444444444444/resourceGroups/rg-data-prod/providers/Microsoft.Compute/virtualMachines/vm-batch-01 --auth-type AAD"],
+      "fake_output": "Opening tunnel through bas-hub...\nalice@contoso.com@vm-batch-01:~$",
+      "explanation": "You're on a private VM through the Bastion host in the hub network.",
+      "why": "Bastion is a managed jump box: private VMs need no public IP and no inbound SSH from the internet. The resource ID is Azure's universal address for anything: subscription, then resource group, then provider and type, then name."
+    },
+    {
+      "prompt": "vm-web-02 in rg-web-prod won't respond to anything. Read its boot log from boot diagnostics.",
+      "expected_commands": ["az vm boot-diagnostics get-boot-log --resource-group rg-web-prod --name vm-web-02", "az vm boot-diagnostics get-boot-log -g rg-web-prod -n vm-web-02"],
+      "fake_output": "[    4.812] EXT4-fs (sda1): mounted filesystem with ordered data mode\n[   92.114] Kernel panic - not syncing: Out of memory and no killable processes...",
+      "explanation": "The VM ran out of memory at boot and panicked.",
+      "why": "Boot diagnostics is Azure's version of 'aws ec2 get-console-output': the one window into a VM whose OS won't come up. Enable it on every VM; with managed storage it costs almost nothing."
+    },
+    {
+      "prompt": "List the extensions installed on vm-web-02 in rg-web-prod, to check whether a monitoring agent is the memory hog.",
+      "expected_commands": ["az vm extension list --resource-group rg-web-prod --vm-name vm-web-02 --output table", "az vm extension list -g rg-web-prod --vm-name vm-web-02 -o table"],
+      "fake_output": "Name                        ProvisioningState  Publisher\n--------------------------  -----------------  -----------------------------\nAzureMonitorLinuxAgent      Succeeded          Microsoft.Azure.Monitor\nOmsAgentForLinux            Succeeded          Microsoft.EnterpriseCloud.Monitoring\nAADSSHLoginForLinux         Succeeded          Microsoft.Azure.ActiveDirectory",
+      "explanation": "Both the new Azure Monitor Agent and the retired OMS agent are installed, so two monitoring agents are running side by side.",
+      "why": "Extensions are software Azure installs into the VM. They're easy to forget and they compete for memory, which matters a lot on small VM sizes. The legacy OMS/Log Analytics agent has been retired in favour of the Azure Monitor Agent; remove the old one after migrating."
+    }
+  ]
+}

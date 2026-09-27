@@ -1,0 +1,46 @@
+{
+  "id": "azure-tutorial-007",
+  "type": "tutorial",
+  "category": "azure",
+  "title": "Azure RBAC and Managed Identities",
+  "difficulty": "intermediate",
+  "tags": ["azure", "rbac", "identity", "security"],
+  "intro": "Azure access is 'role assignments': a principal (user, group, service principal, or managed identity) gets a role (Reader, Contributor, Key Vault Secrets User...) at a scope (management group, subscription, resource group, or single resource). Managed identities give Azure resources their own identity, so apps need no secrets.",
+  "steps": [
+    {
+      "prompt": "Show your own signed-in user's object id.",
+      "expected_commands": ["az ad signed-in-user show --query id", "az ad signed-in-user show --query id -o tsv", "az ad signed-in-user show"],
+      "fake_output": "\"7a1b2c3d-4e5f-4a6b-9c8d-0e1f2a3b4c5d\"",
+      "explanation": "Your Entra ID object id: the value role assignments refer to.",
+      "why": "Role assignments are keyed by object id, not by name. When an assignment shows up as 'Unknown' in the portal, the principal behind that object id was deleted."
+    },
+    {
+      "prompt": "List every role assignment for alice@contoso.com across all scopes.",
+      "expected_commands": ["az role assignment list --assignee alice@contoso.com --all --output table", "az role assignment list --assignee alice@contoso.com --all -o table"],
+      "fake_output": "Principal          Role         Scope\n-----------------  -----------  -------------------------------------------------------------\nalice@contoso.com  Reader       /subscriptions/33333333-dddd-4eee-8fff-444444444444\nalice@contoso.com  Contributor  /subscriptions/33333333-dddd-4eee-8fff-444444444444/resourceGroups/rg-web-prod",
+      "explanation": "Reader on the whole prod subscription, Contributor on one resource group.",
+      "why": "Without --all you only see assignments at the current subscription scope. Also note that permissions inherit downward: Reader on the subscription applies to every group and resource in it. Assign at the smallest scope that does the job."
+    },
+    {
+      "prompt": "Give vm-app-01 (rg-web-prod) a system-assigned managed identity.",
+      "expected_commands": ["az vm identity assign --resource-group rg-web-prod --name vm-app-01", "az vm identity assign -g rg-web-prod -n vm-app-01"],
+      "fake_output": "{\n  \"systemAssignedIdentity\": \"5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b\",\n  \"userAssignedIdentities\": {}\n}",
+      "explanation": "The VM now has its own Entra ID identity, with principal id 5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b.",
+      "why": "Code on the VM gets tokens from the local metadata endpoint, so there's no connection string or client secret to leak or rotate: the same idea as an AWS instance profile. System-assigned identities live and die with the VM; user-assigned ones can be shared and survive the VM."
+    },
+    {
+      "prompt": "Let that identity (5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b) read secrets from the Key Vault kv-web-prod only: assign 'Key Vault Secrets User' scoped to /subscriptions/33333333-dddd-4eee-8fff-444444444444/resourceGroups/rg-web-prod/providers/Microsoft.KeyVault/vaults/kv-web-prod.",
+      "expected_commands": ["az role assignment create --assignee 5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b --role \"Key Vault Secrets User\" --scope /subscriptions/33333333-dddd-4eee-8fff-444444444444/resourceGroups/rg-web-prod/providers/Microsoft.KeyVault/vaults/kv-web-prod"],
+      "fake_output": "{\n  \"principalType\": \"ServicePrincipal\",\n  \"roleDefinitionName\": \"Key Vault Secrets User\",\n  \"scope\": \".../vaults/kv-web-prod\"\n}",
+      "explanation": "The VM can read secrets from one vault, and do nothing else.",
+      "why": "Scoping to the single vault rather than the resource group is least privilege in practice. Secrets User can read secret values but not manage the vault. Role assignments can take a few minutes to take effect, so an immediate 403 isn't proof it failed."
+    },
+    {
+      "prompt": "Look up what the built-in role 'Key Vault Secrets User' actually allows.",
+      "expected_commands": ["az role definition list --name \"Key Vault Secrets User\"", "az role definition list --name 'Key Vault Secrets User'"],
+      "fake_output": "[{\n  \"roleName\": \"Key Vault Secrets User\",\n  \"permissions\": [{\n    \"actions\": [],\n    \"dataActions\": [\"Microsoft.KeyVault/vaults/secrets/getSecret/action\", \"Microsoft.KeyVault/vaults/secrets/readMetadata/action\"]\n  }]\n}]",
+      "explanation": "Only data actions: read secret values and metadata.",
+      "why": "Azure separates control-plane 'actions' (manage the resource) from data-plane 'dataActions' (use its contents). An Owner of a vault can't read its secrets without a data-plane role. That separation surprises people, and it's exactly the point."
+    }
+  ]
+}

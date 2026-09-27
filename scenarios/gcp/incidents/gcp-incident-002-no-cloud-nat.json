@@ -1,0 +1,43 @@
+{
+  "id": "gcp-incident-002",
+  "type": "incident",
+  "category": "gcp",
+  "title": "Batch jobs moved to a new region can't install dependencies",
+  "difficulty": "intermediate",
+  "tags": ["gcp", "nat", "networking", "regions"],
+  "intro": "To cut latency, the batch workers were moved from us-east1 to europe-west1 using the same instance template (no external IPs, 'for security'). In europe-west1 every job fails at 'pip install' with 'Connection timed out'. The same template works fine in us-east1.",
+  "steps": [
+    {
+      "prompt": "Read recent error logs from Compute Engine VMs (last hour, 10 entries).",
+      "expected_commands": ["gcloud logging read 'resource.type=\"gce_instance\" AND severity>=ERROR' --limit 10 --freshness 1h", "gcloud logging read \"resource.type=gce_instance AND severity>=ERROR\" --limit 10 --freshness 1h"],
+      "fake_output": "textPayload: 'batch-ew1-7k2m: pip: Connection to pypi.org timed out. (connect timeout=15)'\ntextPayload: 'batch-ew1-9q4n: pip: Connection to pypi.org timed out. (connect timeout=15)'",
+      "hint": "Filter by resource type and severity."
+    },
+    {
+      "prompt": "Private VMs need Cloud NAT to reach the internet, and NAT is regional. List the Cloud Routers.",
+      "expected_commands": ["gcloud compute routers list"],
+      "fake_output": "NAME          REGION    NETWORK\nrouter-use1   us-east1  prod-vpc",
+      "hint": "Cloud NAT is configured on a Cloud Router, per region."
+    },
+    {
+      "prompt": "Only us-east1 has a router, and its NAT. Create router-ew1 on prod-vpc in europe-west1.",
+      "expected_commands": ["gcloud compute routers create router-ew1 --network prod-vpc --region europe-west1", "gcloud compute routers create router-ew1 --network=prod-vpc --region=europe-west1"],
+      "fake_output": "Creating router [router-ew1]...done.",
+      "hint": "routers create <name> --network --region"
+    },
+    {
+      "prompt": "Add NAT config nat-ew1 to router-ew1 (europe-west1) with auto-allocated IPs for all subnet ranges.",
+      "expected_commands": ["gcloud compute routers nats create nat-ew1 --router router-ew1 --region europe-west1 --auto-allocate-nat-external-ips --nat-all-subnet-ip-ranges", "gcloud compute routers nats create nat-ew1 --router=router-ew1 --region=europe-west1 --auto-allocate-nat-external-ips --nat-all-subnet-ip-ranges"],
+      "fake_output": "Creating NAT [nat-ew1] in router [router-ew1]...done.",
+      "hint": "routers nats create <name> --router --region ..."
+    },
+    {
+      "prompt": "Verify from one worker, batch-ew1-7k2m in europe-west1-b, through IAP: run 'curl -sI https://pypi.org | head -1'.",
+      "expected_commands": ["gcloud compute ssh batch-ew1-7k2m --zone europe-west1-b --tunnel-through-iap --command 'curl -sI https://pypi.org | head -1'", "gcloud compute ssh batch-ew1-7k2m --zone=europe-west1-b --tunnel-through-iap --command=\"curl -sI https://pypi.org | head -1\""],
+      "fake_output": "HTTP/2 200",
+      "hint": "gcloud compute ssh ... --command '<cmd>'"
+    }
+  ],
+  "resolution": "In GCP the VPC is global but Cloud NAT is regional. The instance template was fine: its VMs had no external IPs, which is correct. But egress for private VMs only works in regions where a Cloud Router with a NAT configuration exists, and nobody created one for europe-west1. The network-wide default route to the internet gateway looks like it should work, but it only carries traffic for VMs that have an external IP. 'Same template, different region, different result' points at a regional resource. Prevention: put router and NAT creation in the same Terraform module that 'enables a region', so a region can't be half set up. Private Google Access would also let the workers pull from Artifact Registry without NAT, but public package indexes like PyPI still need NAT, or better, a mirror in Artifact Registry.",
+  "real_commands_used": ["gcloud logging read", "gcloud compute routers list", "gcloud compute routers create", "gcloud compute routers nats create", "gcloud compute ssh --tunnel-through-iap --command"]
+}

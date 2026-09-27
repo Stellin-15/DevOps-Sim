@@ -1,0 +1,46 @@
+{
+  "id": "azure-tutorial-008",
+  "type": "tutorial",
+  "category": "azure",
+  "title": "Key Vault and Storage Accounts",
+  "difficulty": "intermediate",
+  "tags": ["azure", "key-vault", "storage", "secrets"],
+  "intro": "Key Vault holds secrets, keys, and certificates. Storage accounts hold blobs (the equivalent of S3), files, queues, and tables. Both are data-plane services where access control and network restrictions matter more than the commands themselves.",
+  "steps": [
+    {
+      "prompt": "List the secret names in the vault kv-web-prod.",
+      "expected_commands": ["az keyvault secret list --vault-name kv-web-prod --output table", "az keyvault secret list --vault-name kv-web-prod -o table", "az keyvault secret list --vault-name kv-web-prod"],
+      "fake_output": "Name              Enabled  Expires\n----------------  -------  -------------------------\ndb-password       True     2026-10-05T00:00:00+00:00\npayments-api-key  True",
+      "explanation": "Two secrets. db-password expires in about a week.",
+      "why": "Listing shows names and metadata, never values, so it's safe to run while sharing your screen. Expiry dates on secrets plus an alert (Event Grid 'SecretNearExpiry') stop 'the password expired and prod broke' incidents."
+    },
+    {
+      "prompt": "Rotate db-password in kv-web-prod: set a new value read from the file new-db-pass.txt, so it never appears in shell history.",
+      "expected_commands": ["az keyvault secret set --vault-name kv-web-prod --name db-password --file new-db-pass.txt", "az keyvault secret set --vault-name kv-web-prod -n db-password --file new-db-pass.txt"],
+      "fake_output": "{\n  \"attributes\": {\"enabled\": true},\n  \"id\": \"https://kv-web-prod.vault.azure.net/secrets/db-password/9c1d2e3f4a5b\"\n}",
+      "explanation": "A new version of db-password was created. Apps that reference the secret without a version get the new value on their next fetch.",
+      "why": "--value on the command line ends up in shell history and process lists; --file avoids that. Key Vault keeps every version, so rollback is possible. Rotate the value in the database at the same time, or have the app accept both old and new during the switch."
+    },
+    {
+      "prompt": "Check the network rules on the storage account stwebprod001.",
+      "expected_commands": ["az storage account show --name stwebprod001 --query networkRuleSet", "az storage account show -n stwebprod001 --query networkRuleSet"],
+      "fake_output": "{\n  \"defaultAction\": \"Allow\",\n  \"ipRules\": [],\n  \"virtualNetworkRules\": []\n}",
+      "explanation": "defaultAction Allow: the storage endpoint accepts connections from any network (authentication is still required).",
+      "why": "Allow is the default, so the account is reachable from the whole internet, protected only by keys and tokens. A leaked SAS token or account key works from anywhere. Restricting the network is a second layer of defence."
+    },
+    {
+      "prompt": "Allow the app subnet snet-app (vnet-web-prod, rg-web-prod) to reach stwebprod001 before locking it down.",
+      "expected_commands": ["az storage account network-rule add --resource-group rg-web-prod --account-name stwebprod001 --vnet-name vnet-web-prod --subnet snet-app", "az storage account network-rule add -g rg-web-prod --account-name stwebprod001 --vnet-name vnet-web-prod --subnet snet-app"],
+      "fake_output": "{\n  \"virtualNetworkRules\": [{\"virtualNetworkResourceId\": \".../subnets/snet-app\", \"action\": \"Allow\"}]\n}",
+      "explanation": "The app subnet is allowed. (The subnet needs the Microsoft.Storage service endpoint enabled.)",
+      "why": "Add the allow rules first, then switch the default to Deny. Doing it the other way round causes an outage. azure-incident-006 is what happens when someone does exactly that."
+    },
+    {
+      "prompt": "Now deny by default on stwebprod001 (rg-web-prod).",
+      "expected_commands": ["az storage account update --resource-group rg-web-prod --name stwebprod001 --default-action Deny", "az storage account update -g rg-web-prod -n stwebprod001 --default-action Deny"],
+      "fake_output": "{\n  \"networkRuleSet\": {\"defaultAction\": \"Deny\", \"virtualNetworkRules\": [\".../subnets/snet-app\"]}\n}",
+      "explanation": "Only snet-app (and any listed IPs) can reach the account now.",
+      "why": "The stronger option is a private endpoint: the account gets a private IP inside your VNet, and public network access can be disabled entirely. Remember that your own laptop and CI runners are now blocked too; that's usually the next ticket."
+    }
+  ]
+}
