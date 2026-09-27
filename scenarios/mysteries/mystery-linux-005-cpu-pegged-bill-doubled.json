@@ -1,0 +1,42 @@
+{
+  "id": "mystery-linux-005",
+  "type": "mystery",
+  "category": "security",
+  "sandbox": "linux",
+  "title": "CPU Pegged, and the Cloud Bill Doubled",
+  "difficulty": "intermediate",
+  "tags": ["security", "linux", "incident-response", "persistence"],
+  "setup": {"seed": 41, "problems": ["cryptominer"]},
+  "symptom": "The web server has sat at 100% CPU on every core for three days, and finance says this month's bill is double. The app team swears traffic is normal. Someone already rebooted it once; the CPU was back at 100% within minutes.",
+  "goals": [
+    {"check": "process_gone", "match": "kdevtmpfsi", "description": "The process eating the CPU is gone and stays gone"},
+    {"check": "persistence_removed", "match": "ldr.sh", "description": "Whatever keeps bringing it back has been removed"},
+    {"check": "load_below_nproc", "description": "Load average is back below the number of CPUs"}
+  ],
+  "evidence": [
+    {"description": "what is using the CPU", "seen_any": ["kdevtmpfsi"]},
+    {"description": "where it's sending its work", "seen_any": ["45.9.148.3:3333"]},
+    {"description": "how it survives kills and reboots", "seen_any": ["ldr.sh"]}
+  ],
+  "question": {
+    "prompt": "What happened to this server?",
+    "options": [
+      "A report job is stuck in an infinite loop",
+      "The server was compromised through the www-data user (the web app) and is running a crypto-miner connected to a mining pool, re-installed every 5 minutes by a malicious cron job",
+      "The kernel has a CPU accounting bug after the last update",
+      "nginx is under a DDoS attack"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 7,
+  "solution_commands": [
+    "ps aux --sort=-%cpu | head -3",
+    "ss -tnp",
+    "crontab -l -u www-data",
+    "crontab -r -u www-data",
+    "kill -9 {miner_pid}",
+    "rm /tmp/.x/kdevtmpfsi",
+    "uptime"
+  ],
+  "debrief": "A process named like a kernel thread (kdevtmpfsi, imitating the real kdevtmpfs), running from a hidden directory in /tmp, as www-data, at 100% CPU, with a connection to port 3333 (a common mining-pool port): that's a crypto-miner, one of the most common results of a compromised internet-facing server. The reboot didn't help, and a lone 'kill' wouldn't either, because a www-data crontab downloads and restarts it every five minutes. Always remove the persistence first, then kill. Two things matter even more than the cleanup. First, the attacker got code execution as www-data, which means the web application (an upload endpoint, an outdated plugin) is the real hole, and it's still open. Second, a compromised server can't be fully trusted after cleanup: the professional answer is to snapshot the disk for forensics, rebuild from a clean image, patch the application, and rotate any secrets the server held. Blocking outbound traffic to mining pools (egress filtering) and alerting on sustained CPU with no traffic increase would have caught this in hours, not days."
+}

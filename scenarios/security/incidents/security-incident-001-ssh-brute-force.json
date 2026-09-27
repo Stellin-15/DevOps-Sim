@@ -1,0 +1,49 @@
+{
+  "id": "security-incident-001",
+  "type": "incident",
+  "category": "security",
+  "title": "A legacy server is under an SSH brute-force attack",
+  "difficulty": "beginner",
+  "tags": ["security", "ssh", "brute-force", "hardening"],
+  "intro": "Monitoring shows sshd on legacy-ftp-01 using 40% CPU, and its auth.log grew 2GB overnight. This old server still allows password logins, because 'a partner uploads files with a password'. Find out whether anyone got in, then stop it.",
+  "steps": [
+    {
+      "prompt": "Rank the source IPs of failed password attempts in /var/log/auth.log, top 5.",
+      "expected_commands": ["grep 'Failed password' /var/log/auth.log | awk '{print $(NF-3)}' | sort | uniq -c | sort -rn | head -5", "grep \"Failed password\" /var/log/auth.log | awk '{print $(NF-3)}' | sort | uniq -c | sort -rn | head -5"],
+      "fake_output": " 188211 218.92.0.112\n  91450 61.177.172.140\n   4011 103.45.12.9\n     22 203.0.113.80\n      3 198.51.100.23",
+      "hint": "grep 'Failed password' | awk '{print $(NF-3)}' | sort | uniq -c | sort -rn | head -5"
+    },
+    {
+      "prompt": "The critical question: were there any successful logins, and from where? Search auth.log for accepted logins.",
+      "expected_commands": ["grep 'Accepted' /var/log/auth.log", "grep Accepted /var/log/auth.log", "grep -i accepted /var/log/auth.log"],
+      "fake_output": "Sep 28 06:12:40 legacy-ftp-01 sshd[9120]: Accepted password for partnerupload from 203.0.113.80 port 50112 ssh2\nSep 28 07:01:05 legacy-ftp-01 sshd[9321]: Accepted publickey for deploy from 198.51.100.23 port 50412 ssh2",
+      "hint": "Look for 'Accepted'."
+    },
+    {
+      "prompt": "203.0.113.80 is the partner's documented IP, and 198.51.100.23 is your office: no attacker got in. Contain now: check whether fail2ban is protecting sshd.",
+      "expected_commands": ["sudo fail2ban-client status sshd", "fail2ban-client status sshd"],
+      "fake_output": "ERROR   Failed to access socket path: /var/run/fail2ban/fail2ban.sock. Is fail2ban running?",
+      "hint": "fail2ban-client status <jail>"
+    },
+    {
+      "prompt": "fail2ban isn't even installed and running. Real fix: allow SSH only from the partner's IP and the office. Delete the ufw rule that allows 22 from anywhere (rule number 1).",
+      "expected_commands": ["sudo ufw delete 1", "ufw delete 1"],
+      "fake_output": "Deleting:\n allow 22/tcp\nProceed with operation (y|n)? y\nRule deleted",
+      "hint": "ufw delete <rule-number>. The next step re-adds scoped rules."
+    },
+    {
+      "prompt": "Allow SSH (22/tcp) from the partner 203.0.113.80 only (then the office range, not shown).",
+      "expected_commands": ["sudo ufw allow from 203.0.113.80 to any port 22 proto tcp", "ufw allow from 203.0.113.80 to any port 22 proto tcp"],
+      "fake_output": "Rule added",
+      "hint": "ufw allow from <ip> to any port 22 proto tcp"
+    },
+    {
+      "prompt": "Confirm the attack traffic stopped: count failed-password lines in the last 5 minutes of the sshd journal.",
+      "expected_commands": ["journalctl -u ssh --since '5 min ago' | grep -c 'Failed password'", "journalctl -u ssh --since \"5 min ago\" | grep -c \"Failed password\"", "journalctl -u sshd --since '5 min ago' | grep -c 'Failed password'"],
+      "fake_output": "0",
+      "hint": "journalctl -u ssh --since '5 min ago' | grep -c ..."
+    }
+  ],
+  "resolution": "Brute-force attempts are constant background noise on the internet. The real question is always whether any succeeded, and here the only accepted logins were the documented partner and the office, so this was an availability and hygiene problem, not a breach. The durable fix is reducing exposure, not counting attempts: SSH now accepts connections only from the two IPs that need it, which removes more than 99.9% of the noise at once. fail2ban would have helped, but it throttles attacks rather than preventing them. Next steps: move the partner to key-based SFTP (or a managed transfer service) so password authentication can be switched off, add log rotation limits so an attack can't fill the disk, and alert on 'Accepted' from new IPs rather than on failure volume.",
+  "real_commands_used": ["grep | awk | sort | uniq -c | sort -rn", "grep Accepted /var/log/auth.log", "fail2ban-client status", "ufw delete", "ufw allow from ... to any port 22", "journalctl -u ssh --since"]
+}

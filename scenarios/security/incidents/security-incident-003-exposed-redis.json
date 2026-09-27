@@ -1,0 +1,43 @@
+{
+  "id": "security-incident-003",
+  "type": "incident",
+  "category": "security",
+  "title": "The weekly external scan found Redis open to the internet",
+  "difficulty": "intermediate",
+  "tags": ["security", "redis", "exposure", "hardening"],
+  "intro": "Your weekly external attack-surface scan (run from outside your network, against your own public IPs) shows a new open port on 34.76.120.40, the cache server: 6379, Redis. It was added two weeks ago 'temporarily' for a debugging session.",
+  "steps": [
+    {
+      "prompt": "Confirm the finding: detect the service version on port 6379 of 34.76.120.40.",
+      "expected_commands": ["nmap -sV -p 6379 34.76.120.40", "sudo nmap -sV -p 6379 34.76.120.40"],
+      "fake_output": "PORT     STATE SERVICE VERSION\n6379/tcp open  redis   Redis key-value store 7.0.11",
+      "hint": "nmap -sV -p <port> <host>"
+    },
+    {
+      "prompt": "Check whether it requires authentication: connect with redis-cli to 34.76.120.40 and run INFO server.",
+      "expected_commands": ["redis-cli -h 34.76.120.40 INFO server", "redis-cli -h 34.76.120.40 info server"],
+      "fake_output": "# Server\nredis_version:7.0.11\nos:Linux 6.8.0-45-generic x86_64\nuptime_in_days:14\nconfig_file:/etc/redis/redis.conf",
+      "hint": "If INFO answers without a password, anyone on the internet can run any command."
+    },
+    {
+      "prompt": "No authentication. Attackers use open Redis to write files: its CONFIG SET dir/dbfilename can drop an SSH key or a cron job onto the server. Check for signs of that: look at the working directory Redis would write to.",
+      "expected_commands": ["redis-cli -h 34.76.120.40 CONFIG GET dir", "redis-cli -h 34.76.120.40 config get dir"],
+      "fake_output": "1) \"dir\"\n2) \"/root/.ssh\"",
+      "hint": "CONFIG GET dir shows where Redis saves its dump file."
+    },
+    {
+      "prompt": "Its save directory has been changed to /root/.ssh. It's been exploited. Contain immediately: on the cache server, block 6379 from the internet by removing the temporary ufw rule 'allow 6379/tcp'.",
+      "expected_commands": ["sudo ufw delete allow 6379/tcp", "ufw delete allow 6379/tcp"],
+      "fake_output": "Rule deleted\nRule deleted (v6)",
+      "hint": "ufw delete allow <port>/tcp removes that rule."
+    },
+    {
+      "prompt": "Check what was planted: look at root's authorized_keys on the cache server.",
+      "expected_commands": ["sudo cat /root/.ssh/authorized_keys", "cat /root/.ssh/authorized_keys"],
+      "fake_output": "REDIS0009�\u0005redis-ver\u00067.0.11�\n\n\nssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC7x9...kL crack@vps\n\n\n",
+      "hint": "A Redis dump file written over authorized_keys contains binary junk plus the attacker's key."
+    }
+  ],
+  "resolution": "Redis was designed for trusted networks: by default it has no password, and CONFIG SET lets a client change where it writes its dump file. With port 6379 open to the internet, attackers set the directory to /root/.ssh, stored their public key as a value, and saved the database as 'authorized_keys'. sshd happily ignores the binary junk around the key, which gave them root SSH access. This is a well-known, automated attack, so assume the host is fully compromised. Blocking the port stops new abuse, but the planted key means someone may already have root. Next: check 'last' and auth.log for logins using that key, snapshot the disk, rebuild the server from a clean image, and rotate anything it could reach. Prevention: bind Redis to private interfaces only ('bind 127.0.0.1 10.x.x.x'), keep protected-mode on, require ACLs or a password, rename or disable CONFIG, and never 'temporarily' expose a datastore. The weekly external scan paid for itself here: it found the exposure in days, not months.",
+  "real_commands_used": ["nmap -sV -p 6379", "redis-cli INFO server", "redis-cli CONFIG GET dir", "ufw delete allow", "cat /root/.ssh/authorized_keys"]
+}

@@ -225,11 +225,13 @@ structural, so run a real `docker build` on your own projects.
 **Content:** 14 tutorials, 6 incidents, 3 Writing Labs, and an interactive
 Sandbox: a server with two random real problems (failed service blocked by
 a stray process, disk filled by a log held open by a process, runaway CPU,
-memory hog that got postgres OOM-killed) that you must find AND fix with
-kill / systemctl restart / rm / truncate. It models real consequences —
+memory hog that got postgres OOM-killed, and, since the security pass, a
+crypto-miner with cron persistence or an SSH backdoor) that you must find
+AND fix with kill / systemctl restart / rm / truncate / crontab -r /
+userdel / sed. It models real consequences —
 deleting a log a process still holds open frees nothing until you restart
 that process — which unscripted practice needs and scripted steps can't give.
-Four Mystery Incidents run on that sandbox. Each is a symptom only, which
+Six Mystery Incidents run on that sandbox (two of them are the hacked-server ones, listed under Security). Each is a symptom only, which
 you diagnose and fix any way you like, and each is scored against an
 expert's command count.
 
@@ -730,7 +732,83 @@ The three clouds use different names for the same ideas:
 
 ---
 
-# Part 12 — Overall: will this make you proficient in DevOps?
+# Part 12 — Security (defensive)
+
+**Content:** 10 tutorials, 6 incidents, and 2 hacked-server Mystery Incidents
+on the Linux sandbox.
+
+The Linux sandbox gained two compromise scenarios, and both are playable
+there at random too.
+
+**Crypto-miner:**
+- a disguised miner running as www-data from `/tmp/.x`;
+- a connection to a mining pool on port 3333;
+- a www-data cron job that re-downloads it every five minutes.
+
+Killing it without removing the cron job brings it back with a new pid.
+
+**SSH backdoor:**
+- a brute-forced root password;
+- a second UID-0 account;
+- an attacker key in root's `authorized_keys`.
+
+Everything is evidenced in `auth.log`, `last`, and `/etc/passwd`. Careless
+cleanup counts as collateral damage:
+- deleting every SSH key, which locks out the ops team;
+- `crontab -r` without `-u`, which deletes root's backup job;
+- removing real accounts.
+
+## Covered
+
+**Tutorials** (every section of `commands/security.md`):
+- nmap discovery and full-range scans;
+- service versions and TLS checks (ssl-enum-ciphers, testssl.sh, certificate expiry);
+- Trivy for images, repos, IaC, and clusters, plus kube-bench;
+- Lynis and OpenSCAP CIS audits;
+- SSH hardening in a lock-out-safe order (`sshd -T`, `sshd -t`, reload, test from outside);
+- brute-force analysis and fail2ban;
+- auditd (watches, ausearch by auid, aureport, persistent rules);
+- osquery and AIDE file integrity;
+- secrets scanning with gitleaks and trufflehog, rotating before rewriting history;
+- a first-15-minutes compromise triage checklist.
+
+**Incidents:**
+- an SSH brute force (did anyone get in?);
+- a secret in git history before open-sourcing;
+- an internet-exposed Redis used to plant an SSH key;
+- a PHP web shell through an unsafe upload plus nginx config;
+- beaconing from a typosquatted Python package's systemd timer;
+- fleet-wide response to a critical CVE (xz-utils, CVE-2024-3094).
+
+## Still missing
+
+- **Offensive testing**, deliberately. Penetration testing and exploitation are
+  out of scope for a DevOps game; the category is defensive: find your own
+  exposure, harden, detect, and respond.
+- SIEM work (writing detection rules in Sentinel, Splunk, or Elastic), and
+  commercial EDR consoles.
+- SELinux/AppArmor policy troubleshooting (still also listed under Linux).
+- Kubernetes runtime security (Falco rules), admission policies (Kyverno or
+  Gatekeeper, which would also enforce image signatures from Part 6), and
+  network policy auditing.
+- Incident-response process: evidence handling, legal and breach-notification
+  duties. Only mentioned in debriefs.
+
+## Readiness verdict
+
+Strong practical grounding for the security side of a DevOps or SRE role:
+- scanning your own attack surface;
+- hardening the commonly audited controls;
+- recognising the most frequent real compromises (miners, backdoors,
+  exposed datastores, leaked secrets, supply-chain packages);
+- responding in the right order (look, preserve, find persistence, contain,
+  rebuild).
+
+It is not a security-engineer or penetration-testing curriculum.
+
+---
+
+# Part 13 — Overall: will this make you proficient in DevOps?
 
 ## By the numbers
 
@@ -747,7 +825,8 @@ The three clouds use different names for the same ideas:
 | AWS | 11 | 7 | Sandbox (VPC), 4 Mysteries |
 | Azure | 10 | 6 | |
 | Google Cloud | 10 | 6 | |
-| **Total** | **144** | **75** | 22 Writing Labs, 7 career paths, 4 sandboxes, 10 Mystery Incidents, Exam Mode |
+| Security | 10 | 6 | 2 hacked-server Mysteries (Linux sandbox) |
+| **Total** | **154** | **81** | 22 Writing Labs, 7 career paths, 4 sandboxes, 12 Mystery Incidents, Exam Mode |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -759,7 +838,7 @@ command beats the alternatives — not just what it does.
 will know the commands, the failure modes, and — most importantly — the
 debugging method** (check the layer before guessing the fix; refused vs
 timeout; verify after every change; revoke before cleaning up; revert
-don't force-push). The 75 incidents are modeled on the kinds of problems
+don't force-push). The 81 incidents are modeled on the kinds of problems
 that genuinely trip up working engineers, and working through them
 builds judgment that command references alone never will.
 
@@ -782,8 +861,8 @@ that no amount of additional scenario content can fully close:
    fixes change the state, and careless fixes cost points (killing sshd
    or init counts as collateral damage). You can't win by guessing: you
    must have actually seen the evidence before you're allowed to answer.
-   The outputs are still simulated, though, and there are only 10
-   mysteries (Linux, Docker, AWS), none of them Kubernetes. Pair this game with a homelab
+   The outputs are still simulated, though, and there are only 12
+   mysteries (Linux, Docker, AWS, and hacked servers), none of them Kubernetes. Pair this game with a homelab
    (kind/minikube, a free-tier cloud account) where things break for real.
 3. **Cloud-provider fundamentals** (IAM, VPCs, managed services).
    **Partly addressed.** The AWS category (Part 9) and its VPC sandbox

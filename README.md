@@ -3,7 +3,7 @@
 A terminal-based game for learning real DevOps command-line skills by
 typing them, not memorizing them. Started as Kubernetes-only; now spans
 **Kubernetes, Docker, Linux, Terraform, Networking, CI/CD, Monitoring,
-MLOps, AWS, Azure, and Google Cloud**, with Security, Server Fleet Ops,
+MLOps, AWS, Azure, Google Cloud, and Security**, with Server Fleet Ops
 and big-tech SRE in progress. Runs entirely locally — no real infrastructure, no network calls,
 no backend. Every command output you see is a pre-written simulated
 string.
@@ -68,8 +68,8 @@ string.
     crashed on startup, are stuck in a restart loop, or are failing their
     healthcheck, plus dangling images and volumes wasting disk.
   - **Linux** — a server with two hidden problems (a failed service, a
-    full disk, a runaway process, a memory hog) that you must find **and
-    fix**: `kill`, `systemctl restart`, `rm`, and `truncate` really change
+    full disk, a runaway process, a memory hog, a crypto-miner that keeps
+    coming back, or an SSH backdoor) that you must find **and fix**: `kill`, `systemctl restart`, `rm`, and `truncate` really change
     the state, so fixes only work if you've understood the cause.
   - **AWS** — a VPC with two broken network layers. Explore it with real
     `aws ec2 describe-*` commands. Traffic is evaluated layer by layer:
@@ -330,7 +330,8 @@ the engine, loader, sandboxes, yaml_lab, career_path, mystery, or scenario conte
 | AWS | 11 | 7 | profiles/identity, EC2, SSM vs SSH, VPC anatomy, security groups vs NACLs, IAM, S3, CloudWatch/CloudTrail, ALB/ASG, EKS/ECR, cost; plus a VPC Sandbox |
 | Azure | 10 | 6 | subscriptions, resource groups/locks, VMs (stop vs deallocate), Run Command/Bastion/az ssh, VNets/NSGs, UDRs/Network Watcher, RBAC/managed identity, Key Vault/storage, Monitor/KQL, AKS |
 | Google Cloud | 10 | 6 | configurations/projects/APIs, Compute Engine filters, IAP SSH/serial console, global VPCs, tag-based firewalls, Cloud NAT, IAM without keys/impersonation, Cloud Storage, logging/quotas, GKE/Workload Identity |
-| **Total** | **144** | **75** | + 22 Writing Labs |
+| Security | 10 | 6 | nmap discovery/TLS checks, Trivy/kube-bench, Lynis/OpenSCAP CIS audits, SSH hardening, fail2ban, auditd, osquery/AIDE, secrets scanning, compromise triage; plus 2 hacked-server mysteries |
+| **Total** | **154** | **81** | + 22 Writing Labs |
 
 The three clouds use different names for the same ideas (security group
 vs NSG vs firewall rule; CloudTrail vs Activity Log vs Audit Logs). The
@@ -343,7 +344,7 @@ production, security hardening layer by layer, building a platform from
 zero, "The Worst On-Call Night" (seven incidents, seven layers), and
 shipping a self-hosted LLM safely (build → sign → GitOps → serve → SLO).
 
-Plus **10 Mystery Incidents**, symptom only:
+Plus **12 Mystery Incidents**, symptom only:
 - Linux: an API down after a deploy, a disk alert that won't clear, a
   database that keeps dying, and a slow server with two unrelated
   problems.
@@ -352,6 +353,10 @@ Plus **10 Mystery Incidents**, symptom only:
 - AWS: a new web server that times out, private workers that can't pull
   updates, SSH that works while the site doesn't, and a "network
   hardening" change that broke everything.
+- Security: a pegged CPU and a doubled cloud bill (a crypto-miner that
+  comes back until you find its cron job), and a 3am login (a
+  brute-forced root password, a hidden UID-0 account, and a planted SSH
+  key).
 
 Every tutorial step explains not just what the command does but *why*
 it beats the alternatives. Every incident ends with a debrief of the real
@@ -379,12 +384,11 @@ Terraform, and bash Writing Labs → Exam Mode → Docker and Linux sandboxes �
 Mystery Incidents → new-topic content (tracing, SLOs, tcpdump/MTU, GitOps,
 supply chain, bisect, LLM serving, feature stores, strace, BuildKit,
 Terraform modules, and RBAC/PDB/storage incidents) → AWS category, VPC
-sandbox, and AWS mysteries → Azure and Google Cloud categories.
+sandbox, and AWS mysteries → Azure and Google Cloud categories → Security
+category and hacked-server mysteries.
 
 Next, in priority order (details in CLAUDE.md and GAPS.md):
-- **In progress:** a Security category
-  (scanning, hardening, endpoint security) with hacked-server mysteries;
-  Server Fleet Ops (Ansible, patching, backups); big-tech SRE practices;
+- **In progress:** Server Fleet Ops (Ansible, patching, backups); big-tech SRE practices;
   Writing Labs for IAM policies, VPC Terraform, Ansible, and postmortems
 - A stats screen and a spaced-repetition review mode
 - Exam-specific gap passes for other certifications (CKAD, Terraform

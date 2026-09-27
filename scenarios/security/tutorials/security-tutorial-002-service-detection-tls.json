@@ -1,0 +1,46 @@
+{
+  "id": "security-tutorial-002",
+  "type": "tutorial",
+  "category": "security",
+  "title": "What Exactly Is Listening? Service Versions and TLS Checks",
+  "difficulty": "intermediate",
+  "tags": ["security", "nmap", "tls", "vulnerability"],
+  "intro": "An open port is a question; the software and version behind it is the answer that matters. Outdated versions map directly to known vulnerabilities, and weak TLS settings are among the most common audit findings. All scans here are against your own host, shop.example.com (10.0.1.23).",
+  "steps": [
+    {
+      "prompt": "Detect service versions on ports 22, 80, and 443 of 10.0.1.23.",
+      "expected_commands": ["nmap -sV -p 22,80,443 10.0.1.23", "sudo nmap -sV -p 22,80,443 10.0.1.23", "nmap -sV -p22,80,443 10.0.1.23"],
+      "fake_output": "PORT    STATE SERVICE  VERSION\n22/tcp  open  ssh      OpenSSH 8.2p1 Ubuntu 4ubuntu0.1 (Ubuntu Linux; protocol 2.0)\n80/tcp  open  http     nginx 1.18.0 (Ubuntu)\n443/tcp open  ssl/http nginx 1.18.0 (Ubuntu)",
+      "explanation": "OpenSSH 8.2p1 with Ubuntu patch level 4ubuntu0.1, which is years old, and nginx 1.18.0.",
+      "why": "-sV probes each service to identify the product and version. Careful with distro packages, though: Ubuntu backports security fixes without changing the upstream version number, so '8.2p1' alone doesn't prove it's vulnerable. The package revision (4ubuntu0.1) and the distro's security tracker do."
+    },
+    {
+      "prompt": "Check which TLS versions and cipher suites 10.0.1.23 accepts on port 443, using nmap's ssl-enum-ciphers script.",
+      "expected_commands": ["nmap --script ssl-enum-ciphers -p 443 10.0.1.23", "sudo nmap --script ssl-enum-ciphers -p 443 10.0.1.23"],
+      "fake_output": "443/tcp open  https\n| ssl-enum-ciphers:\n|   TLSv1.0:\n|     ciphers:\n|       TLS_RSA_WITH_AES_128_CBC_SHA (rsa 2048) - A\n|     warnings:\n|       Deprecated protocol\n|   TLSv1.2:\n|     ciphers:\n|       TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 (secp256r1) - A\n|   TLSv1.3:\n|     ciphers:\n|       TLS_AKE_WITH_AES_256_GCM_SHA384 (ecdh_x25519) - A\n|_  least strength: C",
+      "explanation": "TLS 1.0 is still enabled, so the overall grade drops to C.",
+      "why": "NSE (the Nmap Scripting Engine) adds hundreds of checks on top of port scanning. TLS 1.0 and 1.1 are deprecated and fail PCI DSS and most compliance audits. Fix it in nginx with 'ssl_protocols TLSv1.2 TLSv1.3;'."
+    },
+    {
+      "prompt": "Get a deeper TLS report, including certificate problems and known TLS vulnerabilities, with testssl.sh against shop.example.com:443.",
+      "expected_commands": ["testssl.sh shop.example.com:443", "./testssl.sh shop.example.com:443", "testssl.sh shop.example.com"],
+      "fake_output": " Testing protocols\n TLS 1      offered (deprecated)\n TLS 1.2    offered (OK)\n TLS 1.3    offered (OK)\n Testing vulnerabilities\n Heartbleed (CVE-2014-0160)    not vulnerable (OK)\n BEAST (CVE-2011-3389)         VULNERABLE -- but also supports higher protocols (likely mitigated)\n Server Certificate\n Certificate Validity (UTC)    expires < 30 days (2026-10-19 12:00)\n Chain of trust                 Ok\n\n Overall Grade                 C",
+      "explanation": "BEAST exposure through TLS 1.0, and the certificate expires in under 30 days.",
+      "why": "testssl.sh checks protocols, ciphers, known TLS vulnerabilities, and certificate details in one run, with no dependencies beyond openssl. The expiry warning matters as much as the ciphers: expired certificates cause more real outages than TLS attacks (see networking-incident-002)."
+    },
+    {
+      "prompt": "Double-check the certificate dates directly with openssl for shop.example.com.",
+      "expected_commands": ["echo | openssl s_client -connect shop.example.com:443 -servername shop.example.com 2>/dev/null | openssl x509 -noout -dates", "openssl s_client -connect shop.example.com:443 -servername shop.example.com | openssl x509 -noout -dates"],
+      "fake_output": "notBefore=Jul 21 12:00:00 2026 GMT\nnotAfter=Oct 19 12:00:00 2026 GMT",
+      "explanation": "Expires 19 October: a 90-day certificate that isn't being auto-renewed.",
+      "why": "Let's Encrypt-style 90-day certificates are only safe with working automation (certbot or cert-manager). A 90-day certificate that someone renews by hand is a scheduled outage. Monitor expiry from outside (Prometheus blackbox_exporter's probe_ssl_earliest_cert_expiry)."
+    },
+    {
+      "prompt": "Run nmap's vulnerability-category scripts against 10.0.1.23 (your own host, with change approval, since some scripts are intrusive).",
+      "expected_commands": ["nmap --script vuln 10.0.1.23", "sudo nmap --script vuln 10.0.1.23", "nmap -sV --script vuln 10.0.1.23"],
+      "fake_output": "80/tcp open  http\n| http-slowloris-check:\n|   VULNERABLE:\n|   Slowloris DOS attack\n|     State: LIKELY VULNERABLE\n|_    References: https://en.wikipedia.org/wiki/Slowloris_(computer_security)\n443/tcp open https\n|_ssl-ccs-injection: No reply from server (TIMEOUT)",
+      "explanation": "Possibly vulnerable to slow-connection denial of service.",
+      "why": "'--script vuln' is a quick sweep for well-known issues, not a replacement for a real vulnerability scanner or a penetration test. Some scripts in that category send real exploit probes that can crash fragile services, which is why you get approval and run them in a maintenance window."
+    }
+  ]
+}

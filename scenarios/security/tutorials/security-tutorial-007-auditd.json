@@ -1,0 +1,46 @@
+{
+  "id": "security-tutorial-007",
+  "type": "tutorial",
+  "category": "security",
+  "title": "Who Touched That File? Linux Auditing with auditd",
+  "difficulty": "intermediate",
+  "tags": ["security", "auditd", "linux", "forensics"],
+  "intro": "Logs record what applications choose to log. The kernel audit system (auditd) records what actually happened: which user and process opened, changed, or executed what. It's required by most compliance standards, and it's what answers 'who changed /etc/passwd?' after an incident.",
+  "steps": [
+    {
+      "prompt": "List the audit rules currently loaded.",
+      "expected_commands": ["sudo auditctl -l", "auditctl -l"],
+      "fake_output": "No rules",
+      "explanation": "auditd is running but watching nothing.",
+      "why": "auditd running with no rules gives false comfort: nothing is being recorded. Rules can be added live with auditctl (lost on reboot) or persistently in /etc/audit/rules.d/*.rules."
+    },
+    {
+      "prompt": "Watch /etc/passwd for writes and attribute changes, tagging events with the key 'identity'.",
+      "expected_commands": ["sudo auditctl -w /etc/passwd -p wa -k identity", "auditctl -w /etc/passwd -p wa -k identity"],
+      "fake_output": "(no output: the watch is active)",
+      "explanation": "Any write (w) or attribute change (a) to /etc/passwd is now recorded.",
+      "why": "-p selects permissions to watch: r(ead), w(rite), x(ecute), a(ttribute change). The key (-k) is a label for searching later. Watch the identity files (/etc/passwd, /etc/shadow, /etc/group, /etc/sudoers) at minimum; the CIS benchmark lists the full set."
+    },
+    {
+      "prompt": "Later, find every event with the key 'identity' from today, with numeric ids translated to names.",
+      "expected_commands": ["sudo ausearch -k identity --start today -i", "ausearch -k identity --start today -i", "sudo ausearch -k identity -i --start today"],
+      "fake_output": "type=SYSCALL msg=audit(09/28/2026 03:16:40.112:4411) : arch=x86_64 syscall=openat success=yes exe=/usr/sbin/useradd auid=root uid=root comm=useradd key=identity\ntype=PATH msg=audit(09/28/2026 03:16:40.112:4411) : name=/etc/passwd nametype=NORMAL",
+      "explanation": "At 03:16:40, useradd modified /etc/passwd, run by a session whose login user (auid) was root.",
+      "why": "-i interprets numeric UIDs and syscalls into names. The key field is auid, the 'audit user id': the account that originally logged in, which stays the same through sudo and su. It answers 'which human did this', which plain uid can't."
+    },
+    {
+      "prompt": "Get a summary report of failed authentication attempts from the audit log.",
+      "expected_commands": ["sudo aureport --auth --failed", "aureport --auth --failed", "sudo aureport -au --failed"],
+      "fake_output": "Authentication Report\n============================================\n# date time acct host term exe success event\n============================================\n1. 09/28/2026 03:11:02 root 185.220.101.4 ssh /usr/sbin/sshd no 4390\n2. 09/28/2026 03:11:09 root 185.220.101.4 ssh /usr/sbin/sshd no 4392",
+      "explanation": "Failed root logins from 185.220.101.4 just before the 03:16 change.",
+      "why": "aureport gives summaries (auth, logins, executables, anomalies) for triage, and ausearch gives the detail. Together they rebuild a timeline: failed logins, then a successful one, then an account created, which is the sequence behind mystery-linux-006."
+    },
+    {
+      "prompt": "Make the rule permanent: after adding '-w /etc/passwd -p wa -k identity' to /etc/audit/rules.d/identity.rules, load all rule files.",
+      "expected_commands": ["sudo augenrules --load", "augenrules --load"],
+      "fake_output": "No rules\nenabled 1\nfailure 1\npid 612\nrate_limit 0\nbacklog_limit 8192\n(rules.d/*.rules compiled into /etc/audit/audit.rules and loaded)",
+      "explanation": "The rules survive reboots now.",
+      "why": "augenrules merges rules.d/ into audit.rules and loads them. Ship the audit logs off the host (to your SIEM or log platform): an attacker with root can delete local audit logs, and remote copies are what make the audit trail trustworthy."
+    }
+  ]
+}

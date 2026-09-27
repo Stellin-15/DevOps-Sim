@@ -1,0 +1,43 @@
+{
+  "id": "security-incident-004",
+  "type": "incident",
+  "category": "security",
+  "title": "A web shell hidden in the uploads folder",
+  "difficulty": "advanced",
+  "tags": ["security", "web-shell", "php", "forensics"],
+  "intro": "The miner on the shop server has been removed (mystery-linux-005), but that was a symptom. It ran as www-data, so the attacker had code execution through the website. Find the entry point before they come back.",
+  "steps": [
+    {
+      "prompt": "Find PHP files in the uploads directory /var/www/shop/uploads, where only images should exist.",
+      "expected_commands": ["find /var/www/shop/uploads -name '*.php'", "sudo find /var/www/shop/uploads -name '*.php'", "find /var/www/shop/uploads -name \"*.php\""],
+      "fake_output": "/var/www/shop/uploads/avatar_8812.php\n/var/www/shop/uploads/.cache.php",
+      "hint": "find <dir> -name '*.php'"
+    },
+    {
+      "prompt": "Inspect the smaller one, /var/www/shop/uploads/.cache.php.",
+      "expected_commands": ["cat /var/www/shop/uploads/.cache.php", "sudo cat /var/www/shop/uploads/.cache.php", "head /var/www/shop/uploads/.cache.php"],
+      "fake_output": "(one line of PHP: it takes a base64-encoded POST parameter named 'x', decodes it, and passes the result to eval(), with errors suppressed)\n\n[kube-sim shows a description rather than the real code: the actual one-liner is a known malware signature, and antivirus software rightly quarantines files that contain it.]",
+      "hint": "Read it, don't run it."
+    },
+    {
+      "prompt": "That's a one-line web shell: it runs whatever code the attacker POSTs. Find when and from where it was used: search the nginx access log for requests to .cache.php.",
+      "expected_commands": ["grep '.cache.php' /var/log/nginx/access.log", "grep .cache.php /var/log/nginx/access.log", "grep -F '.cache.php' /var/log/nginx/access.log"],
+      "fake_output": "185.220.101.4 - - [25/Sep/2026:02:51:13 +0000] \"POST /uploads/.cache.php HTTP/1.1\" 200 42 \"-\" \"Mozilla/5.0\"\n185.220.101.4 - - [25/Sep/2026:02:51:40 +0000] \"POST /uploads/.cache.php HTTP/1.1\" 200 318 \"-\" \"Mozilla/5.0\"",
+      "hint": "The access log shows every request, with the client IP and time."
+    },
+    {
+      "prompt": "Now find how the file got there: look for the upload request that created avatar_8812.php, just before, in the same log.",
+      "expected_commands": ["grep 'avatar_8812' /var/log/nginx/access.log", "grep avatar_8812 /var/log/nginx/access.log"],
+      "fake_output": "185.220.101.4 - - [25/Sep/2026:02:49:02 +0000] \"POST /account/avatar HTTP/1.1\" 200 88 \"-\" \"python-requests/2.31\"\n185.220.101.4 - - [25/Sep/2026:02:49:05 +0000] \"GET /uploads/avatar_8812.php?c=id HTTP/1.1\" 200 54 \"-\" \"python-requests/2.31\"",
+      "hint": "Search for the other file's name."
+    },
+    {
+      "prompt": "The avatar upload accepted a .php file, and nginx then executed it. Check the nginx site config for how .php files are handled under /uploads.",
+      "expected_commands": ["grep -n -A3 'location' /etc/nginx/sites-enabled/shop", "grep -A3 location /etc/nginx/sites-enabled/shop", "cat /etc/nginx/sites-enabled/shop"],
+      "fake_output": "12:    location / {\n13-        try_files $uri $uri/ /index.php?$args;\n14-    }\n16:    location ~ \\.php$ {\n17-        include snippets/fastcgi-php.conf;\n18-        fastcgi_pass unix:/run/php/php8.2-fpm.sock;\n19-    }",
+      "hint": "Look for a location block that passes .php files to PHP-FPM."
+    }
+  ],
+  "resolution": "Two independent flaws combined. The avatar upload trusted the filename's extension and the client-supplied content type, so 'avatar.php' was saved as-is. And nginx's catch-all 'location ~ \\.php$' block executed PHP from anywhere, including the uploads directory. Either fix alone would have stopped the attack. Upload handling: validate the real content (decode it as an image and re-encode it), generate random filenames with a fixed safe extension, and store uploads outside the web root or in object storage. Web server: never execute scripts in upload paths (a nested 'location ~ \\.php$ { deny all; }' inside the /uploads/ location). The access log turned the attack into a timeline: upload at 02:49, a test request with ?c=id, a hidden second shell at 02:51 for persistence, and the miner installed afterwards. Remove both shells, patch the upload code, rebuild the server, and search the logs for the attacker IP across all servers. The same entry point may have been used elsewhere. Also note that endpoint protection flagging a web shell is exactly what a well-configured server's antivirus or EDR should do.",
+  "real_commands_used": ["find -name '*.php'", "cat", "grep access.log", "grep -A3 location nginx config"]
+}

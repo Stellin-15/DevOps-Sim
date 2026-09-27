@@ -1,0 +1,41 @@
+{
+  "id": "mystery-linux-006",
+  "type": "mystery",
+  "category": "security",
+  "sandbox": "linux",
+  "title": "Someone Logged In at 3am",
+  "difficulty": "advanced",
+  "tags": ["security", "linux", "ssh", "incident-response"],
+  "setup": {"seed": 43, "problems": ["ssh_backdoor"]},
+  "symptom": "The login-alert bot posted to the security channel at 03:14 last night: 'new root session on this server'. Nobody on the team was working then. The server seems to run normally. Find out how they got in and what they left behind, and remove their access without locking out your own team.",
+  "goals": [
+    {"check": "no_extra_uid0", "description": "No account other than root has UID 0"},
+    {"check": "file_lacks", "file": "/root/.ssh/authorized_keys", "text": "kali", "description": "The attacker's SSH key is gone from root's authorized_keys"}
+  ],
+  "evidence": [
+    {"description": "where the logins came from", "seen_any": ["185.220.101.4"]},
+    {"description": "how they got in the first time", "seen_any": ["Accepted password for root"]},
+    {"description": "the backdoor account they created", "seen_any": ["sysupdate:x:0:0", "uid=0(sysupdate)"]},
+    {"description": "the key they planted", "seen_any": ["sysadmin@kali"]}
+  ],
+  "question": {
+    "prompt": "How did the attacker get in, and what did they leave behind?",
+    "options": [
+      "A stolen deploy key from the office network",
+      "A vulnerability in nginx gave them a shell",
+      "They brute-forced root's password over SSH (root login and password auth were both enabled), then created a second UID-0 account and added their own SSH key to root for persistence",
+      "An insider with legitimate access logged in at night"
+    ],
+    "answer": 2
+  },
+  "expert_commands": 6,
+  "solution_commands": [
+    "last -a",
+    "grep -i accepted /var/log/auth.log",
+    "awk -F: '$3 == 0' /etc/passwd",
+    "cat /root/.ssh/authorized_keys",
+    "userdel -r sysupdate",
+    "sed -i '/sysadmin@kali/d' /root/.ssh/authorized_keys"
+  ],
+  "debrief": "The logs tell the whole story in order. Failed root passwords from 185.220.101.4 (a Tor exit node), then 'Accepted password for root': SSH allowed both root login and password authentication, and root's password was guessable. Within minutes the attacker created 'sysupdate' with UID 0 (a second root that's easy to overlook in a user list) and added their own key to root's authorized_keys, so they'd keep access even after a password change. That's why persistence hunting comes before celebrating. The cleanup had one trap: deleting every line containing 'ssh-ed25519' would also remove the ops team's key and lock everyone out, so remove the attacker's entry precisely. What's left for a real incident: set 'PermitRootLogin no' and 'PasswordAuthentication no' in sshd_config and reload sshd; rotate root's password and any secrets on the host; check other persistence spots (all crontabs, systemd units and timers, ~/.bashrc, /etc/ld.so.preload); and treat the host as untrusted, rebuilding it from a clean image after taking a disk snapshot for forensics. fail2ban or restricting SSH to the VPN or IAP would have stopped the brute force entirely."
+}

@@ -140,9 +140,25 @@ Don't duplicate content from these files elsewhere — link to them.
   volumes. Read-only. Containers resolve by name or unique id prefix;
   `docker inspect --format` supports a fixed set of Go-template fields
   (INSPECT_FORMATS). `generate_state(seed)` is deterministic per seed.
-- **linux_sandbox.py** — a fake server with exactly 2 of 4 random
-  problems (failed_service, disk_full, runaway_cpu, memory_hog). Unlike
-  the others it is **reactive**: `kill`, `systemctl restart|start`, `rm`,
+- **linux_sandbox.py** — a fake server with exactly 2 of 6 random
+  problems (failed_service, disk_full, runaway_cpu, memory_hog,
+  cryptominer, ssh_backdoor).
+
+  **Security state:** `state["text_files"]` holds `/etc/passwd`,
+  `auth.log`, `sshd_config`, root's `authorized_keys`, and per-user
+  crontabs under `/var/spool/cron/crontabs`. `cat`, `grep <pat> <file>`,
+  `crontab -l/-r [-u]`, `sed -i '/pat/d'`, `userdel`,
+  `awk -F: '$3 == 0'`, `last`, `ss -tnp` (established),
+  `ls -l /proc/<pid>/exe`, `pkill -f`, and `iptables ... DROP` operate
+  on it.
+
+  **Respawn:** killing the miner while its cron line exists sets
+  `respawn_pending`, and `_maybe_respawn` brings it back on the next
+  command with a new pid. The `process_gone` goal runs that settle step
+  first, so 'kill then solve' fails.
+
+  **Other behaviour:** unlike the Docker and Kubernetes sandboxes it is
+  **reactive**: `kill`, `systemctl restart|start`, `rm`,
   and `truncate` mutate state, and fixes only work in the right order
   (restarting app fails while the stray process still holds port 8080;
   postgres gets OOM-killed again while the java hog runs). Models the
@@ -257,6 +273,16 @@ Don't duplicate content from these files elsewhere — link to them.
 
 ## Known environment quirks
 
+**Antivirus deletes malware signatures in content:** Windows Defender
+silently deleted `security-incident-004` because its fake output
+contained a real one-line PHP web shell. The file vanished moments
+after being written, and tests then failed with PermissionError. Never
+put working malicious code in scenario content, such as web shells,
+reverse-shell one-liners, or real exploit payloads. Describe it instead
+("one line of PHP that base64-decodes a POST parameter and passes it to
+eval"). The lesson survives, and the repo stays safe to clone on
+machines with endpoint protection.
+
 **Editing files via bash heredoc scripts:** in this environment, a
 `python - <<'EOF'` script that writes Python or JSON source containing
 `\n` escapes inside string literals has repeatedly produced REAL
@@ -313,7 +339,8 @@ Current per-category content depth (tutorials / incidents):
 - aws: 11 / 7 (+ AWS VPC sandbox, 4 mysteries)
 - azure: 10 / 6
 - gcp: 10 / 6
-- **total: 144 tutorials, 75 incidents, 22 Writing Labs, 10 Mystery Incidents (4 linux, 2 docker, 4 aws)**
+- security: 10 / 6 (+ 2 hacked-server mysteries on the Linux sandbox)
+- **total: 154 tutorials, 81 incidents, 22 Writing Labs, 12 Mystery Incidents (4 linux, 2 docker, 4 aws, 2 security)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with
@@ -518,10 +545,9 @@ See GAPS.md's final 'Overall' part for the reasoning. In priority order:
    1. ✓ aws, with the `aws_sandbox.py` VPC sandbox, sandbox-agnostic
       mysteries, and 4 AWS mysteries;
    2. ✓ azure and gcp; GAPS.md Parts 10–11 include a cross-cloud map;
-   3. (next) security, as below;
-      security, plus hacked-server problems in linux_sandbox (a
+   3. ✓ security, plus hacked-server problems in linux_sandbox (a
       cryptominer with cron persistence, an SSH backdoor);
-   4. servers;
+   4. (next) servers;
    5. sre;
    6. Writing Labs (IAM policy, Terraform VPC, security group, Ansible
       rolling patch, GCP firewall, markdown postmortem) and career paths

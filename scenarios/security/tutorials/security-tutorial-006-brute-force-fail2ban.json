@@ -1,0 +1,46 @@
+{
+  "id": "security-tutorial-006",
+  "type": "tutorial",
+  "category": "security",
+  "title": "Spotting and Stopping Brute-Force Attacks",
+  "difficulty": "beginner",
+  "tags": ["security", "ssh", "fail2ban", "logs"],
+  "intro": "Any server with SSH open to the internet gets thousands of password guesses a day. Most are harmless noise against a key-only server, but you should know how to read them, spot the one that succeeded, and throttle the rest automatically.",
+  "steps": [
+    {
+      "prompt": "Show the most recent failed login attempts (the bad-login log), first 10 lines.",
+      "expected_commands": ["sudo lastb | head", "lastb | head", "sudo lastb | head -10", "sudo lastb -n 10"],
+      "fake_output": "admin    ssh:notty    103.45.12.9      Sun Sep 28 09:15 - 09:15  (00:00)\noracle   ssh:notty    103.45.12.9      Sun Sep 28 09:15 - 09:15  (00:00)\nroot     ssh:notty    218.92.0.112     Sun Sep 28 09:14 - 09:14  (00:00)\nubuntu   ssh:notty    218.92.0.112     Sun Sep 28 09:14 - 09:14  (00:00)\n...",
+      "explanation": "Automated guesses at common usernames: admin, oracle, root, ubuntu.",
+      "why": "lastb reads /var/log/btmp (failed logins), and last reads /var/log/wtmp (successful ones). Usernames like 'oracle' and 'ubuntu' on a server that doesn't have them show it's a botnet dictionary attack, not a targeted one."
+    },
+    {
+      "prompt": "Rank the source IPs of failed password attempts in /var/log/auth.log, top 5.",
+      "expected_commands": ["grep 'Failed password' /var/log/auth.log | awk '{print $(NF-3)}' | sort | uniq -c | sort -rn | head -5", "grep \"Failed password\" /var/log/auth.log | awk '{print $(NF-3)}' | sort | uniq -c | sort -rn | head -5"],
+      "fake_output": "   4812 218.92.0.112\n   1966 103.45.12.9\n    402 45.227.254.8\n     37 61.177.172.140\n     12 198.51.100.23",
+      "explanation": "Two IPs account for most attempts. 198.51.100.23 is the office, probably someone mistyping.",
+      "why": "The grep | awk | sort | uniq -c | sort -rn pipeline is the universal 'top N' from linux-tutorial-002. $(NF-3) picks the IP by counting from the end of the line, because the start of the line varies ('invalid user X' adds words)."
+    },
+    {
+      "prompt": "The important question: did any attempt succeed from an IP that isn't yours? Show all accepted logins in /var/log/auth.log.",
+      "expected_commands": ["grep 'Accepted' /var/log/auth.log", "grep Accepted /var/log/auth.log", "grep -i accepted /var/log/auth.log"],
+      "fake_output": "Sep 28 08:02:11 srv-web-01 sshd[2211]: Accepted publickey for deploy from 198.51.100.23 port 50412 ssh2: ED25519 SHA256:k3JqZ0",
+      "explanation": "Only one success: your deploy user, by key, from the office.",
+      "why": "Thousands of failures are noise; one unexpected 'Accepted' is an incident. 'Accepted password' from an unknown IP is the line that starts mystery-linux-006. Alert on successful logins from new sources, not on failures."
+    },
+    {
+      "prompt": "Check fail2ban's SSH jail: how many IPs are banned right now.",
+      "expected_commands": ["sudo fail2ban-client status sshd", "fail2ban-client status sshd"],
+      "fake_output": "Status for the jail: sshd\n|- Filter\n|  |- Currently failed: 3\n|  `- Total failed:     7215\n`- Actions\n   |- Currently banned: 4\n   |- Total banned:     211\n   `- Banned IP list:   218.92.0.112 103.45.12.9 45.227.254.8 198.51.100.23",
+      "explanation": "Four IPs are banned, including the office IP 198.51.100.23.",
+      "why": "fail2ban watches the logs and adds temporary firewall bans after N failures. It cuts noise and slows brute force, but it's not a substitute for key-only authentication, and it can ban your own people. Add the office range to 'ignoreip' in jail.local."
+    },
+    {
+      "prompt": "Unban the office IP 198.51.100.23 from the sshd jail.",
+      "expected_commands": ["sudo fail2ban-client set sshd unbanip 198.51.100.23", "fail2ban-client set sshd unbanip 198.51.100.23"],
+      "fake_output": "1",
+      "explanation": "The office can connect again.",
+      "why": "A ban on a shared office or VPN exit IP blocks everyone behind it. Unban, then fix it permanently with ignoreip, because otherwise the next person to mistype a password bans the whole office again."
+    }
+  ]
+}

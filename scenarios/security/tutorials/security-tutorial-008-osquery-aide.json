@@ -1,0 +1,46 @@
+{
+  "id": "security-tutorial-008",
+  "type": "tutorial",
+  "category": "security",
+  "title": "Endpoint Visibility: osquery and File Integrity with AIDE",
+  "difficulty": "intermediate",
+  "tags": ["security", "osquery", "edr", "file-integrity"],
+  "intro": "Endpoint security (EDR) tools answer 'what is happening on this machine right now?' across a whole fleet. osquery, originally built at Facebook, is the open-source core of that idea: it exposes the operating system as SQL tables. AIDE covers the complementary question: 'which system files changed since the last known-good state?'",
+  "steps": [
+    {
+      "prompt": "Find processes whose executable has been deleted from disk, a classic sign of malware that removes itself after starting.",
+      "expected_commands": ["osqueryi \"SELECT pid, name, path, cmdline FROM processes WHERE on_disk = 0;\"", "osqueryi 'SELECT pid, name, path, cmdline FROM processes WHERE on_disk = 0;'"],
+      "fake_output": "+------+------------+--------------------+--------------------+\n| pid  | name       | path               | cmdline            |\n+------+------------+--------------------+--------------------+\n| 6860 | kdevtmpfsi | /tmp/.x/kdevtmpfsi | /tmp/.x/kdevtmpfsi |\n+------+------------+--------------------+--------------------+",
+      "explanation": "One process is running from a file that no longer exists: the miner from mystery-linux-005, after someone deleted the binary.",
+      "why": "Legitimate software almost never runs with its binary deleted, except briefly after a package upgrade. osquery turns questions like this into one-line queries, and fleet managers (osquery with Fleet, Kolide, or a commercial EDR) run them on every machine at once."
+    },
+    {
+      "prompt": "List listening ports together with the process behind each, joining two osquery tables.",
+      "expected_commands": ["osqueryi \"SELECT p.name, l.port, l.address FROM listening_ports l JOIN processes p USING (pid);\"", "osqueryi 'SELECT p.name, l.port, l.address FROM listening_ports l JOIN processes p USING (pid);'"],
+      "fake_output": "+-------+-------+-----------+\n| name  | port  | address   |\n+-------+-------+-----------+\n| sshd  | 22    | 0.0.0.0   |\n| nginx | 443   | 0.0.0.0   |\n| nc    | 31337 | 0.0.0.0   |\n+-------+-------+-----------+",
+      "explanation": "netcat listening on 31337: someone left a shell listener behind.",
+      "why": "It's the same data as 'ss -tulnp', but as SQL you can filter, join, and run fleet-wide: 'which of our 3,000 servers have a process listening that isn't in the approved list?'"
+    },
+    {
+      "prompt": "List every account with UID 0 using osquery.",
+      "expected_commands": ["osqueryi \"SELECT username, uid, directory FROM users WHERE uid = 0;\"", "osqueryi 'SELECT username, uid, directory FROM users WHERE uid = 0;'"],
+      "fake_output": "+-----------+-----+----------------+\n| username  | uid | directory      |\n+-----------+-----+----------------+\n| root      | 0   | /root          |\n| sysupdate | 0   | /var/tmp/.sys  |\n+-----------+-----+----------------+",
+      "explanation": "A second root account, with a home in /var/tmp.",
+      "why": "The same check as 'awk -F: '$3 == 0' /etc/passwd', but it works on Linux, macOS and Windows alike, and it can run as a scheduled query that alerts the moment a second UID-0 account appears."
+    },
+    {
+      "prompt": "On a freshly built, known-good server, initialise the AIDE database of file hashes.",
+      "expected_commands": ["sudo aide --init", "aide --init", "sudo aideinit"],
+      "fake_output": "AIDE initialized database at /var/lib/aide/aide.db.new\nNumber of entries: 91842\n(move it into place: mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db)",
+      "explanation": "A baseline of 91,842 file hashes and attributes.",
+      "why": "File integrity monitoring (FIM) is a PCI DSS requirement for a reason: attackers modify system binaries (a trojaned 'ls' or 'sshd') and config files. The baseline must come from a known-good state, and ideally be stored off the host, where an attacker can't rewrite it."
+    },
+    {
+      "prompt": "Weeks later, check the system against the AIDE baseline.",
+      "expected_commands": ["sudo aide --check", "aide --check"],
+      "fake_output": "AIDE found differences between database and filesystem!!\nSummary:\n  Total number of entries:  91847\n  Added entries:            5\n  Removed entries:          0\n  Changed entries:          3\nChanged entries:\nf   ...    . : /etc/passwd\nf   ...    . : /root/.ssh/authorized_keys\nf = .... C.. : /usr/bin/ps",
+      "explanation": "/etc/passwd and root's authorized_keys changed, and so did the checksum of /usr/bin/ps.",
+      "why": "Changes to passwd or authorized_keys might be legitimate: check them against change tickets. A changed /usr/bin/ps without a package upgrade is a rootkit sign. Verify with 'dpkg --verify' or 'rpm -Va', then rebuild the host, don't clean it. Update the baseline after every approved change, or the report fills with noise nobody reads."
+    }
+  ]
+}

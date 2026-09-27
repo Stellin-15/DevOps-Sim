@@ -196,6 +196,12 @@ class TestRunMystery:
         assert out["solved"] and out["score"] == 85
         assert any("port 22" in c for c in out["collateral"])
 
+    def test_killing_the_miner_without_removing_cron_is_not_fixed(self, capsys):
+        m = self.m("mystery-linux-005")
+        pid = mystery.placeholders(m, mystery.build_state(m))["miner_pid"]
+        out = mystery.run_mystery(m, input_fn=scripted([f"kill -9 {pid}", "solve", "exit"]))
+        assert not out["solved"] and "Not fixed yet" in capsys.readouterr().out
+
     def test_help_does_not_count_as_a_command(self):
         m = self.m()
         out = mystery.run_mystery(m, input_fn=scripted(["help"] + expert_path(m) + ["solve", correct_letter(m)]))

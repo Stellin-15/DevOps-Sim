@@ -1,0 +1,49 @@
+{
+  "id": "security-incident-005",
+  "type": "incident",
+  "category": "security",
+  "title": "Every 10 minutes, a quiet connection to somewhere odd",
+  "difficulty": "advanced",
+  "tags": ["security", "c2", "systemd", "egress"],
+  "intro": "The network team noticed a pattern in VPC flow logs: every 10 minutes, app-02 makes a short HTTPS connection to 91.215.85.17, an IP with no link to any vendor you use. CPU and memory look normal, and nothing seems broken. Regular, low-volume check-ins like this are called 'beaconing'.",
+  "steps": [
+    {
+      "prompt": "Catch it in the act: watch established connections to 91.215.85.17 on app-02, refreshing every second (watch -n1).",
+      "expected_commands": ["watch -n1 'ss -tnp | grep 91.215.85.17'", "watch -n1 \"ss -tnp | grep 91.215.85.17\"", "watch -n 1 'ss -tnp | grep 91.215.85.17'"],
+      "fake_output": "Every 1.0s: ss -tnp | grep 91.215.85.17\nESTAB 0 0 10.0.2.14:40312 91.215.85.17:443 users:((\"python3\",pid=31877,fd=3))",
+      "hint": "watch reruns a command at an interval."
+    },
+    {
+      "prompt": "A python3 process, pid 31877. See its full command line and parent: show ps for that pid with ppid and args.",
+      "expected_commands": ["ps -o pid,ppid,user,args -p 31877", "ps -p 31877 -o pid,ppid,user,args", "ps -fp 31877"],
+      "fake_output": "  PID  PPID USER     COMMAND\n31877     1 appsvc   python3 /opt/app/.venv/lib/python3.11/site-packages/dbus_update/helper.py",
+      "hint": "ps -o pid,ppid,user,args -p <pid>"
+    },
+    {
+      "prompt": "Started by PID 1 (systemd), not by the app. Find the systemd timer that runs it.",
+      "expected_commands": ["systemctl list-timers --all", "sudo systemctl list-timers --all"],
+      "fake_output": "NEXT                        LEFT    UNIT                  ACTIVATES\nSun 2026-09-28 11:10:00 UTC 6min    dbus-update.timer     dbus-update.service\nSun 2026-09-28 12:00:00 UTC 56min   logrotate.timer       logrotate.service",
+      "hint": "list-timers shows every scheduled systemd unit."
+    },
+    {
+      "prompt": "Read the unit file behind dbus-update.service.",
+      "expected_commands": ["systemctl cat dbus-update.service", "sudo systemctl cat dbus-update.service"],
+      "fake_output": "# /etc/systemd/system/dbus-update.service\n[Unit]\nDescription=D-Bus update helper\n[Service]\nUser=appsvc\nExecStart=/opt/app/.venv/bin/python3 /opt/app/.venv/lib/python3.11/site-packages/dbus_update/helper.py",
+      "hint": "systemctl cat shows a unit's files."
+    },
+    {
+      "prompt": "It runs code from inside the app's Python virtualenv: a malicious package. Find which installed package it belongs to: pip show dbus-update, using the venv's pip.",
+      "expected_commands": ["/opt/app/.venv/bin/pip show dbus-update", "/opt/app/.venv/bin/pip show dbus_update"],
+      "fake_output": "Name: dbus-update\nVersion: 0.3.1\nSummary: D-Bus helpers\nRequired-by: requets",
+      "hint": "The venv's own pip knows what's installed in it."
+    },
+    {
+      "prompt": "Required by 'requets', a typosquat of 'requests'. Contain: stop and disable the timer so it can't run again.",
+      "expected_commands": ["sudo systemctl disable --now dbus-update.timer", "systemctl disable --now dbus-update.timer"],
+      "fake_output": "Removed \"/etc/systemd/system/timers.target.wants/dbus-update.timer\".",
+      "hint": "disable --now stops it and prevents it starting again."
+    }
+  ],
+  "resolution": "This was a software supply-chain attack. Someone added 'requets' (one letter off 'requests') to requirements.txt. That typosquatted package pulled in a malicious dependency whose install step created a systemd timer disguised as a D-Bus helper, which checked in with a command-and-control server every 10 minutes. There were no CPU spikes and nothing broke: beaconing is quiet by design, and only network pattern analysis caught it. Remaining work: find which commit added 'requets' and whether other services use it (a lock-file search across repos); treat every credential app-02 could read as stolen and rotate it; rebuild the host; block 91.215.85.17 at the egress firewall; and check flow logs for other hosts talking to it. Prevention: pin and hash-check dependencies (pip --require-hashes, lock files), pull from an internal package proxy with an allowlist, scan dependencies in CI, and default-deny egress, so an unknown IP can't be reached at all.",
+  "real_commands_used": ["watch -n1 'ss -tnp | grep'", "ps -o pid,ppid,user,args -p", "systemctl list-timers --all", "systemctl cat", "pip show", "systemctl disable --now"]
+}

@@ -1,0 +1,46 @@
+{
+  "id": "security-tutorial-003",
+  "type": "tutorial",
+  "category": "security",
+  "title": "Vulnerability and Misconfiguration Scanning with Trivy",
+  "difficulty": "intermediate",
+  "tags": ["security", "trivy", "vulnerability", "iac"],
+  "intro": "Trivy is one open-source scanner that covers container images, filesystems and repositories, IaC files (Terraform, Kubernetes YAML, Dockerfiles), and live Kubernetes clusters. It finds three kinds of problems: known-vulnerable packages, leaked secrets, and misconfigurations. cicd-tutorial-012 covered grype; this is the broader tool.",
+  "steps": [
+    {
+      "prompt": "Scan the image registry.example.com/api:3.0 for HIGH and CRITICAL vulnerabilities only, and exit non-zero if any are found.",
+      "expected_commands": ["trivy image --severity HIGH,CRITICAL --exit-code 1 registry.example.com/api:3.0", "trivy image --exit-code 1 --severity HIGH,CRITICAL registry.example.com/api:3.0"],
+      "fake_output": "registry.example.com/api:3.0 (debian 12.5)\nTotal: 3 (HIGH: 2, CRITICAL: 1)\n\nLibrary     Vulnerability   Severity  Installed  Fixed\nlibexpat1   CVE-2024-45491  CRITICAL  2.5.0-1    2.5.0-1+deb12u1\nopenssl     CVE-2024-5535   HIGH      3.0.11-1   3.0.14-1~deb12u1\nNode.js (package-lock.json)\nexpress     CVE-2024-43796  HIGH      4.18.2     4.20.0",
+      "explanation": "Three findings, all with fixed versions available; exit code 1 fails the pipeline.",
+      "why": "Filtering to HIGH and CRITICAL keeps the gate actionable. A build blocked by 400 LOW findings gets its scanner switched off. The 'Fixed' column is the real triage: a CVE with a fix is a rebuild away; one without needs a risk decision."
+    },
+    {
+      "prompt": "Scan the current repository directory for vulnerabilities, secrets, and misconfigurations together.",
+      "expected_commands": ["trivy fs --scanners vuln,secret,misconfig .", "trivy fs . --scanners vuln,secret,misconfig"],
+      "fake_output": "config/settings.py (secrets)\nCRITICAL: AWS (aws-access-key-id)\n  AKIA****************\n\nDockerfile (misconfig)\nHIGH: Specify at least 1 USER command in Dockerfile with non-root user as argument (DS002)\n\nrequirements.txt (vuln)\nrequests  CVE-2024-35195  MEDIUM  2.31.0  2.32.0",
+      "explanation": "A hardcoded AWS key, a container that runs as root, and an outdated library.",
+      "why": "Scanning the source repo catches problems before an image is ever built, and runs in seconds as a pre-commit or pull-request check. The secret finding outranks everything else: rotate that key now, whether or not the repo is private (see security-tutorial-009)."
+    },
+    {
+      "prompt": "Scan the Terraform in ./infra for security misconfigurations.",
+      "expected_commands": ["trivy config ./infra", "trivy config infra", "trivy config infra/"],
+      "fake_output": "main.tf (terraform)\nTests: 48 (SUCCESSES: 44, FAILURES: 4)\nCRITICAL: Security group rule allows ingress from public internet (AVD-AWS-0107)\n  aws_security_group.db: ingress 0.0.0.0/0 port 5432\nHIGH: Bucket does not have encryption enabled (AVD-AWS-0088)\nHIGH: RDS instance has deletion protection disabled (AVD-AWS-0177)",
+      "explanation": "An internet-exposed database would be created by this code, and it hasn't been deployed yet.",
+      "why": "IaC scanning moves security review left: the exposed database is caught in a pull request instead of in a breach report. Tools like Checkov and tfsec (now part of Trivy) do the same, and running one in CI is standard at large companies."
+    },
+    {
+      "prompt": "Get a summary of vulnerabilities and misconfigurations across your whole Kubernetes cluster.",
+      "expected_commands": ["trivy k8s --report summary cluster", "trivy k8s --report summary"],
+      "fake_output": "Workload Assessment\nNamespace  Resource                 Vulnerabilities (C/H/M)  Misconfigurations (C/H/M)\nshop       Deployment/checkout      1/4/12                   0/2/3\nshop       Deployment/cart          0/1/6                    0/2/3\nlegacy     Deployment/reports       6/19/40                  1/5/7",
+      "explanation": "The legacy reports deployment is by far the worst.",
+      "why": "A cluster scan ranks what's actually running, which is often different from what's in the registry. The long-forgotten workload in a 'legacy' namespace is almost always the worst, and is exactly what attackers look for."
+    },
+    {
+      "prompt": "Trivy looked at workloads. Now check the worker nodes' own configuration against the CIS Kubernetes benchmark with kube-bench (node checks only).",
+      "expected_commands": ["kube-bench run --targets node"],
+      "fake_output": "[INFO] 4 Worker Node Security Configuration\n[PASS] 4.1.1 Ensure that the kubelet service file permissions are set to 600 or more restrictive\n[FAIL] 4.2.1 Ensure that the --anonymous-auth argument is set to false\n[FAIL] 4.2.6 Ensure that the --protect-kernel-defaults argument is set to true\n== Summary node ==\n18 checks PASS\n2 checks FAIL",
+      "explanation": "The kubelet allows anonymous authentication, a real hardening gap.",
+      "why": "Trivy scans workloads; kube-bench checks the cluster's own components against the CIS benchmark. Anonymous kubelet auth has been used in real cluster compromises. On managed clusters (EKS, AKS, GKE) the provider handles part of this, and kube-bench has profiles for each."
+    }
+  ]
+}

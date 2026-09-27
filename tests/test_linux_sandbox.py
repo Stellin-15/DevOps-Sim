@@ -107,3 +107,68 @@ class TestCommands:
 
     def test_exit(self):
         assert L.handle_command(L.generate_state(1), "exit") is None
+
+
+class TestCryptominer:
+    def miner(self, s):
+        return next(p for p in s["processes"] if "kdevtmpfsi" in p["command"])
+
+    def test_miner_is_visible_the_usual_ways(self):
+        s = L.generate_state(3, ["cryptominer"])
+        assert "kdevtmpfsi" in run(s, "ps aux --sort=-%cpu | head -2")
+        assert "45.9.148.3:3333" in run(s, "ss -tnp")
+        assert "/tmp/.x/kdevtmpfsi" in run(s, f"ls -l /proc/{self.miner(s)['pid']}/exe")
+        assert "ldr.sh" in run(s, "crontab -l -u www-data")
+
+    def test_killing_it_without_removing_cron_brings_it_back_with_a_new_pid(self):
+        s = L.generate_state(3, ["cryptominer"])
+        old = self.miner(s)["pid"]
+        run(s, f"kill -9 {old}")
+        run(s, "uptime")  # time passes; cron fires
+        assert self.miner(s)["pid"] != old
+
+    def test_removing_cron_first_then_killing_sticks(self):
+        s = L.generate_state(3, ["cryptominer"])
+        run(s, "crontab -r -u www-data")
+        run(s, f"kill -9 {self.miner(s)['pid']}")
+        run(s, "uptime")
+        assert not any("kdevtmpfsi" in p["command"] for p in s["processes"])
+        assert L.GOAL_CHECKS["load_below_nproc"](s, {})
+
+    def test_process_gone_goal_accounts_for_a_pending_respawn(self):
+        s = L.generate_state(3, ["cryptominer"])
+        run(s, f"kill -9 {self.miner(s)['pid']}")
+        assert not L.GOAL_CHECKS["process_gone"](s, {"match": "kdevtmpfsi"})
+
+    def test_crontab_r_without_u_deletes_roots_own_crontab(self):
+        s = L.generate_state(3, ["cryptominer"])
+        run(s, "crontab -r")
+        assert any("backup" in i for i in L.collateral_issues(s))
+        assert L._miner_persistence(s)
+
+
+class TestSshBackdoor:
+    def test_evidence_is_in_the_logs(self):
+        s = L.generate_state(3, ["ssh_backdoor"])
+        assert "185.220.101.4" in run(s, "last -a")
+        assert "Accepted password for root" in run(s, "grep -i accepted /var/log/auth.log")
+        assert "new user: name=sysupdate, UID=0" in run(s, "cat /var/log/auth.log")
+        assert "sysupdate" in run(s, "awk -F: '$3 == 0' /etc/passwd")
+        assert "PermitRootLogin yes" in run(s, "cat /etc/ssh/sshd_config")
+
+    def test_cleanup_meets_the_goals(self):
+        s = L.generate_state(3, ["ssh_backdoor"])
+        assert not L.GOAL_CHECKS["no_extra_uid0"](s, {})
+        run(s, "userdel -r sysupdate")
+        run(s, "sed -i '/sysadmin@kali/d' /root/.ssh/authorized_keys")
+        assert L.GOAL_CHECKS["no_extra_uid0"](s, {})
+        assert L.GOAL_CHECKS["file_lacks"](s, {"file": "/root/.ssh/authorized_keys", "text": "kali"})
+        assert L.collateral_issues(s) == set()
+
+    def test_deleting_every_key_locks_out_the_admins(self):
+        s = L.generate_state(3, ["ssh_backdoor"])
+        run(s, "sed -i '/ssh-ed25519/d' /root/.ssh/authorized_keys")
+        assert any("locked out" in i for i in L.collateral_issues(s))
+
+    def test_healthy_server_has_only_root_as_uid0(self):
+        assert L.GOAL_CHECKS["no_extra_uid0"](L.generate_state(3, []), {})

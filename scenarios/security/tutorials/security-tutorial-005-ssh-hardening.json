@@ -1,0 +1,46 @@
+{
+  "id": "security-tutorial-005",
+  "type": "tutorial",
+  "category": "security",
+  "title": "Hardening SSH Without Locking Yourself Out",
+  "difficulty": "intermediate",
+  "tags": ["security", "ssh", "hardening", "linux"],
+  "intro": "SSH is the most attacked service on the internet. Hardening it means keys only, no direct root login, and fewer attempts, applied in an order that never leaves you without a way back in.",
+  "steps": [
+    {
+      "prompt": "See the SSH server's effective settings for root login, password auth, and pubkey auth: sshd's full resolved config, filtered.",
+      "expected_commands": ["sudo sshd -T | grep -Ei 'permitrootlogin|passwordauthentication|pubkeyauthentication'", "sshd -T | grep -Ei 'permitrootlogin|passwordauthentication|pubkeyauthentication'", "sudo sshd -T | grep -i -E 'permitrootlogin|passwordauthentication|pubkeyauthentication'"],
+      "fake_output": "permitrootlogin yes\npubkeyauthentication yes\npasswordauthentication yes",
+      "explanation": "Root can log in, with a password: the worst combination.",
+      "why": "'sshd -T' prints the settings sshd will actually use, after defaults, Include files (sshd_config.d/*.conf), and Match blocks. Grepping sshd_config alone can mislead you, because a drop-in file may override it (some cloud images ship one that turns passwords back on)."
+    },
+    {
+      "prompt": "Before disabling passwords, make sure your own key works: confirm your public key is in the deploy user's authorized_keys.",
+      "expected_commands": ["cat /home/deploy/.ssh/authorized_keys", "sudo cat /home/deploy/.ssh/authorized_keys"],
+      "fake_output": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGq1vT8k3yM0pR2wZ7nD4fB6cL9sH5eJ1aX3uV0iQ8o alice@laptop",
+      "explanation": "Your ed25519 key is present for the deploy user.",
+      "why": "The number one way people lock themselves out: disabling passwords before their key login works. Test the key in a second terminal first, and keep your current session open until the change is verified."
+    },
+    {
+      "prompt": "After setting 'PermitRootLogin no' and 'PasswordAuthentication no' in /etc/ssh/sshd_config.d/99-hardening.conf, validate the configuration syntax before reloading.",
+      "expected_commands": ["sudo sshd -t", "sshd -t"],
+      "fake_output": "(no output: the configuration is valid)",
+      "explanation": "Syntax is valid.",
+      "why": "A typo in sshd_config plus a restart can leave sshd not running at all, with no remote way back in. 'sshd -t' tests the config without touching the running daemon. Always validate, then reload."
+    },
+    {
+      "prompt": "Apply it with a reload (existing sessions stay open).",
+      "expected_commands": ["sudo systemctl reload ssh", "sudo systemctl reload sshd", "systemctl reload ssh", "systemctl reload sshd"],
+      "fake_output": "(no output: sshd re-read its configuration)",
+      "explanation": "New connections use the hardened settings; your current session is unaffected.",
+      "why": "Reload re-reads the config without dropping established connections, so if you got it wrong, you can still fix it from the session you're in. Now open a NEW terminal and confirm key login works before closing the old one. (The unit is 'ssh' on Debian/Ubuntu and 'sshd' on RHEL.)"
+    },
+    {
+      "prompt": "Verify from outside that password login is really refused: try connecting to 10.0.1.23 forcing password authentication only.",
+      "expected_commands": ["ssh -o PubkeyAuthentication=no -o PreferredAuthentications=password deploy@10.0.1.23", "ssh -o PreferredAuthentications=password -o PubkeyAuthentication=no deploy@10.0.1.23"],
+      "fake_output": "deploy@10.0.1.23: Permission denied (publickey).",
+      "explanation": "The server only offers publickey authentication now.",
+      "why": "'Permission denied (publickey)' lists the only method the server accepts, which proves the hardening worked from an attacker's point of view. Test controls from outside rather than trusting the config file."
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "id": "security-tutorial-001",
+  "type": "tutorial",
+  "category": "security",
+  "title": "Know Your Attack Surface: Discovery and Port Scanning with nmap",
+  "difficulty": "beginner",
+  "tags": ["security", "nmap", "scanning", "attack-surface"],
+  "intro": "Attackers scan the whole internet continuously, so anything you expose will be found within hours. Defenders scan their own networks first, to find what's exposed before someone else does. Only ever scan networks you own or are explicitly authorised to test: unauthorised scanning is illegal in many countries and breaks most cloud providers' terms.",
+  "steps": [
+    {
+      "prompt": "Find which hosts are alive on your office server subnet 10.0.1.0/24, without port scanning them.",
+      "expected_commands": ["nmap -sn 10.0.1.0/24", "sudo nmap -sn 10.0.1.0/24"],
+      "fake_output": "Nmap scan report for 10.0.1.1\nHost is up (0.00031s latency).\nNmap scan report for 10.0.1.15\nHost is up (0.00052s latency).\nNmap scan report for 10.0.1.23\nHost is up (0.00048s latency).\nNmap scan report for 10.0.1.77\nHost is up (0.00061s latency).\nNmap done: 256 IP addresses (4 hosts up) scanned in 2.41 seconds",
+      "explanation": "Four live hosts. 10.0.1.77 isn't in your inventory.",
+      "why": "-sn is a 'ping sweep' (host discovery only): fast and low-noise. Comparing live hosts against your inventory (CMDB or cloud API) finds unknown machines, which are often forgotten test boxes or someone's shadow IT, and unmanaged machines are the ones that don't get patched."
+    },
+    {
+      "prompt": "Scan the unknown host 10.0.1.77 for the 1000 most common TCP ports.",
+      "expected_commands": ["nmap 10.0.1.77", "sudo nmap 10.0.1.77"],
+      "fake_output": "PORT     STATE    SERVICE\n22/tcp   open     ssh\n80/tcp   open     http\n3306/tcp open     mysql\n8080/tcp filtered http-proxy\n\nNmap done: 1 IP address (1 host up) scanned in 4.12 seconds",
+      "explanation": "SSH, HTTP, and MySQL are open; 8080 is filtered.",
+      "why": "open means something answered; closed means the host replied 'nothing here' (RST); filtered means a firewall dropped the probe, the same 'timeout vs refused' distinction from the networking category. A database listening on a general server subnet is worth a question."
+    },
+    {
+      "prompt": "The default scan misses non-standard ports. Scan all 65535 TCP ports on 10.0.1.77, faster timing (-T4).",
+      "expected_commands": ["nmap -p- -T4 10.0.1.77", "sudo nmap -p- -T4 10.0.1.77", "nmap -T4 -p- 10.0.1.77"],
+      "fake_output": "PORT      STATE SERVICE\n22/tcp    open  ssh\n80/tcp    open  http\n3306/tcp  open  mysql\n31337/tcp open  Elite\n\nNmap done: 1 IP address (1 host up) scanned in 38.77 seconds",
+      "explanation": "Port 31337 is open, which the top-1000 scan missed. That port has a long history of being used by backdoors.",
+      "why": "The 'top 1000 ports' covers common services, but admins (and attackers) put things on odd ports all the time. A full-range scan is slower but is the only way to see everything that's listening."
+    },
+    {
+      "prompt": "Some hosts drop ping, so nmap wrongly marks them 'down'. Scan host 10.0.1.90 skipping host discovery.",
+      "expected_commands": ["nmap -Pn 10.0.1.90", "sudo nmap -Pn 10.0.1.90"],
+      "fake_output": "PORT    STATE SERVICE\n443/tcp open  https\n\nNmap done: 1 IP address (1 host up) scanned in 5.02 seconds",
+      "explanation": "10.0.1.90 didn't answer the earlier ping sweep, but it's up and serving HTTPS.",
+      "why": "Cloud and hardened hosts often block ICMP, so a ping sweep undercounts. -Pn treats every target as up and scans it anyway. It's slower across large ranges, but it's how you avoid missing firewalled hosts."
+    },
+    {
+      "prompt": "Save a full scan of 10.0.1.0/24 in all output formats with basename scan-2026-09-28, for comparison next week.",
+      "expected_commands": ["nmap -oA scan-2026-09-28 10.0.1.0/24", "sudo nmap -oA scan-2026-09-28 10.0.1.0/24"],
+      "fake_output": "Nmap done: 256 IP addresses (5 hosts up) scanned in 22.9 seconds\n(written: scan-2026-09-28.nmap, scan-2026-09-28.xml, scan-2026-09-28.gnmap)",
+      "explanation": "Normal, XML, and grepable output saved.",
+      "why": "One scan is a snapshot; the value is in the difference over time. 'ndiff old.xml new.xml' shows newly opened ports, which usually means a new service or a mistake. Mature teams run this on a schedule and alert on changes."
+    }
+  ]
+}

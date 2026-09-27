@@ -1,0 +1,46 @@
+{
+  "id": "security-tutorial-004",
+  "type": "tutorial",
+  "category": "security",
+  "title": "Hardening Audits: Lynis and OpenSCAP (CIS Benchmarks)",
+  "difficulty": "intermediate",
+  "tags": ["security", "hardening", "cis", "compliance"],
+  "intro": "'Is this server hardened?' has a standard answer: the CIS Benchmarks, hundreds of specific settings per operating system. You don't check them by hand. Lynis gives a quick hardening score with advice; OpenSCAP evaluates formal compliance profiles and produces reports auditors accept.",
+  "steps": [
+    {
+      "prompt": "Run a Lynis audit of this system.",
+      "expected_commands": ["sudo lynis audit system", "lynis audit system"],
+      "fake_output": "[+] SSH Support\n  - Checking running SSH daemon                    [ FOUND ]\n    - SSH option: PermitRootLogin                  [ SUGGESTION ]\n    - SSH option: PasswordAuthentication           [ SUGGESTION ]\n[+] Kernel Hardening\n    - sysctl key net.ipv4.conf.all.accept_redirects [ DIFFERENT ]\n  Warnings (2):\n  ! Found one or more vulnerable packages. [PKGS-7392]\n  ! No firewall rules are active [FIRE-4512]\n  Hardening index : 61 [############        ]",
+      "explanation": "A hardening index of 61/100, two warnings (vulnerable packages, no firewall), and SSH suggestions.",
+      "why": "Lynis runs locally with no agent and no network access, and every finding has a test ID you can look up. The index is useful for tracking progress over time, not as an absolute grade."
+    },
+    {
+      "prompt": "Get the details and remediation advice for Lynis test SSH-7408.",
+      "expected_commands": ["sudo lynis show details SSH-7408", "lynis show details SSH-7408"],
+      "fake_output": "SSH-7408: Check SSH specific defined options\n  PermitRootLogin: current=yes  suggested=no\n  PasswordAuthentication: current=yes  suggested=no\n  MaxAuthTries: current=6  suggested=3\n  AllowTcpForwarding: current=yes  suggested=no",
+      "explanation": "Specific current vs suggested values for each SSH setting.",
+      "why": "'show details' turns a vague suggestion into exact settings. Root login plus password authentication is precisely how the server in mystery-linux-006 was taken over."
+    },
+    {
+      "prompt": "Evaluate the formal CIS Level 1 Server profile with OpenSCAP, writing results.xml and report.html, using the datastream /usr/share/xml/scap/ssg/content/ssg-ubuntu2204-ds.xml and profile xccdf_org.ssgproject.content_profile_cis_level1_server.",
+      "expected_commands": ["sudo oscap xccdf eval --profile xccdf_org.ssgproject.content_profile_cis_level1_server --results results.xml --report report.html /usr/share/xml/scap/ssg/content/ssg-ubuntu2204-ds.xml", "oscap xccdf eval --profile xccdf_org.ssgproject.content_profile_cis_level1_server --results results.xml --report report.html /usr/share/xml/scap/ssg/content/ssg-ubuntu2204-ds.xml"],
+      "fake_output": "Title   Ensure SSH root login is disabled\nRule    xccdf_org.ssgproject.content_rule_sshd_disable_root_login\nResult  fail\n...\nTitle   Ensure auditd service is enabled\nResult  fail\n...\n(report.html: 187 rules — 139 pass, 44 fail, 4 not applicable)",
+      "explanation": "139 of 187 CIS rules pass; the HTML report lists every failure with its fix.",
+      "why": "OpenSCAP uses SCAP content from the SCAP Security Guide project (CIS, DISA STIG, PCI DSS profiles). The report is evidence for auditors, and 'oscap xccdf generate fix' can produce a remediation script or Ansible playbook from the failed rules. Review it before applying: some hardening rules can break applications."
+    },
+    {
+      "prompt": "One quick manual check auditors always ask about: list accounts with an empty password field in /etc/shadow.",
+      "expected_commands": ["sudo awk -F: '$2 == \"\" {print $1}' /etc/shadow", "awk -F: '$2 == \"\" {print $1}' /etc/shadow", "sudo awk -F: '($2 == \"\") {print $1}' /etc/shadow"],
+      "fake_output": "(no output: no account has an empty password)",
+      "explanation": "Good: no passwordless accounts.",
+      "why": "An empty password field means login with no password at all. Checks like this, and 'awk -F: '$3 == 0' /etc/passwd' for extra root accounts, are quick to script and worth running on every host as part of a baseline."
+    },
+    {
+      "prompt": "Enable a host firewall on this Ubuntu server, which Lynis flagged: allow OpenSSH first, then turn ufw on.",
+      "expected_commands": ["sudo ufw allow OpenSSH && sudo ufw enable", "ufw allow OpenSSH && ufw enable", "sudo ufw allow ssh && sudo ufw enable"],
+      "fake_output": "Rule added\nRule added (v6)\nCommand may disrupt existing ssh connections. Proceed with operation (y|n)? y\nFirewall is active and enabled on system startup",
+      "explanation": "A default-deny host firewall is on, with SSH still allowed.",
+      "why": "Allow SSH before enabling, or you lock yourself out of a remote server (linux-tutorial-014 covers ufw in depth). A host firewall is defence in depth on top of cloud security groups: if one layer is misconfigured, the other still holds."
+    }
+  ]
+}
