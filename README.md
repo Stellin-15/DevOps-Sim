@@ -16,10 +16,13 @@ simulated string.
   sequence of diagnostic commands to find the actual root cause. Ends with
   a debrief explaining what really happened.
 - **Sandbox** — no scoring, no steps. The game generates a random fake
-  cluster (a handful of pods with random names, statuses like
-  `CrashLoopBackOff`/`OOMKilled`/`Pending`, resource usage) and you explore
-  it freely with `kubectl get/describe/logs/top`. On exit you choose to
-  keep that cluster state for next time or throw it away.
+  cluster: several services, each with a Deployment, a Service, and 1-3
+  pods (some healthy, some randomly broken with `CrashLoopBackOff`/
+  `OOMKilled`/`Pending`/`Error`), plus nodes, a ConfigMap, a Secret, and
+  an event log — all consistent with each other. Explore it freely with
+  `kubectl get/describe/logs/top` across any of those resource types. On
+  exit you choose to keep that cluster state for next time or throw it
+  away.
 
 At every prompt — menu, a tutorial/incident step, or inside sandbox — you
 can type `exit` or `quit` to back out.
@@ -54,19 +57,28 @@ counts as correct.
 ## Playing sandbox mode
 
 ```
-kubectl get pods
-kubectl get pods -o wide
+kubectl get pods [-o wide]
 kubectl get pod <name>
-kubectl describe pod <name>
+kubectl get deployments | deploy
+kubectl get svc | services
+kubectl get configmaps | cm
+kubectl get secrets
+kubectl get nodes
+kubectl get events
+kubectl get all
+kubectl describe pod|deployment|svc|configmap|secret|node <name>
 kubectl logs <name>
 kubectl top pod [<name>]
+kubectl top nodes
 help
 exit
 ```
 
-Some pods will be broken (CrashLoopBackOff, OOMKilled, Pending) — the point
-is figuring out which ones and why, the same way you would against a real
-cluster.
+Some pods will be broken (CrashLoopBackOff, OOMKilled, Pending, Error) —
+the point is figuring out which ones and why, the same way you would
+against a real cluster. Everything is consistent: a broken pod shows up
+in its Deployment's READY count, in `get events`, and in `describe pod`'s
+events section.
 
 ## Project structure
 
@@ -133,12 +145,12 @@ Shortcuts" (aliases and shell completion aren't things with meaningful
 simulated output; their short resource names like `po`/`deploy`/`sts` are
 still accepted throughout the other tutorials).
 
-Not yet built:
+Sandbox now covers pods, deployments, services, configmaps, secrets,
+nodes, and events. Not yet built:
 - A CLI scaffold for authoring new scenario JSON
-- Broader sandbox command support (deployments, services,
-  configmaps/secrets, nodes, events — see COMMANDS.md)
 - More incident scenarios for the newer topics (only 5 incidents exist
   against 20 tutorials)
+- Further sandbox resources (jobs/cronjobs, PVCs, HPA, RBAC)
 
 See CLAUDE.md for the detailed status against the original build order and
 notes for continuing development.

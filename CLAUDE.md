@@ -36,13 +36,20 @@ Don't duplicate content from those two files elsewhere — link to them.
   `tests/test_scenario_content.py`, not by the loader.
 - **scenarios/** — content, not code. One JSON file per scenario. Schema is
   documented in SPEC.md and enforced by tests.
-- **sandbox.py** — separate free-form mode. Generates a random fake
-  cluster state (pods with random names/statuses/resource usage) and
-  handles a small set of read-style kubectl commands
-  (`get`/`describe`/`logs`/`top`) against it via token-based dispatch
-  (see `handle_command`). This is the one place it's fine to have
-  kubectl-shaped parsing, since sandbox is explicitly about exploring
+- **sandbox.py** — separate free-form mode. `generate_state()` builds a
+  random fake cluster: for each of 4-6 randomly chosen services, a
+  Deployment (1-3 replica pods), a ClusterIP Service, plus 3 nodes, an
+  `app-config` ConfigMap, an `app-secrets` Secret, and an event log
+  derived from each pod's status. `handle_command()` does token-based
+  dispatch (`verb`/`resource`/`rest`) across pods, deployments, services,
+  configmaps, secrets, nodes, and events — `get`/`describe`/`logs`/`top`
+  as appropriate per resource type. This is the one place it's fine to
+  have kubectl-shaped parsing, since sandbox is explicitly about exploring
   live-looking cluster state rather than validating scripted steps.
+  Table output goes through `render_table()`, which sizes each column to
+  its widest cell (header or row) instead of a fixed width — required
+  because service/pod names vary a lot in length and a fixed width let
+  long names collide with the next column.
 - **game.py** — entry point / main menu (Learn, Incidents, Sandbox, Quit).
   `exit`/`quit` work at every prompt (menu choice, scenario step, sandbox
   command) — see `engine.read_input` / `engine.QUIT_COMMANDS`.
@@ -142,10 +149,10 @@ something the generic checks don't cover.
 
 ## Likely next work
 
-1. Expand Sandbox's command vocabulary using COMMANDS.md as the source
-   list (deployments, services, configmaps/secrets, nodes, events are the
-   natural next additions beyond pods) — this is next up.
-2. More incident content — only 5 exist vs. 20 tutorials now; incidents
+1. More incident content — only 5 exist vs. 20 tutorials now; incidents
    for the newer topics (RBAC denial, PVC stuck Pending, HPA not scaling,
    Ingress misrouting) would pair naturally with the tutorials just added.
+2. Further Sandbox vocabulary: jobs/cronjobs, PVCs, HPA, RBAC objects are
+   the next natural resources beyond pods/deployments/services/configmaps/
+   secrets/nodes/events (already covered).
 3. v6 scenario-scaffolding CLI, once hand-authoring JSON gets tedious.
