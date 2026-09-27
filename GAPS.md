@@ -189,3 +189,46 @@ and the ARG-vs-ENV secret mistake.
 Solid for day-to-day development and debugging work with containers.
 Missing the hands-on Dockerfile-writing practice that separates "can use
 Docker" from "can containerize an app well."
+
+---
+
+# Part 3 — Linux
+
+**Content:** 12 tutorials, 6 incidents.
+
+## Covered
+
+Every section of `commands/linux.md`: navigation and `find` (by name,
+mtime, size), text pipelines (grep -v, awk, sort | uniq -c | sort -rn,
+sed preview-before-`-i`, diff), permissions and ownership (octal modes,
+chown -R, the `usermod -G` without `-a` trap), processes and signals
+(SIGTERM vs SIGKILL, nohup, jobs, nice/renice), systemd (status vs
+enabled, reload vs restart, daemon-reload, enable --now, journalctl),
+host networking (ip addr/route, ss -tulnp and the localhost-binding trap,
+traceroute), SSH keys and transfer (ed25519, ssh-copy-id, scp vs rsync
+and the trailing-slash trap), archives/cron/environment (tar flags, cron's
+minimal PATH, output redirection), disks (lsblk, mkfs, mount, UUID-based
+fstab, mount -a before rebooting), and performance triage (load vs nproc,
+vmstat's `wa` column, iostat %util/await, dmesg). Incidents cover the
+classic senior-level Linux puzzles: deleted-but-open files (df/du
+mismatch), silent OOM kills, ownership broken by `sudo cp`, cron failing
+silently for weeks, and sshd StrictModes rejecting keys.
+
+## Still missing
+
+- **Shell scripting** — the biggest gap. Real work means writing bash
+  scripts (variables, conditionals, loops, exit codes, `set -euo
+  pipefail`). This game teaches one-liners, not scripts. A "Script Lab"
+  (validating a real .sh file you write, like YAML Labs) would close it.
+- `strace`/`lsof` for deeper process debugging (lsof appears once).
+- Package management (apt/dnf/yum) — trivial but universal.
+- SELinux/AppArmor, firewalls (ufw/iptables/nftables).
+- LVM and resizing a filesystem on a grown cloud volume.
+- `tmux`/`screen` for surviving disconnects (mentioned, not practiced).
+
+## Readiness verdict
+
+Strong on operating and troubleshooting an existing Linux server — the
+incident set here covers problems that genuinely trip up experienced
+engineers. Not yet enough for automating Linux work, which requires
+scripting practice this game doesn't offer.

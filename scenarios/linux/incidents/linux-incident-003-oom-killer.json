@@ -1,0 +1,37 @@
+{
+  "id": "linux-incident-003",
+  "type": "incident",
+  "category": "linux",
+  "title": "The Database Keeps Vanishing With No Error",
+  "difficulty": "intermediate",
+  "tags": ["linux", "memory", "oom", "debugging"],
+  "intro": "Postgres on a VM restarts randomly a few times a day. Its own logs show normal operation right up to the moment it disappears — no error, no shutdown message.",
+  "steps": [
+    {
+      "prompt": "A process that dies without logging anything was often killed from outside. Check the kernel log for OOM kills.",
+      "expected_commands": ["dmesg -T | grep -i oom", "sudo dmesg -T | grep -i oom", "dmesg | grep -i oom", "journalctl -k | grep -i oom"],
+      "fake_output": "[Sat Sep 27 09:12:44 2026] Out of memory: Killed process 920 (postgres) total-vm:6412000kB, anon-rss:3890000kB\n[Sat Sep 27 09:12:44 2026] oom_reaper: reaped process 920 (postgres)",
+      "hint": "The kernel's OOM killer logs to the kernel ring buffer, not to the application's own log."
+    },
+    {
+      "prompt": "Confirmed — the kernel OOM killer took postgres out. Check the machine's memory situation.",
+      "expected_commands": ["free -h"],
+      "fake_output": "              total   used   free   shared  buff/cache  available\nMem:          3.8G   3.5G   120M    40M       210M       180M\nSwap:           0B     0B     0B",
+      "hint": "Look at 'available' and whether there's any swap at all."
+    },
+    {
+      "prompt": "Only 180MB available and no swap. Find out what else is using so much memory, sorted by memory usage.",
+      "expected_commands": ["ps aux --sort=-%mem | head", "ps aux --sort=-%mem | head -10", "top -o %MEM"],
+      "fake_output": "USER     PID  %CPU %MEM    RSS  COMMAND\nappsvc  4821  12.0 58.2  2310000  java -Xmx4g -jar reports.jar\npostgres 1204   2.1 22.0   872000  postgres",
+      "hint": "Sorting by %MEM puts the biggest consumers first."
+    },
+    {
+      "prompt": "A reporting Java app configured with -Xmx4g (a 4GB heap) is running on a machine with only 3.8GB total. Check its service definition to see where that setting lives.",
+      "expected_commands": ["systemctl cat reports", "cat /etc/systemd/system/reports.service"],
+      "fake_output": "[Service]\nUser=appsvc\nExecStart=/usr/bin/java -Xmx4g -jar /opt/reports/reports.jar\nRestart=always",
+      "hint": "systemctl cat shows the exact unit file systemd is using, including any overrides."
+    }
+  ],
+  "resolution": "Postgres wasn't the problem — it was the victim. A reporting job on the same VM was configured with a 4GB Java heap on a 3.8GB machine with no swap. When its heap grew during a big report, total memory ran out and the kernel's OOM killer picked the process whose death would free the most memory (by its scoring, postgres). That's why postgres's own logs showed nothing: it never got a chance to log anything, SIGKILL is instant. The fixes: size the Java heap to what the machine actually has (e.g. -Xmx1g), move the reporting job off the database server entirely, and protect critical processes with a lower OOMScoreAdjust (e.g. OOMScoreAdjust=-900 in postgres's unit file). The general lesson: when a process dies silently, check dmesg before its own logs.",
+  "real_commands_used": ["dmesg -T | grep -i oom", "free -h", "ps aux --sort=-%mem", "systemctl cat"]
+}

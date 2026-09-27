@@ -1,0 +1,46 @@
+{
+  "id": "linux-tutorial-009",
+  "type": "tutorial",
+  "category": "linux",
+  "title": "SSH Keys and Remote File Transfer",
+  "difficulty": "beginner",
+  "tags": ["linux", "ssh", "scp", "rsync"],
+  "intro": "Almost every server you'll ever touch is reached over SSH. Keys instead of passwords, and the right tool for copying files, make this safe and fast.",
+  "steps": [
+    {
+      "prompt": "Generate a new modern SSH key pair.",
+      "expected_commands": ["ssh-keygen -t ed25519", "ssh-keygen -t ed25519 -C \"you@example.com\""],
+      "fake_output": "Generating public/private ed25519 key pair.\nYour identification has been saved in /home/you/.ssh/id_ed25519\nYour public key has been saved in /home/you/.ssh/id_ed25519.pub",
+      "explanation": "Creates a private key (never share it) and a .pub public key (safe to put on servers).",
+      "why": "ed25519 is shorter, faster, and more secure than old RSA-2048 keys. Set a passphrase when prompted — it protects you if the private key file itself is ever stolen."
+    },
+    {
+      "prompt": "Install your public key on the server 10.0.4.20 for user 'deploy', so you can log in without a password.",
+      "expected_commands": ["ssh-copy-id deploy@10.0.4.20"],
+      "fake_output": "Number of key(s) added: 1\nNow try logging into the machine, with: \"ssh 'deploy@10.0.4.20'\"",
+      "explanation": "Appends your public key to ~/.ssh/authorized_keys on the server, with the correct permissions.",
+      "why": "Doing this by hand works too, but it's easy to get the permissions on ~/.ssh or authorized_keys wrong — and SSH silently refuses keys from files with overly open permissions."
+    },
+    {
+      "prompt": "Connect to a cloud server using a specific key file, bastion.pem, as user 'ubuntu' at 54.12.34.56.",
+      "expected_commands": ["ssh -i bastion.pem ubuntu@54.12.34.56"],
+      "fake_output": "Welcome to Ubuntu 24.04 LTS\nubuntu@ip-10-0-1-5:~$",
+      "explanation": "-i picks a specific private key instead of your defaults.",
+      "why": "If this fails with 'UNPROTECTED PRIVATE KEY FILE', run 'chmod 600 bastion.pem' — SSH refuses keys that other users could read. When a connection fails for unclear reasons, add -v to see exactly which step breaks."
+    },
+    {
+      "prompt": "Copy a single file, backup.sql, to the server's /tmp directory.",
+      "expected_commands": ["scp backup.sql deploy@10.0.4.20:/tmp", "scp backup.sql deploy@10.0.4.20:/tmp/"],
+      "fake_output": "backup.sql                  100%   48MB  52.1MB/s   00:00",
+      "explanation": "scp copies over the same SSH connection and keys.",
+      "why": "scp is fine for a quick one-off file. For anything larger or repeated, rsync (next step) is the better tool."
+    },
+    {
+      "prompt": "Sync your local ./site/ directory to /var/www/site/ on the server, transferring only files that changed.",
+      "expected_commands": ["rsync -avz ./site/ deploy@10.0.4.20:/var/www/site/", "rsync -avz site/ deploy@10.0.4.20:/var/www/site/"],
+      "fake_output": "sending incremental file list\nindex.html\ncss/main.css\nsent 18,204 bytes  received 92 bytes\ntotal size is 4,812,003  speedup is 263.01",
+      "explanation": "Only 2 changed files were sent out of ~4.8MB — the 'speedup is 263' is how much less data moved than a full copy.",
+      "why": "rsync compares files and only sends differences, and can resume. The trailing slash on the source matters: 'site/' copies the contents, 'site' copies the directory itself into the destination — a very common surprise."
+    }
+  ]
+}

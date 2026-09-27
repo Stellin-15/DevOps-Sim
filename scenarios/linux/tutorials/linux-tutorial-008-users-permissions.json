@@ -1,0 +1,53 @@
+{
+  "id": "linux-tutorial-008",
+  "type": "tutorial",
+  "category": "linux",
+  "title": "Users, Groups, and Ownership",
+  "difficulty": "intermediate",
+  "tags": ["linux", "users", "permissions", "security"],
+  "intro": "Services should run as dedicated, unprivileged users that own exactly the files they need — no more. Let's set that up properly for a new app.",
+  "steps": [
+    {
+      "prompt": "Check who you are and which groups you belong to.",
+      "expected_commands": ["id", "id -a"],
+      "fake_output": "uid=1001(deploy) gid=1001(deploy) groups=1001(deploy),27(sudo),999(docker)",
+      "explanation": "You're 'deploy', a member of sudo (can run admin commands) and docker (can control Docker).",
+      "why": "Membership in the docker group is effectively root access — anyone who can run 'docker run -v /:/host' can read and modify the entire host filesystem. Worth knowing exactly who has it."
+    },
+    {
+      "prompt": "Create a system user called 'appsvc' with no login shell, to run the service.",
+      "expected_commands": ["sudo useradd -r -s /usr/sbin/nologin appsvc", "sudo useradd --system -s /usr/sbin/nologin appsvc", "sudo useradd -r -s /sbin/nologin appsvc"],
+      "fake_output": "(no output — user created)",
+      "explanation": "-r creates a system account; -s /usr/sbin/nologin means nobody can SSH in or get a shell as this user.",
+      "why": "A service account that can't log in can't be used for interactive access if its credentials ever leak. It exists purely to own files and run one process."
+    },
+    {
+      "prompt": "Give appsvc ownership of the app directory /opt/myapp and everything inside it.",
+      "expected_commands": ["sudo chown -R appsvc:appsvc /opt/myapp"],
+      "fake_output": "(no output — success)",
+      "explanation": "-R applies recursively to every file and subdirectory.",
+      "why": "The most common cause of 'Permission denied' after a deploy is files copied in as root (or your own user) that the service account then can't read or write. Fixing ownership is usually the right fix — not chmod 777."
+    },
+    {
+      "prompt": "Make the config file readable only by its owner — it contains a database password.",
+      "expected_commands": ["sudo chmod 600 /opt/myapp/config.env", "chmod 600 /opt/myapp/config.env"],
+      "fake_output": "(no output — success)",
+      "explanation": "600 = owner read+write (6), group nothing (0), others nothing (0).",
+      "why": "Octal is worth learning: each digit is read(4)+write(2)+execute(1) for owner/group/others. 600 for secrets, 644 for normal files, 755 for executables and directories covers most real cases."
+    },
+    {
+      "prompt": "Add your 'deploy' user to the 'appsvc' group so you can read the app's logs without sudo.",
+      "expected_commands": ["sudo usermod -aG appsvc deploy"],
+      "fake_output": "(no output — success; takes effect on next login)",
+      "explanation": "-aG APPENDS the group to the user's existing groups.",
+      "why": "Forgetting the -a is a genuinely dangerous mistake: 'usermod -G appsvc deploy' REPLACES all of deploy's groups with just appsvc — silently removing sudo and docker access. Always -aG."
+    },
+    {
+      "prompt": "Verify the permissions and ownership on the config file.",
+      "expected_commands": ["ls -la /opt/myapp/config.env", "ls -l /opt/myapp/config.env"],
+      "fake_output": "-rw------- 1 appsvc appsvc 214 Sep 27 10:40 /opt/myapp/config.env",
+      "explanation": "-rw------- confirms 600, and appsvc owns it.",
+      "why": "Always verify after changing permissions — especially recursive ones, where a typo in the path can change far more than you intended."
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "id": "linux-incident-002",
+  "type": "incident",
+  "category": "linux",
+  "title": "Disk Full — But Deleting the Log Didn't Free Any Space",
+  "difficulty": "advanced",
+  "tags": ["linux", "disk", "logs", "debugging"],
+  "intro": "The app server's root disk hit 100%, writes are failing. A teammate already deleted the huge /var/log/app/debug.log file — but df still shows the disk full.",
+  "steps": [
+    {
+      "prompt": "Confirm the current disk usage.",
+      "expected_commands": ["df -h"],
+      "fake_output": "Filesystem      Size  Used  Avail  Use%  Mounted on\n/dev/sda1        50G   50G     0   100%  /",
+      "hint": "Start by confirming the symptom, even when someone already told you what it is."
+    },
+    {
+      "prompt": "Check what's actually using space under /var/log now that the file is deleted.",
+      "expected_commands": ["du -sh /var/log/*", "sudo du -sh /var/log/*"],
+      "fake_output": "12M   /var/log/app\n45M   /var/log/syslog\n8M    /var/log/nginx",
+      "hint": "du adds up the sizes of files it can SEE in the directory tree."
+    },
+    {
+      "prompt": "du shows almost nothing, but df says the disk is full. The space must belong to a file that was deleted but is still held open by a running process. Find deleted-but-open files.",
+      "expected_commands": ["lsof +L1", "sudo lsof +L1", "lsof | grep deleted", "sudo lsof | grep deleted"],
+      "fake_output": "COMMAND  PID   USER    FD  TYPE  SIZE/OFF      NLINK  NAME\nnode    4821  appsvc  12w  REG   41203847168   0     /var/log/app/debug.log (deleted)",
+      "hint": "lsof +L1 lists open files with a link count of 0 — i.e. deleted from the directory, but still open."
+    },
+    {
+      "prompt": "The app (PID 4821) still has the deleted 41GB file open, so the kernel can't free the space. Restart the service so it releases the file handle.",
+      "expected_commands": ["sudo systemctl restart app", "systemctl restart app"],
+      "fake_output": "(no output — success)",
+      "hint": "Once the process closes its handle, the space is released immediately."
+    },
+    {
+      "prompt": "Confirm the space came back.",
+      "expected_commands": ["df -h"],
+      "fake_output": "Filesystem      Size  Used  Avail  Use%  Mounted on\n/dev/sda1        50G    9G   41G    18%   /",
+      "hint": "Always verify the fix."
+    }
+  ],
+  "resolution": "Deleting a file on Linux only removes its directory entry — the actual disk blocks are freed only once no process has it open. The app was still writing to its (now-deleted) 41GB debug log, so df (which reports actual block usage) kept showing 100% while du (which walks visible files) showed almost nothing. That df/du mismatch is the telltale sign of this exact problem. Restarting the app released the handle and freed the space. If a restart isn't acceptable, truncating instead of deleting ('> /var/log/app/debug.log' or 'truncate -s 0') frees the space while the file stays open. The real fixes: turn off debug logging in production, and configure logrotate (with copytruncate, or a signal telling the app to reopen its log) so no log file grows unbounded again.",
+  "real_commands_used": ["df -h", "du -sh", "lsof +L1", "systemctl restart"]
+}

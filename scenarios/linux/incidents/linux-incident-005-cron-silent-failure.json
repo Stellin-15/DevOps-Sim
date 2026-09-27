@@ -1,0 +1,43 @@
+{
+  "id": "linux-incident-005",
+  "type": "incident",
+  "category": "linux",
+  "title": "Nightly Backups Haven't Run in Two Weeks",
+  "difficulty": "intermediate",
+  "tags": ["linux", "cron", "backups", "debugging"],
+  "intro": "Someone went to restore a file and discovered the newest backup is 14 days old. The backup script works perfectly when run by hand.",
+  "steps": [
+    {
+      "prompt": "Check the crontab to confirm the job is actually scheduled.",
+      "expected_commands": ["crontab -l", "sudo crontab -l"],
+      "fake_output": "0 2 * * * backup.sh",
+      "hint": "First confirm the job exists at all."
+    },
+    {
+      "prompt": "It's scheduled. Check whether cron actually tried to run it last night.",
+      "expected_commands": ["grep CRON /var/log/syslog", "journalctl -u cron", "grep -i cron /var/log/syslog", "journalctl -u cron --since yesterday"],
+      "fake_output": "Sep 27 02:00:01 web01 CRON[31022]: (deploy) CMD (backup.sh)\nSep 27 02:00:01 web01 CRON[31021]: (CRON) info (No MTA installed, discarding output)",
+      "hint": "Cron logs each job launch to syslog (or the journal)."
+    },
+    {
+      "prompt": "Cron DID run it every night — but threw away the output. Find out where 'backup.sh' lives.",
+      "expected_commands": ["which backup.sh"],
+      "fake_output": "/home/deploy/bin/backup.sh",
+      "hint": "Interactively, your shell finds it via PATH."
+    },
+    {
+      "prompt": "It lives in /home/deploy/bin, which is on your interactive PATH. Check what PATH cron gives its jobs by running the job the way cron would, with cron's minimal environment.",
+      "expected_commands": ["env -i PATH=/usr/bin:/bin /bin/sh -c 'backup.sh'"],
+      "fake_output": "/bin/sh: 1: backup.sh: not found",
+      "hint": "env -i starts with an empty environment — the closest simulation of cron's minimal one."
+    },
+    {
+      "prompt": "Confirmed: under cron's PATH the script simply isn't found. Edit the crontab to use the absolute path and log output.",
+      "expected_commands": ["crontab -e"],
+      "fake_output": "(editor opens — change the line to: 0 2 * * * /home/deploy/bin/backup.sh >> /var/log/backup.log 2>&1 )",
+      "hint": "Absolute path for the script, and redirect output somewhere you'll actually see it."
+    }
+  ],
+  "resolution": "The job had been failing every single night with 'command not found' — cron runs jobs with a minimal PATH (typically /usr/bin:/bin), not your interactive shell's PATH, so 'backup.sh' in ~/bin was never found. The error was invisible because cron mails job output to the local user, and with no mail server installed it was simply discarded ('No MTA installed, discarding output'). Two fixes: use absolute paths in every cron entry, and always redirect output to a log file. The deeper lesson: a backup nobody verifies is not a backup. Add monitoring that alerts when the newest backup is older than ~26 hours — a 'dead man's switch' — so a silent failure pages someone within a day, not two weeks.",
+  "real_commands_used": ["crontab -l", "grep CRON /var/log/syslog", "which", "env -i", "crontab -e"]
+}

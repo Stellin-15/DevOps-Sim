@@ -1,0 +1,53 @@
+{
+  "id": "linux-tutorial-010",
+  "type": "tutorial",
+  "category": "linux",
+  "title": "Archives, Cron Jobs, and the Shell Environment",
+  "difficulty": "intermediate",
+  "tags": ["linux", "tar", "cron", "environment"],
+  "intro": "Backing up a directory, scheduling it to happen nightly, and understanding the environment it runs in — three small skills that combine into one very common real task.",
+  "steps": [
+    {
+      "prompt": "Create a compressed archive of /opt/myapp/data named data-backup.tar.gz.",
+      "expected_commands": ["tar -czvf data-backup.tar.gz /opt/myapp/data", "tar czvf data-backup.tar.gz /opt/myapp/data"],
+      "fake_output": "tar: Removing leading '/' from member names\n/opt/myapp/data/\n/opt/myapp/data/users.db\n/opt/myapp/data/uploads/",
+      "explanation": "c = create, z = gzip, v = verbose, f = filename (must come last, right before the name).",
+      "why": "The 'f' must be immediately followed by the archive name — 'tar -cvfz' would try to create an archive literally named 'z'. Memorizing 'czvf' to create and 'xzvf' to extract avoids the whole class of mistakes."
+    },
+    {
+      "prompt": "List what's inside the archive without extracting it, to verify the backup.",
+      "expected_commands": ["tar -tzvf data-backup.tar.gz", "tar tzvf data-backup.tar.gz"],
+      "fake_output": "drwxr-xr-x appsvc/appsvc   0 2026-09-27 opt/myapp/data/\n-rw------- appsvc/appsvc 51M 2026-09-27 opt/myapp/data/users.db",
+      "explanation": "t = list contents.",
+      "why": "A backup you've never verified isn't a backup. Listing contents is the minimum check; actually restoring to a scratch location and testing it is the real one."
+    },
+    {
+      "prompt": "Find the full path of the tar binary — cron needs full paths.",
+      "expected_commands": ["which tar"],
+      "fake_output": "/usr/bin/tar",
+      "explanation": "which shows the exact executable your shell would run.",
+      "why": "Cron runs jobs with a minimal PATH (often just /usr/bin:/bin), so commands that work fine interactively can fail silently under cron. Using absolute paths in cron jobs removes that whole class of bug."
+    },
+    {
+      "prompt": "Check what your current PATH contains.",
+      "expected_commands": ["echo $PATH", "printenv PATH"],
+      "fake_output": "/home/deploy/.local/bin:/usr/local/bin:/usr/bin:/bin",
+      "explanation": "Directories are searched left to right when you type a command name.",
+      "why": "This is the interactive PATH. Cron's is far shorter — comparing the two is exactly how you debug 'works when I run it, fails from cron' (see linux-incident-005)."
+    },
+    {
+      "prompt": "Open your crontab to add a nightly job.",
+      "expected_commands": ["crontab -e"],
+      "fake_output": "(opens editor — you'd add:  0 2 * * * /usr/bin/tar -czf /backups/data-$(date +\\%F).tar.gz /opt/myapp/data >> /var/log/backup.log 2>&1 )",
+      "explanation": "'0 2 * * *' = minute 0, hour 2, every day. The % in date must be escaped as \\% inside crontab, or cron treats it as a newline.",
+      "why": "Redirecting output (>> log 2>&1) matters: without it, cron's output goes to local mail nobody reads, so failures are completely invisible."
+    },
+    {
+      "prompt": "List your crontab to confirm the job was saved.",
+      "expected_commands": ["crontab -l"],
+      "fake_output": "0 2 * * * /usr/bin/tar -czf /backups/data-$(date +\\%F).tar.gz /opt/myapp/data >> /var/log/backup.log 2>&1",
+      "explanation": "The job is installed for your user.",
+      "why": "Never edit crontab by editing files under /var/spool directly — 'crontab -e' validates syntax on save; 'crontab -l' is the safe way to read it back."
+    }
+  ]
+}

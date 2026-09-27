@@ -1,0 +1,37 @@
+{
+  "id": "linux-incident-006",
+  "type": "incident",
+  "category": "linux",
+  "title": "SSH Key Suddenly Rejected",
+  "difficulty": "intermediate",
+  "tags": ["linux", "ssh", "permissions", "debugging"],
+  "intro": "You could SSH into the build server with your key yesterday. Today: 'Permission denied (publickey)'. A teammate says they 'cleaned up permissions' in the home directories last night.",
+  "steps": [
+    {
+      "prompt": "Retry the connection with verbose output to see which step fails.",
+      "expected_commands": ["ssh -v deploy@10.0.4.20", "ssh -vvv deploy@10.0.4.20", "ssh -vv deploy@10.0.4.20"],
+      "fake_output": "debug1: Offering public key: /home/you/.ssh/id_ed25519 ED25519\ndebug1: Authentications that can continue: publickey\ndebug1: No more authentication methods to try.\ndeploy@10.0.4.20: Permission denied (publickey).",
+      "hint": "-v shows each authentication attempt and what the server says about it."
+    },
+    {
+      "prompt": "Your key is offered but the server refuses it — the problem is on the server side. Log in through the cloud provider's console as an admin and check the server's auth log.",
+      "expected_commands": ["sudo tail /var/log/auth.log", "sudo journalctl -u ssh", "sudo journalctl -u sshd", "tail /var/log/auth.log"],
+      "fake_output": "Sep 27 09:14:02 build sshd[2201]: Authentication refused: bad ownership or modes for directory /home/deploy/.ssh",
+      "hint": "sshd logs the real reason it rejected a key — the client never sees it."
+    },
+    {
+      "prompt": "sshd refuses keys when .ssh permissions are too open. Check them.",
+      "expected_commands": ["ls -la /home/deploy/.ssh", "sudo ls -la /home/deploy/.ssh"],
+      "fake_output": "drwxrwxrwx 2 deploy deploy 4096 Sep 26 22:10 .\n-rw-rw-rw- 1 deploy deploy  402 Sep 20 10:00 authorized_keys",
+      "hint": "Look at the permission bits on the .ssh directory and authorized_keys."
+    },
+    {
+      "prompt": "The 'cleanup' set everything to world-writable. Restore the permissions sshd requires: 700 on the directory, 600 on authorized_keys.",
+      "expected_commands": ["sudo chmod 700 /home/deploy/.ssh && sudo chmod 600 /home/deploy/.ssh/authorized_keys", "chmod 700 /home/deploy/.ssh && chmod 600 /home/deploy/.ssh/authorized_keys"],
+      "fake_output": "(no output — success)",
+      "hint": "Directory 700, key file 600."
+    }
+  ],
+  "resolution": "sshd's StrictModes check refuses to trust authorized_keys if the file or its directory is writable by anyone other than the owner — otherwise any local user could add their own key and log in as you. The teammate's 'permission cleanup' (likely a recursive chmod 777 or 666) broke that. The client only ever sees a generic 'Permission denied (publickey)'; the real reason is only in the server's auth log. That asymmetry is worth remembering for any auth failure: the useful error is usually on the side that rejected you. The process lesson: recursive chmod across home directories is almost never the right fix for anything.",
+  "real_commands_used": ["ssh -v", "tail /var/log/auth.log", "ls -la", "chmod 700", "chmod 600"]
+}

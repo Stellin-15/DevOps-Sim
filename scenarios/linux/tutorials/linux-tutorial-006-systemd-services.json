@@ -1,0 +1,53 @@
+{
+  "id": "linux-tutorial-006",
+  "type": "tutorial",
+  "category": "linux",
+  "title": "Managing Services with systemd",
+  "difficulty": "intermediate",
+  "tags": ["linux", "systemd", "services"],
+  "intro": "On nearly every modern Linux server, long-running services are managed by systemd. Knowing its handful of core commands is non-negotiable for operations work.",
+  "steps": [
+    {
+      "prompt": "List all running services on this machine.",
+      "expected_commands": ["systemctl list-units --type=service", "systemctl list-units --type=service --state=running"],
+      "fake_output": "UNIT              LOAD   ACTIVE SUB     DESCRIPTION\nnginx.service     loaded active running A high performance web server\napi.service       loaded active running API Server\nsshd.service      loaded active running OpenSSH server daemon",
+      "explanation": "Every service systemd knows about, with its current state.",
+      "why": "This is your inventory of what's actually running — useful on an unfamiliar server before touching anything."
+    },
+    {
+      "prompt": "Check the detailed status of the nginx service.",
+      "expected_commands": ["systemctl status nginx"],
+      "fake_output": "● nginx.service - A high performance web server\n   Loaded: loaded (/lib/systemd/system/nginx.service; enabled)\n   Active: active (running) since Sat 2026-09-27 08:00:12; 2h ago\n Main PID: 812 (nginx)",
+      "explanation": "Two different things matter here: 'active (running)' is the current state, 'enabled' means it will start on boot.",
+      "why": "A service can be running right now but DISABLED, meaning it will silently not come back after the next reboot — exactly the trap in linux-incident-001. Always check both words."
+    },
+    {
+      "prompt": "You just edited nginx's config. Reload it without dropping active connections.",
+      "expected_commands": ["systemctl reload nginx"],
+      "fake_output": "(no output — success)",
+      "explanation": "reload tells the service to re-read its config without a full stop/start, if the service supports it.",
+      "why": "'restart' kills and restarts the process, dropping every in-flight request. For services that support it (nginx does), 'reload' is the zero-downtime option. Run 'nginx -t' first to validate the config — a broken config plus restart takes the site down."
+    },
+    {
+      "prompt": "You just created a new unit file at /etc/systemd/system/worker.service. Make systemd pick it up.",
+      "expected_commands": ["systemctl daemon-reload"],
+      "fake_output": "(no output — success)",
+      "explanation": "systemd caches unit files; daemon-reload re-reads them from disk.",
+      "why": "Forgetting daemon-reload after creating or editing a unit file is one of the most common systemd mistakes — your changes simply don't exist yet as far as systemd is concerned, and start/restart uses the stale version."
+    },
+    {
+      "prompt": "Start the worker service AND enable it to start on boot, in one command.",
+      "expected_commands": ["systemctl enable --now worker", "systemctl enable worker --now"],
+      "fake_output": "Created symlink /etc/systemd/system/multi-user.target.wants/worker.service → /etc/systemd/system/worker.service.",
+      "explanation": "--now combines enable (start on boot) with start (start right now).",
+      "why": "Running only 'start' leaves you with a service that works until the next reboot and then mysteriously vanishes. 'enable --now' is the one-shot way to make it both running and persistent."
+    },
+    {
+      "prompt": "Follow the worker service's logs live.",
+      "expected_commands": ["journalctl -u worker -f", "journalctl -fu worker", "journalctl -f -u worker"],
+      "fake_output": "Sep 27 10:15:02 worker[9021]: Connected to queue\nSep 27 10:15:03 worker[9021]: Processing job 1\n(streaming...)",
+      "explanation": "-u filters to one unit, -f follows new lines as they arrive.",
+      "why": "Same idea as tail -f or kubectl logs -f, but for anything systemd manages. Add --since '10 min ago' to see recent history before following."
+    }
+  ]
+}

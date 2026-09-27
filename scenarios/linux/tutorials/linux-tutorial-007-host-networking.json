@@ -1,0 +1,53 @@
+{
+  "id": "linux-tutorial-007",
+  "type": "tutorial",
+  "category": "linux",
+  "title": "Networking from the Host",
+  "difficulty": "intermediate",
+  "tags": ["linux", "networking", "ports"],
+  "intro": "Before blaming the application, check the host's own view of the network: its addresses, routes, and which ports are actually listening.",
+  "steps": [
+    {
+      "prompt": "Show this machine's IP addresses on every interface.",
+      "expected_commands": ["ip addr", "ip a", "ip address"],
+      "fake_output": "1: lo: <LOOPBACK,UP> inet 127.0.0.1/8\n2: eth0: <BROADCAST,UP> inet 10.0.4.15/24\n3: docker0: <BROADCAST,UP> inet 172.17.0.1/16",
+      "explanation": "eth0 has the real private IP; docker0 is Docker's bridge network; lo is loopback.",
+      "why": "'ifconfig' shows similar information but is deprecated and missing from many minimal images. 'ip' is the modern replacement and the one you can count on being installed."
+    },
+    {
+      "prompt": "Show the routing table — where does traffic leave this machine?",
+      "expected_commands": ["ip route", "ip r"],
+      "fake_output": "default via 10.0.4.1 dev eth0\n10.0.4.0/24 dev eth0 proto kernel scope link src 10.0.4.15\n172.17.0.0/16 dev docker0",
+      "explanation": "'default via 10.0.4.1' is the gateway: anything not on a local network goes there.",
+      "why": "If there's no default route, the machine can talk to its local subnet but nothing on the internet — a common cause of 'can reach the database but not external APIs'."
+    },
+    {
+      "prompt": "List every listening TCP/UDP port along with which process owns it.",
+      "expected_commands": ["ss -tulnp", "sudo ss -tulnp"],
+      "fake_output": "Netid State  Local Address:Port  Process\ntcp   LISTEN 0.0.0.0:22          users:((\"sshd\",pid=610))\ntcp   LISTEN 127.0.0.1:5432      users:((\"postgres\",pid=920))\ntcp   LISTEN 0.0.0.0:8080        users:((\"node\",pid=4821))",
+      "explanation": "-t TCP, -u UDP, -l listening only, -n numeric (no DNS lookups), -p show the process.",
+      "why": "Note postgres listens on 127.0.0.1 — only reachable from this machine itself, NOT from other hosts. 'Connection refused from another server' is often just a service bound to localhost instead of 0.0.0.0."
+    },
+    {
+      "prompt": "Check basic reachability of the database server at 10.0.4.30.",
+      "expected_commands": ["ping 10.0.4.30", "ping -c 4 10.0.4.30"],
+      "fake_output": "64 bytes from 10.0.4.30: icmp_seq=1 ttl=64 time=0.412 ms\n64 bytes from 10.0.4.30: icmp_seq=2 ttl=64 time=0.388 ms",
+      "explanation": "The host is up and reachable at the network level.",
+      "why": "A failed ping doesn't always mean the host is down — many cloud networks block ICMP entirely. A successful ping only proves the network path works, not that the service port is open (use nc -zv for that)."
+    },
+    {
+      "prompt": "Trace the network path to api.partner.com to see where packets are getting slow or lost.",
+      "expected_commands": ["traceroute api.partner.com", "tracepath api.partner.com", "mtr api.partner.com"],
+      "fake_output": " 1  10.0.4.1      0.5 ms\n 2  100.64.0.1    1.2 ms\n 3  * * *\n 4  198.51.100.7  48.9 ms",
+      "explanation": "Each line is a network hop. '* * *' means that hop didn't respond — often just a router ignoring probes, not necessarily the problem.",
+      "why": "Look for where latency JUMPS and stays high, not isolated asterisks. A sudden jump that persists through every later hop points at the link where things actually degrade."
+    },
+    {
+      "prompt": "Send a POST request with a JSON body to test an internal API endpoint directly.",
+      "expected_commands": ["curl -X POST http://localhost:8080/api/orders -d '{\"item\":\"book\"}' -H 'Content-Type: application/json'", "curl -X POST http://localhost:8080/api/orders -H 'Content-Type: application/json' -d '{\"item\":\"book\"}'"],
+      "fake_output": "{\"id\": 1042, \"status\": \"created\"}",
+      "explanation": "-X sets the method, -d the body, -H adds a header.",
+      "why": "Forgetting the Content-Type header is a classic reason an API returns 400/415 to curl but works fine from the frontend — many frameworks refuse to parse a JSON body without it."
+    }
+  ]
+}

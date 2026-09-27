@@ -1,0 +1,43 @@
+{
+  "id": "linux-incident-004",
+  "type": "incident",
+  "category": "linux",
+  "title": "Permission Denied After a Deploy",
+  "difficulty": "beginner",
+  "tags": ["linux", "permissions", "deploy", "debugging"],
+  "intro": "A new release was deployed by copying files into /opt/myapp with sudo. The service now fails to start.",
+  "steps": [
+    {
+      "prompt": "Check the service status and its last log lines.",
+      "expected_commands": ["systemctl status myapp", "sudo systemctl status myapp"],
+      "fake_output": "● myapp.service\n   Active: failed (Result: exit-code)\nSep 27 11:02:04 myapp[8801]: Error: EACCES: permission denied, open '/opt/myapp/config/settings.json'",
+      "hint": "The last few log lines in the status output often contain the exact error."
+    },
+    {
+      "prompt": "Check who owns the files in /opt/myapp/config now.",
+      "expected_commands": ["ls -la /opt/myapp/config"],
+      "fake_output": "-rw------- 1 root   root   812 Sep 27 11:00 settings.json\n-rw-r--r-- 1 appsvc appsvc 204 Sep 20 09:00 logging.json",
+      "hint": "Compare the owner of the file that fails against the files that still work."
+    },
+    {
+      "prompt": "settings.json is now owned by root with mode 600 — the service runs as 'appsvc' and can't read it. Confirm which user the service runs as.",
+      "expected_commands": ["systemctl show myapp -p User", "systemctl cat myapp"],
+      "fake_output": "User=appsvc",
+      "hint": "The unit file's User= line determines which account the process runs under."
+    },
+    {
+      "prompt": "Fix ownership of the whole app directory back to appsvc.",
+      "expected_commands": ["sudo chown -R appsvc:appsvc /opt/myapp"],
+      "fake_output": "(no output — success)",
+      "hint": "Fix ownership recursively; don't reach for chmod 777."
+    },
+    {
+      "prompt": "Restart the service and confirm it's running.",
+      "expected_commands": ["sudo systemctl restart myapp", "systemctl restart myapp"],
+      "fake_output": "(no output — success)",
+      "hint": "Restart, then check status again."
+    }
+  ],
+  "resolution": "Files copied with 'sudo cp' are created owned by root, and settings.json came across with restrictive 600 permissions — so the appsvc service account couldn't read its own config. The correct fix is restoring ownership to the service account, not loosening permissions (chmod 777 'fixes' the symptom while making a file containing credentials readable by every user on the box). The process fix: deploy with 'install -o appsvc -g appsvc', rsync --chown, or a chown step at the end of the deploy script — or better, a proper deployment tool that sets ownership consistently every time.",
+  "real_commands_used": ["systemctl status", "ls -la", "systemctl show -p User", "chown -R", "systemctl restart"]
+}

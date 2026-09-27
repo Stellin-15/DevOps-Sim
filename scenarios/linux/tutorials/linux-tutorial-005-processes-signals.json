@@ -1,0 +1,53 @@
+{
+  "id": "linux-tutorial-005",
+  "type": "tutorial",
+  "category": "linux",
+  "title": "Processes, Signals, and Background Jobs",
+  "difficulty": "intermediate",
+  "tags": ["linux", "processes", "signals"],
+  "intro": "Finding a process, stopping it politely (or not), and running things that survive after you log out — core skills for any server work.",
+  "steps": [
+    {
+      "prompt": "Find the PID of any running process named 'worker'.",
+      "expected_commands": ["pgrep worker", "pgrep -a worker"],
+      "fake_output": "5012\n5013",
+      "explanation": "pgrep matches by process name and prints just the PIDs.",
+      "why": "'ps aux | grep worker' works too, but also matches the grep command itself and prints lots of noise. pgrep gives you exactly the PIDs, ready to pass to kill."
+    },
+    {
+      "prompt": "Ask process 5012 to shut down gracefully.",
+      "expected_commands": ["kill 5012", "kill -15 5012", "kill -term 5012"],
+      "fake_output": "(no output — SIGTERM sent)",
+      "explanation": "Plain kill sends SIGTERM (15), which lets the process finish in-flight work, flush files, and exit cleanly.",
+      "why": "Always try SIGTERM first. The process gets a chance to clean up — close database connections, finish writing a file. Jumping straight to -9 risks corrupted data."
+    },
+    {
+      "prompt": "Process 5013 is hung and ignores SIGTERM. Force-kill it.",
+      "expected_commands": ["kill -9 5013", "kill -kill 5013"],
+      "fake_output": "(no output — SIGKILL sent)",
+      "explanation": "SIGKILL (9) can't be caught or ignored — the kernel removes the process immediately.",
+      "why": "-9 is the last resort, not the first move: no cleanup happens at all. It's also why exit code 137 (128+9) in Docker/Kubernetes means 'something force-killed this', usually the OOM killer."
+    },
+    {
+      "prompt": "Start a long-running data migration script so it keeps running even after you disconnect your SSH session.",
+      "expected_commands": ["nohup ./migrate.sh &", "nohup ./migrate.sh > migrate.log 2>&1 &"],
+      "fake_output": "[1] 6120\nnohup: ignoring input and appending output to 'nohup.out'",
+      "explanation": "nohup ignores the hangup signal sent when your terminal closes; & puts it in the background.",
+      "why": "Without nohup, closing your laptop kills an hour-long migration halfway through. For anything important, tmux or screen (which let you reattach later) or a proper systemd service are even better options."
+    },
+    {
+      "prompt": "List the background jobs running in your current shell.",
+      "expected_commands": ["jobs", "jobs -l"],
+      "fake_output": "[1]+  Running    nohup ./migrate.sh &",
+      "explanation": "jobs only shows jobs started from THIS shell session.",
+      "why": "jobs/fg/bg manage your own shell's jobs; for anything system-wide use ps/pgrep. Confusing the two is why 'jobs' shows nothing after you reconnect in a new SSH session."
+    },
+    {
+      "prompt": "A CPU-heavy backup script is slowing down the web server. Lower its priority (PID 7004) so it yields CPU to more important work.",
+      "expected_commands": ["renice 10 -p 7004", "renice -n 10 -p 7004"],
+      "fake_output": "7004 (process ID) old priority 0, new priority 10",
+      "explanation": "Higher nice values mean LOWER priority. The backup still runs, it just gets CPU only when others don't need it.",
+      "why": "Killing the backup loses the work; renice keeps it running without hurting production traffic. To start something at low priority from the beginning, use 'nice -n 10 ./backup.sh' instead."
+    }
+  ]
+}

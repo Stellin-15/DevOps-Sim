@@ -1,0 +1,60 @@
+{
+  "id": "linux-tutorial-003",
+  "type": "tutorial",
+  "category": "linux",
+  "title": "Navigating and Finding Files",
+  "difficulty": "beginner",
+  "tags": ["linux", "files", "find"],
+  "intro": "Half of server work is just finding things: where a config lives, which file changed recently, what's taking up space. These are the commands you'll use before anything else.",
+  "steps": [
+    {
+      "prompt": "Confirm which directory you're currently in.",
+      "expected_commands": ["pwd"],
+      "fake_output": "/home/deploy",
+      "explanation": "pwd = print working directory. Every relative path you type is resolved from here.",
+      "why": "Running a destructive command like 'rm -rf ./build' in the wrong directory is a classic mistake — checking pwd first is a cheap habit before anything that deletes or overwrites."
+    },
+    {
+      "prompt": "List everything in /etc/nginx, including hidden files, with permissions and sizes.",
+      "expected_commands": ["ls -la /etc/nginx"],
+      "fake_output": "drwxr-xr-x  4 root root 4096 Sep 20 10:00 .\n-rw-r--r--  1 root root 1482 Sep 20 10:00 nginx.conf\ndrwxr-xr-x  2 root root 4096 Sep 27 09:14 sites-enabled",
+      "explanation": "-l gives the long format (permissions, owner, size, modified time); -a includes hidden dotfiles.",
+      "why": "Plain 'ls' hides dotfiles like .env and .htaccess — exactly the files most likely to matter when debugging config. -la is the default you want on a server."
+    },
+    {
+      "prompt": "Find every file named 'app.conf' anywhere under /etc.",
+      "expected_commands": ["find /etc -name \"app.conf\"", "find /etc -name app.conf", "find /etc -name 'app.conf'"],
+      "fake_output": "/etc/app/app.conf\n/etc/app/backup/app.conf",
+      "explanation": "Two copies — a live one and a backup. Worth knowing which one the service actually reads before editing either.",
+      "why": "Scoping the search to /etc instead of / makes it finish in seconds instead of crawling the whole disk (including /proc, which produces a flood of permission errors)."
+    },
+    {
+      "prompt": "Find files under /etc modified in the last 24 hours — useful when 'something changed' but nobody knows what.",
+      "expected_commands": ["find /etc -type f -mtime -1"],
+      "fake_output": "/etc/app/app.conf\n/etc/nginx/sites-enabled/default",
+      "explanation": "-mtime -1 means 'modified less than 1 day ago'. -type f restricts it to regular files.",
+      "why": "This is one of the most useful incident-response commands there is: when a server broke overnight, the list of recently changed config files is often the root cause staring back at you."
+    },
+    {
+      "prompt": "Find any files larger than 100MB under /var.",
+      "expected_commands": ["find /var -size +100M", "find /var -type f -size +100M"],
+      "fake_output": "/var/log/app/debug.log\n/var/lib/docker/overlay2/abc123/merged/data.db",
+      "explanation": "+100M means larger than 100 megabytes.",
+      "why": "'du -sh' tells you which DIRECTORY is big; find -size tells you which individual FILES are big — together they narrow down disk problems quickly from both directions."
+    },
+    {
+      "prompt": "Count how many lines are in /var/log/app/debug.log.",
+      "expected_commands": ["wc -l /var/log/app/debug.log"],
+      "fake_output": "48210931 /var/log/app/debug.log",
+      "explanation": "48 million lines — debug logging has clearly been left on in production.",
+      "why": "Before opening a huge file with cat or less, wc -l tells you whether that's a sane thing to do. Catting a 48-million-line file will flood your terminal for minutes."
+    },
+    {
+      "prompt": "Just look at the first 20 lines to see what's in it.",
+      "expected_commands": ["head -n 20 /var/log/app/debug.log", "head -20 /var/log/app/debug.log"],
+      "fake_output": "2026-09-27 00:00:01 DEBUG cache lookup key=user:1\n2026-09-27 00:00:01 DEBUG cache hit\n...",
+      "explanation": "head reads only the start of the file, no matter how large it is.",
+      "why": "head (start) and tail (end) are the safe way to sample huge files. 'less' is the next step up when you need to scroll or search interactively without loading the whole file."
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "id": "linux-tutorial-011",
+  "type": "tutorial",
+  "category": "linux",
+  "title": "Disks, Filesystems, and Mounting",
+  "difficulty": "advanced",
+  "tags": ["linux", "disks", "filesystems", "mount"],
+  "intro": "You just attached a new 100GB cloud volume to a server for database storage. It shows up as a raw block device — here's how to go from that to a usable, persistent mount.",
+  "steps": [
+    {
+      "prompt": "List block devices to find the new disk.",
+      "expected_commands": ["lsblk"],
+      "fake_output": "NAME    MAJ:MIN  SIZE TYPE MOUNTPOINT\nsda       8:0     50G disk\n└─sda1    8:1     50G part /\nsdb       8:16   100G disk",
+      "explanation": "sdb is the new 100GB disk — no partitions, no mountpoint yet.",
+      "why": "Always identify the device by size and absence of a mountpoint before formatting anything. Formatting the wrong device (say, sda) destroys the operating system instantly and irreversibly."
+    },
+    {
+      "prompt": "Create an ext4 filesystem on /dev/sdb.",
+      "expected_commands": ["sudo mkfs.ext4 /dev/sdb", "mkfs.ext4 /dev/sdb"],
+      "fake_output": "Creating filesystem with 26214400 4k blocks\nWriting superblocks and filesystem accounting information: done",
+      "explanation": "This erases anything on the device and lays down a fresh filesystem.",
+      "why": "This is one of the few genuinely irreversible commands in this whole game. The lsblk check in the previous step is what makes it safe — never run mkfs from memory without looking first."
+    },
+    {
+      "prompt": "Create a mount point directory and mount the new disk there.",
+      "expected_commands": ["sudo mkdir -p /data && sudo mount /dev/sdb /data", "mkdir -p /data && mount /dev/sdb /data"],
+      "fake_output": "(no output — success)",
+      "explanation": "The disk's contents are now accessible under /data.",
+      "why": "A mount done this way does NOT survive a reboot. The database would start on the next boot writing to an empty /data directory on the ROOT disk instead — silently filling it up. The next step fixes that."
+    },
+    {
+      "prompt": "Get the filesystem's UUID, needed for a reliable /etc/fstab entry.",
+      "expected_commands": ["sudo blkid /dev/sdb", "blkid /dev/sdb"],
+      "fake_output": "/dev/sdb: UUID=\"8c1f2a3b-4d5e-6f70-8192-a3b4c5d6e7f8\" TYPE=\"ext4\"",
+      "explanation": "The UUID uniquely identifies this filesystem regardless of device naming.",
+      "why": "Device names like /dev/sdb can change between reboots (especially in the cloud, when disks are added or reattached). fstab entries using UUID=... always point at the right disk."
+    },
+    {
+      "prompt": "After adding the UUID line to /etc/fstab, test it by mounting everything listed in fstab.",
+      "expected_commands": ["sudo mount -a", "mount -a"],
+      "fake_output": "(no output — success)",
+      "explanation": "mount -a mounts every fstab entry not already mounted — a safe test that your fstab line is valid.",
+      "why": "A broken fstab line can drop a server into emergency mode on its next boot, which on a cloud VM often means no SSH access at all. Testing with mount -a now catches that before a reboot does."
+    },
+    {
+      "prompt": "Confirm the new disk is mounted with the space you expect.",
+      "expected_commands": ["df -h /data", "df -h"],
+      "fake_output": "Filesystem      Size  Used  Avail  Use%  Mounted on\n/dev/sdb         98G   24K   93G    1%   /data",
+      "explanation": "98G usable (filesystem overhead takes a little) and mounted at /data.",
+      "why": "Close the loop: verify the end state rather than trusting each earlier command silently succeeded."
+    }
+  ]
+}

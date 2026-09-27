@@ -1,0 +1,53 @@
+{
+  "id": "linux-tutorial-004",
+  "type": "tutorial",
+  "category": "linux",
+  "title": "Text Processing Pipelines",
+  "difficulty": "intermediate",
+  "tags": ["linux", "grep", "awk", "sed", "pipes"],
+  "intro": "The real power of the Linux shell is chaining small tools with pipes. Let's answer a real question from an nginx access log: which IPs are hammering us, and with what?",
+  "steps": [
+    {
+      "prompt": "Show only the lines in access.log that are NOT successful 200 responses.",
+      "expected_commands": ["grep -v \" 200 \" access.log", "grep -v ' 200 ' access.log"],
+      "fake_output": "10.0.0.5 - - [27/Sep] \"GET /api/users HTTP/1.1\" 500 312\n203.0.113.9 - - [27/Sep] \"POST /login HTTP/1.1\" 401 58",
+      "explanation": "-v inverts the match — show lines that DON'T contain the pattern.",
+      "why": "The spaces around 200 matter: without them, grep -v '200' would also drop a 500 response whose byte count happened to contain '200'. Precise patterns avoid silently wrong answers."
+    },
+    {
+      "prompt": "Print just the first column (the client IP) from every line.",
+      "expected_commands": ["awk '{print $1}' access.log"],
+      "fake_output": "203.0.113.9\n10.0.0.5\n203.0.113.9\n203.0.113.9\n...",
+      "explanation": "awk splits each line on whitespace; $1 is the first field.",
+      "why": "'cut -d' ' -f1' works here too, but awk handles multiple consecutive spaces correctly and can do arithmetic/conditions later — it's the more general tool once you know it."
+    },
+    {
+      "prompt": "Now count requests per IP and show the top offenders, highest first.",
+      "expected_commands": ["awk '{print $1}' access.log | sort | uniq -c | sort -rn", "awk '{print $1}' access.log | sort | uniq -c | sort -nr"],
+      "fake_output": "  48213 203.0.113.9\n    912 10.0.0.5\n    204 10.0.0.7",
+      "explanation": "sort groups identical lines together, uniq -c counts each group, sort -rn orders by that count numerically, descending.",
+      "why": "uniq only collapses ADJACENT duplicates — that's why the first sort is mandatory. Forgetting it is the most common mistake with this pipeline and gives wrong counts silently."
+    },
+    {
+      "prompt": "Add 'head' to show only the top 3.",
+      "expected_commands": ["awk '{print $1}' access.log | sort | uniq -c | sort -rn | head -3", "awk '{print $1}' access.log | sort | uniq -c | sort -rn | head -n 3"],
+      "fake_output": "  48213 203.0.113.9\n    912 10.0.0.5\n    204 10.0.0.7",
+      "explanation": "203.0.113.9 made 50x more requests than anyone else — likely a scraper or an attack.",
+      "why": "This exact pipeline (extract a field → sort → uniq -c → sort -rn → head) is one of the most reused patterns in operations work. Once it's muscle memory, you can answer 'top N of anything' from any log in seconds."
+    },
+    {
+      "prompt": "Replace every occurrence of 'staging-db' with 'prod-db' in config.env, printing the result without modifying the file.",
+      "expected_commands": ["sed 's/staging-db/prod-db/g' config.env"],
+      "fake_output": "DATABASE_HOST=prod-db\nREPLICA_HOST=prod-db-replica",
+      "explanation": "s/old/new/g substitutes all matches on each line; without -i, sed prints the result and leaves the file untouched.",
+      "why": "Always run sed WITHOUT -i first to preview the change — then add -i to apply it once you've confirmed the output. An in-place sed with a wrong pattern can silently corrupt a config file."
+    },
+    {
+      "prompt": "Compare the old and new config files to see exactly what differs.",
+      "expected_commands": ["diff config.env.bak config.env"],
+      "fake_output": "1c1\n< DATABASE_HOST=staging-db\n---\n> DATABASE_HOST=prod-db",
+      "explanation": "< lines are from the first file, > lines from the second.",
+      "why": "Diffing against a backup before restarting a service is a cheap way to confirm you changed exactly what you meant to, and nothing else."
+    }
+  ]
+}

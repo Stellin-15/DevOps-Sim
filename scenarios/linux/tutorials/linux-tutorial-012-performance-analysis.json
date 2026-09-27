@@ -1,0 +1,46 @@
+{
+  "id": "linux-tutorial-012",
+  "type": "tutorial",
+  "category": "linux",
+  "title": "System Performance: Load, CPU, Memory, and I/O",
+  "difficulty": "advanced",
+  "tags": ["linux", "performance", "vmstat", "iostat"],
+  "intro": "'The server is slow' can mean CPU, memory, disk I/O, or something else entirely. These tools tell you which one within the first minute — before you waste time guessing.",
+  "steps": [
+    {
+      "prompt": "Check the load average and how long the system has been up.",
+      "expected_commands": ["uptime"],
+      "fake_output": " 10:42:01 up 12 days,  3:14,  2 users,  load average: 7.82, 6.10, 2.05",
+      "explanation": "Load averages over the last 1, 5, and 15 minutes. It jumped sharply recently (2.05 → 7.82).",
+      "why": "Load only means something relative to CPU count — check next. A load of 7.8 is fine on 16 cores and severe on 2."
+    },
+    {
+      "prompt": "Check how many CPU cores this machine has.",
+      "expected_commands": ["nproc", "lscpu"],
+      "fake_output": "2",
+      "explanation": "Only 2 cores against a load of 7.8 — processes are queuing badly.",
+      "why": "Comparing load average to nproc is the fastest sanity check there is. Load consistently above core count means work is waiting."
+    },
+    {
+      "prompt": "Get a per-second snapshot of CPU, memory, swap, and I/O wait — 5 samples, 1 second apart.",
+      "expected_commands": ["vmstat 1 5"],
+      "fake_output": "procs -----memory---- ---swap-- -----io---- ---cpu---\n r  b   free  cache  si  so   bi    bo  us sy id wa\n 1  6  81200 204000   0   0  9800  4200  5  3 12 80",
+      "explanation": "The key column is 'wa' = 80: CPUs spend 80% of their time WAITING on disk I/O, not computing. 'b' = 6 processes blocked on I/O.",
+      "why": "High load with high 'us' (user CPU) means compute-bound; high load with high 'wa' means disk-bound. They need completely different fixes — adding CPU won't help an I/O problem at all."
+    },
+    {
+      "prompt": "It's disk-bound. See which disk is saturated.",
+      "expected_commands": ["iostat -x 1 3", "iostat -xz 1 3", "iostat -x"],
+      "fake_output": "Device   r/s    w/s   rkB/s   wkB/s  await  %util\nsda     12.0  980.0    48.0  4200.0  112.4   99.8\nsdb      0.4    1.2     1.6     4.8    0.9    0.3",
+      "explanation": "sda is at 99.8% utilization with 112ms average wait per request — completely saturated by writes.",
+      "why": "%util near 100% plus a high await is the signature of a saturated disk. Now the question becomes WHO is writing so much, which tools like 'iotop' or checking recently-growing logs answer."
+    },
+    {
+      "prompt": "Check the kernel log for hardware errors or OOM events, with human-readable timestamps.",
+      "expected_commands": ["dmesg -T | tail", "sudo dmesg -T | tail", "dmesg -T | tail -20"],
+      "fake_output": "[Sat Sep 27 10:38:12 2026] EXT4-fs warning (device sda1): ext4_dx_add_entry: Directory index full!\n[Sat Sep 27 10:39:44 2026] app invoked oom-killer",
+      "explanation": "The kernel log shows things applications never see: filesystem warnings, hardware errors, and OOM kills.",
+      "why": "dmesg is where the OOM killer leaves its evidence — if a process vanished with no error in its own logs, dmesg is the first place to look. -T converts kernel uptime-seconds into real clock times."
+    }
+  ]
+}
