@@ -1,0 +1,32 @@
+{
+  "id": "yaml-009",
+  "type": "yaml_lab",
+  "category": "monitoring",
+  "title": "Write a Prometheus Alert Rule",
+  "difficulty": "intermediate",
+  "tags": ["yaml", "monitoring", "prometheus", "alerting"],
+  "intro": "The monitoring tutorials had you validating and silencing alerts. Now write one: page someone when checkout's error ratio stays above 5% for 10 minutes.",
+  "steps": [
+    {
+      "file": "alerts.yml",
+      "starter_content": "",
+      "prompt": "Write a rules file with one group named 'checkout-alerts' containing one rule: alert 'CheckoutHighErrorRate', whose expr is the ratio of 5xx requests to all requests for service=\"checkout\" over 5 minutes, compared with > 0.05. It must hold for 10m, carry the label severity: page, and have a summary annotation.",
+      "apply_commands": ["promtool check rules alerts.yml", "check"],
+      "validate": {
+        "fields": {
+          "groups[0].name": "checkout-alerts",
+          "groups[0].rules[0].alert": "CheckoutHighErrorRate",
+          "groups[0].rules[0].expr": {"contains": ["http_requests_total", "service=\"checkout\"", "5..", "[5m]", "/", "> 0.05"]},
+          "groups[0].rules[0].for": "10m",
+          "groups[0].rules[0].labels.severity": "page",
+          "groups[0].rules[0].annotations.summary": "ANY"
+        }
+      },
+      "hint": "Structure: groups (list) → each group has name and rules (list) → each rule has alert, expr, for, labels, annotations. For the expr, reuse the error-ratio query from monitoring-tutorial-003: sum(rate(...{service=\"checkout\",status=~\"5..\"}[5m])) / sum(rate(...{service=\"checkout\"}[5m])) > 0.05.",
+      "solution": "groups:\n  - name: checkout-alerts\n    rules:\n      - alert: CheckoutHighErrorRate\n        expr: sum(rate(http_requests_total{service=\"checkout\",status=~\"5..\"}[5m])) / sum(rate(http_requests_total{service=\"checkout\"}[5m])) > 0.05\n        for: 10m\n        labels:\n          severity: page\n        annotations:\n          summary: \"Checkout error rate above 5% for 10 minutes\"\n",
+      "fake_output": "Checking alerts.yml\n  SUCCESS: 1 rules found",
+      "explanation": "A symptom-based, ratio-based alert that only pages for sustained problems.",
+      "why": "Every design choice here prevents a known failure: a RATIO works at any traffic level (a count doesn't), 'for: 10m' ignores brief spikes (see monitoring-incident-003's flapping alert), and 'severity: page' lets Alertmanager route real emergencies to on-call while lower severities go to a ticket queue instead of waking anyone."
+    }
+  ]
+}

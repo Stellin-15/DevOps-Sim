@@ -85,9 +85,28 @@ Don't duplicate content from these files elsewhere — link to them.
   {"dotted.path[0].to.field": expected_value}}`) via `get_value()`'s
   dotted-path resolver — giving per-field feedback, not just pass/fail.
   Reuses `engine.QuitScenario`/`read_input` so `exit` works the same way
-  everywhere. This exists specifically because GAPS.md named "no real
-  YAML-editing practice" as a structural gap nothing else in this repo
-  could fix — see GAPS.md's update note on that entry.
+  everywhere. Originally built for Kubernetes manifests (GAPS.md's "no
+  real YAML-editing practice" gap); now also validates GitHub Actions
+  workflows, Prometheus alert rules, and Compose files. Validation
+  features, all driven by lab JSON, not code:
+  - `kind` is optional (required only for `category: kubernetes` labs,
+    enforced by test_yaml_lab_content.py).
+  - `[*]` wildcards: `jobs.test.steps[*].run` matches if ANY step has
+    that value; with a list as the expected value, EVERY listed item
+    must appear somewhere (e.g. `["npm ci", "npm test"]`).
+  - `{"contains": [...]}` does substring checks — used for PromQL and
+    `if:` expressions whose exact spacing shouldn't matter. Its failure
+    message lists only the missing substrings.
+  - Lenient comparison (`_equal`): strings ignore surrounding
+    whitespace, numbers match their string form (`node-version: 20` vs
+    `'20'`), a one-element list matches a scalar (`needs: [test]` vs
+    `needs: test`). Rationale: a correct hand-written file shouldn't
+    fail on formatting that the real tool accepts.
+  - PyYAML follows YAML 1.1, so a workflow's unquoted `on:` key parses
+    as boolean `True`; `_lookup_key` maps on/off/yes/no/true/false path
+    tokens to those boolean keys so lab paths can still say `on.push`.
+    (Related YAML 1.1 trap taught in yaml-011: unquoted `22:22` parses
+    as the base-60 integer 1342.)
 - **sandbox.py** — separate free-form mode. `generate_state()` builds a
   random fake cluster: for each of 4-6 randomly chosen services, a
   Deployment (1-3 replica pods), a ClusterIP Service, plus 3 nodes, an
@@ -156,15 +175,15 @@ unique). The Kubernetes-only `kubernetes.md` command reference is
 identical to (and replaces) the old root `COMMANDS.md`.
 
 Current per-category content depth (tutorials / incidents):
-- kubernetes: 29 / 10 (also has 5 YAML labs and Sandbox) — CKA-gap-filled
-- docker: 10 / 5
+- kubernetes: 29 / 10 (also has 9 YAML labs and Sandbox) — CKA-gap-filled
+- docker: 10 / 5 (+1 YAML lab: Compose)
 - linux: 12 / 6
 - terraform: 10 / 6
 - networking: 10 / 6
-- cicd: 10 / 6
-- monitoring: 10 / 6
+- cicd: 10 / 6 (+3 YAML labs: GitHub Actions)
+- monitoring: 10 / 6 (+2 YAML labs: alert rules)
 - mlops: 10 / 6
-- **total: 101 tutorials, 51 incidents**
+- **total: 101 tutorials, 51 incidents, 15 YAML labs**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with
@@ -298,7 +317,9 @@ python -m pytest
   real temp file mid-loop (simulating "player switches to their editor")
 - `test_yaml_lab_content.py` — every yaml_lab file's schema, plus the
   critical self-consistency check that each hand-written `solution`
-  actually parses and passes its own `validate` spec
+  actually parses and passes its own `validate` spec — and the converse:
+  a pre-filled (broken) `starter_content` must NOT already pass, or the
+  "fix this file" lab teaches nothing
 - `test_career_path.py` — the run loop: completes all steps, records each
   sub-scenario into `progress` as it goes, stops cleanly on quit, skips
   (doesn't crash on) a missing scenario id
@@ -327,14 +348,13 @@ exercise something the generic checks don't cover.
 
 See GAPS.md Part 9 for the reasoning. In priority order:
 
-1. **Authoring labs beyond Kubernetes manifests.** The biggest gap in
-   every category is writing, not operating. `yaml_lab.py` already
-   validates arbitrary YAML against dotted-path field specs, so a
-   GitHub Actions workflow lab or a Prometheus alert-rule lab needs only
-   new `scenarios/yaml_labs/*.json` content, no code. Dockerfile, HCL,
-   and bash-script labs need a small new validator each (a Dockerfile
-   instruction parser, `terraform validate`/HCL parsing, `bash -n` +
-   shellcheck-style checks) following yaml_lab.py's pattern.
+1. **Non-YAML authoring labs** — Dockerfile, Terraform HCL, and bash.
+   (YAML-based authoring — manifests, Actions workflows, alert rules,
+   Compose — is done: 15 labs.) Each needs a small validator following
+   yaml_lab.py's pattern: a Dockerfile instruction parser, HCL parsing
+   (python-hcl2) or `terraform validate` if installed, and `bash -n` plus
+   simple structural checks for scripts. Keep the lab JSON shape the same
+   so the menu, progress, and content tests carry over.
 2. Per-category exam gap passes (like Part 1 did for the CKA): e.g.
    Terraform Associate, CKAD, AWS certs.
 3. Topics each GAPS.md part lists as missing: tracing/SLOs (monitoring),

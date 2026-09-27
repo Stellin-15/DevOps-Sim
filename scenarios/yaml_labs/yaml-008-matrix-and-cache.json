@@ -1,0 +1,47 @@
+{
+  "id": "yaml-008",
+  "type": "yaml_lab",
+  "category": "cicd",
+  "title": "Speed Up CI With a Matrix and Dependency Caching",
+  "difficulty": "advanced",
+  "tags": [
+    "yaml",
+    "cicd",
+    "github-actions",
+    "performance"
+  ],
+  "intro": "Your library supports Node 18, 20, and 22, but CI only tests 20 — and every run spends 90 seconds re-downloading the same dependencies.",
+  "steps": [
+    {
+      "file": "ci.yml",
+      "starter_content": "name: CI\non: [push, pull_request]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-node@v4\n        with:\n          node-version: 20\n      - run: npm ci\n      - run: npm test\n",
+      "prompt": "Change the 'test' job to (1) run once per Node version using strategy.matrix.node-version: [18, 20, 22], (2) pass node-version: ${{ matrix.node-version }} to setup-node, and (3) enable npm dependency caching by adding cache: npm to setup-node's 'with' block.",
+      "apply_commands": [
+        "git push",
+        "check"
+      ],
+      "validate": {
+        "fields": {
+          "jobs.test.strategy.matrix.node-version": [
+            18,
+            20,
+            22
+          ],
+          "jobs.test.steps[*].with.node-version": {
+            "contains": "matrix.node-version"
+          },
+          "jobs.test.steps[*].with.cache": "npm",
+          "jobs.test.steps[*].run": [
+            "npm ci",
+            "npm test"
+          ]
+        }
+      },
+      "hint": "strategy goes directly under jobs.test (same level as runs-on). The matrix value must be a list. Inside steps, ${{ matrix.node-version }} is replaced with each value in turn — one full job run per value.",
+      "solution": "name: CI\non: [push, pull_request]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    strategy:\n      matrix:\n        node-version: [18, 20, 22]\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-node@v4\n        with:\n          node-version: ${{ matrix.node-version }}\n          cache: npm\n      - run: npm ci\n      - run: npm test\n",
+      "fake_output": "✓ test (18)  52s   cache hit\n✓ test (20)  49s   cache hit\n✓ test (22)  51s   cache hit",
+      "explanation": "Three parallel jobs, one per Node version, each restoring cached dependencies instead of downloading them.",
+      "why": "The matrix catches 'works on 20, breaks on 18' before your users do, and the three jobs run in parallel, so it costs no extra wall-clock time. The cache is keyed on package-lock.json's hash, so it's automatically invalidated when dependencies actually change — you get speed without stale installs."
+    }
+  ]
+}

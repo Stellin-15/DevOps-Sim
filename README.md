@@ -28,13 +28,16 @@ string.
   with CI/CD → observe with Monitoring). Each stage is a normal scenario;
   the path just sequences them with one framing intro/outro around the
   whole thing.
-- **YAML Labs** — real manifest-editing practice, not command matching.
+- **YAML Labs** — real config-writing practice, not command matching.
   The game writes a real file to `workspace/`, tells you what to build or
   fix, and you edit it in your actual editor (vim, nano, VS Code —
   whatever you'd really use). Typing the apply command reads your real
-  file and checks its structure field by field. This is the one skill a
-  pure command-matcher can't fake, and it's the closest thing here to the
-  actual CKA exam experience. (Kubernetes-only for now.)
+  file and checks its structure field by field. 15 labs: Kubernetes
+  manifests (Pod, Deployment, init containers, NetworkPolicy, PVC,
+  Ingress, HPA, RBAC, StatefulSet), GitHub Actions workflows, Prometheus
+  alert rules, and a Docker Compose file. This is the skill a pure
+  command-matcher can't fake, and the closest thing here to real exam and
+  on-the-job conditions.
 - **Sandbox** — no scoring, no steps. The game generates a random fake
   Kubernetes cluster: several services, each with a Deployment, a
   Service, and 1-3 pods (some healthy, some randomly broken with
@@ -198,6 +201,10 @@ new `scenarios/<newcategory>/tutorials/` (and/or `incidents/`) folder —
 `validate.fields` use dotted notation with `[N]` for list indices (e.g.
 `spec.containers[0].image`); use the string `"ANY"` as a value when a
 field must exist but its exact value doesn't matter (like a random name).
+`[*]` matches any list element (`jobs.test.steps[*].run`), and with a
+list as the expected value every item must appear. `{"contains": [...]}`
+checks substrings (good for PromQL or `if:` expressions). `kind` is only
+required for Kubernetes labs. Set `category` so the lab list labels it.
 
 **Career path**: drop a new JSON file into `scenarios/career_paths/` with
 `type: "career_path"` and `{"id", "title", "intro", "steps": [existing
@@ -230,15 +237,15 @@ the engine, loader, sandbox, yaml_lab, career_path, or scenario content.
 
 | Category | Tutorials | Incidents | Topics |
 |---|---|---|---|
-| Kubernetes | 29 | 10 | pods → operators, full CKA coverage incl. etcd, kubeadm, certs, security; plus 5 YAML Labs and Sandbox |
-| Docker | 10 | 5 | images/layers, volumes, networking, Compose, cleanup, Dockerfiles, runtime limits, container security |
+| Kubernetes | 29 | 10 | pods → operators, full CKA coverage incl. etcd, kubeadm, certs, security; plus 9 YAML Labs and Sandbox |
+| Docker | 10 | 5 | images/layers, volumes, networking, Compose, cleanup, Dockerfiles, runtime limits, container security; plus a Compose YAML Lab |
 | Linux | 12 | 6 | find, text pipelines, processes/signals, systemd, networking, users/permissions, SSH, cron, disks, performance |
 | Terraform | 10 | 6 | safe CI workflow, variables/outputs, state inspection & refactoring, import, workspaces, remote state/locking, providers, debugging |
 | Networking | 10 | 6 | DNS, refused vs timeout, ports/nmap, routing/ARP, firewalls, TLS/openssl, HTTP/curl, in-cluster networking, CIDR |
-| CI/CD | 10 | 6 | git workflows, revert vs reset, tags/releases, GitHub Actions CLI, secrets/OIDC, local CI repro, rolling/blue-green/canary |
-| Monitoring | 10 | 6 | PromQL, golden signals, Prometheus ops, alerting/Alertmanager, journald, Elasticsearch, Loki, Grafana API |
+| CI/CD | 10 | 6 | git workflows, revert vs reset, tags/releases, GitHub Actions CLI, secrets/OIDC, local CI repro, rolling/blue-green/canary; plus 3 workflow-writing YAML Labs |
+| Monitoring | 10 | 6 | PromQL, golden signals, Prometheus ops, alerting/Alertmanager, journald, Elasticsearch, Loki, Grafana API; plus 2 alert-rule YAML Labs |
 | MLOps | 10 | 6 | environments, GPUs, MLflow, DVC, serving, KServe/Kubeflow, profiling, model monitoring, model canaries |
-| **Total** | **101** | **51** | |
+| **Total** | **101** | **51** | + 15 YAML Labs |
 
 Plus **6 Career Paths** chaining scenarios across categories: ship a
 feature end to end, a production incident chain, ML model from laptop to
@@ -269,9 +276,8 @@ coverage → CKA gap-filling → YAML Labs → multi-category architecture →
 Career Paths → all 8 categories expanded to full depth.
 
 Next, in priority order (details in CLAUDE.md and GAPS.md):
-- **Authoring labs beyond Kubernetes manifests** — GitHub Actions
-  workflows and Prometheus alert rules (possible with existing YAML Lab
-  engine, content only), then Dockerfile, Terraform, and bash-script labs
+- **Dockerfile, Terraform, and bash-script labs** (YAML-based labs for
+  manifests, Actions workflows, alert rules, and Compose are done)
 - Exam-specific gap passes for other certifications (CKAD, Terraform
   Associate, AWS)
 - Topics each GAPS.md part lists as missing (tracing/SLOs, tcpdump,

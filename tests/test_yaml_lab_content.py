@@ -72,11 +72,27 @@ def test_solution_parses_and_passes_its_own_validate_spec(lab):
 
 
 @pytest.mark.parametrize("lab", ALL_LABS, ids=_id)
-def test_validate_spec_has_kind_and_fields(lab):
+def test_validate_spec_has_fields(lab):
+    """'kind' is only required for Kubernetes manifests — workflow, compose,
+    and alert-rule files have no kind field."""
     for i, step in enumerate(lab["steps"]):
         validate = step["validate"]
-        assert "kind" in validate, f"{lab['id']} step {i} validate spec missing 'kind'"
-        assert "fields" in validate and validate["fields"], f"{lab['id']} step {i} validate spec has no fields"
+        assert validate.get("fields"), f"{lab['id']} step {i} validate spec has no fields"
+        if lab.get("category", "kubernetes") == "kubernetes":
+            assert "kind" in validate, f"{lab['id']} step {i} is a Kubernetes lab but has no 'kind'"
+
+
+@pytest.mark.parametrize("lab", ALL_LABS, ids=_id)
+def test_starter_content_does_not_already_pass(lab):
+    """The converse of the solution check: a 'fix this file' lab whose
+    broken starter already passes validation teaches nothing. Blank
+    starters trivially fail; this guards the pre-filled ones."""
+    for i, step in enumerate(lab["steps"]):
+        starter = step.get("starter_content", "")
+        if not starter.strip():
+            continue
+        problems = yaml_lab.validate_manifest(yaml.safe_load(starter), step["validate"])
+        assert problems, f"{lab['id']} step {i}: starter_content already passes — nothing to fix"
 
 
 def test_all_lab_ids_are_unique():

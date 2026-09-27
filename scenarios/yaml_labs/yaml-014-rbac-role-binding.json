@@ -1,0 +1,58 @@
+{
+  "id": "yaml-014",
+  "type": "yaml_lab",
+  "category": "kubernetes",
+  "title": "Write RBAC: a Role and a RoleBinding",
+  "difficulty": "advanced",
+  "tags": ["yaml", "kubernetes", "rbac", "security"],
+  "intro": "tutorial-012 had you inspecting RBAC. Now grant the 'ci-bot' ServiceAccount exactly what a deploy pipeline needs in the 'staging' namespace — and nothing more.",
+  "steps": [
+    {
+      "file": "role.yaml",
+      "starter_content": "",
+      "prompt": "Write a Role named 'deployer' in namespace 'staging' with ONE rule: apiGroups [\"apps\"], resources [\"deployments\"], verbs get, list, patch, and update.",
+      "apply_commands": ["kubectl apply -f role.yaml"],
+      "validate": {
+        "kind": "Role",
+        "fields": {
+          "apiVersion": "rbac.authorization.k8s.io/v1",
+          "metadata.name": "deployer",
+          "metadata.namespace": "staging",
+          "rules[0].apiGroups[*]": "apps",
+          "rules[0].resources[*]": "deployments",
+          "rules[0].verbs[*]": ["get", "list", "patch", "update"]
+        }
+      },
+      "hint": "Role lives in rbac.authorization.k8s.io/v1. 'rules' is a top-level list (not under spec). Deployments are in the 'apps' API group — core resources like pods use the empty group \"\".",
+      "solution": "apiVersion: rbac.authorization.k8s.io/v1\nkind: Role\nmetadata:\n  name: deployer\n  namespace: staging\nrules:\n- apiGroups: [\"apps\"]\n  resources: [\"deployments\"]\n  verbs: [\"get\", \"list\", \"patch\", \"update\"]\n",
+      "fake_output": "role.rbac.authorization.k8s.io/deployer created",
+      "explanation": "The permissions exist — but nobody has them yet.",
+      "why": "No 'delete', no 'create', no secrets, no pods/exec: a deploy pipeline only needs to update an existing Deployment's image. If ci-bot's token ever leaks, the blast radius is 'can change a staging deployment', not 'owns the cluster'."
+    },
+    {
+      "file": "rolebinding.yaml",
+      "starter_content": "",
+      "prompt": "Now bind it: a RoleBinding named 'ci-bot-deployer' in namespace 'staging' whose subject is the ServiceAccount 'ci-bot' (namespace staging), referencing the Role 'deployer' (roleRef apiGroup rbac.authorization.k8s.io).",
+      "apply_commands": ["kubectl apply -f rolebinding.yaml"],
+      "validate": {
+        "kind": "RoleBinding",
+        "fields": {
+          "apiVersion": "rbac.authorization.k8s.io/v1",
+          "metadata.name": "ci-bot-deployer",
+          "metadata.namespace": "staging",
+          "subjects[0].kind": "ServiceAccount",
+          "subjects[0].name": "ci-bot",
+          "subjects[0].namespace": "staging",
+          "roleRef.kind": "Role",
+          "roleRef.name": "deployer",
+          "roleRef.apiGroup": "rbac.authorization.k8s.io"
+        }
+      },
+      "hint": "subjects is a list (one binding can grant a role to many identities); roleRef is a single object with kind, name, and apiGroup.",
+      "solution": "apiVersion: rbac.authorization.k8s.io/v1\nkind: RoleBinding\nmetadata:\n  name: ci-bot-deployer\n  namespace: staging\nsubjects:\n- kind: ServiceAccount\n  name: ci-bot\n  namespace: staging\nroleRef:\n  kind: Role\n  name: deployer\n  apiGroup: rbac.authorization.k8s.io\n",
+      "fake_output": "rolebinding.rbac.authorization.k8s.io/ci-bot-deployer created\n\n$ kubectl auth can-i patch deployments -n staging --as=system:serviceaccount:staging:ci-bot\nyes\n$ kubectl auth can-i delete deployments -n staging --as=system:serviceaccount:staging:ci-bot\nno",
+      "explanation": "ci-bot can now patch deployments in staging, and verifiably can't delete them.",
+      "why": "Always verify RBAC with 'kubectl auth can-i --as' — both what should be allowed AND what shouldn't. roleRef is immutable after creation: pointing a binding at a different role means deleting and recreating it, a deliberate guard against quietly escalating a binding's permissions."
+    }
+  ]
+}

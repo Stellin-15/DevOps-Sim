@@ -44,6 +44,56 @@ class TestGetValue:
         assert found and value == "512Mi"
 
 
+class TestWildcardsAndYamlQuirks:
+    def test_wildcard_returns_every_list_element(self):
+        obj = {"steps": [{"run": "npm ci"}, {"run": "npm test"}]}
+        assert yaml_lab.get_values(obj, "steps[*].run") == ["npm ci", "npm test"]
+
+    def test_wildcard_field_passes_if_any_element_matches(self):
+        parsed = {"steps": [{"uses": "actions/checkout@v4"}, {"run": "npm test"}]}
+        spec = {"fields": {"steps[*].run": "npm test"}}
+        assert yaml_lab.validate_manifest(parsed, spec) == []
+
+    def test_wildcard_field_fails_if_no_element_matches(self):
+        parsed = {"steps": [{"run": "npm ci"}]}
+        spec = {"fields": {"steps[*].run": "npm test"}}
+        problems = yaml_lab.validate_manifest(parsed, spec)
+        assert len(problems) == 1 and "npm test" in problems[0]
+
+    def test_on_key_parsed_as_boolean_is_still_reachable(self):
+        import yaml
+        parsed = yaml.safe_load("on:\n  push:\n    branches: [main]\n")
+        assert True in parsed  # PyYAML's YAML 1.1 behavior
+        found, value = yaml_lab.get_value(parsed, "on.push.branches")
+        assert found and value == ["main"]
+
+    def test_string_comparison_ignores_surrounding_whitespace(self):
+        parsed = {"run": "npm test\n"}
+        assert yaml_lab.validate_manifest(parsed, {"fields": {"run": "npm test"}}) == []
+
+    def test_wildcard_with_list_requires_every_item(self):
+        parsed = {"steps": [{"run": "npm ci"}, {"run": "npm test"}]}
+        assert yaml_lab.validate_manifest(parsed, {"fields": {"steps[*].run": ["npm ci", "npm test"]}}) == []
+        problems = yaml_lab.validate_manifest(parsed, {"fields": {"steps[*].run": ["npm ci", "npm run build"]}})
+        assert len(problems) == 1 and "npm run build" in problems[0]
+
+    def test_contains_checks_substrings(self):
+        parsed = {"expr": "sum(rate(x{status=~\"5..\"}[5m])) > 0.05"}
+        assert yaml_lab.validate_manifest(parsed, {"fields": {"expr": {"contains": ["5..", "[5m]"]}}}) == []
+        assert yaml_lab.validate_manifest(parsed, {"fields": {"expr": {"contains": "by (le)"}}}) != []
+
+    def test_number_matches_its_string_form(self):
+        assert yaml_lab.validate_manifest({"v": 20}, {"fields": {"v": "20"}}) == []
+        assert yaml_lab.validate_manifest({"v": "20"}, {"fields": {"v": 20}}) == []
+
+    def test_single_element_list_matches_scalar(self):
+        assert yaml_lab.validate_manifest({"needs": ["test"]}, {"fields": {"needs": "test"}}) == []
+
+    def test_kind_is_optional(self):
+        parsed = {"name": "CI"}
+        assert yaml_lab.validate_manifest(parsed, {"fields": {"name": "CI"}}) == []
+
+
 class TestValidateManifest:
     def test_passes_when_all_fields_match(self):
         parsed = {"kind": "Pod", "metadata": {"name": "db"}}

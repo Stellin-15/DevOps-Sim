@@ -33,13 +33,16 @@ def choose_from_list(scenarios: list, label: str, scenario_type: str, progress: 
         print(f"\nNo {label} available yet.")
         return None
 
+    show_category = len({s.get("category") for s in scenarios}) > 1
+
     print(f"\n=== {label} ===")
     for i, s in enumerate(scenarios, start=1):
         done = progress_module.is_completed(progress, s["id"], scenario_type)
         mark = "x" if done else " "
         attempts = progress_module.attempt_count(progress, s["id"])
         attempts_note = f", {attempts} attempt{'s' if attempts != 1 else ''}" if attempts else ""
-        print(f"  {i}. [{mark}] [{s.get('difficulty', '?')}] {s['title']}{attempts_note}")
+        category_note = f"[{CATEGORY_LABELS.get(s.get('category'), s.get('category'))}] " if show_category else ""
+        print(f"  {i}. [{mark}] [{s.get('difficulty', '?')}] {category_note}{s['title']}{attempts_note}")
     print("  b. Back")
 
     choice = read_input("\nChoose one: ").lower()
@@ -125,7 +128,7 @@ def main_menu_loop() -> None:
         print("\n=== kube-sim ===")
         print("  1. Practice (pick a category)")
         print("  2. Career Paths (chained scenarios across categories)")
-        print("  3. YAML Labs (edit real manifests in your own editor)")
+        print("  3. YAML Labs (write real config files in your own editor)")
         print("  4. Sandbox (random cluster)")
         print("  q. Quit")
 

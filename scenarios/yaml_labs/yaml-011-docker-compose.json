@@ -1,0 +1,33 @@
+{
+  "id": "yaml-011",
+  "type": "yaml_lab",
+  "category": "docker",
+  "title": "Write a Docker Compose File",
+  "difficulty": "intermediate",
+  "tags": ["yaml", "docker", "compose"],
+  "intro": "docker-tutorial-002 had you running an existing Compose stack. Now write one: a web app plus a Postgres database with persistent storage.",
+  "steps": [
+    {
+      "file": "docker-compose.yml",
+      "starter_content": "",
+      "prompt": "Define two services. 'web': built from the current directory (build: .), port \"8080:3000\" (quoted!), depends_on db (as a list), and environment variable DATABASE_URL: postgres://db:5432/app (map form). 'db': image postgres:16, with a named volume 'db-data' mounted at /var/lib/postgresql/data. Declare 'db-data' under a top-level volumes key.",
+      "apply_commands": ["docker compose up -d", "docker compose config", "check"],
+      "validate": {
+        "fields": {
+          "services.web.build": ".",
+          "services.web.ports[*]": "8080:3000",
+          "services.web.depends_on[*]": "db",
+          "services.web.environment.DATABASE_URL": "postgres://db:5432/app",
+          "services.db.image": "postgres:16",
+          "services.db.volumes[*]": "db-data:/var/lib/postgresql/data",
+          "volumes.db-data": "ANY"
+        }
+      },
+      "hint": "Top-level keys: services and volumes. Quote port mappings as a habit: YAML 1.1 parses some unquoted 'a:b' values as base-60 NUMBERS — an SSH mapping like 22:22 silently becomes the integer 1342. 8080:3000 happens to survive, but quoting every mapping avoids the whole class of bug. A named volume just needs 'db-data:' (empty value) under the top-level volumes key.",
+      "solution": "services:\n  web:\n    build: .\n    ports:\n      - \"8080:3000\"\n    depends_on:\n      - db\n    environment:\n      DATABASE_URL: postgres://db:5432/app\n  db:\n    image: postgres:16\n    volumes:\n      - db-data:/var/lib/postgresql/data\nvolumes:\n  db-data:\n",
+      "fake_output": "[+] Running 3/3\n ✔ Network app_default   Created\n ✔ Container app-db-1    Started\n ✔ Container app-web-1   Started",
+      "explanation": "The app reaches the database at hostname 'db' (the service name) on Compose's automatic network, and the database's data survives 'docker compose down'.",
+      "why": "Using the service name 'db' in DATABASE_URL works because Compose gives every service a DNS name on a shared network — no IPs to hardcode (compare docker-incident-002, where plain docker run left containers on different networks). Note depends_on only controls START ORDER, not readiness: postgres may still be initializing when web starts, so the app should retry its connection (or use depends_on with condition: service_healthy plus a healthcheck)."
+    }
+  ]
+}

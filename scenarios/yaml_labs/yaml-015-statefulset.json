@@ -1,0 +1,39 @@
+{
+  "id": "yaml-015",
+  "type": "yaml_lab",
+  "category": "kubernetes",
+  "title": "Write a StatefulSet With Per-Pod Storage",
+  "difficulty": "advanced",
+  "tags": ["yaml", "kubernetes", "statefulset", "storage"],
+  "intro": "A Deployment's pods are interchangeable. A database's aren't — each replica needs its own identity and its own disk. That's what a StatefulSet's volumeClaimTemplates provide.",
+  "steps": [
+    {
+      "file": "statefulset.yaml",
+      "starter_content": "",
+      "prompt": "Write a StatefulSet named 'db' with serviceName 'db', 3 replicas, selector/labels app: db, one container 'postgres' (image postgres:16) mounting a volume named 'data' at /var/lib/postgresql/data. Add a volumeClaimTemplate named 'data' requesting 10Gi with accessModes [ReadWriteOnce].",
+      "apply_commands": ["kubectl apply -f statefulset.yaml"],
+      "validate": {
+        "kind": "StatefulSet",
+        "fields": {
+          "apiVersion": "apps/v1",
+          "metadata.name": "db",
+          "spec.serviceName": "db",
+          "spec.replicas": 3,
+          "spec.selector.matchLabels.app": "db",
+          "spec.template.metadata.labels.app": "db",
+          "spec.template.spec.containers[0].image": "postgres:16",
+          "spec.template.spec.containers[0].volumeMounts[0].name": "data",
+          "spec.template.spec.containers[0].volumeMounts[0].mountPath": "/var/lib/postgresql/data",
+          "spec.volumeClaimTemplates[0].metadata.name": "data",
+          "spec.volumeClaimTemplates[0].spec.accessModes[*]": "ReadWriteOnce",
+          "spec.volumeClaimTemplates[0].spec.resources.requests.storage": "10Gi"
+        }
+      },
+      "hint": "It looks like a Deployment plus two extras: spec.serviceName (the headless Service giving each pod a stable DNS name like db-0.db) and spec.volumeClaimTemplates (a list of PVC templates, each shaped like the PVC from yaml-005). The volumeMount name must match the template's metadata.name.",
+      "solution": "apiVersion: apps/v1\nkind: StatefulSet\nmetadata:\n  name: db\nspec:\n  serviceName: db\n  replicas: 3\n  selector:\n    matchLabels:\n      app: db\n  template:\n    metadata:\n      labels:\n        app: db\n    spec:\n      containers:\n      - name: postgres\n        image: postgres:16\n        volumeMounts:\n        - name: data\n          mountPath: /var/lib/postgresql/data\n  volumeClaimTemplates:\n  - metadata:\n      name: data\n    spec:\n      accessModes: [\"ReadWriteOnce\"]\n      resources:\n        requests:\n          storage: 10Gi\n",
+      "fake_output": "statefulset.apps/db created\n\n$ kubectl get pvc\nNAME        STATUS  CAPACITY\ndata-db-0   Bound   10Gi\ndata-db-1   Bound   10Gi\ndata-db-2   Bound   10Gi",
+      "explanation": "Three pods (db-0, db-1, db-2), each with its own automatically-created PVC that follows it across restarts and rescheduling.",
+      "why": "Putting a normal PVC in a Deployment with 3 replicas would make all three share ONE ReadWriteOnce volume — which fails to schedule, or corrupts data if it somehow doesn't. volumeClaimTemplates give each replica its own disk. Note that deleting the StatefulSet does NOT delete these PVCs — deliberately, so a mistaken delete doesn't destroy database data."
+    }
+  ]
+}

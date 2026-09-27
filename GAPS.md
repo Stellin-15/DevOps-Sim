@@ -135,9 +135,8 @@ plane being the actual outage).
   there's no investigative incident built around "why can't this pod do X")
 - PodDisruptionBudget blocking a drain
 - Admission controllers / webhooks
-- More YAML Labs — only 5 exist (pod-from-scratch, broken-deployment-fix,
-  multi-container/init, NetworkPolicy, PVC); StatefulSet, Ingress, HPA,
-  and RBAC (Role/RoleBinding) manifests would be natural next labs
+- ~~More YAML Labs~~ — **done**: StatefulSet, Ingress (with TLS), HPA,
+  and RBAC (Role + RoleBinding) labs added, for 9 Kubernetes labs total
 - Kubeflow at an operator level now lives in the MLOps category (Part 8);
   deep Kubeflow Pipelines authoring remains out of scope
 
@@ -172,11 +171,11 @@ and the ARG-vs-ENV secret mistake.
 
 ## Still missing
 
-- **Writing Dockerfiles** — same structural issue YAML Labs solved for
-  Kubernetes manifests: tutorials teach you to *recognize* instructions
+- **Writing Dockerfiles** — tutorials teach you to *recognize* instructions
   and debug builds, but never have you write a Dockerfile yourself. A
-  "Dockerfile Lab" (like YAML Labs, validating a real file you write) is
-  the single highest-value Docker addition left.
+  Dockerfile Lab needs a small new validator (Dockerfiles aren't YAML),
+  and is the single highest-value Docker addition left. *(Writing a
+  docker-compose.yml IS now covered — YAML Lab yaml-011.)*
 - BuildKit specifics (cache mounts, secrets mounts `--secret`),
   multi-platform builds (`docker buildx`) — common in modern CI.
 - Registry operations beyond push/login: image signing, digest pinning.
@@ -348,11 +347,12 @@ and recovering commits lost to a bad rebase.
 
 ## Still missing
 
-- **Writing pipeline YAML** — the biggest gap, same as elsewhere. You
-  recognize workflow structure here but never author one. A "Pipeline
-  Lab" (write a real .github/workflows file, validated like YAML Labs:
-  triggers, jobs, `needs`, caching, matrix builds) would close it — and
-  the YAML Lab engine could validate it with no new code, only content.
+- ~~Writing pipeline YAML~~ — **largely closed**: three YAML Labs now
+  have you write a GitHub Actions workflow from scratch (yaml-006), fix
+  one that deploys untested PRs with `needs`/`if`/`environment`
+  (yaml-007), and add a version matrix plus dependency caching
+  (yaml-008). Still unpracticed: reusable workflows, composite actions,
+  and OIDC-based cloud deploys written by hand.
 - GitLab CI and Jenkins are recognized in commands/cicd.md but not
   practiced — GitHub Actions is used throughout as the representative.
 - GitOps (Argo CD / Flux), artifact repositories, SBOMs and supply-chain
@@ -399,8 +399,10 @@ journald volume.
   pillar of observability, absent entirely. Essential for microservices.
 - **SLOs and error budgets** — defining SLIs, burn-rate alerting
   (multi-window, multi-burn-rate). Mentioned conceptually, not practiced.
-- Writing alert rule YAML and dashboards (authoring, again — the YAML Lab
-  engine could validate alert rule files with content only).
+- ~~Writing alert rule YAML~~ — **closed**: YAML Labs yaml-009 (write a
+  ratio-based, `for:`-guarded paging rule) and yaml-010 (fix the flapping
+  rule from monitoring-incident-003, including its missing `by (le)`).
+  Writing Grafana dashboards by hand is still not practiced.
 - Hosted/commercial tools (Datadog, New Relic, CloudWatch) — different
   syntax, same concepts.
 - Incident-response process itself: declaring an incident, comms,
@@ -465,15 +467,15 @@ gaps relative to what current MLOps roles ask for.
 
 | Category | Tutorials | Incidents | Extra |
 |---|---|---|---|
-| Kubernetes | 29 | 10 | 5 YAML Labs, Sandbox |
-| Docker | 10 | 5 | |
+| Kubernetes | 29 | 10 | 9 YAML Labs, Sandbox |
+| Docker | 10 | 5 | 1 YAML Lab (Compose) |
 | Linux | 12 | 6 | |
 | Terraform | 10 | 6 | |
 | Networking | 10 | 6 | |
-| CI/CD | 10 | 6 | |
-| Monitoring | 10 | 6 | |
+| CI/CD | 10 | 6 | 3 YAML Labs (Actions) |
+| Monitoring | 10 | 6 | 2 YAML Labs (alert rules) |
 | MLOps | 10 | 6 | |
-| **Total** | **101** | **51** | 5 labs, 6 career paths |
+| **Total** | **101** | **51** | 15 labs, 6 career paths |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -492,12 +494,12 @@ builds judgment that command references alone never will.
 **It will not, on its own, make you fully proficient**, for four reasons
 that no amount of additional scenario content can fully close:
 
-1. **Authoring vs. operating.** The game drills operating existing
-   systems. Real proficiency also means *writing* them: Dockerfiles,
-   Terraform modules, pipeline YAML, alert rules, bash scripts. YAML Labs
-   prove the model works (real files, real validation) — extending it to
-   Dockerfiles, workflow files, alert rules, and HCL is the single
-   highest-value next step for this project.
+1. **Authoring vs. operating.** The game mostly drills operating existing
+   systems. Real proficiency also means *writing* them. YAML Labs now
+   cover the YAML-based artifacts — Kubernetes manifests, GitHub Actions
+   workflows, Prometheus alert rules, and Compose files (15 labs). Still
+   unpracticed: **Dockerfiles, Terraform HCL, and bash scripts**, which
+   each need a small non-YAML validator — the next step on the roadmap.
 2. **Real systems misbehave in unscripted ways.** Every simulated output
    here was written in advance. A real cluster, a real cloud account, and
    real traffic produce errors nobody predicted. Pair this game with a

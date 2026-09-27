@@ -1,0 +1,31 @@
+{
+  "id": "yaml-010",
+  "type": "yaml_lab",
+  "category": "monitoring",
+  "title": "Fix a Flapping, Broken Latency Alert",
+  "difficulty": "advanced",
+  "tags": ["yaml", "monitoring", "prometheus", "alert-fatigue"],
+  "intro": "This is the rule from monitoring-incident-003 — the one that paged 23 times in a week. You diagnosed it there; now fix the actual file.",
+  "steps": [
+    {
+      "file": "alerts.yml",
+      "starter_content": "groups:\n  - name: search-alerts\n    rules:\n      - alert: SearchHighLatency\n        expr: histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{service=\"search\"}[1m])) > 0.5\n        labels:\n          severity: page\n",
+      "prompt": "Fix three problems: (1) aggregate the buckets correctly — the expr must use sum(...) by (le), (2) widen the rate window from [1m] to [5m], (3) add for: 10m so brief spikes don't page. Also add a summary annotation so whoever gets paged knows what it means.",
+      "apply_commands": ["promtool check rules alerts.yml", "check"],
+      "validate": {
+        "fields": {
+          "groups[0].rules[0].alert": "SearchHighLatency",
+          "groups[0].rules[0].expr": {"contains": ["histogram_quantile(0.99", "by (le)", "[5m]", "service=\"search\"", "> 0.5"]},
+          "groups[0].rules[0].for": "10m",
+          "groups[0].rules[0].labels.severity": "page",
+          "groups[0].rules[0].annotations.summary": "ANY"
+        }
+      },
+      "hint": "The fixed expr looks like: histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{service=\"search\"}[5m])) by (le)) > 0.5 — note sum(...) by (le) wraps the rate() and sits INSIDE histogram_quantile. 'for' is a sibling of 'expr'.",
+      "solution": "groups:\n  - name: search-alerts\n    rules:\n      - alert: SearchHighLatency\n        expr: histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{service=\"search\"}[5m])) by (le)) > 0.5\n        for: 10m\n        labels:\n          severity: page\n        annotations:\n          summary: \"Search p99 latency above 500ms for 10 minutes\"\n",
+      "fake_output": "Checking alerts.yml\n  SUCCESS: 1 rules found",
+      "explanation": "Correct math, a less jumpy window, and a duration that requires a sustained problem before anyone is woken up.",
+      "why": "The missing 'by (le)' is the subtle one: without it, histogram_quantile computes a percentile per pod and series rather than across the whole service, which is statistically meaningless — the alert was not just noisy but wrong. promtool check rules would NOT catch that; it's valid PromQL. Only understanding the query (or a unit test with promtool test rules) does."
+    }
+  ]
+}

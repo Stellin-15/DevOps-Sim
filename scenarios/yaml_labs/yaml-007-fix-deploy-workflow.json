@@ -1,0 +1,44 @@
+{
+  "id": "yaml-007",
+  "type": "yaml_lab",
+  "category": "cicd",
+  "title": "Fix a Workflow That Deploys Untested Pull Requests",
+  "difficulty": "intermediate",
+  "tags": [
+    "yaml",
+    "cicd",
+    "github-actions",
+    "safety"
+  ],
+  "intro": "A teammate added a deploy job to the CI workflow. It works — too well. It deploys to production on every pull request, including ones whose tests failed.",
+  "steps": [
+    {
+      "file": "ci.yml",
+      "starter_content": "name: CI\non:\n  push:\n    branches: [main]\n  pull_request:\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: npm ci\n      - run: npm test\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: ./deploy.sh\n",
+      "prompt": "Fix the 'deploy' job so that it: (1) only runs after 'test' succeeds (needs: test), (2) only runs for pushes to main (e.g. if: github.ref == 'refs/heads/main'), and (3) runs in the 'production' environment (environment: production), so it gets approval gates and production-scoped secrets.",
+      "apply_commands": [
+        "git push",
+        "check"
+      ],
+      "validate": {
+        "fields": {
+          "jobs.test.steps[*].run": "npm test",
+          "jobs.deploy.needs": "test",
+          "jobs.deploy.if": {
+            "contains": [
+              "github.ref",
+              "refs/heads/main"
+            ]
+          },
+          "jobs.deploy.environment": "production",
+          "jobs.deploy.steps[*].run": "./deploy.sh"
+        }
+      },
+      "hint": "Jobs in GitHub Actions run in PARALLEL by default — without 'needs', deploy doesn't even wait for test to finish. All three keys (needs, if, environment) go directly under jobs.deploy, at the same level as runs-on.",
+      "solution": "name: CI\non:\n  push:\n    branches: [main]\n  pull_request:\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: npm ci\n      - run: npm test\n  deploy:\n    needs: test\n    if: github.ref == 'refs/heads/main'\n    environment: production\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: ./deploy.sh\n",
+      "fake_output": "PR #62: ✓ test   – deploy skipped (not main)\npush to main: ✓ test → ⏳ deploy waiting for approval (production)",
+      "explanation": "Pull requests now only run tests; deploys happen only from main, only after tests pass, and only after the production environment's approval rule.",
+      "why": "Three independent safety layers, each covering a different failure: 'needs' stops a deploy after failed tests, 'if' stops deploys from branches that were never reviewed, and 'environment' adds a human approval plus keeps production secrets away from PR code entirely. Missing any one of them is a real, common way broken or malicious code reaches production."
+    }
+  ]
+}

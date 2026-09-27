@@ -21,24 +21,70 @@ from engine import QuitScenario, read_input
 BASE_DIR = Path(__file__).parent
 WORKSPACE_DIR = BASE_DIR / "workspace"
 
-PATH_TOKEN_RE = re.compile(r"[^.\[\]]+|\[\d+\]")
+PATH_TOKEN_RE = re.compile(r"[^.\[\]]+|\[\d+\]|\[\*\]")
+
+# PyYAML follows YAML 1.1, where unquoted on/off/yes/no are booleans — so a
+# GitHub Actions workflow's `on:` key parses as True. Paths still say "on".
+YAML11_BOOL_KEYS = {"on": True, "yes": True, "true": True, "off": False, "no": False, "false": False}
+
+
+def _lookup_key(mapping: dict, token: str):
+    if token in mapping:
+        return True, mapping[token]
+    alias = YAML11_BOOL_KEYS.get(token.lower())
+    if alias is not None and alias in mapping:
+        return True, mapping[alias]
+    return False, None
+
+
+def get_values(obj, path: str) -> list:
+    """Resolve a dotted path to every matching value. Supports [N] indices
+    and [*], which matches any list element — e.g.
+    'jobs.test.steps[*].run' returns the run command of every step."""
+    currents = [obj]
+    for token in PATH_TOKEN_RE.findall(path):
+        found = []
+        for current in currents:
+            if token == "[*]":
+                if isinstance(current, list):
+                    found.extend(current)
+            elif token.startswith("["):
+                index = int(token[1:-1])
+                if isinstance(current, list) and index < len(current):
+                    found.append(current[index])
+            elif isinstance(current, dict):
+                ok, value = _lookup_key(current, token)
+                if ok:
+                    found.append(value)
+        currents = found
+    return currents
 
 
 def get_value(obj, path: str):
     """Resolve a dotted path with optional [N] indices, e.g.
     'spec.containers[0].image'. Returns (found: bool, value)."""
-    current = obj
-    for token in PATH_TOKEN_RE.findall(path):
-        if token.startswith("["):
-            index = int(token[1:-1])
-            if not isinstance(current, list) or index >= len(current):
-                return False, None
-            current = current[index]
-        else:
-            if not isinstance(current, dict) or token not in current:
-                return False, None
-            current = current[token]
-    return True, current
+    values = get_values(obj, path)
+    if not values:
+        return False, None
+    return True, values[0]
+
+
+def _equal(actual, expected) -> bool:
+    """Lenient comparison for hand-written YAML: {"contains": ...} does
+    substring checks, strings ignore surrounding whitespace, numbers match
+    their string form (node-version: 20 vs '20'), and a one-element list
+    matches its element (needs: test vs needs: [test])."""
+    if isinstance(expected, dict) and "contains" in expected:
+        wanted = expected["contains"]
+        wanted = wanted if isinstance(wanted, list) else [wanted]
+        return all(w in str(actual) for w in wanted)
+    if isinstance(actual, list) and len(actual) == 1 and not isinstance(expected, list):
+        return _equal(actual[0], expected)
+    if isinstance(actual, str) and isinstance(expected, str):
+        return actual.strip() == expected.strip()
+    if isinstance(actual, (int, float)) != isinstance(expected, (int, float)) and not isinstance(actual, bool):
+        return str(actual).strip() == str(expected).strip()
+    return actual == expected
 
 
 def validate_manifest(parsed, validate_spec: dict) -> list:
@@ -59,11 +105,23 @@ def validate_manifest(parsed, validate_spec: dict) -> list:
             problems.append(f"kind is '{kind}', expected '{expected_kind}'")
 
     for path, expected in validate_spec.get("fields", {}).items():
-        found, value = get_value(parsed, path)
-        if not found:
+        values = get_values(parsed, path)
+        if not values:
             problems.append(f"{path} is missing")
-        elif expected != "ANY" and value != expected:
-            problems.append(f"{path} is {value!r}, expected {expected!r}")
+        elif expected == "ANY":
+            continue
+        elif "[*]" in path:
+            wanted = expected if isinstance(expected, list) else [expected]
+            for item in wanted:
+                if not any(_equal(v, item) for v in values):
+                    problems.append(f"no {path} matches {item!r} (found {values!r})")
+        elif not _equal(values[0], expected):
+            if isinstance(expected, dict) and "contains" in expected:
+                wanted = expected["contains"] if isinstance(expected["contains"], list) else [expected["contains"]]
+                missing = [w for w in wanted if w not in str(values[0])]
+                problems.append(f"{path} is missing: {', '.join(repr(m) for m in missing)}")
+            else:
+                problems.append(f"{path} is {values[0]!r}, expected {expected!r}")
 
     return problems
 

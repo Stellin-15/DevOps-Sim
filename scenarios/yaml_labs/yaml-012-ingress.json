@@ -1,0 +1,37 @@
+{
+  "id": "yaml-012",
+  "type": "yaml_lab",
+  "category": "kubernetes",
+  "title": "Write an Ingress With TLS",
+  "difficulty": "intermediate",
+  "tags": ["yaml", "kubernetes", "ingress", "tls"],
+  "intro": "tutorial-010 had you reading an existing Ingress. Now write one that routes shop.example.com over HTTPS to the 'web' Service.",
+  "steps": [
+    {
+      "file": "ingress.yaml",
+      "starter_content": "",
+      "prompt": "Write an Ingress named 'web-ing' with ingressClassName: nginx. It routes host shop.example.com, path / (pathType: Prefix), to Service 'web' on port number 80. Add a tls section for shop.example.com using the secret 'shop-tls'.",
+      "apply_commands": ["kubectl apply -f ingress.yaml"],
+      "validate": {
+        "kind": "Ingress",
+        "fields": {
+          "apiVersion": "networking.k8s.io/v1",
+          "metadata.name": "web-ing",
+          "spec.ingressClassName": "nginx",
+          "spec.rules[0].host": "shop.example.com",
+          "spec.rules[0].http.paths[0].path": "/",
+          "spec.rules[0].http.paths[0].pathType": "Prefix",
+          "spec.rules[0].http.paths[0].backend.service.name": "web",
+          "spec.rules[0].http.paths[0].backend.service.port.number": 80,
+          "spec.tls[0].hosts[*]": "shop.example.com",
+          "spec.tls[0].secretName": "shop-tls"
+        }
+      },
+      "hint": "Nesting is the hard part: spec.rules[] → host + http.paths[] → path, pathType, backend.service.{name, port.number}. TLS is a separate list: spec.tls[] → hosts (a list) + secretName. apiVersion is networking.k8s.io/v1.",
+      "solution": "apiVersion: networking.k8s.io/v1\nkind: Ingress\nmetadata:\n  name: web-ing\nspec:\n  ingressClassName: nginx\n  tls:\n  - hosts:\n    - shop.example.com\n    secretName: shop-tls\n  rules:\n  - host: shop.example.com\n    http:\n      paths:\n      - path: /\n        pathType: Prefix\n        backend:\n          service:\n            name: web\n            port:\n              number: 80\n",
+      "fake_output": "ingress.networking.k8s.io/web-ing created",
+      "explanation": "External HTTPS traffic for shop.example.com is now terminated at the ingress controller and forwarded to the web Service.",
+      "why": "The TLS secret must contain a certificate whose SANs include shop.example.com (see networking-tutorial-007) — in practice cert-manager creates and renews it automatically from an annotation. Also note TLS terminates at the ingress: the app receives plain HTTP, which is exactly the setup that causes networking-incident-006's redirect loop if the app isn't told to trust X-Forwarded-Proto."
+    }
+  ]
+}
