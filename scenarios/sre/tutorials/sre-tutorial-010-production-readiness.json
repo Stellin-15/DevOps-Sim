@@ -1,0 +1,46 @@
+{
+  "id": "sre-tutorial-010",
+  "type": "tutorial",
+  "category": "sre",
+  "title": "Production Readiness Review: Is This Service Ready to Launch?",
+  "difficulty": "intermediate",
+  "tags": ["sre", "prr", "reliability", "kubernetes"],
+  "intro": "Before an SRE team at Google agrees to support a service, it goes through a Production Readiness Review: a checklist of things that separate 'it works' from 'it survives production'. Here you check a new service, loyalty, in namespace shop against the essentials, using nothing but kubectl and promtool.",
+  "steps": [
+    {
+      "prompt": "Redundancy: check the loyalty deployment's replica count and which nodes its pods run on (label app=loyalty, namespace shop).",
+      "expected_commands": ["kubectl get pods -n shop -l app=loyalty -o wide", "kubectl get po -n shop -l app=loyalty -o wide"],
+      "fake_output": "NAME                       READY   STATUS    NODE\nloyalty-7b8c9d6f5-a1b2c    1/1     Running   node-1\nloyalty-7b8c9d6f5-d3e4f    1/1     Running   node-1",
+      "explanation": "Two replicas, both on node-1, so one node failure takes the service down.",
+      "why": "Replicas only help if they fail independently. Topology spread constraints (or pod anti-affinity) across nodes and zones are a standard readiness item, and a very common gap."
+    },
+    {
+      "prompt": "Health checks: show the loyalty deployment's readiness and liveness probes.",
+      "expected_commands": ["kubectl get deployment loyalty -n shop -o jsonpath='{.spec.template.spec.containers[0].readinessProbe}{\"\\n\"}{.spec.template.spec.containers[0].livenessProbe}'", "kubectl get deploy loyalty -n shop -o yaml | grep -A5 Probe"],
+      "fake_output": "\n(none: no readiness or liveness probe is defined)",
+      "explanation": "No probes: Kubernetes sends traffic to pods that aren't ready, and never restarts a hung one.",
+      "why": "Without readiness probes, every deploy and restart sends traffic to pods that are still starting, which means errors on every rollout. tutorial-021 covers probe design; the key rule is that readiness checks only what this pod needs, never shared downstreams (sre-tutorial-009)."
+    },
+    {
+      "prompt": "Safe maintenance: check whether loyalty has a PodDisruptionBudget in shop.",
+      "expected_commands": ["kubectl get pdb -n shop", "kubectl get poddisruptionbudget -n shop"],
+      "fake_output": "NAME           MIN AVAILABLE   MAX UNAVAILABLE   ALLOWED DISRUPTIONS\ncheckout-pdb   N/A             1                 1\ncart-pdb       N/A             1                 1",
+      "explanation": "No PDB for loyalty.",
+      "why": "Without one, a node drain for patching can evict both replicas at once. Use maxUnavailable: 1 rather than a minAvailable equal to the replica count, which blocks drains forever (incident-012)."
+    },
+    {
+      "prompt": "Resource sizing: check the loyalty container's requests and limits.",
+      "expected_commands": ["kubectl get deployment loyalty -n shop -o jsonpath='{.spec.template.spec.containers[0].resources}'", "kubectl get deploy loyalty -n shop -o jsonpath='{.spec.template.spec.containers[0].resources}'"],
+      "fake_output": "{}",
+      "explanation": "No requests or limits at all.",
+      "why": "Without requests the scheduler can't place the pods sensibly, and they're the first evicted under memory pressure (BestEffort QoS). Without a memory limit, a leak can starve its neighbours (sre-incident-005). Set requests from load-test data (sre-tutorial-005)."
+    },
+    {
+      "prompt": "Monitoring: check that loyalty has alerting rules, by validating the team's rules file alerts/loyalty.yml.",
+      "expected_commands": ["promtool check rules alerts/loyalty.yml"],
+      "fake_output": "Checking alerts/loyalty.yml\n  FAILED:\nopen alerts/loyalty.yml: no such file or directory",
+      "explanation": "There are no alerts, so nobody gets paged when loyalty breaks.",
+      "why": "A service isn't ready until someone gets paged when it breaks, ideally on SLO burn rate (monitoring-tutorial-012), with a runbook linked from the alert. Add redundancy, probes, a PDB, resources, and alerts, and this service passes the review."
+    }
+  ]
+}

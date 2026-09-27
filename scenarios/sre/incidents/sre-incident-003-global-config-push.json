@@ -1,0 +1,43 @@
+{
+  "id": "sre-incident-003",
+  "type": "incident",
+  "category": "sre",
+  "title": "A config change took down every region at once",
+  "difficulty": "advanced",
+  "tags": ["sre", "config", "staged-rollout", "gitops"],
+  "intro": "At 16:20 the edge proxies in all four regions started rejecting every request with 400 errors. No code was deployed. The rate-limit config repo, which Argo CD syncs to every region's cluster automatically, received a commit at 16:19.",
+  "steps": [
+    {
+      "prompt": "Confirm what changed: show the last commit in the edge-config repo with its diff.",
+      "expected_commands": ["git log -1 -p", "git show HEAD", "git log -p -1"],
+      "fake_output": "commit 7d3e9a1 (HEAD -> main)\nAuthor: carol\nDate:   16:19:02\n    ratelimit: tighten per-IP limit\n-    requests_per_unit: 100\n-    unit: second\n+    requests_per_unit: 100\n+    unit: seconds",
+      "hint": "git show HEAD, or git log -1 -p"
+    },
+    {
+      "prompt": "'seconds' isn't a valid unit, so the rate limiter rejects every request. Revert commit 7d3e9a1 so Argo CD syncs the good config everywhere.",
+      "expected_commands": ["git revert --no-edit 7d3e9a1 && git push", "git revert 7d3e9a1 && git push"],
+      "fake_output": "[main 2b8f4c6] Revert \"ratelimit: tighten per-IP limit\"\n 1 file changed, 1 insertion(+), 1 deletion(-)\nTo git.example.com:platform/edge-config.git\n   7d3e9a1..2b8f4c6  main -> main",
+      "hint": "git revert, then push."
+    },
+    {
+      "prompt": "Don't wait for the 3-minute polling interval: force a sync of the application edge-config in Argo CD.",
+      "expected_commands": ["argocd app sync edge-config"],
+      "fake_output": "Name:               edge-config\nSync Status:        Synced to main (2b8f4c6)\nHealth Status:      Healthy",
+      "hint": "argocd app sync <app>"
+    },
+    {
+      "prompt": "Check how the apps for each region are set up: list the Argo CD apps with their sync policy.",
+      "expected_commands": ["argocd app list"],
+      "fake_output": "NAME                 CLUSTER     STATUS  HEALTH   SYNCPOLICY  REPO\nedge-config-us-east  us-east     Synced  Healthy  Auto        edge-config.git (main)\nedge-config-us-west  us-west     Synced  Healthy  Auto        edge-config.git (main)\nedge-config-eu       eu          Synced  Healthy  Auto        edge-config.git (main)\nedge-config-ap       ap          Synced  Healthy  Auto        edge-config.git (main)",
+      "hint": "argocd app list shows SYNCPOLICY."
+    },
+    {
+      "prompt": "All four regions auto-sync the same branch the moment it changes: one bad commit hits everything at once. Validate the config before merge in the future: run the proxy's own config checker on ratelimit.yaml.",
+      "expected_commands": ["envoy --mode validate -c ratelimit.yaml", "envoy --mode validate --config-path ratelimit.yaml"],
+      "fake_output": "error initializing configuration 'ratelimit.yaml': Protobuf message (type envoy.extensions.common.ratelimit.v3.RateLimitDescriptor) has unknown fields\n[validation failed]",
+      "hint": "Many proxies and servers can validate a config without starting (nginx -t, envoy --mode validate)."
+    }
+  ],
+  "resolution": "This is one of the most common causes of large outages at big companies. Global configuration changes are riskier than code deploys, because they often skip the safety steps code goes through: canaries, staged regions, automated validation. The one-word typo was valid YAML but invalid config, the pipeline didn't validate it with the real parser, and GitOps auto-sync pushed it to all regions within a minute. The revert was fast because config lived in Git; that part went well. Durable fixes: validate configs in CI with the consuming software itself (envoy --mode validate, nginx -t, promtool check); roll config out by region, one region first (ideally the smallest) with a soak period and automated health checks before the next, the way code canaries work (sre-tutorial-002); and have the proxy reject a bad config and keep serving the last good one, instead of applying it. Treat configuration as code, including its rollout.",
+  "real_commands_used": ["git log -1 -p", "git revert", "argocd app sync", "argocd app list", "envoy --mode validate"]
+}

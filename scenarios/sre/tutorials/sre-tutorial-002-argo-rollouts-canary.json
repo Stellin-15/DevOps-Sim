@@ -1,0 +1,46 @@
+{
+  "id": "sre-tutorial-002",
+  "type": "tutorial",
+  "category": "sre",
+  "title": "Progressive Delivery: Canaries with Argo Rollouts",
+  "difficulty": "advanced",
+  "tags": ["sre", "canary", "argo-rollouts", "deployment"],
+  "intro": "Large companies rarely deploy to 100% at once. A new version gets a small slice of traffic first (the canary), metrics are compared automatically, and it's promoted or aborted. Argo Rollouts brings this to Kubernetes: a Rollout resource replaces a Deployment and adds steps like 'setWeight: 10, pause, run analysis'.",
+  "steps": [
+    {
+      "prompt": "Start a canary: set the image of rollout checkout (container checkout) in namespace shop to registry.example.com/checkout:1.9.0.",
+      "expected_commands": ["kubectl argo rollouts set image checkout checkout=registry.example.com/checkout:1.9.0 -n shop"],
+      "fake_output": "rollout \"checkout\" image updated",
+      "explanation": "The canary steps begin: 10% of traffic to 1.9.0 first.",
+      "why": "The Rollout's strategy decides what happens next (weights, pauses, analysis). Changing the image is the only thing you do. The rest is automated, which makes every deploy follow the same safe process."
+    },
+    {
+      "prompt": "Watch rollout checkout in shop.",
+      "expected_commands": ["kubectl argo rollouts get rollout checkout -n shop --watch", "kubectl argo rollouts get rollout checkout -n shop -w", "kubectl argo rollouts get rollout checkout -n shop"],
+      "fake_output": "Name:            checkout\nStatus:          ॥ Paused\nMessage:         CanaryPauseStep\nStrategy:        Canary\n  Step:          2/6\n  SetWeight:     10\n  ActualWeight:  10\nImages:          registry.example.com/checkout:1.8.2 (stable)\n                 registry.example.com/checkout:1.9.0 (canary)\n├──# revision:7\n│  └──⧉ checkout-6f8b9c7d5 ReplicaSet ✔ Healthy canary\n│     └──□ checkout-6f8b9c7d5-q2w8e Pod ✔ Running\n└──# revision:6\n   └──⧉ checkout-5d7c8b6a4 ReplicaSet ✔ Healthy stable",
+      "explanation": "10% of traffic is on 1.9.0, paused at step 2 of 6.",
+      "why": "The tree shows stable and canary side by side. 'ActualWeight' matters: with plain replica-based canaries the split is approximate (1 of 10 pods); with a service mesh or ingress integration it's exact."
+    },
+    {
+      "prompt": "Check the automated analysis runs for checkout's canary in shop.",
+      "expected_commands": ["kubectl get analysisrun -n shop", "kubectl get analysisruns -n shop"],
+      "fake_output": "NAME                         STATUS       AGE\ncheckout-6f8b9c7d5-7-2       Successful   4m",
+      "explanation": "The analysis passed: the canary's error rate and latency were within limits.",
+      "why": "An AnalysisTemplate runs Prometheus queries (for example the canary's success rate must be at least 99%) and fails the rollout automatically if it isn't. That's the key idea: promotion is decided by metrics, not by someone glancing at a dashboard."
+    },
+    {
+      "prompt": "The analysis looks good and the next step is a manual gate. Promote checkout in shop to the next step.",
+      "expected_commands": ["kubectl argo rollouts promote checkout -n shop"],
+      "fake_output": "rollout 'checkout' promoted",
+      "explanation": "It continues to the next weight (for example 50%) and its analysis.",
+      "why": "'promote' advances one step; 'promote --full' skips the remaining steps. A manual gate at a small weight is common for risky changes: automation handles the metrics, and a human confirms the business signals (orders, sign-ups) look normal too."
+    },
+    {
+      "prompt": "At 50% the checkout latency analysis fails. Abort rollout checkout in shop, sending all traffic back to stable.",
+      "expected_commands": ["kubectl argo rollouts abort checkout -n shop"],
+      "fake_output": "rollout 'checkout' aborted\nStatus: ✖ Degraded\nMessage: RolloutAborted: Rollout aborted update to revision 7",
+      "explanation": "100% of traffic is back on 1.8.2 within seconds.",
+      "why": "Aborting is fast because the stable version never went away. At its worst, half the traffic saw the problem for a few minutes, versus everyone for however long a full rollback takes. 'Degraded' here is deliberate: the rollout waits until someone fixes or retries it."
+    }
+  ]
+}

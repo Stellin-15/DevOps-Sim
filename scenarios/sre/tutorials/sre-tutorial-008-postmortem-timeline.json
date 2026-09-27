@@ -1,0 +1,46 @@
+{
+  "id": "sre-tutorial-008",
+  "type": "tutorial",
+  "category": "sre",
+  "title": "Building a Postmortem Timeline from the Evidence",
+  "difficulty": "intermediate",
+  "tags": ["sre", "postmortem", "timeline", "blameless"],
+  "intro": "Google's SRE practice made the blameless postmortem standard. After every significant incident you write down what happened, why, and what will change, focusing on systems and processes rather than who made a mistake. The core is an accurate timeline, rebuilt from evidence rather than memory. Yesterday's checkout incident ran 14:02–14:19 UTC.",
+  "steps": [
+    {
+      "prompt": "What did deploys look like? Get the checkout deploy repo's commits between 13:00 and 15:00 yesterday (2026-09-27).",
+      "expected_commands": ["git log --since='2026-09-27 13:00' --until='2026-09-27 15:00' --pretty='%h %ad %an %s' --date=iso", "git log --since=\"2026-09-27 13:00\" --until=\"2026-09-27 15:00\" --pretty=\"%h %ad %an %s\" --date=iso"],
+      "fake_output": "a1f9c3e 2026-09-27 13:58:12 +0000 release-bot checkout: bump payments client to 4.3",
+      "explanation": "The release was merged at 13:58.",
+      "why": "Git gives exact, trustworthy timestamps for what changed and who approved it. Memory in the incident channel doesn't. (And 'who' in a blameless postmortem is for context, not for blame: the question is why the process let this through.)"
+    },
+    {
+      "prompt": "When did the rollout actually run? Show deployment checkout's ReplicaSets in shop with creation times.",
+      "expected_commands": ["kubectl get rs -n shop -l app=checkout -o custom-columns=NAME:.metadata.name,CREATED:.metadata.creationTimestamp,REPLICAS:.spec.replicas", "kubectl get replicasets -n shop -l app=checkout -o wide"],
+      "fake_output": "NAME                  CREATED                REPLICAS\ncheckout-5d7c8b6a4    2026-09-20T10:02:33Z   6\ncheckout-6f8b9c7d5    2026-09-27T14:02:05Z   0",
+      "explanation": "The bad ReplicaSet was created at 14:02:05 and later scaled to 0 by the rollback.",
+      "why": "Merged, deployed, and serving traffic are three different timestamps. The postmortem needs each one, because the gaps between them are where detection and safety checks could have happened."
+    },
+    {
+      "prompt": "Get the error rate over the incident window at 1-minute resolution: a range query on checkout's 5xx ratio from 13:55 to 14:30 (unix times 1790000100 to 1790002200).",
+      "expected_commands": ["promtool query range --start=1790000100 --end=1790002200 --step=1m http://prometheus:9090 'sum(rate(http_requests_total{service=\"checkout\",code=~\"5..\"}[1m])) / sum(rate(http_requests_total{service=\"checkout\"}[1m]))'"],
+      "fake_output": "{} =>\n0.003 @[1790000100] (13:55)\n0.004 @[1790000400] (14:00)\n0.29 @[1790000700] (14:05)\n0.31 @[1790001000] (14:10)\n0.02 @[1790001300] (14:15)\n0.004 @[1790001540] (14:19)",
+      "explanation": "Errors from about 14:04; mitigated by 14:15; normal at 14:19.",
+      "why": "Metrics give the impact curve: when users were affected, how badly, and for how long. That's what the customer-impact section and the SLO error-budget cost are calculated from."
+    },
+    {
+      "prompt": "When did anyone find out? List the alerts that fired, from Alertmanager (amtool), including resolved ones.",
+      "expected_commands": ["amtool alert query --alertmanager.url=http://alertmanager:9093", "amtool --alertmanager.url=http://alertmanager:9093 alert query"],
+      "fake_output": "Alertname              Starts At                Summary\nCheckoutErrorBudgetBurn 2026-09-27 14:09:30 UTC  checkout burning error budget at 14x\n(no alert fired between 14:04 and 14:09:30)",
+      "explanation": "The page came 5.5 minutes after impact began.",
+      "why": "Time-to-detect is one of the most valuable postmortem numbers. 5.5 minutes came from the burn-rate alert's windows. Whether that's acceptable is a real discussion, and action items often shorten it."
+    },
+    {
+      "prompt": "The postmortem template lives in the repo. Check it for the required sections before writing: grep for its level-2 headings in postmortems/TEMPLATE.md.",
+      "expected_commands": ["grep '^## ' postmortems/TEMPLATE.md", "grep \"^## \" postmortems/TEMPLATE.md", "grep -E '^## ' postmortems/TEMPLATE.md"],
+      "fake_output": "## Summary\n## Impact\n## Timeline (UTC)\n## Root cause and contributing factors\n## What went well\n## What went poorly\n## Action items (owner, due date, ticket)",
+      "explanation": "The standard sections.",
+      "why": "Contributing factors (plural) matter: the bug, the missing canary, the 5-minute alert delay. Action items need owners and ticket links, or they never happen. 'What went well' keeps practices that worked, like the rollback being fast. The Writing Labs include writing one of these."
+    }
+  ]
+}

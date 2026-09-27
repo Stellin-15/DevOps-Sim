@@ -1,0 +1,43 @@
+{
+  "id": "sre-incident-006",
+  "type": "incident",
+  "category": "sre",
+  "title": "The recommendations service broke, and it took the homepage with it",
+  "difficulty": "intermediate",
+  "tags": ["sre", "dependencies", "readiness", "degradation"],
+  "intro": "The recommendations service (a nice-to-have 'you might also like' widget) had a bad deploy and is returning errors. That shouldn't matter much, but the whole storefront homepage is returning 503 for everyone.",
+  "steps": [
+    {
+      "prompt": "Check the storefront pods' readiness in shop (label app=storefront).",
+      "expected_commands": ["kubectl get pods -n shop -l app=storefront", "kubectl get po -n shop -l app=storefront"],
+      "fake_output": "NAME                          READY   STATUS    RESTARTS\nstorefront-6b7c8d9e5-a1b2c    0/1     Running   0\nstorefront-6b7c8d9e5-d3e4f    0/1     Running   0\nstorefront-6b7c8d9e5-g5h6i    0/1     Running   0",
+      "hint": "READY 0/1 means the readiness probe is failing."
+    },
+    {
+      "prompt": "Every storefront pod is running but not ready, so the Service has no endpoints and returns 503. Describe pod storefront-6b7c8d9e5-a1b2c in shop to see why.",
+      "expected_commands": ["kubectl describe pod storefront-6b7c8d9e5-a1b2c -n shop", "kubectl describe po storefront-6b7c8d9e5-a1b2c -n shop"],
+      "fake_output": "Readiness:  http-get http://:8080/readyz delay=5s timeout=1s period=10s\nEvents:\n  Warning  Unhealthy  kubelet  Readiness probe failed: HTTP probe failed with statuscode: 503",
+      "hint": "Look at the probe definition and the events."
+    },
+    {
+      "prompt": "Ask the readiness endpoint what it's checking: port-forward is on localhost:8080.",
+      "expected_commands": ["curl -s localhost:8080/readyz", "curl localhost:8080/readyz", "curl -s http://localhost:8080/readyz"],
+      "fake_output": "{\"status\":\"not ready\",\"checks\":{\"db\":\"ok\",\"cache\":\"ok\",\"recommendations\":\"FAIL (503)\"}}",
+      "hint": "The response lists each dependency check."
+    },
+    {
+      "prompt": "Readiness requires recommendations, so a non-essential dependency took every pod out of rotation. Mitigate: the app supports READYZ_SKIP=recommendations. Set it on deployment storefront in shop.",
+      "expected_commands": ["kubectl set env deployment/storefront READYZ_SKIP=recommendations -n shop", "kubectl set env deploy/storefront READYZ_SKIP=recommendations -n shop"],
+      "fake_output": "deployment.apps/storefront env updated",
+      "hint": "kubectl set env deployment/<name> KEY=value -n <ns>"
+    },
+    {
+      "prompt": "Confirm the storefront Service has endpoints again.",
+      "expected_commands": ["kubectl get endpoints storefront -n shop", "kubectl get ep storefront -n shop"],
+      "fake_output": "NAME         ENDPOINTS                                      AGE\nstorefront   10.1.4.21:8080,10.1.5.33:8080,10.1.6.12:8080   210d",
+      "hint": "kubectl get endpoints <service>"
+    }
+  ],
+  "resolution": "The storefront's readiness probe checked every downstream dependency, including one it doesn't need to serve pages. When recommendations failed, every storefront pod reported 'not ready' at the same moment, Kubernetes removed them all from the Service, and a broken widget became a full outage. The same thing happens with liveness probes that check dependencies, except then Kubernetes restarts every pod in a loop. The rule: readiness checks only what this instance needs to serve (its own startup and warm-up, maybe its own database connection), and liveness checks only that the process isn't stuck. Degraded dependencies are handled in code, with timeouts and fallbacks (sre-tutorial-009), and surfaced in metrics and alerts, never through probes. Look for this in every production readiness review (sre-tutorial-010): 'which failure of which dependency takes this service out?'.",
+  "real_commands_used": ["kubectl get pods -l", "kubectl describe pod", "curl /readyz", "kubectl set env", "kubectl get endpoints"]
+}

@@ -1,0 +1,49 @@
+{
+  "id": "sre-incident-004",
+  "type": "incident",
+  "category": "sre",
+  "title": "Redis restarted for 20 seconds and the database fell over",
+  "difficulty": "advanced",
+  "tags": ["sre", "cache", "stampede", "database"],
+  "intro": "During routine maintenance the redis cache (cache.shop.internal) restarted and came back empty after 20 seconds. Immediately the product database CPU hit 100%, queries started timing out, and the storefront has been failing for 10 minutes, even though redis is up again.",
+  "steps": [
+    {
+      "prompt": "Check the cache's hit and miss counters now.",
+      "expected_commands": ["redis-cli -h cache.shop.internal INFO stats | grep keyspace", "redis-cli -h cache.shop.internal info stats | grep keyspace"],
+      "fake_output": "keyspace_hits:10492\nkeyspace_misses:388114",
+      "hint": "INFO stats has keyspace_hits and keyspace_misses."
+    },
+    {
+      "prompt": "Almost everything misses: the cache is cold, and every miss goes to the database. Check how many keys the cache holds.",
+      "expected_commands": ["redis-cli -h cache.shop.internal DBSIZE", "redis-cli -h cache.shop.internal dbsize"],
+      "fake_output": "(integer) 212",
+      "hint": "DBSIZE counts keys."
+    },
+    {
+      "prompt": "Normally it holds about 400,000 keys. The database is so overloaded that queries time out before results can be cached, so the cache never warms. Count active queries on the product database.",
+      "expected_commands": ["psql -h products-db.internal -c \"SELECT count(*) FROM pg_stat_activity WHERE state = 'active';\"", "psql -h products-db.internal -c \"select count(*) from pg_stat_activity where state='active';\""],
+      "fake_output": " count\n-------\n   498\n(1 row)",
+      "hint": "pg_stat_activity lists every connection and its state."
+    },
+    {
+      "prompt": "498 active queries, many of them identical product lookups. Break the loop: shed load so the cache can warm. Scale deployment storefront in shop down to 5 replicas temporarily.",
+      "expected_commands": ["kubectl scale deployment storefront --replicas=5 -n shop", "kubectl scale deploy storefront --replicas=5 -n shop"],
+      "fake_output": "deployment.apps/storefront scaled",
+      "hint": "Fewer callers means fewer concurrent misses."
+    },
+    {
+      "prompt": "Warm the cache for the top products with the prepared script, then watch the key count grow.",
+      "expected_commands": ["./warm-cache.sh --top 10000 && redis-cli -h cache.shop.internal DBSIZE", "./warm-cache.sh --top 10000; redis-cli -h cache.shop.internal DBSIZE"],
+      "fake_output": "warmed 10000 product keys in 41s\n(integer) 10387",
+      "hint": "Run the script, then DBSIZE."
+    },
+    {
+      "prompt": "The hot keys are cached; database CPU is back to 35%. Restore storefront in shop to its normal 20 replicas.",
+      "expected_commands": ["kubectl scale deployment storefront --replicas=20 -n shop", "kubectl scale deploy storefront --replicas=20 -n shop"],
+      "fake_output": "deployment.apps/storefront scaled\n(hit rate climbs past 95% within 2 minutes)",
+      "hint": "Same command, the normal replica count."
+    }
+  ],
+  "resolution": "A 98% cache hit rate means the database only ever sized itself for 2% of reads. When the cache came back empty, 100% of reads hit the database at once: a cache stampede (or thundering herd). The database slowed, queries timed out before their results could be cached, and the system got stuck in a failure state that outlived the 20-second trigger, the same metastable pattern as sre-incident-001. The recovery shape is typical: reduce load, warm the cache deliberately, then restore traffic. Prevention: request coalescing, where one request fills a missing key while the others wait, instead of 500 identical database queries; jittered TTLs, so keys don't all expire at once; a replicated or persistent cache so a restart isn't a cold start; limits on database connections so it can't be overwhelmed; and treating 'the cache is empty' as a failure mode to test (sre-tutorial-006), not an impossibility.",
+  "real_commands_used": ["redis-cli INFO stats", "redis-cli DBSIZE", "psql pg_stat_activity", "kubectl scale"]
+}

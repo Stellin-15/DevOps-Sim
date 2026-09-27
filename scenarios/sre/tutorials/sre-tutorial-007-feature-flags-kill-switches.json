@@ -1,0 +1,46 @@
+{
+  "id": "sre-tutorial-007",
+  "type": "tutorial",
+  "category": "sre",
+  "title": "Feature Flags and Kill Switches",
+  "difficulty": "intermediate",
+  "tags": ["sre", "feature-flags", "mitigation", "deployment"],
+  "intro": "Big companies separate deploying code from releasing features. Code ships 'dark' behind a flag, and turning the feature on or off is a configuration change: instant, targeted, and reversible without a deploy. A kill switch is a flag whose job is to switch off something expensive or broken during an incident.",
+  "steps": [
+    {
+      "prompt": "The new recommendations widget is overloading the database. Check the flag service's current state for the flag reco-widget: GET http://flags.internal/flags/reco-widget.",
+      "expected_commands": ["curl -s http://flags.internal/flags/reco-widget", "curl http://flags.internal/flags/reco-widget"],
+      "fake_output": "{\"key\":\"reco-widget\",\"enabled\":true,\"rollout_percent\":100,\"updated_by\":\"release-bot\",\"updated_at\":\"2026-09-28T13:00:00Z\"}",
+      "explanation": "Enabled for 100% of users since 13:00.",
+      "why": "When a problem starts right after a flag flips, the flag is as good a suspect as a deploy. Flag changes must be audited (who, when) exactly like deploys, and shown in the same timeline."
+    },
+    {
+      "prompt": "Turn it off: PATCH the flag to enabled=false.",
+      "expected_commands": ["curl -s -X PATCH http://flags.internal/flags/reco-widget -d '{\"enabled\":false}'", "curl -X PATCH http://flags.internal/flags/reco-widget -d '{\"enabled\":false}'"],
+      "fake_output": "{\"key\":\"reco-widget\",\"enabled\":false,\"updated_by\":\"alice\",\"updated_at\":\"2026-09-28T14:21:03Z\"}",
+      "explanation": "The widget disappears for all users within seconds; database load drops.",
+      "why": "Mitigation in seconds with no deploy, no rollback of unrelated changes in the same release, and it's reversible. That's why risky features ship behind flags. Dedicated tools (LaunchDarkly, Unleash, OpenFeature-compatible services) add targeting, percentage rollouts, and audit logs."
+    },
+    {
+      "prompt": "A simpler service reads a kill switch from an environment variable: set PDF_EXPORT_ENABLED=false on deployment reports in namespace shop.",
+      "expected_commands": ["kubectl set env deployment/reports PDF_EXPORT_ENABLED=false -n shop", "kubectl set env deploy/reports PDF_EXPORT_ENABLED=false -n shop"],
+      "fake_output": "deployment.apps/reports env updated",
+      "explanation": "A new rollout starts with PDF export disabled.",
+      "why": "Environment-variable switches work everywhere, but they need a rollout (a restart), taking minutes rather than seconds. That's fine for a kill switch, too slow for gradual rollouts. Know which kind each of your switches is before the incident."
+    },
+    {
+      "prompt": "The flag config for the storefront lives in a ConfigMap. Check the current values of storefront-flags in shop.",
+      "expected_commands": ["kubectl get configmap storefront-flags -n shop -o yaml", "kubectl get cm storefront-flags -n shop -o yaml"],
+      "fake_output": "data:\n  new_checkout_flow: \"25\"\n  reco_widget: \"off\"\n  holiday_banner: \"on\"",
+      "explanation": "The new checkout flow is at 25% of users.",
+      "why": "Percentage rollouts are canaries at the feature level: 1%, then 5%, 25%, 100%, watching metrics at each step. Clean up flags once a feature is at 100%: stale flags are dead code paths, and a well-known outage at Knight Capital involved an old flag reused for new behaviour."
+    },
+    {
+      "prompt": "The app reads the ConfigMap only at startup. Restart deployment storefront in shop so it picks up the change.",
+      "expected_commands": ["kubectl rollout restart deployment/storefront -n shop", "kubectl rollout restart deploy/storefront -n shop"],
+      "fake_output": "deployment.apps/storefront restarted",
+      "explanation": "A rolling restart loads the new flag values.",
+      "why": "ConfigMaps mounted as files update in place after a short delay, but environment variables built from them never do, and many apps only read config at startup anyway. A rolling restart is the reliable way to apply a change, and it respects the deployment's surge and availability settings."
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "id": "sre-incident-005",
+  "type": "incident",
+  "category": "sre",
+  "title": "Checkout latency spikes every night at 01:00 (a noisy neighbour)",
+  "difficulty": "intermediate",
+  "tags": ["sre", "kubernetes", "resources", "isolation"],
+  "intro": "Every night around 01:00, checkout's p99 latency jumps from 80ms to 2s for about 40 minutes. Checkout's code and traffic don't change at that time. Only some checkout pods are affected.",
+  "steps": [
+    {
+      "prompt": "See which nodes the checkout pods (app=checkout, namespace shop) run on.",
+      "expected_commands": ["kubectl get pods -n shop -l app=checkout -o wide", "kubectl get po -n shop -l app=checkout -o wide"],
+      "fake_output": "NAME                        READY   STATUS    NODE\ncheckout-5d7c8b6a4-a1b2c    1/1     Running   node-3\ncheckout-5d7c8b6a4-d3e4f    1/1     Running   node-5\ncheckout-5d7c8b6a4-g5h6i    1/1     Running   node-3",
+      "hint": "-o wide adds the NODE column."
+    },
+    {
+      "prompt": "The slow pods are the ones on node-3. During tonight's spike, see everything running on node-3 across all namespaces.",
+      "expected_commands": ["kubectl get pods -A --field-selector spec.nodeName=node-3", "kubectl get pods --all-namespaces --field-selector spec.nodeName=node-3"],
+      "fake_output": "NAMESPACE   NAME                              READY   STATUS\nshop        checkout-5d7c8b6a4-a1b2c          1/1     Running\nshop        checkout-5d7c8b6a4-g5h6i          1/1     Running\nanalytics   nightly-export-29311020-kx8zq     1/1     Running",
+      "hint": "--field-selector spec.nodeName=<node>"
+    },
+    {
+      "prompt": "A nightly analytics CronJob pod shares the node. Check its CPU and memory usage in analytics.",
+      "expected_commands": ["kubectl top pod nightly-export-29311020-kx8zq -n analytics", "kubectl top pods -n analytics"],
+      "fake_output": "NAME                            CPU(cores)   MEMORY(bytes)\nnightly-export-29311020-kx8zq   7820m        11Gi",
+      "hint": "kubectl top pod <name> -n <ns>"
+    },
+    {
+      "prompt": "It uses 7.8 of node-3's 8 cores. Check its resource settings.",
+      "expected_commands": ["kubectl get pod nightly-export-29311020-kx8zq -n analytics -o jsonpath='{.spec.containers[0].resources}'", "kubectl get pod nightly-export-29311020-kx8zq -n analytics -o yaml | grep -A6 resources"],
+      "fake_output": "{}",
+      "hint": "Look at .spec.containers[0].resources."
+    },
+    {
+      "prompt": "No requests or limits, so it can take the whole node. Stop it happening in that namespace at all: apply the LimitRange in analytics-limits.yaml to the analytics namespace, giving every container default requests and limits.",
+      "expected_commands": ["kubectl apply -f analytics-limits.yaml -n analytics"],
+      "fake_output": "limitrange/analytics-defaults created",
+      "hint": "kubectl apply -f <file> -n <ns>"
+    }
+  ],
+  "resolution": "A classic noisy neighbour: a nightly batch job with no resource requests or limits, scheduled onto the same node as latency-sensitive checkout pods, took almost all the node's CPU for 40 minutes. The checkout pods on that node were CPU-starved, while those on other nodes were fine, which is why 'only some pods' and 'only at 01:00' were the key clues. Fixes, from immediate to structural: give the batch job requests and a CPU limit (the LimitRange now makes defaults mandatory in that namespace); use a ResourceQuota per team namespace; set PriorityClasses so batch work yields to user-facing work; and at scale, run batch on a separate node pool with taints, so it can't land next to checkout at all. Google's Borg paper describes the same idea: mixing batch and serving work on shared machines is efficient only if isolation is enforced.",
+  "real_commands_used": ["kubectl get pods -o wide", "kubectl get pods --field-selector spec.nodeName", "kubectl top pod", "kubectl get pod -o jsonpath resources", "kubectl apply LimitRange"]
+}

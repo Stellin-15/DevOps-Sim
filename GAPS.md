@@ -106,10 +106,10 @@ all, so they're easy to skip even after CKA-level prep:
   Incidents (see the final Overall part) practice exactly that, but so far only on the
   Linux and Docker sandboxes. **A Kubernetes mystery doesn't exist
   yet**: the Kubernetes sandbox is read-only, so there's nothing to fix.
-- **Escalation and communication** aren't practiced here at all — a huge
-  part of real incident response is knowing when to page someone else,
-  what to say in a status update, and how to hand off. Out of scope for
-  this tool, but worth knowing it's out of scope.
+- **Escalation and communication**: now **partly covered** by the SRE
+  category (Part 14): incident roles, mitigate-first, and the postmortem
+  timeline. Actually running an incident with other people (paging,
+  status updates, handoffs) still needs real drills.
 
 ## What this update adds to close the highest-value gaps
 
@@ -482,8 +482,10 @@ journald volume.
   Writing Grafana dashboards by hand is still not practiced.
 - Hosted/commercial tools (Datadog, New Relic, CloudWatch) — different
   syntax, same concepts.
-- Incident-response process itself: declaring an incident, comms,
-  writing a blameless post-mortem.
+- Incident-response process: **partly covered** by SRE (Part 14). It
+  covers severity from user impact, mitigate-first, rebuilding the
+  timeline, and the postmortem structure. Live comms practice is still
+  missing.
 
 ## Readiness verdict
 
@@ -865,7 +867,78 @@ real VMs.
 
 ---
 
-# Part 14 — Overall: will this make you proficient in DevOps?
+# Part 14 — SRE: How Large Companies Run Production
+
+**Content:** 10 tutorials, 6 incidents.
+
+**What's taught, honestly:** Google's and Meta's internal tools (Borg,
+Borgmon, Tupperware, and the internal deploy and config systems) aren't
+public, so nobody outside can practise them. This category teaches the
+*practices* those companies made standard, using the open-source tools
+that descend from or implement them:
+- Kubernetes (from Borg);
+- Prometheus (inspired by Borgmon);
+- Argo Rollouts and Istio (progressive delivery and service mesh);
+- the SLO, error-budget, and postmortem discipline of the Google SRE books.
+
+## Covered
+
+**Tutorials** (every section of `commands/sre.md`):
+- the first ten minutes of an incident (quantify, what changed, mitigate first,
+  verify, annotate);
+- Argo Rollouts canaries with automated analysis, promote, and abort;
+- Istio sync, analysis, weighted routing, outlier detection, and bounded
+  retries and timeouts;
+- capacity planning (predict_linear, peak subqueries, requested vs used CPU,
+  N+1, growth and lead time);
+- load testing (k6 thresholds, vegeta open-model constant rate, finding the
+  bottleneck, histograms);
+- chaos engineering (tc netem, Chaos Mesh, hypothesis, abort, and cleanup);
+- feature flags and kill switches;
+- rebuilding a postmortem timeline from git, ReplicaSets, metrics, and alerts;
+- graceful degradation and load shedding;
+- a production readiness review.
+
+**Incidents** (the textbook large-scale failure modes):
+- a retry storm (27x amplification);
+- a slow dependency with no timeout or circuit breaker;
+- a bad global config push to every region at once;
+- a cache stampede;
+- a noisy-neighbour batch job;
+- a non-essential dependency wired into readiness probes.
+
+## Still missing
+
+- **The human side, practised live.** Incident command roles, stakeholder
+  comms, and escalation are explained in the tutorials, and the Writing Labs
+  include a postmortem, but running an incident with other people can only
+  be practised in real game days or drills.
+- Multi-region architecture work (active-active data, failover drills, DNS
+  and global load balancing) and disaster-recovery exercises.
+- Distributed systems theory behind it all: consensus (Raft/Paxos),
+  consistency models, queues and backpressure.
+- The SRE hiring-interview style of 'design a system for N users' (NALSD).
+
+## Readiness verdict
+
+This is the practices layer that distinguishes a senior SRE or DevOps
+engineer: you'll recognise and prevent the failure patterns that cause
+most large outages, and know the standard defences:
+- mitigate first;
+- canaries;
+- bounded retries;
+- timeouts and circuit breakers;
+- shedding;
+- isolation;
+- staged config rollouts;
+- blameless postmortems.
+
+Read the free Google SRE books alongside it; this category is their
+hands-on companion.
+
+---
+
+# Part 15 — Overall: will this make you proficient in DevOps?
 
 ## By the numbers
 
@@ -884,7 +957,8 @@ real VMs.
 | Google Cloud | 10 | 6 | |
 | Security | 10 | 6 | 2 hacked-server Mysteries (Linux sandbox) |
 | Server Fleet Ops | 11 | 6 | |
-| **Total** | **165** | **87** | 22 Writing Labs, 7 career paths, 4 sandboxes, 12 Mystery Incidents, Exam Mode |
+| SRE | 10 | 6 | |
+| **Total** | **175** | **93** | 22 Writing Labs, 7 career paths, 4 sandboxes, 12 Mystery Incidents, Exam Mode |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -896,7 +970,7 @@ command beats the alternatives — not just what it does.
 will know the commands, the failure modes, and — most importantly — the
 debugging method** (check the layer before guessing the fix; refused vs
 timeout; verify after every change; revoke before cleaning up; revert
-don't force-push). The 87 incidents are modeled on the kinds of problems
+don't force-push). The 93 incidents are modeled on the kinds of problems
 that genuinely trip up working engineers, and working through them
 builds judgment that command references alone never will.
 
@@ -928,9 +1002,12 @@ that no amount of additional scenario content can fully close:
    and Google Cloud (Part 11) cover the same ground on each platform,
    with a cross-cloud map. Managed databases, serverless, and
    multi-account networking still need a real account.
-4. **The human side of operations** — incident command, communication
-   during an outage, blameless post-mortems, and knowing when to escalate
-   — isn't practiced here at all.
+4. **The human side of operations.** Incident command, communication
+   during an outage, blameless postmortems, and knowing when to escalate.
+   **Partly addressed** by the SRE category (Part 14), which covers
+   incident roles, mitigate-first, timelines, and postmortem structure.
+   Doing it with real people under pressure still needs game days and
+   on-call shadowing.
 
 ## Recommended path to real proficiency
 

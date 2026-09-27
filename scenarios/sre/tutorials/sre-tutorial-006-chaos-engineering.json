@@ -1,0 +1,53 @@
+{
+  "id": "sre-tutorial-006",
+  "type": "tutorial",
+  "category": "sre",
+  "title": "Chaos Engineering: Breaking Things on Purpose",
+  "difficulty": "advanced",
+  "tags": ["sre", "chaos", "resilience", "testing"],
+  "intro": "Netflix's Chaos Monkey made the idea famous: if failures will happen anyway, cause small ones deliberately, at a time you choose, to prove the system survives them. Every experiment has a hypothesis, a small blast radius, a way to abort, and someone watching. Start in staging.",
+  "steps": [
+    {
+      "prompt": "Hypothesis: cart tolerates 200ms of extra latency to redis. On the staging host cart-stg-01, add 200ms ±50ms of delay to all traffic leaving eth0.",
+      "expected_commands": ["sudo tc qdisc add dev eth0 root netem delay 200ms 50ms", "tc qdisc add dev eth0 root netem delay 200ms 50ms"],
+      "fake_output": "(no output: every packet leaving eth0 is delayed 150-250ms)",
+      "explanation": "Network latency is injected at the kernel level.",
+      "why": "tc netem simulates slow, lossy, or jittery networks with no application change, which is exactly what happens during a cloud network degradation or a cross-region failover. Keep a second terminal ready with the removal command before you start."
+    },
+    {
+      "prompt": "Confirm the rule is active on eth0.",
+      "expected_commands": ["tc qdisc show dev eth0", "sudo tc qdisc show dev eth0"],
+      "fake_output": "qdisc netem 8001: root refcnt 2 limit 1000 delay 200ms  50ms",
+      "explanation": "The netem qdisc is active.",
+      "why": "Always verify the fault is really injected. An experiment that 'passed' because the fault never applied gives false confidence."
+    },
+    {
+      "prompt": "Observe: cart's p99 latency jumped from 40ms to 3s, and some requests time out. The hypothesis was wrong. Abort the experiment: remove the netem rule from eth0.",
+      "expected_commands": ["sudo tc qdisc del dev eth0 root", "tc qdisc del dev eth0 root"],
+      "fake_output": "(no output: the delay is removed)",
+      "explanation": "Normal latency is restored immediately.",
+      "why": "A failed hypothesis is a successful experiment: you found, in staging, that cart makes about 15 sequential redis calls per request, so 200ms of latency multiplies into seconds. Fix that (batch the calls, set timeouts) before a real network blip finds it in production."
+    },
+    {
+      "prompt": "Next experiment, on Kubernetes: kill one random cart pod in shop-staging with Chaos Mesh. Apply podchaos-kill-cart.yaml.",
+      "expected_commands": ["kubectl apply -f podchaos-kill-cart.yaml", "kubectl apply -f podchaos-kill-cart.yaml -n shop-staging"],
+      "fake_output": "podchaos.chaos-mesh.org/kill-one-cart created",
+      "explanation": "Chaos Mesh will kill one pod matching app=cart.",
+      "why": "Chaos Mesh (and LitmusChaos) run experiments as Kubernetes resources: pod kills, network faults, CPU and memory stress, clock skew. Because the experiment is YAML, it can be reviewed, versioned, scheduled, and run as a regular 'game day' test."
+    },
+    {
+      "prompt": "Check the experiment's status in shop-staging.",
+      "expected_commands": ["kubectl get podchaos -n shop-staging", "kubectl describe podchaos kill-one-cart -n shop-staging"],
+      "fake_output": "NAME            ACTION     DURATION   AGE\nkill-one-cart   pod-kill              40s\n(events: Killed pod cart-5c7d9f8b6-h2j4k; a replacement was Ready after 6s; error rate unchanged)",
+      "explanation": "One pod was killed; the replacement was ready in 6s and users saw nothing.",
+      "why": "That's the hypothesis confirmed: multiple replicas, a readiness probe, and a PodDisruptionBudget mean a lost pod is invisible. Run the same experiment regularly, since a later change (a slow startup, one replica) can silently break this resilience."
+    },
+    {
+      "prompt": "Clean up: delete the PodChaos kill-one-cart in shop-staging.",
+      "expected_commands": ["kubectl delete podchaos kill-one-cart -n shop-staging", "kubectl delete -f podchaos-kill-cart.yaml"],
+      "fake_output": "podchaos.chaos-mesh.org \"kill-one-cart\" deleted",
+      "explanation": "The experiment is removed.",
+      "why": "Leftover chaos resources keep injecting faults, which is an easy way to create a confusing incident a week later. Every experiment ends with explicit cleanup and a short write-up of what was learned."
+    }
+  ]
+}

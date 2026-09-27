@@ -1,0 +1,46 @@
+{
+  "id": "sre-tutorial-004",
+  "type": "tutorial",
+  "category": "sre",
+  "title": "Capacity Planning with Prometheus",
+  "difficulty": "intermediate",
+  "tags": ["sre", "capacity", "promql", "forecasting"],
+  "intro": "Capacity planning answers 'when do we run out, and how much do we need for the next peak?' before the pager does. Most of it is a few PromQL queries plus the N+1 rule: the service must survive its busiest hour even with one zone or node gone. Queries run through promtool against http://prometheus:9090.",
+  "steps": [
+    {
+      "prompt": "Which filesystems will fill up within 4 days at their current rate? Use predict_linear over the last 6 hours of node_filesystem_avail_bytes.",
+      "expected_commands": ["promtool query instant http://prometheus:9090 'predict_linear(node_filesystem_avail_bytes{mountpoint=\"/\"}[6h], 4*86400) < 0'", "promtool query instant http://prometheus:9090 'predict_linear(node_filesystem_avail_bytes[6h], 4*86400) < 0'"],
+      "fake_output": "node_filesystem_avail_bytes{instance=\"db-01:9100\",mountpoint=\"/\"} => -2.1e+10\nnode_filesystem_avail_bytes{instance=\"logs-02:9100\",mountpoint=\"/\"} => -8.4e+09",
+      "explanation": "db-01 and logs-02 are on track to run out of disk within 4 days.",
+      "why": "Alerting on 'will be full in N hours' instead of 'is 90% full' gives time to act, and doesn't page for a disk that sits at 91% forever. This is the standard 'disk will fill' alert in most Prometheus rule sets."
+    },
+    {
+      "prompt": "What was the peak request rate over the last 30 days? Use a subquery: max over time of the 5-minute rate, at 1h resolution.",
+      "expected_commands": ["promtool query instant http://prometheus:9090 'max_over_time(sum(rate(http_requests_total[5m]))[30d:1h])'"],
+      "fake_output": "{} => 18420 @[1790000000]",
+      "explanation": "The peak was about 18,400 requests per second.",
+      "why": "Size for peaks, not averages: the busiest hour is when capacity fails. Subqueries ([30d:1h]) evaluate an expression over time. Then add expected growth and known events (a sale, a launch), because last month's peak isn't next month's."
+    },
+    {
+      "prompt": "How much of the cluster's CPU is already promised? Divide total CPU requests by total allocatable CPU.",
+      "expected_commands": ["promtool query instant http://prometheus:9090 'sum(kube_pod_container_resource_requests{resource=\"cpu\"}) / sum(kube_node_status_allocatable{resource=\"cpu\"})'"],
+      "fake_output": "{} => 0.86 @[1790000000]",
+      "explanation": "86% of the cluster's CPU is reserved by requests.",
+      "why": "The scheduler places pods by requests, not actual usage. At 86% requested, losing one node of seven (14% of capacity) leaves pods unschedulable. That's the N+1 test: can the remaining nodes absorb the loss of the largest failure domain?"
+    },
+    {
+      "prompt": "Compare with what's actually used: divide the CPU used by containers (rate of container_cpu_usage_seconds_total over 5m) by total CPU requests.",
+      "expected_commands": ["promtool query instant http://prometheus:9090 'sum(rate(container_cpu_usage_seconds_total{container!=\"\"}[5m])) / sum(kube_pod_container_resource_requests{resource=\"cpu\"})'"],
+      "fake_output": "{} => 0.31 @[1790000000]",
+      "explanation": "Pods use only 31% of what they request.",
+      "why": "Big gaps between requested and used capacity are the largest source of cloud waste at scale. Right-size requests from real usage (the Vertical Pod Autoscaler in recommend mode helps) before buying more nodes. Here the cluster isn't short of CPU; it's over-reserved."
+    },
+    {
+      "prompt": "Pull the daily peak request rate for the last 90 days as a range query, to chart the growth trend (1-day step).",
+      "expected_commands": ["promtool query range --start=$(date -d '90 days ago' +%s) --end=$(date +%s) --step=1d http://prometheus:9090 'max_over_time(sum(rate(http_requests_total[5m]))[1d:1h])'"],
+      "fake_output": "{} =>\n14100 @[1782224000]\n14380 @[1782310400]\n...\n18420 @[1790000000]\n(growth: ~31% over 90 days)",
+      "explanation": "Peak traffic grows roughly 10% a month.",
+      "why": "Growth rate plus lead time decides when to act: if new capacity (hardware, quota increases, reserved instances) takes 6 weeks, you order it when the forecast says you'll run out in 8. That's capacity planning as practised at large companies: forecast, lead time, headroom."
+    }
+  ]
+}

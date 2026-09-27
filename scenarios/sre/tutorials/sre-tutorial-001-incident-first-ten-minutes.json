@@ -1,0 +1,46 @@
+{
+  "id": "sre-tutorial-001",
+  "type": "tutorial",
+  "category": "sre",
+  "title": "Incident Response: The First Ten Minutes",
+  "difficulty": "intermediate",
+  "tags": ["sre", "incident-response", "mitigation"],
+  "intro": "At companies like Google and Meta, incident response is a practised skill with fixed roles: an Incident Commander coordinates, an Ops lead changes production, and a Comms lead updates stakeholders. The first rule is mitigate first, find the root cause later. Stopping the bleeding (roll back, fail over, shed load) beats understanding it. Checkout error rates just jumped at 14:05.",
+  "steps": [
+    {
+      "prompt": "Quantify the impact: query Prometheus (promtool, http://prometheus:9090) for checkout's current 5xx ratio over 5 minutes.",
+      "expected_commands": ["promtool query instant http://prometheus:9090 'sum(rate(http_requests_total{service=\"checkout\",code=~\"5..\"}[5m])) / sum(rate(http_requests_total{service=\"checkout\"}[5m]))'"],
+      "fake_output": "{} => 0.31 @[1790000000]",
+      "explanation": "31% of checkout requests are failing.",
+      "why": "Start with user impact, in numbers. It sets severity (31% failing checkouts is SEV-1: page more people, update stakeholders every 15 minutes), and it's the number that shows whether each mitigation worked."
+    },
+    {
+      "prompt": "Ask 'what changed?': show the rollout history of deployment checkout in namespace shop.",
+      "expected_commands": ["kubectl rollout history deployment/checkout -n shop", "kubectl rollout history deploy/checkout -n shop"],
+      "fake_output": "REVISION  CHANGE-CAUSE\n41        release 2026.09.27 (payments client 4.2)\n42        release 2026.09.28 (payments client 4.3) - deployed 14:02",
+      "explanation": "A new release went out at 14:02, three minutes before errors started.",
+      "why": "Most incidents are caused by a change: a deploy, a config push, a flag flip, an infrastructure change. A change shortly before the start is the prime suspect, even before you understand the mechanism."
+    },
+    {
+      "prompt": "Mitigate now, investigate later: roll deployment checkout in shop back to the previous revision.",
+      "expected_commands": ["kubectl rollout undo deployment/checkout -n shop", "kubectl rollout undo deploy/checkout -n shop", "kubectl rollout undo deployment/checkout -n shop --to-revision=41"],
+      "fake_output": "deployment.apps/checkout rolled back",
+      "explanation": "Revision 41 is rolling out again.",
+      "why": "Rollback is the safest, fastest mitigation because it returns to a known-good state, and it doesn't require knowing what's wrong. Teams that insist on 'fixing forward' during an outage stretch minutes into hours. Debug the bad version later, in staging."
+    },
+    {
+      "prompt": "Confirm the mitigation worked: rerun the 5xx ratio query for checkout.",
+      "expected_commands": ["promtool query instant http://prometheus:9090 'sum(rate(http_requests_total{service=\"checkout\",code=~\"5..\"}[5m])) / sum(rate(http_requests_total{service=\"checkout\"}[5m]))'"],
+      "fake_output": "{} => 0.004 @[1790000240]",
+      "explanation": "Back to 0.4%, the normal baseline.",
+      "why": "Never assume a mitigation worked; measure it. The 5-minute window lags, so wait one full window before declaring recovery, then keep watching. The incident isn't closed until the postmortem, and the bad release stays blocked."
+    },
+    {
+      "prompt": "Record the change cause on the deployment so the next responder sees why it was rolled back: annotate checkout in shop with kubernetes.io/change-cause.",
+      "expected_commands": ["kubectl annotate deployment checkout -n shop kubernetes.io/change-cause=\"rollback: payments client 4.3 caused 31% 5xx, INC-2291\" --overwrite", "kubectl annotate deploy checkout -n shop kubernetes.io/change-cause=\"rollback: payments client 4.3 caused 31% 5xx, INC-2291\" --overwrite"],
+      "fake_output": "deployment.apps/checkout annotated",
+      "explanation": "The rollout history now explains itself.",
+      "why": "During an incident, write down what you did and when: in the incident channel, the ticket, and on the resources themselves. That record becomes the postmortem timeline (sre-tutorial-008), and it stops a teammate from 'fixing' the rollback by redeploying the broken version."
+    }
+  ]
+}

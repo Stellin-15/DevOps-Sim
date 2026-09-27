@@ -1,0 +1,39 @@
+{
+  "id": "sre-tutorial-005",
+  "type": "tutorial",
+  "category": "sre",
+  "title": "Load Testing: Finding the Limit Before Your Users Do",
+  "difficulty": "intermediate",
+  "tags": ["sre", "load-testing", "k6", "vegeta"],
+  "intro": "Capacity numbers are guesses until you test them. Load tests answer 'how much can this handle, and what breaks first?'. Run them against staging (or production with great care), with the teams involved told in advance. The target here is the staging checkout API.",
+  "steps": [
+    {
+      "prompt": "Run the k6 script checkout.js with 100 virtual users for 5 minutes.",
+      "expected_commands": ["k6 run --vus 100 --duration 5m checkout.js", "k6 run --duration 5m --vus 100 checkout.js"],
+      "fake_output": "  scenarios: (100.00%) 1 scenario, 100 max VUs, 5m30s max duration\n     ✓ status is 200\n     checks.........................: 99.87% ✓ 148210 ✗ 193\n     http_req_duration..............: avg=182ms p(90)=310ms p(95)=420ms max=2.9s\n     http_req_failed................: 0.13%\n     http_reqs......................: 148403 494.6/s\n   ✗ http_req_duration..............: p(95)<400\nERRO[0301] thresholds on metrics 'http_req_duration' have been crossed",
+      "explanation": "About 495 req/s, but p95 latency is 420ms, above the 400ms threshold, so k6 exits non-zero.",
+      "why": "Read the percentiles, never the average: the average (182ms) looks fine while 1 in 20 requests takes over 400ms. Thresholds in the script turn the test into a pass/fail gate that can run in CI before every release."
+    },
+    {
+      "prompt": "Find the breaking point at a fixed request rate regardless of response time: attack http://staging.shop.internal/api/cart at 800 req/s for 60s with vegeta and report.",
+      "expected_commands": ["echo \"GET http://staging.shop.internal/api/cart\" | vegeta attack -rate=800/s -duration=60s | vegeta report", "echo 'GET http://staging.shop.internal/api/cart' | vegeta attack -rate=800/s -duration=60s | vegeta report"],
+      "fake_output": "Requests      [total, rate, throughput]  48000, 800.02, 612.40\nLatencies     [min, mean, 50, 90, 95, 99, max]  4ms, 1.9s, 380ms, 5.1s, 8.2s, 30s, 30s\nSuccess       [ratio]  76.55%\nStatus Codes  [code:count]  200:36744  503:6012  0:5244\nError Set:\nGet \"http://staging.shop.internal/api/cart\": context deadline exceeded",
+      "explanation": "At 800 req/s only about 612/s complete. 23% fail with 503s and timeouts.",
+      "why": "vegeta sends at a constant rate whether or not responses come back (an 'open' model, like real users), whereas k6 VUs wait for each response (a 'closed' model), which hides overload. Constant-rate tests show how the system really fails: queues grow and latency explodes."
+    },
+    {
+      "prompt": "While the test runs, find the bottleneck: check CPU and memory of the pods in namespace shop-staging, sorted by CPU.",
+      "expected_commands": ["kubectl top pods -n shop-staging --sort-by=cpu", "kubectl top pod -n shop-staging --sort-by=cpu"],
+      "fake_output": "NAME                        CPU(cores)   MEMORY(bytes)\ncart-5c7d9f8b6-h2j4k        1980m        410Mi\ncart-5c7d9f8b6-p9q1w        1975m        402Mi\npostgres-0                  240m         1.9Gi\nredis-0                     60m          90Mi",
+      "explanation": "The cart pods are pinned at their 2-CPU limit; the database is fine.",
+      "why": "A load test is only useful if you learn what saturated first: CPU limits, a connection pool, the database, a downstream rate limit. The fix depends entirely on which one it is. Here it's cart's CPU, so scale it out or make it cheaper per request."
+    },
+    {
+      "prompt": "Get a histogram of latencies from the saved result file results.bin, with buckets at 50ms, 100ms, 250ms, 500ms, and 1s.",
+      "expected_commands": ["vegeta report -type='hist[0,50ms,100ms,250ms,500ms,1s]' results.bin", "vegeta report -type=hist[0,50ms,100ms,250ms,500ms,1s] results.bin", "cat results.bin | vegeta report -type='hist[0,50ms,100ms,250ms,500ms,1s]'"],
+      "fake_output": "Bucket           #      %       Histogram\n[0s,    50ms]    4210   8.77%   ######\n[50ms,  100ms]   9870   20.56%  ###############\n[100ms, 250ms]   12440  25.92%  ###################\n[250ms, 500ms]   8210   17.10%  ############\n[500ms, 1s]      2980   6.21%   ####\n[1s,    +Inf]    10290  21.44%  ################",
+      "explanation": "Over 21% of requests took more than a second: a bimodal shape, with fast requests and ones stuck in a queue.",
+      "why": "Histograms reveal shapes percentiles hide: two humps usually mean some requests hit a queue, cache miss, or retry path and others don't. That's where to look next."
+    }
+  ]
+}

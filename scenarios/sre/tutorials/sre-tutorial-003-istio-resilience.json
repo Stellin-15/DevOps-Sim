@@ -1,0 +1,46 @@
+{
+  "id": "sre-tutorial-003",
+  "type": "tutorial",
+  "category": "sre",
+  "title": "Service Mesh Basics: Istio Health, Traffic Splits, and Resilience",
+  "difficulty": "advanced",
+  "tags": ["sre", "istio", "service-mesh", "resilience"],
+  "intro": "A service mesh (Istio, Linkerd) puts a proxy next to every pod, so traffic routing, retries, timeouts, circuit breaking, and mTLS are configured centrally instead of in each service's code. That's powerful and adds a layer to debug. This tutorial covers the essential checks and the resilience settings.",
+  "steps": [
+    {
+      "prompt": "Check that every sidecar proxy is in sync with the Istio control plane.",
+      "expected_commands": ["istioctl proxy-status"],
+      "fake_output": "NAME                                   CLUSTER     CDS      LDS      EDS      RDS      ISTIOD\ncart-7d9f8c6b5-x2k4p.shop              Kubernetes  SYNCED   SYNCED   SYNCED   SYNCED   istiod-7b6f5d8c9-r4t6y\ncheckout-5d7c8b6a4-m8n2q.shop          Kubernetes  SYNCED   SYNCED   SYNCED   STALE    istiod-7b6f5d8c9-r4t6y",
+      "explanation": "One checkout pod has STALE routes: it's using an old routing configuration.",
+      "why": "When some requests behave differently from others, a stale proxy is a classic cause. Its routes don't match what you applied. Restarting that pod (or finding why istiod can't push to it) fixes it."
+    },
+    {
+      "prompt": "Check namespace shop's mesh configuration for mistakes.",
+      "expected_commands": ["istioctl analyze -n shop"],
+      "fake_output": "Warning [IST0101] (VirtualService shop/checkout) Referenced host+subset in destinationrule not found: \"checkout+v2\"\nError: Analyzers found issues when analyzing namespace: shop.",
+      "explanation": "The VirtualService routes to a subset 'v2' that no DestinationRule defines.",
+      "why": "istioctl analyze catches references to things that don't exist, conflicting rules, and missing sidecar injection, before they cause 503s. Run it in CI on mesh YAML, just like kubectl --dry-run for normal manifests."
+    },
+    {
+      "prompt": "Send 10% of reviews traffic to v2: apply the weighted VirtualService in reviews-90-10.yaml to namespace shop.",
+      "expected_commands": ["kubectl apply -f reviews-90-10.yaml -n shop"],
+      "fake_output": "virtualservice.networking.istio.io/reviews configured",
+      "explanation": "90/10 split between v1 and v2, set by the mesh, not by replica counts.",
+      "why": "The mesh splits traffic by exact percentage regardless of pod counts, and can also route by header (for example 'send internal employees to v2'). This is the precise canary that Argo Rollouts can drive automatically."
+    },
+    {
+      "prompt": "Look at the resilience settings for payments: show the DestinationRule payments in shop as YAML.",
+      "expected_commands": ["kubectl get destinationrule payments -n shop -o yaml", "kubectl get dr payments -n shop -o yaml"],
+      "fake_output": "spec:\n  host: payments\n  trafficPolicy:\n    connectionPool:\n      http:\n        http1MaxPendingRequests: 100\n        maxRequestsPerConnection: 10\n    outlierDetection:\n      consecutive5xxErrors: 5\n      interval: 10s\n      baseEjectionTime: 30s\n      maxEjectionPercent: 50",
+      "explanation": "A connection pool limit, plus outlier detection: a pod with 5 consecutive 5xx errors is ejected for 30s.",
+      "why": "This is circuit breaking. A failing backend pod stops getting traffic quickly instead of failing every request sent to it, and the pending-request cap stops callers queueing forever. maxEjectionPercent: 50 is a safety valve, so the mesh never ejects the whole service."
+    },
+    {
+      "prompt": "Check the timeout and retry policy on the VirtualService payments in shop.",
+      "expected_commands": ["kubectl get virtualservice payments -n shop -o yaml", "kubectl get vs payments -n shop -o yaml"],
+      "fake_output": "spec:\n  http:\n  - route:\n    - destination: {host: payments}\n    timeout: 2s\n    retries:\n      attempts: 2\n      perTryTimeout: 800ms\n      retryOn: 5xx,reset,connect-failure",
+      "explanation": "A 2s overall timeout; at most 2 retries of 800ms each.",
+      "why": "Every call needs a timeout, or a slow dependency ties up callers indefinitely (sre-incident-002). Retries must be few and bounded: if each of 3 layers retries 3 times, one user request becomes 27 at the bottom, which is sre-incident-001's retry storm."
+    }
+  ]
+}

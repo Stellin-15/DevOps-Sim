@@ -1,0 +1,46 @@
+{
+  "id": "sre-tutorial-009",
+  "type": "tutorial",
+  "category": "sre",
+  "title": "Graceful Degradation and Load Shedding",
+  "difficulty": "advanced",
+  "tags": ["sre", "degradation", "load-shedding", "caching"],
+  "intro": "At scale something is always partly broken. Well-designed systems degrade (serve a reduced experience) instead of failing completely, and shed load deliberately instead of collapsing under it. This tutorial checks the mechanisms on the storefront during a traffic spike.",
+  "steps": [
+    {
+      "prompt": "Check the storefront's cache health: get keyspace hits and misses from redis at cache.shop.internal.",
+      "expected_commands": ["redis-cli -h cache.shop.internal INFO stats | grep keyspace", "redis-cli -h cache.shop.internal info stats | grep keyspace"],
+      "fake_output": "keyspace_hits:184229381\nkeyspace_misses:2211044",
+      "explanation": "About a 98.8% hit rate: the cache absorbs almost all reads.",
+      "why": "A high hit rate means the database only sees 1.2% of reads. It also means the database would be flattened if the cache vanished, which is sre-incident-004's cache stampede. Know how dependent you are on a cache before it fails."
+    },
+    {
+      "prompt": "Check the readiness endpoint of one storefront pod, reached via port-forward on localhost:8080, to see which dependencies it considers essential.",
+      "expected_commands": ["curl -s localhost:8080/readyz", "curl localhost:8080/readyz", "curl -s http://localhost:8080/readyz"],
+      "fake_output": "{\"status\":\"ready\",\"checks\":{\"db\":\"ok\",\"cache\":\"ok\",\"recommendations\":\"degraded (timeout), not required\"}}",
+      "explanation": "Recommendations is timing out, but the pod stays ready because it's marked non-essential.",
+      "why": "Readiness should depend only on what the service needs in order to serve at all. If a nice-to-have dependency could mark every pod not-ready, one flaky recommendations service would take the whole storefront out of rotation. sre-incident-006 is exactly that failure."
+    },
+    {
+      "prompt": "Traffic is climbing past capacity. Check the storefront's load-shedding counters on its metrics endpoint (localhost:8080/metrics), filtered for 'shed'.",
+      "expected_commands": ["curl -s localhost:8080/metrics | grep shed", "curl localhost:8080/metrics | grep shed"],
+      "fake_output": "http_requests_shed_total{priority=\"low\",route=\"/api/recommendations\"} 41822\nhttp_requests_shed_total{priority=\"critical\",route=\"/api/checkout\"} 0",
+      "explanation": "Low-priority requests are being rejected fast (429/503); checkout traffic is untouched.",
+      "why": "Load shedding means rejecting some work early and cheaply, so the rest completes, instead of accepting everything and timing out on all of it. Prioritising by business value (checkout over recommendations) is how large sites survive traffic spikes."
+    },
+    {
+      "prompt": "Add capacity while shedding protects you: scale deployment storefront in shop to 30 replicas.",
+      "expected_commands": ["kubectl scale deployment storefront --replicas=30 -n shop", "kubectl scale deploy storefront --replicas=30 -n shop", "kubectl scale deployment/storefront --replicas=30 -n shop"],
+      "fake_output": "deployment.apps/storefront scaled",
+      "explanation": "More pods are starting; shedding drops as capacity arrives.",
+      "why": "Autoscaling reacts in minutes; spikes arrive in seconds. Shedding and degradation cover that gap. Also check that the dependencies can take 30 replicas' worth of connections: scaling the front end sometimes just moves the bottleneck to the database."
+    },
+    {
+      "prompt": "Check what a degraded page looks like to a user: request the homepage http://shop.example.com/ and look for the fallback marker in its HTML.",
+      "expected_commands": ["curl -s http://shop.example.com/ | grep -i fallback", "curl -s https://shop.example.com/ | grep -i fallback"],
+      "fake_output": "<section class=\"recommendations\" data-source=\"fallback-bestsellers\">",
+      "explanation": "Instead of personalised recommendations, the page shows a cached bestseller list.",
+      "why": "A static fallback (bestsellers, a cached copy, hiding a widget) keeps the page useful while a dependency is down. Designing these fallbacks per dependency is a standard part of a production readiness review (sre-tutorial-010)."
+    }
+  ]
+}

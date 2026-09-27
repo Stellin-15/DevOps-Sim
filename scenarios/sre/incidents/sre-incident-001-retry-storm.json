@@ -1,0 +1,43 @@
+{
+  "id": "sre-incident-001",
+  "type": "incident",
+  "category": "sre",
+  "title": "A 30-second database blip became a 40-minute outage (retry storm)",
+  "difficulty": "advanced",
+  "tags": ["sre", "retries", "cascading-failure", "istio"],
+  "intro": "At 09:00 the inventory database had a 30-second failover, which is normal and expected. But the whole shop stayed down for 40 minutes afterwards, with inventory's pods pinned at 100% CPU long after the database was healthy again. The request path is frontend → checkout → inventory → db.",
+  "steps": [
+    {
+      "prompt": "Compare the request rate each layer received during the incident: query Prometheus for the per-service request rate (sum by service of rate over 1m of http_requests_total, services frontend, checkout, and inventory).",
+      "expected_commands": ["promtool query instant http://prometheus:9090 'sum by (service) (rate(http_requests_total{service=~\"frontend|checkout|inventory\"}[1m]))'"],
+      "fake_output": "{service=\"frontend\"} => 1000\n{service=\"checkout\"} => 3000\n{service=\"inventory\"} => 27000",
+      "hint": "sum by (service) (rate(...[1m]))"
+    },
+    {
+      "prompt": "Users sent 1,000 req/s, but inventory received 27,000: 27x amplification. Check the retry policy on the VirtualService checkout in shop.",
+      "expected_commands": ["kubectl get virtualservice checkout -n shop -o yaml", "kubectl get vs checkout -n shop -o yaml"],
+      "fake_output": "    retries:\n      attempts: 3\n      perTryTimeout: 2s\n      retryOn: 5xx,reset,connect-failure",
+      "hint": "Look at spec.http[].retries."
+    },
+    {
+      "prompt": "The mesh retries 3 times, and so do the app clients inside each service (3 layers × 3 tries = 27). Check the inventory VirtualService in shop too.",
+      "expected_commands": ["kubectl get virtualservice inventory -n shop -o yaml", "kubectl get vs inventory -n shop -o yaml"],
+      "fake_output": "    retries:\n      attempts: 3\n      perTryTimeout: 2s\n      retryOn: 5xx,reset,connect-failure",
+      "hint": "Same check, other service."
+    },
+    {
+      "prompt": "Stop the amplification now: apply the prepared VirtualService with retries limited to 1 attempt at the edge only, from vs-retries-fixed.yaml, in shop.",
+      "expected_commands": ["kubectl apply -f vs-retries-fixed.yaml -n shop"],
+      "fake_output": "virtualservice.networking.istio.io/checkout configured\nvirtualservice.networking.istio.io/inventory configured",
+      "hint": "kubectl apply -f <file> -n <ns>"
+    },
+    {
+      "prompt": "Confirm inventory's load dropped: rerun the per-service rate query.",
+      "expected_commands": ["promtool query instant http://prometheus:9090 'sum by (service) (rate(http_requests_total{service=~\"frontend|checkout|inventory\"}[1m]))'"],
+      "fake_output": "{service=\"frontend\"} => 1000\n{service=\"checkout\"} => 1020\n{service=\"inventory\"} => 1040",
+      "hint": "Same query as the first step."
+    }
+  ],
+  "resolution": "The database failover lasted 30 seconds, but every failed call was retried 3 times at each of 3 layers, so inventory received up to 27 requests for each user request. That load kept inventory overloaded, which caused more timeouts, which caused more retries: a self-sustaining retry storm that outlived its trigger by 40 minutes. Nothing was 'broken' after 09:01; the system was stuck in a metastable failure state it couldn't leave on its own. Fixes: retry at one layer only (usually the edge or the direct caller), with a small attempt count; use exponential backoff with jitter so retries don't arrive in synchronized waves; add retry budgets (for example, retries may be at most 10% of requests) as gRPC and Envoy support; and pair retries with circuit breaking (sre-tutorial-003), so a clearly failing dependency gets less traffic rather than more. Google's SRE book and AWS's Builders' Library both treat retry amplification as a top cause of large outages.",
+  "real_commands_used": ["promtool query instant sum by (service) rate", "kubectl get virtualservice -o yaml", "kubectl apply -f"]
+}

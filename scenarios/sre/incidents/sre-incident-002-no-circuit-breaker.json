@@ -1,0 +1,43 @@
+{
+  "id": "sre-incident-002",
+  "type": "incident",
+  "category": "sre",
+  "title": "A slow tax API took down the whole checkout (no timeouts, no circuit breaker)",
+  "difficulty": "advanced",
+  "tags": ["sre", "timeouts", "circuit-breaker", "dependencies"],
+  "intro": "An external tax-calculation vendor slowed from 50ms to 30s per call. It didn't fail, it just became slow. Within minutes the entire checkout service stopped responding, including endpoints that never call the tax API, like order history.",
+  "steps": [
+    {
+      "prompt": "Check checkout's worker pool: look at in-flight requests and pool saturation on one pod's metrics (port-forwarded to localhost:8080), filtered for 'inflight' and 'pool'.",
+      "expected_commands": ["curl -s localhost:8080/metrics | grep -E 'inflight|pool'", "curl localhost:8080/metrics | grep -E 'inflight|pool'"],
+      "fake_output": "http_server_inflight_requests 200\nhttp_server_worker_pool_size 200\nhttp_client_inflight_requests{target=\"tax-vendor\"} 198",
+      "hint": "grep -E for several words."
+    },
+    {
+      "prompt": "All 200 workers are stuck waiting on the tax vendor, so nothing else can be served. Check the configured timeout on the client: grep the tax client settings in the checkout ConfigMap checkout-config (namespace shop).",
+      "expected_commands": ["kubectl get configmap checkout-config -n shop -o yaml | grep -i tax", "kubectl get cm checkout-config -n shop -o yaml | grep -i tax"],
+      "fake_output": "  TAX_API_URL: https://api.taxvendor.example/v2/calculate\n  TAX_API_TIMEOUT_MS: \"0\"",
+      "hint": "Timeout 0 usually means 'wait forever'."
+    },
+    {
+      "prompt": "No timeout at all. Mitigate: the tax call has a documented fallback (estimate tax, reconcile later). Flip the kill switch: set TAX_FALLBACK_MODE=estimate on deployment checkout in shop.",
+      "expected_commands": ["kubectl set env deployment/checkout TAX_FALLBACK_MODE=estimate -n shop", "kubectl set env deploy/checkout TAX_FALLBACK_MODE=estimate -n shop"],
+      "fake_output": "deployment.apps/checkout env updated",
+      "hint": "kubectl set env deployment/<name> KEY=value -n <ns>"
+    },
+    {
+      "prompt": "Watch the rollout of checkout in shop complete.",
+      "expected_commands": ["kubectl rollout status deployment/checkout -n shop", "kubectl rollout status deploy/checkout -n shop"],
+      "fake_output": "deployment \"checkout\" successfully rolled out",
+      "hint": "kubectl rollout status"
+    },
+    {
+      "prompt": "Add protection at the mesh level too: an outlier-detecting, time-limited ServiceEntry and DestinationRule for the vendor are in tax-vendor-resilience.yaml. Apply it in shop.",
+      "expected_commands": ["kubectl apply -f tax-vendor-resilience.yaml -n shop"],
+      "fake_output": "serviceentry.networking.istio.io/tax-vendor created\ndestinationrule.networking.istio.io/tax-vendor created\nvirtualservice.networking.istio.io/tax-vendor created (timeout: 800ms)",
+      "hint": "kubectl apply -f <file> -n <ns>"
+    }
+  ],
+  "resolution": "A slow dependency is more dangerous than a dead one. A dead one fails fast; a slow one holds every caller's resources hostage. The tax client had no timeout, so each request waited 30 seconds, all 200 workers filled up, and checkout stopped serving everything, even endpoints unrelated to tax. That's a cascading failure. The defences, all standard at large companies: a timeout on every network call, set from the dependency's real latency (p99 plus margin); bulkheads, meaning separate worker pools or concurrency limits per dependency so one can't consume all workers; circuit breakers that stop calling a failing dependency for a while; and a fallback for non-essential calls (here, estimating tax and reconciling later). The kill switch existed and worked, and knowing it existed turned a potential multi-hour outage into minutes.",
+  "real_commands_used": ["curl /metrics | grep", "kubectl get configmap -o yaml | grep", "kubectl set env", "kubectl rollout status", "kubectl apply -f"]
+}
