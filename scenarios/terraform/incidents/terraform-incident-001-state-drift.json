@@ -1,0 +1,31 @@
+{
+  "id": "terraform-incident-001",
+  "type": "incident",
+  "category": "terraform",
+  "title": "State Drift After a Manual Console Change",
+  "difficulty": "intermediate",
+  "tags": ["terraform", "state", "drift"],
+  "intro": "A teammate manually resized an EC2 instance in the AWS console 'just to fix something quickly.' Now terraform plan is showing something weird.",
+  "steps": [
+    {
+      "prompt": "Run a plan to see what Terraform thinks needs to change.",
+      "expected_commands": ["terraform plan"],
+      "fake_output": "# aws_instance.web will be updated in-place\n  ~ instance_type = \"t3.large\" -> \"t3.micro\"\nPlan: 0 to add, 1 to change, 0 to destroy.",
+      "hint": "plan compares real infrastructure state against your .tf files and the last known state."
+    },
+    {
+      "prompt": "Confirm what Terraform's state currently has recorded for this resource.",
+      "expected_commands": ["terraform state show aws_instance.web"],
+      "fake_output": "resource \"aws_instance\" \"web\" {\n  instance_type = \"t3.micro\"\n  ...\n}",
+      "hint": "state show prints what Terraform believes is true — compare it against what plan just reported."
+    },
+    {
+      "prompt": "The instance is actually t3.large now (the manual change), but both your .tf file and the state say t3.micro — meaning apply would silently downsize it back. Decide: is t3.large the new correct value? If yes, update the .tf file's instance_type to t3.large, then re-plan to confirm no changes remain.",
+      "expected_commands": ["terraform plan"],
+      "fake_output": "No changes. Your infrastructure matches the configuration.",
+      "hint": "After editing the .tf file to match reality, re-running plan should show zero diff — that's how you know config, state, and real infra are all aligned again."
+    }
+  ],
+  "resolution": "A manual console change created drift: real infrastructure no longer matched Terraform's state or config. Since plan only compares state vs config (not always live reality by default, depending on refresh behavior), an ill-timed apply could have silently reverted a legitimate fix. The right response to drift is never to blindly apply — first understand which value (console or config) is actually correct, then update the losing side to match, and confirm with a clean plan. The deeper lesson: manual console changes to Terraform-managed resources are exactly how state drift happens, and teams that do this often eventually adopt policies or tooling (like Sentinel/OPA or restricted IAM) to prevent it entirely.",
+  "real_commands_used": ["terraform plan", "terraform state show"]
+}

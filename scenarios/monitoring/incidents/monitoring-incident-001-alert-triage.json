@@ -1,0 +1,37 @@
+{
+  "id": "monitoring-incident-001",
+  "type": "incident",
+  "category": "monitoring",
+  "title": "Alert Fired But No One Can Tell What's Actually Wrong",
+  "difficulty": "intermediate",
+  "tags": ["monitoring", "alerting", "saturation"],
+  "intro": "An Alertmanager alert fired: 'HighErrorRate on checkout-service'. Nobody's sure if it's real or if users are actually affected.",
+  "steps": [
+    {
+      "prompt": "Check the actual error rate right now, not just trust the alert fired.",
+      "expected_commands": ["curl 'http://localhost:9090/api/v1/query?query=rate(http_requests_total{status=\"500\",job=\"checkout-service\"}[5m])'"],
+      "fake_output": "{\"result\":[{\"value\":[1695800000,\"0.18\"]}]}",
+      "hint": "Query the exact metric the alert is based on — confirm the number is genuinely elevated, not a stale/flapping alert."
+    },
+    {
+      "prompt": "Check total traffic volume too — a high rate on low traffic can look scarier than it is.",
+      "expected_commands": ["curl 'http://localhost:9090/api/v1/query?query=rate(http_requests_total{job=\"checkout-service\"}[5m])'"],
+      "fake_output": "{\"result\":[{\"value\":[1695800000,\"1.2\"]}]}",
+      "hint": "0.18 errors/sec against 1.2 total requests/sec — do that division: that's roughly 15% error rate, not negligible."
+    },
+    {
+      "prompt": "Check saturation — is the service under resource pressure?",
+      "expected_commands": ["kubectl top pods -l app=checkout-service"],
+      "fake_output": "checkout-service-abc12   1/1   CPU: 980m/1000m   MEMORY: 900Mi/1Gi",
+      "hint": "CPU near its limit is a strong saturation signal — check this alongside error rate, not instead of it."
+    },
+    {
+      "prompt": "Pull recent logs to see the actual errors, not just the rate.",
+      "expected_commands": ["kubectl logs -l app=checkout-service --tail=50 | grep -i error"],
+      "fake_output": "ERROR: request queue full, rejecting request\nERROR: request queue full, rejecting request",
+      "hint": "The actual error message usually tells you which of the four golden signals is the real root cause."
+    }
+  ],
+  "resolution": "The service was CPU-saturated (near its limit) and started rejecting requests once its internal queue filled up, which is exactly what the elevated 500 rate was measuring — this wasn't a flaky alert, it was traffic genuinely exceeding capacity. The right response is scaling out (more replicas) or scaling up (higher CPU limit/request), not just 'restarting the pods', since a restart under sustained load just repeats the same saturation shortly after. The deeper lesson: an alert on error rate alone doesn't tell you why — cross-referencing traffic volume, saturation, and logs together (the four golden signals) is what actually diagnoses it.",
+  "real_commands_used": ["curl (PromQL query)", "kubectl top pods", "kubectl logs"]
+}

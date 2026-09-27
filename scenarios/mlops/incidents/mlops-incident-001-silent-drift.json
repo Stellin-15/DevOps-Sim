@@ -1,0 +1,37 @@
+{
+  "id": "mlops-incident-001",
+  "type": "incident",
+  "category": "mlops",
+  "title": "Model Accuracy Silently Dropped in Production",
+  "difficulty": "advanced",
+  "tags": ["mlops", "drift", "monitoring", "serving"],
+  "intro": "No errors, no crashes, no alerts fired — but the fraud-detection model's precision has quietly dropped according to last week's business report. Nothing in the deploy history looks unusual.",
+  "steps": [
+    {
+      "prompt": "Check if a new model version was actually deployed recently.",
+      "expected_commands": ["kubectl rollout history deployment fraud-model-server"],
+      "fake_output": "REVISION  CHANGE-CAUSE\n1  initial deploy\n2  deploy model v2.3 (10 days ago)",
+      "hint": "Confirm the timing of any model version change against when accuracy started dropping."
+    },
+    {
+      "prompt": "Check the model-serving metrics for request/error volume — rule out an infrastructure problem first.",
+      "expected_commands": ["curl http://localhost:8000/metrics | grep model_"],
+      "fake_output": "model_requests_total 184213\nmodel_prediction_errors_total 12\nmodel_prediction_latency_seconds_sum 9021.4",
+      "hint": "Low error count and normal latency — this isn't a crash or slowdown, so the problem is likely in the data or the model itself, not the serving infra."
+    },
+    {
+      "prompt": "Compare the current input feature distributions against training-time distributions to check for drift.",
+      "expected_commands": ["python -c \"import pandas as pd; print(pd.read_csv('recent_requests.csv').describe())\""],
+      "fake_output": "transaction_amount   mean: 340.21   (training mean was 118.50)",
+      "hint": "A big shift in a key feature's distribution (transaction_amount here) versus training-time stats is a strong drift signal."
+    },
+    {
+      "prompt": "Given input data has drifted well outside the training distribution, the model needs retraining on recent data, not a config fix. Kick off a new training job using the latest data.",
+      "expected_commands": ["kubectl create job retrain-fraud-model --image=my-training-image -- python train.py --data recent_data.csv"],
+      "fake_output": "job.batch/retrain-fraud-model created",
+      "hint": "This is a data problem, not a bug — the fix is retraining, then a canary rollout of the new model version, not a hotfix to the serving code."
+    }
+  ],
+  "resolution": "This was data drift: real-world transaction amounts had shifted well above what the model was trained on (likely due to a genuine change in customer behavior or a new merchant category), so the model's learned decision boundary no longer matched reality — even though nothing crashed or errored. This is exactly why 'no errors' doesn't mean 'no problem' in ML systems: model quality can silently degrade while every traditional health check stays green. The fix is retraining on recent data and rolling out the new version cautiously (canary), plus setting up ongoing drift monitoring so this is caught automatically next time instead of via a delayed business report.",
+  "real_commands_used": ["kubectl rollout history", "curl (metrics endpoint)", "python (data inspection)", "kubectl create job"]
+}

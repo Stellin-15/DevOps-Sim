@@ -1,0 +1,37 @@
+{
+  "id": "networking-incident-001",
+  "type": "incident",
+  "category": "networking",
+  "title": "Intermittent Timeouts to an External API",
+  "difficulty": "intermediate",
+  "tags": ["networking", "firewall", "timeouts", "dns"],
+  "intro": "Your app occasionally times out calling a third-party payments API. It works most of the time, which is what makes it annoying.",
+  "steps": [
+    {
+      "prompt": "First, distinguish 'timeout' from 'refused' — try a direct request.",
+      "expected_commands": ["curl -v https://payments-api.example.com/health --max-time 5"],
+      "fake_output": "*   Trying 203.0.113.10:443...\n* Connection timed out after 5001 milliseconds",
+      "hint": "A timeout (not 'connection refused') usually means packets are being silently dropped somewhere, not that the port is closed."
+    },
+    {
+      "prompt": "Check if DNS is returning a consistent IP each time, or flapping between multiple.",
+      "expected_commands": ["dig payments-api.example.com +short"],
+      "fake_output": "203.0.113.10\n203.0.113.11",
+      "hint": "Multiple IPs means DNS round-robins between them — worth checking if only one is unhealthy."
+    },
+    {
+      "prompt": "Test connectivity to each IP directly.",
+      "expected_commands": ["nc -zv 203.0.113.10 443", "nc -zv 203.0.113.11 443"],
+      "fake_output": "nc: connect to 203.0.113.10 port 443 (tcp) failed: Operation timed out\nConnection to 203.0.113.11 443 port [tcp/https] succeeded!",
+      "hint": "Test both IPs separately — DNS round-robin means roughly half your requests are silently going to the broken one."
+    },
+    {
+      "prompt": "Check your own outbound firewall rules in case egress is the issue, not the remote side.",
+      "expected_commands": ["iptables -L -n -v", "ufw status"],
+      "fake_output": "Chain OUTPUT (policy ACCEPT)\ntarget  prot  source        destination\nDROP    tcp   0.0.0.0/0     203.0.113.10",
+      "hint": "Check if there's an explicit DROP rule for that specific IP — sometimes these get added and forgotten."
+    }
+  ],
+  "resolution": "Two things were true at once: DNS was round-robining between two IPs for the payments API, and a stale firewall rule on your own server was dropping outbound traffic to exactly one of those IPs. Since DNS alternated per-request, roughly half your calls silently hung until timeout while the other half succeeded instantly — explaining the 'intermittent' pattern perfectly. The fix is removing the stale DROP rule; the API provider's DNS setup wasn't actually the problem, it just made the real problem look random.",
+  "real_commands_used": ["curl -v", "dig", "nc -zv", "iptables -L"]
+}

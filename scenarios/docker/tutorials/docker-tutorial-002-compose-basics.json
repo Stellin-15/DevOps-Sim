@@ -1,0 +1,46 @@
+{
+  "id": "docker-tutorial-002",
+  "type": "tutorial",
+  "category": "docker",
+  "title": "Docker Compose Basics",
+  "difficulty": "beginner",
+  "tags": ["docker", "compose", "multi-container"],
+  "intro": "Real apps are rarely one container — Compose lets you define and run multi-container setups (app + db + cache) with one file.",
+  "steps": [
+    {
+      "prompt": "Start everything defined in docker-compose.yml, in detached mode.",
+      "expected_commands": ["docker compose up -d"],
+      "fake_output": "Creating network \"myapp_default\"\nCreating myapp_db_1 ... done\nCreating myapp_web_1 ... done",
+      "explanation": "Compose creates a shared network automatically so services can reach each other by name (e.g. the app can just connect to host 'db').",
+      "why": "You could 'docker run' each container separately and wire up networking by hand, but Compose reads the relationships (depends_on, shared networks, volumes) from one file — the whole point is not having to remember and retype a growing pile of individual docker run flags."
+    },
+    {
+      "prompt": "Check the status of all services.",
+      "expected_commands": ["docker compose ps"],
+      "fake_output": "NAME          IMAGE      STATUS         PORTS\nmyapp_db_1    postgres   Up 10 seconds  5432/tcp\nmyapp_web_1   myapp      Up 10 seconds  0.0.0.0:8080->3000/tcp",
+      "explanation": "Same idea as docker ps, scoped to this compose project.",
+      "why": "Plain 'docker ps' would also show these containers, mixed in with anything else running on the machine — 'compose ps' filters to just this project, which matters once you have several compose projects running at once."
+    },
+    {
+      "prompt": "Follow the logs of just the 'web' service.",
+      "expected_commands": ["docker compose logs -f web"],
+      "fake_output": "web_1  | Connecting to db:5432...\nweb_1  | Connected. Server started.",
+      "explanation": "Notice it connects to 'db' by service name, not an IP — that's Compose's internal DNS at work.",
+      "why": "'docker compose logs -f' with no service name streams every service interleaved, which gets noisy fast — naming 'web' specifically is the same instinct as kubectl logs -l app=X when you only care about one thing."
+    },
+    {
+      "prompt": "You changed the Dockerfile. Rebuild and restart everything.",
+      "expected_commands": ["docker compose up -d --build", "docker compose up --build -d"],
+      "fake_output": "Building web\nStep 1/5...\nSuccessfully built\nRecreating myapp_web_1 ... done",
+      "explanation": "--build forces a rebuild of any service with a 'build' key in the compose file before starting.",
+      "why": "Without --build, 'docker compose up' reuses whatever image already exists locally — your Dockerfile change would be silently ignored, which is a very common 'why isn't my change showing up' trap."
+    },
+    {
+      "prompt": "Tear everything down, including the volumes.",
+      "expected_commands": ["docker compose down -v"],
+      "fake_output": "Stopping myapp_web_1 ... done\nStopping myapp_db_1 ... done\nRemoving myapp_web_1 ... done\nRemoving myapp_db_1 ... done\nRemoving volume myapp_dbdata",
+      "explanation": "-v also removes named volumes — without it, your database data would survive for next time, which is usually what you want in dev unless you're intentionally resetting.",
+      "why": "Plain 'docker compose down' (no -v) is the safer default for everyday stop/start — reach for -v specifically when you want a genuinely clean slate, like testing what a fresh install actually looks like."
+    }
+  ]
+}

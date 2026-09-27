@@ -1,0 +1,53 @@
+{
+  "id": "cicd-tutorial-001",
+  "type": "tutorial",
+  "category": "cicd",
+  "title": "The Basic Git-to-Deploy Flow",
+  "difficulty": "beginner",
+  "tags": ["cicd", "git", "github-actions"],
+  "intro": "Almost every CI/CD pipeline starts the same way: branch, commit, push, let automation take over. Let's walk the flow.",
+  "steps": [
+    {
+      "prompt": "Create and switch to a new branch called 'fix-login-bug'.",
+      "expected_commands": ["git checkout -b fix-login-bug"],
+      "fake_output": "Switched to a new branch 'fix-login-bug'",
+      "explanation": "Branching keeps your change isolated from main until it's reviewed and merged.",
+      "why": "'git checkout -b' combines creating the branch and switching to it in one step — the equivalent two-step form is 'git branch fix-login-bug' followed by 'git checkout fix-login-bug', which is just more typing for the same result."
+    },
+    {
+      "prompt": "Stage and commit your changes with the message 'fix: handle expired session tokens'.",
+      "expected_commands": ["git add . && git commit -m \"fix: handle expired session tokens\"", "git commit -am \"fix: handle expired session tokens\""],
+      "fake_output": "[fix-login-bug a1b2c3d] fix: handle expired session tokens\n 1 file changed, 12 insertions(+), 2 deletions(-)",
+      "explanation": "Descriptive, conventional commit messages (fix:, feat:, chore:) often drive automated changelogs and versioning in real pipelines.",
+      "why": "'commit -am' only stages files that are already tracked by git — a genuinely new file still needs an explicit 'git add' first. 'add . && commit -m' is the safer habit when you're not sure whether everything changed is already tracked."
+    },
+    {
+      "prompt": "Push the branch to origin.",
+      "expected_commands": ["git push origin fix-login-bug"],
+      "fake_output": "* [new branch]      fix-login-bug -> fix-login-bug",
+      "explanation": "This alone often triggers a CI workflow (on: push in GitHub Actions) that runs tests automatically.",
+      "why": "Without specifying 'origin fix-login-bug' the first time you push a new branch, plain 'git push' fails asking you to set an upstream — this explicit form sets it up in the same command instead of needing a follow-up."
+    },
+    {
+      "prompt": "Open a pull request from this branch into main using the GitHub CLI.",
+      "expected_commands": ["gh pr create"],
+      "fake_output": "? Title: fix: handle expired session tokens\nCreating pull request for fix-login-bug into main\nhttps://github.com/you/repo/pull/42",
+      "explanation": "PR creation itself often triggers a separate CI workflow (on: pull_request) — commonly a stricter set of checks than plain push.",
+      "why": "You could open the PR through the GitHub web UI instead — 'gh pr create' exists specifically so this whole flow (branch, commit, push, PR) never requires leaving the terminal, which matters when you're doing it dozens of times a week."
+    },
+    {
+      "prompt": "Check the status of the CI run on this PR.",
+      "expected_commands": ["gh pr view 42", "gh run list"],
+      "fake_output": "Checks:\n  ✓ build\n  ✓ test\n  ✗ lint - Failed",
+      "explanation": "Lint failed but build/test passed — worth knowing at a glance which specific job to look at rather than treating the whole pipeline as one blob.",
+      "why": "'gh pr view' scopes the check list to this one PR specifically; 'gh run list' shows every recent workflow run across the whole repo — reach for pr view when you already know which PR you care about, run list when you're scanning broadly."
+    },
+    {
+      "prompt": "View the failed run's logs to see what lint caught.",
+      "expected_commands": ["gh run view --log-failed"],
+      "fake_output": "src/auth.js:34:5 error 'unusedVar' is defined but never used",
+      "explanation": "--log-failed filters straight to the failing job's output instead of dumping the entire pipeline log.",
+      "why": "Without --log-failed, 'gh run view --log' dumps every job's full output including the ones that already passed — for a pipeline with several jobs, that's a lot of scrolling to find the one line that actually matters."
+    }
+  ]
+}

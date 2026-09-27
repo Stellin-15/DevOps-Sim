@@ -1,0 +1,39 @@
+{
+  "id": "monitoring-tutorial-001",
+  "type": "tutorial",
+  "category": "monitoring",
+  "title": "Reading Metrics and Logs Like an SRE",
+  "difficulty": "beginner",
+  "tags": ["monitoring", "prometheus", "logs", "sre"],
+  "intro": "Monitoring isn't just dashboards — it's knowing which question to ask the data. Let's practice the basics: checking if something is up, querying a rate, and searching logs.",
+  "steps": [
+    {
+      "prompt": "Query Prometheus to check if the 'checkout-service' target is up.",
+      "expected_commands": ["curl http://localhost:9090/api/v1/query?query=up{job=\"checkout-service\"}"],
+      "fake_output": "{\"status\":\"success\",\"data\":{\"result\":[{\"metric\":{\"job\":\"checkout-service\"},\"value\":[1695800000,\"1\"]}]}}",
+      "explanation": "A value of \"1\" means Prometheus successfully scraped it last time; \"0\" means the target is down or unreachable.",
+      "why": "You could check the same thing visually in the Prometheus web UI, but hitting the HTTP API directly with curl is what you'd actually do inside a script or a quick terminal check without switching to a browser."
+    },
+    {
+      "prompt": "In the Prometheus UI, what PromQL would show the 5-minute request rate for http_requests_total?",
+      "expected_commands": ["rate(http_requests_total[5m])"],
+      "fake_output": "(Graph showing requests/sec over time, per label combination)",
+      "explanation": "rate() is essential for counters — raw counter values only ever go up, so you always wrap them in rate() to get something meaningful like requests/sec.",
+      "why": "Just graphing http_requests_total directly would show an ever-climbing line that resets to 0 on every restart — completely useless for spotting a traffic drop. rate() converts that raw ever-increasing counter into a per-second value that actually reflects what's happening right now."
+    },
+    {
+      "prompt": "Now write a PromQL query for the 95th percentile request latency.",
+      "expected_commands": ["histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))"],
+      "fake_output": "(Graph showing p95 latency over time)",
+      "explanation": "p95/p99 matter more than averages — a slow 5% of requests can be a real user-facing problem an average completely hides.",
+      "why": "An average latency query would be simpler to write, but it's exactly what hides the problem you're usually looking for — a handful of genuinely painful slow requests get smoothed away by thousands of fast ones. histogram_quantile is the standard way to surface that tail instead of averaging it out."
+    },
+    {
+      "prompt": "Search recent logs for any 500 errors in the last hour.",
+      "expected_commands": ["journalctl -u checkout-service --since '1 hour ago' | grep 500", "kubectl logs -l app=checkout-service --since=1h | grep 500"],
+      "fake_output": "10:14:02 POST /checkout 500 Internal Server Error",
+      "explanation": "Combining a time-scoped log fetch with grep is one of the single most common on-call actions there is.",
+      "why": "journalctl is for a service running directly on a host (via systemd); kubectl logs is for one running as a pod — same underlying instinct (get logs, scope by time, filter with grep), just a different command depending on where the thing actually runs."
+    }
+  ]
+}

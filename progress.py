@@ -7,8 +7,14 @@ per-player local state, not project content). Schema matches SPEC.md:
   "tutorials_completed": ["tutorial-001", ...],
   "incidents_completed": ["incident-001", ...],
   "yaml_labs_completed": ["yaml-001", ...],
+  "career_paths_completed": ["path-001", ...],
   "attempts": {"tutorial-001": 1, "incident-001": 3}
 }
+
+Scenario ids are globally unique across every category (e.g.
+"docker-tutorial-001" vs "tutorial-001" vs "terraform-tutorial-001"), so
+this stays flat rather than nested per category — no migration needed as
+categories are added.
 
 "attempts" counts how many times a scenario has been played (run to
 completion or quit early) — a rough measure of how much a scenario was
@@ -25,6 +31,7 @@ DEFAULT_PROGRESS = {
     "tutorials_completed": [],
     "incidents_completed": [],
     "yaml_labs_completed": [],
+    "career_paths_completed": [],
     "attempts": {},
 }
 
@@ -32,6 +39,7 @@ COMPLETED_KEY = {
     "tutorial": "tutorials_completed",
     "incident": "incidents_completed",
     "yaml_lab": "yaml_labs_completed",
+    "career_path": "career_paths_completed",
 }
 
 
@@ -74,5 +82,6 @@ def _fresh_progress() -> dict:
         "tutorials_completed": [],
         "incidents_completed": [],
         "yaml_labs_completed": [],
+        "career_paths_completed": [],
         "attempts": {},
     }

@@ -1,0 +1,49 @@
+{
+  "id": "linux-incident-001",
+  "type": "incident",
+  "category": "linux",
+  "title": "Service Won't Start After Server Reboot",
+  "difficulty": "intermediate",
+  "tags": ["linux", "systemd", "services", "debugging"],
+  "intro": "A server rebooted overnight (kernel patching). This morning, the API isn't responding.",
+  "steps": [
+    {
+      "prompt": "Check the status of the api service.",
+      "expected_commands": ["systemctl status api"],
+      "fake_output": "● api.service - API Server\n   Loaded: loaded\n   Active: failed (Result: exit-code) since 03:12:05",
+      "hint": "systemctl status shows current state and the last few log lines."
+    },
+    {
+      "prompt": "Get more detail from its journal logs.",
+      "expected_commands": ["journalctl -u api", "journalctl -u api -f", "journalctl -u api --since '4 hours ago'"],
+      "fake_output": "Sep 27 03:12:05 api[1234]: Error: EADDRINUSE: address already in use :::8080\nSep 27 03:12:05 api[1234]: Process exited with code 1",
+      "hint": "journalctl -u <service> shows that service's full logged history."
+    },
+    {
+      "prompt": "Something else is already using port 8080. Find out what.",
+      "expected_commands": ["ss -tulnp | grep 8080", "lsof -i :8080"],
+      "fake_output": "tcp   LISTEN   0   128   *:8080   *:*   users:((\"old-api\",pid=987,fd=6))",
+      "hint": "ss or lsof will show you which process is bound to that port."
+    },
+    {
+      "prompt": "An old leftover process called 'old-api' never got cleaned up and grabbed the port on boot. Kill it.",
+      "expected_commands": ["kill 987", "kill -9 987"],
+      "fake_output": "(process terminated)",
+      "hint": "kill sends SIGTERM by default; -9 forces it if it doesn't respond."
+    },
+    {
+      "prompt": "Now start the real api service.",
+      "expected_commands": ["systemctl start api"],
+      "fake_output": "(no output — success)",
+      "hint": "Just start it now that the port is free."
+    },
+    {
+      "prompt": "Confirm it's healthy and enabled to survive future reboots.",
+      "expected_commands": ["systemctl status api", "systemctl enable api"],
+      "fake_output": "● api.service - API Server\n   Active: active (running)",
+      "hint": "Also worth checking 'systemctl enable' so it starts automatically on the next boot."
+    }
+  ],
+  "resolution": "An orphaned old-api process from before the reboot somehow survived and grabbed port 8080 first during boot, so the real api.service failed immediately with EADDRINUSE. The fix was identifying and killing the stray process, then starting the real service. Worth investigating separately why 'old-api' existed at all — likely a leftover from a manual debugging session that was never cleaned up, which is exactly the kind of thing that causes 3am reboot surprises.",
+  "real_commands_used": ["systemctl status", "journalctl -u", "ss -tulnp", "lsof -i", "kill", "systemctl start", "systemctl enable"]
+}

@@ -7,6 +7,14 @@ answer: **helpful, not sufficient, for both** — and this file exists to be
 specific about where it falls short, so nobody mistakes "completed every
 scenario" for "ready."
 
+**Scope note:** this assessment covers the **Kubernetes** category only.
+The game has since expanded to Docker, Linux, Terraform, Networking,
+CI/CD, Monitoring, and MLOps too (see README.md/CLAUDE.md) — those
+categories are at an earlier content-depth stage and haven't had an
+equivalent gap analysis yet. Everything below is specifically about
+whether the Kubernetes content (tutorials 001-029, incidents 001-010,
+YAML labs) holds up against real CKA/production expectations.
+
 ---
 
 ## What kube-sim is actually good at

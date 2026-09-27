@@ -1,5 +1,14 @@
 # kube-sim — Terminal-Based Kubernetes/DevOps Learning Game
 
+> **Historical note:** this was the original, Kubernetes-only design spec
+> (v1–v6). The project has since expanded into a multi-category DevOps
+> simulator (Kubernetes, Docker, Linux, Terraform, Networking, CI/CD,
+> Monitoring, MLOps) plus YAML Labs and Career Paths. This file is kept
+> as-is for history — see **CLAUDE.md** for the current architecture and
+> **README.md** for current usage. The matching rules, feedback rules, and
+> JSON schema described below are still accurate; the "one category"
+> framing and build order are not.
+
 ## Overview
 
 A terminal-based CLI game for learning real DevOps/Kubernetes commands by doing, not memorizing. Two modes:

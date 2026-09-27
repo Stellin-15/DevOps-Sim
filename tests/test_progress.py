@@ -15,6 +15,7 @@ def test_fresh_progress_shape():
         "tutorials_completed": [],
         "incidents_completed": [],
         "yaml_labs_completed": [],
+        "career_paths_completed": [],
         "attempts": {},
     }
 
@@ -49,6 +50,13 @@ def test_mark_completed_yaml_lab():
     progress_module.mark_completed(p, "yaml-001", "yaml_lab")
     assert progress_module.is_completed(p, "yaml-001", "yaml_lab")
     assert "yaml-001" in p["yaml_labs_completed"]
+
+
+def test_mark_completed_career_path():
+    p = progress_module._fresh_progress()
+    progress_module.mark_completed(p, "path-001", "career_path")
+    assert progress_module.is_completed(p, "path-001", "career_path")
+    assert "path-001" in p["career_paths_completed"]
 
 
 def test_mark_completed_is_idempotent():

@@ -1,0 +1,39 @@
+{
+  "id": "networking-tutorial-001",
+  "type": "tutorial",
+  "category": "networking",
+  "title": "Diagnosing Connectivity, Layer by Layer",
+  "difficulty": "beginner",
+  "tags": ["networking", "dns", "curl", "ports"],
+  "intro": "When something is 'unreachable', you check connectivity in layers: can I resolve the name, can I reach the port, does the app actually respond.",
+  "steps": [
+    {
+      "prompt": "Check if the hostname resolves at all.",
+      "expected_commands": ["dig api.internal.example.com +short", "nslookup api.internal.example.com"],
+      "fake_output": "10.0.4.22",
+      "explanation": "If this step fails, the problem is DNS, not the app — always check this first, it rules out an entire category of causes.",
+      "why": "'dig +short' prints just the IP with none of the extra query/answer-section noise a plain 'dig' dumps — faster to read at a glance during an incident when you just need the one value."
+    },
+    {
+      "prompt": "DNS resolves fine. Now check if the port is even reachable.",
+      "expected_commands": ["nc -zv api.internal.example.com 443", "nc -zv 10.0.4.22 443"],
+      "fake_output": "Connection to api.internal.example.com 443 port [tcp/https] succeeded!",
+      "explanation": "This confirms something is listening on that port — separate from whether the application logic actually works correctly.",
+      "why": "-z tells nc to just test the connection and exit instead of opening an interactive session, and -v prints the result — without -z you'd be dropped into a raw socket session, which isn't what you want for a quick health check."
+    },
+    {
+      "prompt": "Port's open. Now check the actual HTTP response.",
+      "expected_commands": ["curl -I https://api.internal.example.com", "curl -v https://api.internal.example.com"],
+      "fake_output": "HTTP/1.1 200 OK\nContent-Type: application/json",
+      "explanation": "A 200 here means DNS, network, and application are all fine — three layers confirmed in three commands.",
+      "why": "-I sends a HEAD request and shows just the response headers, which is enough to confirm the app is actually answering — -v is the heavier option, useful when you need the full TLS handshake and connection details, not just the final status."
+    },
+    {
+      "prompt": "Check how long the request actually took (useful when 'slow' is the complaint, not 'broken').",
+      "expected_commands": ["curl -o /dev/null -s -w \"%{time_total}\\n\" https://api.internal.example.com"],
+      "fake_output": "0.842315",
+      "explanation": "This isolates total request time without downloading/printing the response body — handy for quick latency checks in scripts.",
+      "why": "-o /dev/null discards the body and -s suppresses curl's own progress output, leaving only the -w formatted timing value — without those two flags this command would dump the entire response onto your screen just to show one number at the end."
+    }
+  ]
+}

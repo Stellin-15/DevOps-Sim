@@ -1,0 +1,39 @@
+{
+  "id": "linux-tutorial-001",
+  "type": "tutorial",
+  "category": "linux",
+  "title": "Finding What's Eating Resources",
+  "difficulty": "beginner",
+  "tags": ["linux", "processes", "resources"],
+  "intro": "A server feels slow. Before touching anything else, you need to know what's actually consuming CPU, memory, and disk.",
+  "steps": [
+    {
+      "prompt": "Check overall memory usage.",
+      "expected_commands": ["free -h"],
+      "fake_output": "              total        used        free      shared\nMem:           7.8G        6.9G        200M        150M",
+      "explanation": "6.9G used out of 7.8G — this box is nearly out of memory.",
+      "why": "-h prints human-readable units (G/M) instead of raw kilobytes — the numbers are identical either way, but you shouldn't have to do division in your head during an incident."
+    },
+    {
+      "prompt": "List running processes sorted to find the biggest resource users.",
+      "expected_commands": ["ps aux", "top"],
+      "fake_output": "USER  PID  %CPU  %MEM  COMMAND\nroot  4821  95.2  42.1  node server.js\nroot  1023   2.1   1.5  sshd",
+      "explanation": "That node process is using 95% CPU and 42% memory — clearly the culprit.",
+      "why": "'top' updates live and is better for watching a process's usage change in real time; 'ps aux' gives you a single static snapshot you can pipe into grep/sort/scripts — pick based on whether you need to watch or just capture."
+    },
+    {
+      "prompt": "Check disk space too, since resource issues often come in pairs.",
+      "expected_commands": ["df -h"],
+      "fake_output": "Filesystem      Size  Used  Avail  Use%\n/dev/sda1        50G   48G   2.0G   96%",
+      "explanation": "96% disk usage — worth checking what's filling it, often log files.",
+      "why": "'df' reports space at the filesystem level; it won't tell you WHICH files are responsible for that usage — that's what the next step (du) is for. df answers 'is this the problem,' du answers 'what's causing it.'"
+    },
+    {
+      "prompt": "Find what's taking up space in /var/log.",
+      "expected_commands": ["du -sh /var/log/*"],
+      "fake_output": "2.1G  /var/log/app.log\n45M   /var/log/syslog",
+      "explanation": "A 2.1G log file that was never rotated — a very common real-world cause of disk pressure.",
+      "why": "-s summarizes each argument to one total instead of listing every file/subdirectory recursively — without it, du -h /var/log/* would print a noisy line for every single file inside every subfolder, burying the one number you actually care about."
+    }
+  ]
+}

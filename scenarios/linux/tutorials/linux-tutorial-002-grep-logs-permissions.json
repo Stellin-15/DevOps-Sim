@@ -1,0 +1,46 @@
+{
+  "id": "linux-tutorial-002",
+  "type": "tutorial",
+  "category": "linux",
+  "title": "grep, Logs, and Permissions",
+  "difficulty": "beginner",
+  "tags": ["linux", "grep", "permissions", "logs"],
+  "intro": "Three skills you'll use every single day as a DevOps/SRE: searching text, tailing logs, and fixing permissions.",
+  "steps": [
+    {
+      "prompt": "Search app.log for any line containing 'ERROR'.",
+      "expected_commands": ["grep 'ERROR' app.log", "grep ERROR app.log"],
+      "fake_output": "2026-09-27 10:01:23 ERROR: connection timeout\n2026-09-27 10:04:51 ERROR: disk write failed",
+      "explanation": "grep's most basic and most-used form — searching one file for one pattern.",
+      "why": "Quoting the pattern ('ERROR' vs ERROR) only actually matters once the pattern contains spaces or shell-special characters — for a single plain word like this, both are equivalent, which is why either is accepted here."
+    },
+    {
+      "prompt": "Now search recursively for 'ERROR' across the whole /var/log directory, showing line numbers.",
+      "expected_commands": ["grep -rn 'ERROR' /var/log", "grep -rn ERROR /var/log"],
+      "fake_output": "/var/log/app.log:23:ERROR: connection timeout\n/var/log/nginx/error.log:8:ERROR: upstream timed out",
+      "explanation": "-r recurses into subdirectories, -n shows line numbers — combine flags like this constantly.",
+      "why": "Without -n you'd see the matching lines but not WHERE in each file — fine for a quick count, useless when you actually need to go open the file and look at the surrounding context."
+    },
+    {
+      "prompt": "Follow app.log live to watch for new errors as they happen.",
+      "expected_commands": ["tail -f app.log"],
+      "fake_output": "(streaming new lines as they're written... press Ctrl+C to stop)",
+      "explanation": "tail -f is the Linux equivalent of kubectl logs -f — you'll reach for this instinctively once it's muscle memory.",
+      "why": "Plain 'tail app.log' (no -f) just shows the last 10 lines once and exits — -f is specifically what keeps the connection open and streams new lines as they're appended, which is the whole point when reproducing a live bug."
+    },
+    {
+      "prompt": "Try to run deploy.sh and you get 'Permission denied'. Make it executable.",
+      "expected_commands": ["chmod +x deploy.sh"],
+      "fake_output": "(no output — success)",
+      "explanation": "chmod +x adds execute permission for all permission classes without touching read/write bits.",
+      "why": "You could instead write out the exact octal permissions (chmod 755 deploy.sh), but that overwrites ALL the permission bits at once — +x is safer when you only want to add execute and leave whatever read/write permissions were already set untouched."
+    },
+    {
+      "prompt": "Now run it.",
+      "expected_commands": ["./deploy.sh"],
+      "fake_output": "Deploying application...\nDeployment complete.",
+      "explanation": "The './' matters — it tells the shell to run the script from the current directory rather than searching $PATH.",
+      "why": "Just typing 'deploy.sh' without './' fails with 'command not found' unless the current directory happens to be on $PATH (which it usually isn't, deliberately, for security reasons) — this trips up almost everyone the first time."
+    }
+  ]
+}

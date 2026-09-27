@@ -1,0 +1,15 @@
+{
+  "id": "path-002",
+  "type": "career_path",
+  "title": "Production Fire Drill",
+  "difficulty": "intermediate",
+  "tags": ["linux", "networking", "kubernetes", "monitoring", "incidents"],
+  "intro": "Real incidents don't stay inside one tool's boundary. This path chains four separate production fires across the stack — a host-level failure, a network problem, a Kubernetes crash loop, and a confusing alert — back to back, the way an actual on-call shift bounces between layers.",
+  "steps": [
+    "linux-incident-001",
+    "networking-incident-001",
+    "incident-001",
+    "monitoring-incident-001"
+  ],
+  "resolution": "Four different incidents, four different layers of the stack — a systemd service that wouldn't start, a network path that was silently dropping packets, a Kubernetes pod stuck crash-looping, and an alert that fired without enough context to act on. Real on-call work jumps between all of these in a single shift, and the actual skill isn't memorizing any one tool's commands — it's recognizing which layer a symptom is actually coming from before you start debugging the wrong one."
+}

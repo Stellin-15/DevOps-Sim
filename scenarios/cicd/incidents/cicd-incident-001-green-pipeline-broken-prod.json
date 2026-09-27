@@ -1,0 +1,43 @@
+{
+  "id": "cicd-incident-001",
+  "type": "incident",
+  "category": "cicd",
+  "title": "Deploy Pipeline Passing Tests But Prod Is Broken",
+  "difficulty": "advanced",
+  "tags": ["cicd", "deployment", "rollback"],
+  "intro": "CI went green, the deploy job ran successfully, and now prod is throwing 500s. Everyone's asking what happened.",
+  "steps": [
+    {
+      "prompt": "Check the most recent workflow run to confirm it actually deployed the commit you think it did.",
+      "expected_commands": ["gh run list", "gh run view <run-id>"],
+      "fake_output": "✓ Deploy #128 — commit a1b2c3d — main — 4 minutes ago",
+      "hint": "Confirm which exact commit was deployed before assuming anything about the code itself."
+    },
+    {
+      "prompt": "Check current prod pods/containers to confirm they're running that new version.",
+      "expected_commands": ["kubectl get pods -o wide", "kubectl describe deployment app"],
+      "fake_output": "app-9f8e7d6c5-abcd   1/1   Running   0   3m   image: app:a1b2c3d",
+      "hint": "Confirm the deployed image tag actually matches the commit from the pipeline."
+    },
+    {
+      "prompt": "Check logs on the new pods for the actual error.",
+      "expected_commands": ["kubectl logs -l app=app --tail=50"],
+      "fake_output": "Error: Cannot connect to database\nFATAL: password authentication failed for user \"app_prod\"",
+      "hint": "The error is auth-related, not a code bug — worth checking what changed about credentials, not the code."
+    },
+    {
+      "prompt": "Check if a secret used in deployment was recently rotated or changed.",
+      "expected_commands": ["kubectl get secret db-creds -o yaml", "kubectl describe secret db-creds"],
+      "fake_output": "Last Modified: 6 minutes ago (via CI pipeline step 'rotate-secrets')",
+      "hint": "Compare the secret's last-modified time against the deploy time — a coincidence in timing is rarely a coincidence."
+    },
+    {
+      "prompt": "The pipeline's secret-rotation step ran but the new password was never actually synced to the database itself — a script bug. While that gets fixed properly, roll back the deployment to restore service immediately.",
+      "expected_commands": ["kubectl rollout undo deployment app", "git revert a1b2c3d && git push"],
+      "fake_output": "deployment.apps/app rolled back",
+      "hint": "Restoring service now matters more than root-causing further at this exact moment — that's what a rollback buys you."
+    }
+  ],
+  "resolution": "Tests passed and the deploy job succeeded because both only checked that the application code built and ran correctly — neither validated that the newly-rotated database password was actually applied on the database side, since that was a separate, unrelated automation step that silently failed. This is a classic 'green pipeline, broken prod' pattern: CI validates code, not the full system state it depends on. Immediate fix was rollback to restore service; real fix afterward was making the secret-rotation step fail loudly (and probably block deploy) if the sync step doesn't succeed, plus adding a smoke test that actually hits the database post-deploy.",
+  "real_commands_used": ["gh run list", "kubectl get pods", "kubectl logs", "kubectl get secret", "kubectl rollout undo"]
+}

@@ -1,0 +1,46 @@
+{
+  "id": "docker-tutorial-001",
+  "type": "tutorial",
+  "category": "docker",
+  "title": "Build, Run, and Inspect Your First Container",
+  "difficulty": "beginner",
+  "tags": ["docker", "basics", "containers"],
+  "intro": "Let's build an image, run it as a container, and poke at it — the core Docker loop you'll repeat constantly.",
+  "steps": [
+    {
+      "prompt": "Build an image from the Dockerfile in the current directory, tagging it 'myapp:v1'.",
+      "expected_commands": ["docker build -t myapp:v1 ."],
+      "fake_output": "Step 1/5 : FROM node:20-alpine\n ---> a1b2c3d4\nStep 5/5 : CMD [\"node\", \"server.js\"]\n ---> Running in e5f6g7h8\nSuccessfully built i9j0k1l2\nSuccessfully tagged myapp:v1",
+      "explanation": "Each Dockerfile instruction becomes a cached layer — this is why reordering COPY/RUN steps in a Dockerfile can drastically speed up rebuilds.",
+      "why": "Without -t, the image builds but gets an unmemorable hash as its only identifier — tagging it 'myapp:v1' is what lets every later command (run, push) refer to it by a name you'll actually remember."
+    },
+    {
+      "prompt": "Run it in detached mode, mapping host port 8080 to container port 3000.",
+      "expected_commands": ["docker run -d -p 8080:3000 myapp:v1"],
+      "fake_output": "7f3a9b2c1d0e",
+      "explanation": "-d runs it in the background and returns the container ID immediately.",
+      "why": "Without -d, the container runs in your foreground terminal and blocks it until you Ctrl+C (which stops the container) — -d is what you want for anything meant to keep running while you do other things."
+    },
+    {
+      "prompt": "Confirm it's running.",
+      "expected_commands": ["docker ps"],
+      "fake_output": "CONTAINER ID   IMAGE       PORTS                    STATUS\n7f3a9b2c1d0e   myapp:v1    0.0.0.0:8080->3000/tcp   Up 5 seconds",
+      "explanation": "docker ps only shows running containers — add -a to see stopped ones too.",
+      "why": "If a container crashed right after starting, plain 'docker ps' would show nothing and make it look like the run command silently failed — 'docker ps -a' is the one to reach for when a container you expect to see isn't showing up here."
+    },
+    {
+      "prompt": "View its logs.",
+      "expected_commands": ["docker logs 7f3a9b2c1d0e"],
+      "fake_output": "Server listening on port 3000",
+      "explanation": "Same idea as kubectl logs — every container's stdout/stderr is captured here.",
+      "why": "Add -f to this to stream logs live, same as kubectl logs -f — the flag names lining up between Docker and Kubernetes isn't a coincidence, kubectl's CLI was deliberately modeled on Docker's for exactly this kind of muscle-memory transfer."
+    },
+    {
+      "prompt": "Get a shell inside the running container.",
+      "expected_commands": ["docker exec -it 7f3a9b2c1d0e /bin/sh", "docker exec -it 7f3a9b2c1d0e sh"],
+      "fake_output": "/app #",
+      "explanation": "Alpine-based images usually only have /bin/sh, not bash — worth remembering when exec fails with 'executable file not found'.",
+      "why": "This is the exact same pattern as kubectl exec -it <pod> -- /bin/sh — a container is a container whether Kubernetes is managing it or not, which is why the debugging technique transfers directly."
+    }
+  ]
+}

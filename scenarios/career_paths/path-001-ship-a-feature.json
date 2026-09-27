@@ -1,0 +1,16 @@
+{
+  "id": "path-001",
+  "type": "career_path",
+  "title": "Ship a Feature End to End",
+  "difficulty": "beginner",
+  "tags": ["terraform", "docker", "kubernetes", "cicd", "monitoring"],
+  "intro": "This is how these tools actually get used together on the job, not in isolation: provision the infrastructure, containerize the app, deploy it, automate the deploy, then make sure you can actually see what's happening once it's live. Five stages, five different tools, one continuous flow.",
+  "steps": [
+    "terraform-tutorial-001",
+    "docker-tutorial-001",
+    "tutorial-002",
+    "cicd-tutorial-001",
+    "monitoring-tutorial-001"
+  ],
+  "resolution": "You just walked the same path a feature takes from idea to production: Terraform provisioned the server it runs on, Docker packaged the app so it runs the same everywhere, Kubernetes deployed it with self-healing, CI/CD automated that deploy so a human doesn't have to run it by hand every time, and monitoring is what tells you whether any of that actually worked once real traffic hits it. Each of these tools solves a different problem — the skill that matters on the job isn't just knowing one of them, it's knowing how they hand off to each other."
+}
