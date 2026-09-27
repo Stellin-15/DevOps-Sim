@@ -1,0 +1,34 @@
+{
+  "id": "yaml-017",
+  "type": "yaml_lab",
+  "category": "docker",
+  "title": "Fix a Bloated, Insecure Dockerfile With a Multi-Stage Build",
+  "difficulty": "advanced",
+  "tags": ["dockerfile", "docker", "security", "multi-stage"],
+  "intro": "This image is 1.1GB, runs as root, ships the whole build toolchain to production — and has a live API key baked into one of its layers.",
+  "steps": [
+    {
+      "file": "Dockerfile",
+      "format": "dockerfile",
+      "starter_content": "FROM node:20\nWORKDIR /app\nCOPY . .\nENV API_KEY=sk_live_abc123\nRUN npm install\nRUN npm run build\nEXPOSE 3000\nCMD npm start\n",
+      "prompt": "Rewrite it as a multi-stage build. Stage 1: 'FROM node:20 AS build', copy the source, 'npm ci', 'npm run build'. Stage 2: 'FROM node:20-alpine', copy ONLY the built output and dependencies from the build stage (COPY --from=build ...), run as USER node, and start with an exec-form CMD. Remove the API_KEY entirely — it must be passed at runtime instead.",
+      "apply_commands": ["docker build -t app .", "docker build -t app:v2 .", "check"],
+      "validate": {
+        "fields": {
+          "FROM[0]": {"contains": "AS build"},
+          "FROM[1]": {"contains": "node:20-alpine"},
+          "COPY[*]": {"contains": "--from=build"},
+          "USER[*]": "node",
+          "CMD[*]": {"contains": "["}
+        },
+        "order": ["AS build", "npm run build", "node:20-alpine", "--from=build", "USER node"],
+        "absent": ["sk_live_abc123", "API_KEY="]
+      },
+      "hint": "Two FROM lines = two stages. Only the LAST stage becomes the image, so the build tools in stage 1 never ship. Pull artifacts across with e.g. COPY --from=build /app/dist ./dist and COPY --from=build /app/node_modules ./node_modules. Any ENV holding a secret is readable by anyone who pulls the image.",
+      "solution": "FROM node:20 AS build\nWORKDIR /app\nCOPY package*.json ./\nRUN npm ci\nCOPY . .\nRUN npm run build\n\nFROM node:20-alpine\nWORKDIR /app\nCOPY --from=build /app/node_modules ./node_modules\nCOPY --from=build /app/dist ./dist\nUSER node\nEXPOSE 3000\nCMD [\"node\", \"dist/server.js\"]\n",
+      "fake_output": "[+] Building 41.8s (14/14) FINISHED\n\n$ docker images app\nREPOSITORY  TAG   SIZE\napp         v2    168MB   (was 1.1GB)",
+      "explanation": "~85% smaller, no compilers or source in production, non-root, and no secret in any layer.",
+      "why": "Smaller images pull faster (faster scaling and rollbacks) and contain fewer packages for scanners to flag. But deleting the ENV line only protects FUTURE images: the old image's layers still contain the key, readable via 'docker history' — so that key must be rotated now (same rule as cicd-incident-004: once a secret is published, removal isn't enough). Pass secrets at runtime with -e or a secrets manager, or use BuildKit '--mount=type=secret' if the build itself needs one."
+    }
+  ]
+}

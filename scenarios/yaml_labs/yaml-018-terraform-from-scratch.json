@@ -1,0 +1,34 @@
+{
+  "id": "yaml-018",
+  "type": "yaml_lab",
+  "category": "terraform",
+  "title": "Write Terraform Configuration From Scratch",
+  "difficulty": "intermediate",
+  "tags": ["terraform", "hcl", "iac"],
+  "intro": "The Terraform tutorials taught you to operate existing configs. Now write one: a pinned provider, a variable, a resource that uses it, and an output.",
+  "steps": [
+    {
+      "file": "main.tf",
+      "format": "hcl",
+      "starter_content": "",
+      "prompt": "Write main.tf with: (1) a terraform block requiring provider aws from source \"hashicorp/aws\" with version \"~> 5.0\"; (2) provider \"aws\" with region \"us-east-1\"; (3) variable \"environment\" with type = string; (4) resource \"aws_s3_bucket\" \"logs\" whose bucket is \"acme-logs-${var.environment}\" and whose tags map sets Environment = var.environment; (5) output \"bucket_arn\" with value = aws_s3_bucket.logs.arn.",
+      "apply_commands": ["terraform validate", "terraform plan", "terraform fmt", "check"],
+      "validate": {
+        "fields": {
+          "terraform.required_providers.aws.source": "hashicorp/aws",
+          "terraform.required_providers.aws.version": "~> 5.0",
+          "provider.aws.region": "us-east-1",
+          "variable.environment.type": "string",
+          "resource.aws_s3_bucket.logs.bucket": {"contains": "${var.environment}"},
+          "resource.aws_s3_bucket.logs.tags.Environment": "var.environment",
+          "output.bucket_arn.value": "aws_s3_bucket.logs.arn"
+        }
+      },
+      "hint": "Blocks look like: resource \"TYPE\" \"NAME\" { ... }. Inside required_providers, aws is a map attribute: aws = { source = \"...\", version = \"...\" }. References to other things aren't quoted (var.environment, aws_s3_bucket.logs.arn); interpolation inside a string uses ${...}.",
+      "solution": "terraform {\n  required_providers {\n    aws = {\n      source  = \"hashicorp/aws\"\n      version = \"~> 5.0\"\n    }\n  }\n}\n\nprovider \"aws\" {\n  region = \"us-east-1\"\n}\n\nvariable \"environment\" {\n  type = string\n}\n\nresource \"aws_s3_bucket\" \"logs\" {\n  bucket = \"acme-logs-${var.environment}\"\n  tags = {\n    Environment = var.environment\n  }\n}\n\noutput \"bucket_arn\" {\n  value = aws_s3_bucket.logs.arn\n}\n",
+      "fake_output": "Success! The configuration is valid.\n\nTerraform will perform the following actions:\n  # aws_s3_bucket.logs will be created\n  + bucket = \"acme-logs-staging\"\nPlan: 1 to add, 0 to change, 0 to destroy.",
+      "explanation": "One config that builds a correctly-named, tagged bucket in any environment, and reports its ARN.",
+      "why": "Each piece exists for a reason you've met in the tutorials: '~> 5.0' allows fixes but blocks a breaking 6.0 (terraform-incident-005), the variable lets one config serve dev and prod via tfvars (terraform-tutorial-003), the reference aws_s3_bucket.logs.arn also tells Terraform about ordering (terraform-tutorial-010's graph), and the output hands the ARN to other tools without anyone copy-pasting from the console."
+    }
+  ]
+}

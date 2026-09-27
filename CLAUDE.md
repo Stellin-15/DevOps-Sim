@@ -107,6 +107,25 @@ Don't duplicate content from these files elsewhere — link to them.
     tokens to those boolean keys so lab paths can still say `on.push`.
     (Related YAML 1.1 trap taught in yaml-011: unquoted `22:22` parses
     as the base-60 integer 1342.)
+- **lab_formats.py** — the parsers behind Writing Labs (still called
+  "yaml_lab" internally — `yaml_lab.py`, `scenarios/yaml_labs/`, type
+  `yaml_lab` — renamed only in the menu, to avoid churning ids and
+  progress keys). A lab step's `format` field picks the parser: `yaml`
+  (default), `dockerfile`, `hcl`, or `bash`. Each returns a plain nested
+  dict so the same dotted-path / `[*]` / `contains` checks work on every
+  format: Dockerfile → `{"lines": [...], "FROM": [args...], "RUN": [...]}`,
+  HCL → `{"resource": {"aws_s3_bucket": {"logs": {...}}}, "variable": ...}`,
+  bash → `{"shebang", "lines", "text"}`. Two extra validate keys use
+  them: `order` (substrings that must appear in `lines` in sequence —
+  Dockerfile cache ordering, script structure) and `absent` (substrings
+  that must NOT appear anywhere in the raw text — hardcoded secrets,
+  unquoted `rm -rf`). Deliberately dependency-free: the HCL parser is a
+  small hand-written recursive-descent parser (no python-hcl2), and the
+  bash check is structural (balanced if/fi, do/done, case/esac, quotes)
+  rather than shelling out to `bash -n` — because from native Windows
+  Python, `bash` resolved to a launcher that hung indefinitely. The
+  trade-off (documented in GAPS.md): checks confirm the right shape, not
+  that `docker build`/`terraform validate`/shellcheck would pass.
 - **sandbox.py** — separate free-form mode. `generate_state()` builds a
   random fake cluster: for each of 4-6 randomly chosen services, a
   Deployment (1-3 replica pods), a ClusterIP Service, plus 3 nodes, an
@@ -175,15 +194,15 @@ unique). The Kubernetes-only `kubernetes.md` command reference is
 identical to (and replaces) the old root `COMMANDS.md`.
 
 Current per-category content depth (tutorials / incidents):
-- kubernetes: 29 / 10 (also has 9 YAML labs and Sandbox) — CKA-gap-filled
-- docker: 10 / 5 (+1 YAML lab: Compose)
-- linux: 12 / 6
-- terraform: 10 / 6
+- kubernetes: 29 / 10 (also has 9 Writing Labs and Sandbox) — CKA-gap-filled
+- docker: 10 / 5 (+3 Writing Labs: 2 Dockerfile, 1 Compose)
+- linux: 12 / 6 (+2 Writing Labs: bash)
+- terraform: 10 / 6 (+2 Writing Labs: HCL)
 - networking: 10 / 6
-- cicd: 10 / 6 (+3 YAML labs: GitHub Actions)
-- monitoring: 10 / 6 (+2 YAML labs: alert rules)
+- cicd: 10 / 6 (+3 Writing Labs: GitHub Actions)
+- monitoring: 10 / 6 (+2 Writing Labs: alert rules)
 - mlops: 10 / 6
-- **total: 101 tutorials, 51 incidents, 15 YAML labs**
+- **total: 101 tutorials, 51 incidents, 21 Writing Labs**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with
@@ -297,7 +316,7 @@ final `resolution` debrief instead).
 python -m pytest
 ```
 
-(`pytest.ini` points it at `tests/`.) Nine files:
+(`pytest.ini` points it at `tests/`.) Ten files:
 - `test_engine.py` — matching/normalization logic, proven kubectl-agnostic
 - `test_scenario_loader.py` — category-aware JSON loading (`list_categories`,
   category-filtered vs. aggregated `load_tutorials`/`load_incidents`,
@@ -320,6 +339,9 @@ python -m pytest
   actually parses and passes its own `validate` spec — and the converse:
   a pre-filled (broken) `starter_content` must NOT already pass, or the
   "fix this file" lab teaches nothing
+- `test_lab_formats.py` — the Dockerfile, HCL, and bash parsers (line
+  continuations, labels, nested maps, repeated blocks, comments, syntax
+  errors, unbalanced blocks/quotes) and the `order`/`absent` checks
 - `test_career_path.py` — the run loop: completes all steps, records each
   sub-scenario into `progress` as it goes, stops cleanly on quit, skips
   (doesn't crash on) a missing scenario id
@@ -348,13 +370,16 @@ exercise something the generic checks don't cover.
 
 See GAPS.md Part 9 for the reasoning. In priority order:
 
-1. **Non-YAML authoring labs** — Dockerfile, Terraform HCL, and bash.
-   (YAML-based authoring — manifests, Actions workflows, alert rules,
-   Compose — is done: 15 labs.) Each needs a small validator following
-   yaml_lab.py's pattern: a Dockerfile instruction parser, HCL parsing
-   (python-hcl2) or `terraform validate` if installed, and `bash -n` plus
-   simple structural checks for scripts. Keep the lab JSON shape the same
-   so the menu, progress, and content tests carry over.
+1. **Exam mode** (next, per the agreed roadmap order): timed, no hints,
+   randomly drawn scenarios from a category, scored at the end — closes
+   GAPS.md Part 1's "no exam timer" gap. Should reuse engine.run_step's
+   matching but disable hint/reveal escalation.
+   Then, in order: sandboxes for other categories (Docker host, Linux
+   box), "mystery incidents" (free-form diagnosis, any command in any
+   order, scored on finding the root cause), new-topic content from
+   GAPS.md, a stats/spaced-repetition review mode, and more cert passes.
+   (Writing Labs — step 1 of that roadmap — are done: 21 labs across 7
+   formats.)
 2. Per-category exam gap passes (like Part 1 did for the CKA): e.g.
    Terraform Associate, CKAD, AWS certs.
 3. Topics each GAPS.md part lists as missing: tracing/SLOs (monitoring),

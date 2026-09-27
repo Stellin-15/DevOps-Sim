@@ -1,0 +1,34 @@
+{
+  "id": "yaml-016",
+  "type": "yaml_lab",
+  "category": "docker",
+  "title": "Write a Production Dockerfile From Scratch",
+  "difficulty": "intermediate",
+  "tags": ["dockerfile", "docker", "build"],
+  "intro": "The Docker tutorials had you building and debugging images. Now write the Dockerfile yourself — cache-friendly, non-root, and with a proper startup command.",
+  "steps": [
+    {
+      "file": "Dockerfile",
+      "format": "dockerfile",
+      "starter_content": "",
+      "prompt": "Write a Dockerfile for a Node app: base image node:20-alpine, working directory /app, copy package*.json first and run 'npm ci --omit=dev', THEN copy the rest of the source (COPY . .), run as the built-in 'node' user, expose port 3000, and start with CMD [\"node\", \"server.js\"] (exec form).",
+      "apply_commands": ["docker build -t app .", "docker build -t app:v1 .", "check"],
+      "validate": {
+        "fields": {
+          "FROM[0]": {"contains": "node:20-alpine"},
+          "WORKDIR[*]": "/app",
+          "RUN[*]": {"contains": "npm ci"},
+          "USER[*]": "node",
+          "EXPOSE[*]": "3000",
+          "CMD[0]": {"contains": ["[", "node", "server.js"]}
+        },
+        "order": ["COPY package", "RUN npm ci", "COPY . ."]
+      },
+      "hint": "Order matters for the build cache: dependencies change rarely, source code changes constantly. COPY package*.json ./ → RUN npm ci --omit=dev → COPY . . means code edits don't re-run the install. CMD in exec form is a JSON array: CMD [\"node\", \"server.js\"].",
+      "solution": "FROM node:20-alpine\nWORKDIR /app\nCOPY package*.json ./\nRUN npm ci --omit=dev\nCOPY . .\nUSER node\nEXPOSE 3000\nCMD [\"node\", \"server.js\"]\n",
+      "fake_output": "[+] Building 14.2s (10/10) FINISHED\n => [3/5] COPY package*.json ./\n => [4/5] RUN npm ci --omit=dev\n => [5/5] COPY . .\n => naming to docker.io/library/app:latest",
+      "explanation": "A small, cache-friendly image that runs as an unprivileged user.",
+      "why": "Three habits in eight lines: dependency install before source copy (a code change rebuilds in seconds, not minutes — see docker-tutorial-006's layer history), USER node so a compromised app isn't root (docker-tutorial-010), and exec-form CMD so node runs as PID 1 and actually receives SIGTERM on 'docker stop' — shell form (CMD node server.js) wraps it in /bin/sh, which swallows the signal and forces a 10-second kill."
+    }
+  ]
+}

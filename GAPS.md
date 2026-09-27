@@ -171,11 +171,12 @@ and the ARG-vs-ENV secret mistake.
 
 ## Still missing
 
-- **Writing Dockerfiles** — tutorials teach you to *recognize* instructions
-  and debug builds, but never have you write a Dockerfile yourself. A
-  Dockerfile Lab needs a small new validator (Dockerfiles aren't YAML),
-  and is the single highest-value Docker addition left. *(Writing a
-  docker-compose.yml IS now covered — YAML Lab yaml-011.)*
+- ~~Writing Dockerfiles~~ — **closed**: Writing Labs yaml-016 (a
+  cache-friendly, non-root, exec-form Dockerfile from scratch) and
+  yaml-017 (convert a 1.1GB root image with a baked-in secret into a
+  multi-stage build), plus yaml-011 for docker-compose.yml. Validation is
+  structural (instruction order, stages, forbidden text) — it doesn't
+  run a real `docker build`, so it can't catch e.g. a wrong COPY path.
 - BuildKit specifics (cache mounts, secrets mounts `--secret`),
   multi-platform builds (`docker buildx`) — common in modern CI.
 - Registry operations beyond push/login: image signing, digest pinning.
@@ -215,10 +216,13 @@ silently for weeks, and sshd StrictModes rejecting keys.
 
 ## Still missing
 
-- **Shell scripting** — the biggest gap. Real work means writing bash
-  scripts (variables, conditionals, loops, exit codes, `set -euo
-  pipefail`). This game teaches one-liners, not scripts. A "Script Lab"
-  (validating a real .sh file you write, like YAML Labs) would close it.
+- **Shell scripting** — **partly closed**: Writing Labs yaml-020 (a
+  defensive backup script: `set -euo pipefail`, argument checks, stderr,
+  quoting) and yaml-021 (fix a cleanup script that deletes `/*` when
+  called without an argument). The script checker is structural
+  (balanced if/fi, do/done, case/esac and quotes, plus required and
+  forbidden text) — not a real bash parser or shellcheck, so subtler bugs
+  go unnoticed. Loops, functions, traps, and arrays still aren't practiced.
 - `strace`/`lsof` for deeper process debugging (lsof appears once).
 - Package management (apt/dnf/yum) — trivial but universal.
 - SELinux/AppArmor, firewalls (ufw/iptables/nftables).
@@ -259,9 +263,13 @@ state file.
 
 ## Still missing
 
-- **Writing HCL** — as with Dockerfiles, you learn to *operate* Terraform
-  here, not to *author* it. A "Terraform Lab" validating a real .tf file
-  (via `terraform validate` or HCL parsing) would close this.
+- ~~Writing HCL~~ — **closed** for core authoring: Writing Labs yaml-018
+  (pinned provider, variable, interpolated resource, output) and yaml-019
+  (harden a production database: prevent_destroy, deletion_protection,
+  AWS-managed password, encrypted remote state). A built-in HCL parser
+  checks structure and values; it doesn't validate against provider
+  schemas the way `terraform validate` does, so a misspelled argument
+  name passes.
 - Writing reusable modules (inputs/outputs/versioning), `for_each` vs
   `count` trade-offs, `dynamic` blocks, data sources.
 - Cloud-provider knowledge itself (VPCs, IAM, subnets) — Terraform is
@@ -467,15 +475,15 @@ gaps relative to what current MLOps roles ask for.
 
 | Category | Tutorials | Incidents | Extra |
 |---|---|---|---|
-| Kubernetes | 29 | 10 | 9 YAML Labs, Sandbox |
-| Docker | 10 | 5 | 1 YAML Lab (Compose) |
-| Linux | 12 | 6 | |
-| Terraform | 10 | 6 | |
+| Kubernetes | 29 | 10 | 9 Writing Labs, Sandbox |
+| Docker | 10 | 5 | 3 Writing Labs (Dockerfile, Compose) |
+| Linux | 12 | 6 | 2 Writing Labs (bash) |
+| Terraform | 10 | 6 | 2 Writing Labs (HCL) |
 | Networking | 10 | 6 | |
-| CI/CD | 10 | 6 | 3 YAML Labs (Actions) |
-| Monitoring | 10 | 6 | 2 YAML Labs (alert rules) |
+| CI/CD | 10 | 6 | 3 Writing Labs (Actions) |
+| Monitoring | 10 | 6 | 2 Writing Labs (alert rules) |
 | MLOps | 10 | 6 | |
-| **Total** | **101** | **51** | 15 labs, 6 career paths |
+| **Total** | **101** | **51** | 21 Writing Labs, 6 career paths |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -494,12 +502,14 @@ builds judgment that command references alone never will.
 **It will not, on its own, make you fully proficient**, for four reasons
 that no amount of additional scenario content can fully close:
 
-1. **Authoring vs. operating.** The game mostly drills operating existing
-   systems. Real proficiency also means *writing* them. YAML Labs now
-   cover the YAML-based artifacts — Kubernetes manifests, GitHub Actions
-   workflows, Prometheus alert rules, and Compose files (15 labs). Still
-   unpracticed: **Dockerfiles, Terraform HCL, and bash scripts**, which
-   each need a small non-YAML validator — the next step on the roadmap.
+1. **Authoring vs. operating.** Largely addressed: 21 Writing Labs now
+   have you write real Kubernetes manifests, GitHub Actions workflows,
+   Prometheus alert rules, Compose files, Dockerfiles, Terraform, and
+   bash scripts in your own editor. What remains is **depth and
+   realism**: the checkers are structural, not the real tools
+   (`docker build`, `terraform validate`, shellcheck), so they confirm
+   you wrote the right shape, not that it would actually run. Building
+   the same files for a real project is still the final test.
 2. **Real systems misbehave in unscripted ways.** Every simulated output
    here was written in advance. A real cluster, a real cloud account, and
    real traffic produce errors nobody predicted. Pair this game with a

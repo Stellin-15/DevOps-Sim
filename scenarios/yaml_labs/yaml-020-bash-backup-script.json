@@ -1,0 +1,30 @@
+{
+  "id": "yaml-020",
+  "type": "yaml_lab",
+  "category": "linux",
+  "title": "Write a Safe Bash Backup Script",
+  "difficulty": "intermediate",
+  "tags": ["bash", "scripting", "linux"],
+  "intro": "The Linux tutorials were all one-liners. Real automation means scripts — and a script that keeps going after an error, or mangles a path with a space in it, can do real damage. Write one defensively.",
+  "steps": [
+    {
+      "file": "backup.sh",
+      "format": "bash",
+      "starter_content": "",
+      "prompt": "Write backup.sh: (1) shebang #!/usr/bin/env bash; (2) 'set -euo pipefail'; (3) if the number of arguments ($#) isn't exactly 1, print a usage message to stderr (>&2) and 'exit 1'; (4) store the argument in a quoted variable (src=\"$1\"); (5) create a tar.gz in /backups named after the directory plus today's date (date +%F), with 'tar -czf', quoting every variable.",
+      "apply_commands": ["bash -n backup.sh", "./backup.sh /data", "shellcheck backup.sh", "check"],
+      "validate": {
+        "fields": {
+          "shebang": {"contains": "bash"},
+          "text": {"contains": ["set -euo pipefail", "$#", ">&2", "exit 1", "\"$1\"", "tar -czf", "date +%F"]}
+        },
+        "order": ["set -euo pipefail", "exit 1", "tar -czf"]
+      },
+      "hint": "Structure: shebang → set -euo pipefail → argument check (if [ \"$#\" -ne 1 ]; then echo \"usage: $0 <dir>\" >&2; exit 1; fi) → src=\"$1\" → build the destination path with $(basename \"$src\") and $(date +%F) → tar -czf \"$dest\" \"$src\".",
+      "solution": "#!/usr/bin/env bash\nset -euo pipefail\n\nif [ \"$#\" -ne 1 ]; then\n  echo \"usage: $0 <directory>\" >&2\n  exit 1\nfi\n\nsrc=\"$1\"\ndest=\"/backups/$(basename \"$src\")-$(date +%F).tar.gz\"\n\ntar -czf \"$dest\" \"$src\"\necho \"backup written to $dest\"\n",
+      "fake_output": "$ ./backup.sh\nusage: ./backup.sh <directory>\n$ ./backup.sh /data\nbackup written to /backups/data-2026-09-27.tar.gz",
+      "explanation": "Fails fast on bad input or any failed command, and handles paths with spaces correctly.",
+      "why": "'set -e' stops at the first failing command (without it, a failed tar still prints 'backup written' — the silent-success pattern behind linux-incident-005's two weeks of missing backups). '-u' turns a typo'd variable into an error instead of an empty string, '-o pipefail' makes a pipeline fail if ANY command in it fails. Quoting every \"$var\" keeps a path like '/data/my files' as one argument instead of two. Errors go to stderr (>&2) so cron logs and callers can tell them apart from normal output."
+    }
+  ]
+}

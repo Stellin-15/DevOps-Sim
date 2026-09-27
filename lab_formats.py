@@ -1,0 +1,332 @@
+"""
+Parsers that turn each lab file format into a plain nested dict, so
+yaml_lab.validate_manifest can check any format with the same dotted-path
+field specs, [*] wildcards, and {"contains": ...} checks.
+
+Every parser returns (parsed_dict_or_None, problems). Non-YAML formats also
+expose "lines" (for `order` checks) and "text" (for `absent`/contains).
+
+No external tools or libraries: the HCL and bash checks are deliberately
+lightweight — structural, not full language implementations — so labs
+behave identically on every machine.
+"""
+
+import re
+
+import yaml
+
+# ---------------------------------------------------------------- YAML
+
+
+def parse_yaml(content: str):
+    try:
+        return yaml.safe_load(content), []
+    except yaml.YAMLError as e:
+        return None, [f"YAML syntax error: {e}"]
+
+
+# ---------------------------------------------------------- Dockerfile
+
+DOCKERFILE_INSTRUCTIONS = {
+    "FROM", "RUN", "CMD", "LABEL", "EXPOSE", "ENV", "ADD", "COPY", "ENTRYPOINT",
+    "VOLUME", "USER", "WORKDIR", "ARG", "ONBUILD", "STOPSIGNAL", "HEALTHCHECK",
+    "SHELL", "MAINTAINER",
+}
+
+
+def parse_dockerfile(content: str):
+    """{'lines': ['FROM node:20 AS build', ...], 'FROM': [args, ...], ...}"""
+    logical, buffer = [], ""
+    for raw in content.splitlines():
+        line = raw.strip()
+        if not buffer and (not line or line.startswith("#")):
+            continue
+        if line.endswith("\\"):
+            buffer += line[:-1].strip() + " "
+            continue
+        logical.append((buffer + line).strip())
+        buffer = ""
+    if buffer.strip():
+        logical.append(buffer.strip())
+
+    parsed = {"lines": [], "text": content}
+    problems = []
+    for n, line in enumerate(logical, start=1):
+        parts = line.split(None, 1)
+        instruction = parts[0].upper()
+        args = parts[1].strip() if len(parts) > 1 else ""
+        if instruction not in DOCKERFILE_INSTRUCTIONS:
+            problems.append(f"Unknown Dockerfile instruction '{parts[0]}' (instruction {n})")
+            continue
+        parsed["lines"].append(f"{instruction} {args}".strip())
+        parsed.setdefault(instruction, []).append(args)
+
+    if not parsed["lines"]:
+        return None, problems or ["Dockerfile is empty."]
+    if parsed["lines"][0].split()[0] not in ("FROM", "ARG"):
+        problems.append("A Dockerfile must start with FROM (only ARG may come before it).")
+    return (None if problems else parsed), problems
+
+
+# ----------------------------------------------------------------- HCL
+
+
+class HCLError(Exception):
+    pass
+
+
+class _HCLParser:
+    """Minimal HCL: blocks with labels, attributes, strings (with ${}
+    interpolation kept raw), numbers, bools, lists, maps, and raw
+    expressions. Enough for typical Terraform configs, not a full spec."""
+
+    def __init__(self, text: str):
+        self.s = text
+        self.i = 0
+
+    def line(self) -> int:
+        return self.s.count("\n", 0, self.i) + 1
+
+    def peek(self) -> str:
+        return self.s[self.i] if self.i < len(self.s) else ""
+
+    def skip(self, newlines=True):
+        while self.i < len(self.s):
+            c = self.s[self.i]
+            if c in " \t\r" or (newlines and c == "\n"):
+                self.i += 1
+            elif c == "#" or self.s.startswith("//", self.i):
+                while self.i < len(self.s) and self.s[self.i] != "\n":
+                    self.i += 1
+            elif self.s.startswith("/*", self.i):
+                end = self.s.find("*/", self.i + 2)
+                if end == -1:
+                    raise HCLError(f"unterminated /* comment starting on line {self.line()}")
+                self.i = end + 2
+            else:
+                break
+
+    def read_string(self) -> str:
+        start_line = self.line()
+        self.i += 1
+        out, depth = [], 0
+        while self.i < len(self.s):
+            c = self.s[self.i]
+            if c == "\\" and self.i + 1 < len(self.s):
+                out.append(self.s[self.i + 1])
+                self.i += 2
+                continue
+            if self.s.startswith("${", self.i):
+                depth += 1
+                out.append("${")
+                self.i += 2
+                continue
+            if c == "}" and depth:
+                depth -= 1
+            if c == '"' and not depth:
+                self.i += 1
+                return "".join(out)
+            if c == "\n":
+                break
+            out.append(c)
+            self.i += 1
+        raise HCLError(f"unterminated string on line {start_line}")
+
+    def read_ident(self) -> str:
+        if self.peek() == '"':
+            return self.read_string()
+        m = re.match(r"[A-Za-z_][A-Za-z0-9_\-]*", self.s[self.i:])
+        if not m:
+            raise HCLError(f"unexpected '{self.peek()}' on line {self.line()}")
+        self.i += m.end()
+        return m.group(0)
+
+    def parse_body(self, closing=None) -> dict:
+        body = {}
+        while True:
+            self.skip()
+            if self.i >= len(self.s):
+                if closing:
+                    raise HCLError("unbalanced braces: a '{' is never closed")
+                return body
+            if self.peek() == closing:
+                self.i += 1
+                return body
+            if self.peek() == ",":
+                self.i += 1
+                continue
+            if self.peek() == "}":
+                raise HCLError(f"unexpected '}}' on line {self.line()}")
+            name = self.read_ident()
+            self.skip(newlines=False)
+            if self.peek() in ("=", ":"):
+                self.i += 1
+                body[name] = self.parse_value()
+                continue
+            labels = []
+            while self.peek() == '"':
+                labels.append(self.read_string())
+                self.skip(newlines=False)
+            if self.peek() != "{":
+                raise HCLError(f"expected '=' or '{{' after '{name}' on line {self.line()}")
+            self.i += 1
+            inner = self.parse_body("}")
+            self._insert(body, [name] + labels, inner)
+
+    @staticmethod
+    def _insert(body, keys, inner):
+        target = body
+        for key in keys[:-1]:
+            target = target.setdefault(key, {})
+        last = keys[-1]
+        if last in target:
+            existing = target[last]
+            target[last] = existing + [inner] if isinstance(existing, list) else [existing, inner]
+        else:
+            target[last] = inner
+
+    def parse_value(self):
+        self.skip(newlines=False)
+        c = self.peek()
+        if c == '"':
+            return self.read_string()
+        if c == "[":
+            self.i += 1
+            items = []
+            while True:
+                self.skip()
+                if self.peek() == "]":
+                    self.i += 1
+                    return items
+                if not self.peek():
+                    raise HCLError("unbalanced brackets: a '[' is never closed")
+                items.append(self.parse_value())
+                self.skip()
+                if self.peek() == ",":
+                    self.i += 1
+        if c == "{":
+            self.i += 1
+            return self.parse_body("}")
+        return self._convert(self.read_expression())
+
+    def read_expression(self) -> str:
+        start, depth = self.i, 0
+        while self.i < len(self.s):
+            c = self.s[self.i]
+            if c == '"':
+                self.read_string()
+                continue
+            if c in "([{":
+                depth += 1
+            elif c in ")]}":
+                if depth == 0:
+                    break
+                depth -= 1
+            elif (c == "\n" or c == ",") and depth == 0:
+                break
+            elif depth == 0 and (c == "#" or self.s.startswith("//", self.i)):
+                break
+            self.i += 1
+        expr = self.s[start:self.i].strip()
+        if not expr:
+            raise HCLError(f"missing value on line {self.line()}")
+        return expr
+
+    @staticmethod
+    def _convert(expr: str):
+        if expr == "true":
+            return True
+        if expr == "false":
+            return False
+        if re.fullmatch(r"-?\d+", expr):
+            return int(expr)
+        if re.fullmatch(r"-?\d+\.\d+", expr):
+            return float(expr)
+        return expr
+
+
+def parse_hcl(content: str):
+    try:
+        parsed = _HCLParser(content).parse_body()
+    except HCLError as e:
+        return None, [f"HCL syntax error: {e}"]
+    if not parsed:
+        return None, ["File is empty."]
+    parsed["text"] = content
+    return parsed, []
+
+
+# ---------------------------------------------------------------- bash
+
+_OPENERS = {"if": "fi", "case": "esac", "do": "done"}
+
+
+def _strip_bash_comments_and_strings(line: str) -> str:
+    out, quote = [], None
+    for idx, c in enumerate(line):
+        if quote:
+            if c == quote and (quote == "'" or line[idx - 1] != "\\"):
+                quote = None
+            continue
+        if c in ("'", '"'):
+            quote = c
+            out.append(" ")
+            continue
+        if c == "#" and (idx == 0 or line[idx - 1] in " \t;"):
+            break
+        out.append(c)
+    return "".join(out)
+
+
+def parse_bash(content: str):
+    """{'shebang': ..., 'lines': [...], 'text': ...} plus a structural
+    check: balanced if/fi, case/esac, do/done, and closed quotes."""
+    lines = content.splitlines()
+    parsed = {
+        "shebang": lines[0].strip() if lines and lines[0].startswith("#!") else "",
+        "lines": [l.strip() for l in lines if l.strip() and not l.strip().startswith("#")],
+        "text": content,
+    }
+    if not parsed["lines"]:
+        return None, ["Script is empty."]
+
+    stack, problems = [], []
+    in_quote = None
+    for n, raw in enumerate(lines, start=1):
+        # Track multi-line quote state first.
+        for idx, c in enumerate(raw):
+            if in_quote:
+                if c == in_quote and (in_quote == "'" or raw[idx - 1] != "\\"):
+                    in_quote = None
+            elif c in ("'", '"'):
+                in_quote = c
+            elif c == "#" and (idx == 0 or raw[idx - 1] in " \t;"):
+                break
+        code = _strip_bash_comments_and_strings(raw)
+        for word in re.findall(r"[A-Za-z_]+", code):
+            if word in _OPENERS:
+                stack.append((word, n))
+            elif word in _OPENERS.values():
+                if not stack or _OPENERS[stack[-1][0]] != word:
+                    problems.append(f"'{word}' on line {n} doesn't close a matching block")
+                else:
+                    stack.pop()
+    if in_quote:
+        problems.append(f"unclosed {in_quote} quote")
+    for opener, n in stack:
+        problems.append(f"'{opener}' on line {n} is never closed with '{_OPENERS[opener]}'")
+    if problems:
+        return None, [f"Script syntax error: {p}" for p in problems]
+    return parsed, []
+
+
+PARSERS = {
+    "yaml": parse_yaml,
+    "dockerfile": parse_dockerfile,
+    "hcl": parse_hcl,
+    "bash": parse_bash,
+}
+
+
+def parse(fmt: str, content: str):
+    return PARSERS[fmt](content)

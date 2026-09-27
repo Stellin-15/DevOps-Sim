@@ -1,0 +1,52 @@
+{
+  "id": "yaml-021",
+  "type": "yaml_lab",
+  "category": "linux",
+  "title": "Fix a Cleanup Script That Could Delete Everything",
+  "difficulty": "advanced",
+  "tags": [
+    "bash",
+    "scripting",
+    "safety"
+  ],
+  "intro": "This build-cleanup script has run in CI for a year without trouble. The day someone calls it without an argument, it runs 'rm -rf /*'.",
+  "steps": [
+    {
+      "file": "clean.sh",
+      "format": "bash",
+      "starter_content": "#!/bin/bash\nBUILD_DIR=$1\ncd $BUILD_DIR\nrm -rf $BUILD_DIR/*\necho \"cleaned\"\n",
+      "prompt": "Make it safe: (1) add 'set -euo pipefail'; (2) fail with a message if no argument is given, using BUILD_DIR=\"${1:?usage: clean.sh <build-dir>}\"; (3) quote the cd: cd \"$BUILD_DIR\"; (4) guard the delete itself with rm -rf \"${BUILD_DIR:?}\"/* so an empty variable can never expand to /*.",
+      "apply_commands": [
+        "bash -n clean.sh",
+        "shellcheck clean.sh",
+        "check"
+      ],
+      "validate": {
+        "fields": {
+          "text": {
+            "contains": [
+              "set -euo pipefail",
+              "${1:?",
+              "cd \"$BUILD_DIR\"",
+              "\"${BUILD_DIR:?}\""
+            ]
+          }
+        },
+        "order": [
+          "set -euo pipefail",
+          "${1:?",
+          "cd \"$BUILD_DIR\"",
+          "rm -rf"
+        ],
+        "absent": [
+          "rm -rf $BUILD_DIR/*"
+        ]
+      },
+      "hint": "${VAR:?message} expands to VAR's value, or aborts the script with 'message' if VAR is unset or empty. Put it on the argument AND on the rm, so the dangerous line is protected even if someone later edits how BUILD_DIR gets set.",
+      "solution": "#!/usr/bin/env bash\nset -euo pipefail\n\nBUILD_DIR=\"${1:?usage: clean.sh <build-dir>}\"\ncd \"$BUILD_DIR\"\nrm -rf \"${BUILD_DIR:?}\"/*\necho \"cleaned $BUILD_DIR\"\n",
+      "fake_output": "$ ./clean.sh\n./clean.sh: line 4: 1: usage: clean.sh <build-dir>\n$ ./clean.sh ./build\ncleaned ./build",
+      "explanation": "Called with no argument, the script now stops immediately instead of deleting the filesystem.",
+      "why": "The original failure chain: $1 empty → 'cd' with no argument goes to $HOME and succeeds → 'rm -rf /*' runs, because an empty $BUILD_DIR/* expands to /*. This exact pattern has wiped real machines — in 2015, a Steam for Linux script ran rm -rf \"$STEAMROOT/\"* with an empty STEAMROOT and deleted users' entire home directories. Each fix blocks the chain at a different point: set -u, the ${1:?} check, the quoted cd (and set -e stopping if it fails), and ${BUILD_DIR:?} on the rm line itself. Running 'shellcheck' flags unquoted variables like the original's automatically — worth adding to CI for every shell script."
+    }
+  ]
+}

@@ -128,7 +128,7 @@ def main_menu_loop() -> None:
         print("\n=== kube-sim ===")
         print("  1. Practice (pick a category)")
         print("  2. Career Paths (chained scenarios across categories)")
-        print("  3. YAML Labs (write real config files in your own editor)")
+        print("  3. Writing Labs (write real config files and scripts in your own editor)")
         print("  4. Sandbox (random cluster)")
         print("  q. Quit")
 
@@ -142,7 +142,7 @@ def main_menu_loop() -> None:
         elif choice == "2":
             career_paths_menu(progress)
         elif choice == "3":
-            scenario = choose_from_list(load_yaml_labs(), "YAML Labs", "yaml_lab", progress)
+            scenario = choose_from_list(load_yaml_labs(), "Writing Labs", "yaml_lab", progress)
             if scenario:
                 play(scenario, progress, runner=yaml_lab.run_yaml_lab)
         elif choice == "4":

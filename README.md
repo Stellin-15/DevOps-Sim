@@ -28,16 +28,15 @@ string.
   with CI/CD → observe with Monitoring). Each stage is a normal scenario;
   the path just sequences them with one framing intro/outro around the
   whole thing.
-- **YAML Labs** — real config-writing practice, not command matching.
+- **Writing Labs** — real authoring practice, not command matching.
   The game writes a real file to `workspace/`, tells you what to build or
   fix, and you edit it in your actual editor (vim, nano, VS Code —
   whatever you'd really use). Typing the apply command reads your real
-  file and checks its structure field by field. 15 labs: Kubernetes
-  manifests (Pod, Deployment, init containers, NetworkPolicy, PVC,
-  Ingress, HPA, RBAC, StatefulSet), GitHub Actions workflows, Prometheus
-  alert rules, and a Docker Compose file. This is the skill a pure
-  command-matcher can't fake, and the closest thing here to real exam and
-  on-the-job conditions.
+  file and checks it field by field. 21 labs across seven formats:
+  Kubernetes manifests, GitHub Actions workflows, Prometheus alert rules,
+  Docker Compose files, Dockerfiles, Terraform (HCL), and bash scripts.
+  Half are "write from scratch", half are "fix this broken or dangerous
+  file". This is the skill a command-matcher can't fake.
 - **Sandbox** — no scoring, no steps. The game generates a random fake
   Kubernetes cluster: several services, each with a Deployment, a
   Service, and 1-3 pods (some healthy, some randomly broken with
@@ -53,7 +52,7 @@ step, or inside sandbox — you can type `exit` or `quit` to back out.
 ## Running it
 
 Requires Python 3 and PyYAML (`pip install -r requirements.txt`, or just
-`pip install pyyaml` — PyYAML is only needed for YAML Labs, everything
+`pip install pyyaml` — PyYAML is only needed for Writing Labs, everything
 else uses only the standard library).
 
 ```
@@ -115,7 +114,7 @@ against a real cluster. Everything is consistent: a broken pod shows up
 in its Deployment's READY count, in `get events`, and in `describe pod`'s
 events section.
 
-## Playing YAML Labs
+## Playing Writing Labs
 
 A lab writes a real file — blank, or with a deliberate bug — under
 `workspace/` in the project directory and prints its path. Open that path
@@ -152,7 +151,8 @@ progress.py         reads/writes progress.json (completion + attempt
                      globally unique)
 sandbox.py          random cluster generator + free-form command handling
                      (Kubernetes-only)
-yaml_lab.py         YAML Labs: real file editing + structural validation
+yaml_lab.py         Writing Labs runner: real file editing + validation
+lab_formats.py      parsers for YAML, Dockerfile, HCL, and bash lab files
                      (Kubernetes-only)
 scenarios/
   kubernetes/tutorials/*.json, incidents/*.json
@@ -193,7 +193,8 @@ teaches matches the actual tool. **A brand-new category** just needs a
 new `scenarios/<newcategory>/tutorials/` (and/or `incidents/`) folder —
 `list_categories()` discovers it automatically, no code changes.
 
-**YAML lab**: drop a new JSON file into `scenarios/yaml_labs/` with
+**Writing lab**: drop a new JSON file into `scenarios/yaml_labs/` (the
+folder keeps its original name) with
 `type: "yaml_lab"` and steps shaped like `{"file": "pod.yaml",
 "starter_content": "...", "prompt": "...", "apply_commands": [...],
 "validate": {"kind": "Pod", "fields": {"metadata.name": "db", ...}},
@@ -205,6 +206,11 @@ field must exist but its exact value doesn't matter (like a random name).
 list as the expected value every item must appear. `{"contains": [...]}`
 checks substrings (good for PromQL or `if:` expressions). `kind` is only
 required for Kubernetes labs. Set `category` so the lab list labels it.
+For non-YAML files add `"format": "dockerfile" | "hcl" | "bash"` to the
+step; paths then refer to the parsed structure (e.g. `FROM[0]`,
+`resource.aws_s3_bucket.logs.bucket`, `text`). Two more checks:
+`"order": [...]` (substrings that must appear in that line order) and
+`"absent": [...]` (text that must not appear, e.g. a hardcoded password).
 
 **Career path**: drop a new JSON file into `scenarios/career_paths/` with
 `type: "career_path"` and `{"id", "title", "intro", "steps": [existing
@@ -225,7 +231,7 @@ python -m pytest
 ```
 
 Covers the matching engine, category-aware scenario loading, sandbox
-command handling, progress tracking, the YAML Lab file-validation logic,
+command handling, progress tracking, the Writing Lab parsers and validation logic,
 and the Career Path runner — and validates every scenario/lab/path JSON
 file against its schema, including self-consistency checks (every
 tutorial/incident's own listed commands match under the real matcher;
@@ -237,15 +243,15 @@ the engine, loader, sandbox, yaml_lab, career_path, or scenario content.
 
 | Category | Tutorials | Incidents | Topics |
 |---|---|---|---|
-| Kubernetes | 29 | 10 | pods → operators, full CKA coverage incl. etcd, kubeadm, certs, security; plus 9 YAML Labs and Sandbox |
-| Docker | 10 | 5 | images/layers, volumes, networking, Compose, cleanup, Dockerfiles, runtime limits, container security; plus a Compose YAML Lab |
-| Linux | 12 | 6 | find, text pipelines, processes/signals, systemd, networking, users/permissions, SSH, cron, disks, performance |
-| Terraform | 10 | 6 | safe CI workflow, variables/outputs, state inspection & refactoring, import, workspaces, remote state/locking, providers, debugging |
+| Kubernetes | 29 | 10 | pods → operators, full CKA coverage incl. etcd, kubeadm, certs, security; plus 9 Writing Labs and Sandbox |
+| Docker | 10 | 5 | images/layers, volumes, networking, Compose, cleanup, Dockerfiles, runtime limits, container security; plus 3 Writing Labs (2 Dockerfile, Compose) |
+| Linux | 12 | 6 | find, text pipelines, processes/signals, systemd, networking, users/permissions, SSH, cron, disks, performance; plus 2 bash-script Writing Labs |
+| Terraform | 10 | 6 | safe CI workflow, variables/outputs, state inspection & refactoring, import, workspaces, remote state/locking, providers, debugging; plus 2 HCL Writing Labs |
 | Networking | 10 | 6 | DNS, refused vs timeout, ports/nmap, routing/ARP, firewalls, TLS/openssl, HTTP/curl, in-cluster networking, CIDR |
-| CI/CD | 10 | 6 | git workflows, revert vs reset, tags/releases, GitHub Actions CLI, secrets/OIDC, local CI repro, rolling/blue-green/canary; plus 3 workflow-writing YAML Labs |
-| Monitoring | 10 | 6 | PromQL, golden signals, Prometheus ops, alerting/Alertmanager, journald, Elasticsearch, Loki, Grafana API; plus 2 alert-rule YAML Labs |
+| CI/CD | 10 | 6 | git workflows, revert vs reset, tags/releases, GitHub Actions CLI, secrets/OIDC, local CI repro, rolling/blue-green/canary; plus 3 workflow Writing Labs |
+| Monitoring | 10 | 6 | PromQL, golden signals, Prometheus ops, alerting/Alertmanager, journald, Elasticsearch, Loki, Grafana API; plus 2 alert-rule Writing Labs |
 | MLOps | 10 | 6 | environments, GPUs, MLflow, DVC, serving, KServe/Kubeflow, profiling, model monitoring, model canaries |
-| **Total** | **101** | **51** | + 15 YAML Labs |
+| **Total** | **101** | **51** | + 21 Writing Labs |
 
 Plus **6 Career Paths** chaining scenarios across categories: ship a
 feature end to end, a production incident chain, ML model from laptop to
@@ -272,12 +278,14 @@ For the CKA specifically, see GAPS.md Part 1.
 
 Built so far: hardcoded single scenario → JSON-driven scenarios with a
 menu → hint escalation → sandbox → progress tracking → full Kubernetes
-coverage → CKA gap-filling → YAML Labs → multi-category architecture →
-Career Paths → all 8 categories expanded to full depth.
+coverage → CKA gap-filling → Writing Labs → multi-category architecture →
+Career Paths → all 8 categories expanded to full depth → Dockerfile,
+Terraform, and bash Writing Labs.
 
 Next, in priority order (details in CLAUDE.md and GAPS.md):
-- **Dockerfile, Terraform, and bash-script labs** (YAML-based labs for
-  manifests, Actions workflows, alert rules, and Compose are done)
+- **Exam mode** — timed, no hints, random scenarios, scored (next up)
+- Sandboxes for Docker and Linux, then "mystery incidents" (free-form
+  diagnosis in any order)
 - Exam-specific gap passes for other certifications (CKAD, Terraform
   Associate, AWS)
 - Topics each GAPS.md part lists as missing (tracing/SLOs, tcpdump,

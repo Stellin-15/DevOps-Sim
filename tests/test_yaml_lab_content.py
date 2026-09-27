@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import pytest
 import yaml
 
+import lab_formats
 import yaml_lab
 from scenario_loader import load_yaml_labs
 
@@ -49,10 +50,12 @@ def test_starter_content_is_valid_yaml_when_present(lab):
         starter = step.get("starter_content", "")
         if not starter.strip():
             continue  # blank-slate labs are allowed
-        try:
-            yaml.safe_load(starter)
-        except yaml.YAMLError as e:
-            pytest.fail(f"{lab['id']} step {i} starter_content is not valid YAML: {e}")
+        fmt = step.get("format", "yaml")
+        if fmt == "yaml":
+            try:
+                yaml.safe_load(starter)
+            except yaml.YAMLError as e:
+                pytest.fail(f"{lab['id']} step {i} starter_content is not valid YAML: {e}")
 
 
 @pytest.mark.parametrize("lab", ALL_LABS, ids=_id)
@@ -63,11 +66,9 @@ def test_solution_parses_and_passes_its_own_validate_spec(lab):
         solution = step.get("solution")
         if not solution:
             continue
-        try:
-            parsed = yaml.safe_load(solution)
-        except yaml.YAMLError as e:
-            pytest.fail(f"{lab['id']} step {i}'s solution is not valid YAML: {e}")
-        problems = yaml_lab.validate_manifest(parsed, step["validate"])
+        parsed, parse_problems = lab_formats.parse(step.get("format", "yaml"), solution)
+        assert not parse_problems, f"{lab['id']} step {i}'s solution doesn't parse: {parse_problems}"
+        problems = yaml_lab.validate_manifest(parsed, step["validate"], text=solution)
         assert problems == [], f"{lab['id']} step {i}'s solution fails its own validate spec: {problems}"
 
 
@@ -91,7 +92,10 @@ def test_starter_content_does_not_already_pass(lab):
         starter = step.get("starter_content", "")
         if not starter.strip():
             continue
-        problems = yaml_lab.validate_manifest(yaml.safe_load(starter), step["validate"])
+        parsed, parse_problems = lab_formats.parse(step.get("format", "yaml"), starter)
+        if parse_problems:
+            continue  # a starter that doesn't even parse clearly needs fixing
+        problems = yaml_lab.validate_manifest(parsed, step["validate"], text=starter)
         assert problems, f"{lab['id']} step {i}: starter_content already passes — nothing to fix"
 
 

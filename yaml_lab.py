@@ -14,8 +14,7 @@ pass/fail.
 import re
 from pathlib import Path
 
-import yaml
-
+import lab_formats
 from engine import QuitScenario, read_input
 
 BASE_DIR = Path(__file__).parent
@@ -87,7 +86,7 @@ def _equal(actual, expected) -> bool:
     return actual == expected
 
 
-def validate_manifest(parsed, validate_spec: dict) -> list:
+def validate_manifest(parsed, validate_spec: dict, text: str = "") -> list:
     """Returns a list of human-readable problems; empty list means it passed."""
     if parsed is None:
         return ["File is empty or contains no valid YAML document."]
@@ -123,7 +122,34 @@ def validate_manifest(parsed, validate_spec: dict) -> list:
             else:
                 problems.append(f"{path} is {values[0]!r}, expected {expected!r}")
 
+    problems.extend(_check_order(parsed, validate_spec.get("order", [])))
+    problems.extend(_check_absent(text or parsed.get("text", ""), validate_spec.get("absent", [])))
     return problems
+
+
+def _check_order(parsed: dict, order: list) -> list:
+    """Each substring must appear in parsed['lines'], in this sequence —
+    e.g. a Dockerfile's COPY package*.json before RUN npm ci before COPY . ."""
+    if not order:
+        return []
+    lines = parsed.get("lines", [])
+    position = 0
+    previous = None
+    for wanted in order:
+        index = next((i for i in range(position, len(lines)) if wanted in lines[i]), None)
+        if index is None:
+            if any(wanted in line for line in lines):
+                return [f"'{wanted}' must come after '{previous}'"]
+            return [f"missing a line containing '{wanted}'"]
+        position = index + 1
+        previous = wanted
+    return []
+
+
+def _check_absent(text: str, absent: list) -> list:
+    """Substrings that must NOT appear anywhere in the file (a hardcoded
+    password, an unquoted rm -rf, a secret baked into an image)."""
+    return [f"file must not contain '{bad}'" for bad in absent if bad in text]
 
 
 def prepare_file(step: dict) -> Path:
@@ -133,19 +159,16 @@ def prepare_file(step: dict) -> Path:
     return file_path
 
 
-def load_and_parse(file_path: Path):
-    """Returns (parsed_obj_or_None, problems_list)."""
+def load_and_parse(file_path: Path, fmt: str = "yaml"):
+    """Returns (parsed_obj_or_None, problems_list). fmt picks the parser
+    from lab_formats: yaml, dockerfile, hcl, or bash."""
     if not file_path.exists():
         return None, ["File not found — did you save it?"]
     try:
         content = file_path.read_text(encoding="utf-8")
     except OSError as e:
         return None, [f"Couldn't read the file: {e}"]
-    try:
-        parsed = yaml.safe_load(content)
-    except yaml.YAMLError as e:
-        return None, [f"YAML syntax error: {e}"]
-    return parsed, []
+    return lab_formats.parse(fmt, content)
 
 
 def run_yaml_step(step: dict, step_num: int, total_steps: int, file_path: Path) -> None:
@@ -171,8 +194,11 @@ def run_yaml_step(step: dict, step_num: int, total_steps: int, file_path: Path) 
             continue
 
         attempts += 1
-        parsed, parse_problems = load_and_parse(file_path)
-        problems = parse_problems if parse_problems else validate_manifest(parsed, step["validate"])
+        parsed, parse_problems = load_and_parse(file_path, step.get("format", "yaml"))
+        if parse_problems:
+            problems = parse_problems
+        else:
+            problems = validate_manifest(parsed, step["validate"], text=file_path.read_text(encoding="utf-8"))
 
         if not problems:
             print(f"\n{step.get('fake_output', step['file'] + ' applied.')}")

@@ -1,0 +1,33 @@
+{
+  "id": "yaml-019",
+  "type": "yaml_lab",
+  "category": "terraform",
+  "title": "Protect a Production Database in Terraform",
+  "difficulty": "advanced",
+  "tags": ["terraform", "hcl", "safety", "secrets"],
+  "intro": "This is the database config that nearly got destroyed in terraform-incident-003 — and it has a password sitting in plain text. Harden it so neither accident can happen.",
+  "steps": [
+    {
+      "file": "main.tf",
+      "format": "hcl",
+      "starter_content": "resource \"aws_db_instance\" \"main\" {\n  identifier        = \"prod-db\"\n  engine            = \"postgres\"\n  instance_class    = \"db.t3.medium\"\n  allocated_storage = 50\n  username          = \"dbadmin\"\n  password          = \"hunter2\"\n}\n",
+      "prompt": "Fix it: (1) delete the hardcoded password and set manage_master_user_password = true (AWS then generates and stores it in Secrets Manager); (2) set deletion_protection = true; (3) add a lifecycle block with prevent_destroy = true; (4) add a terraform block with an s3 backend (any bucket/key/region) that has encrypt = true, so state is encrypted at rest.",
+      "apply_commands": ["terraform validate", "terraform plan", "check"],
+      "validate": {
+        "fields": {
+          "resource.aws_db_instance.main.engine": "postgres",
+          "resource.aws_db_instance.main.manage_master_user_password": true,
+          "resource.aws_db_instance.main.deletion_protection": true,
+          "resource.aws_db_instance.main.lifecycle.prevent_destroy": true,
+          "terraform.backend.s3.encrypt": true
+        },
+        "absent": ["hunter2"]
+      },
+      "hint": "lifecycle is a nested block inside the resource: lifecycle { prevent_destroy = true }. The backend lives inside terraform { backend \"s3\" { bucket = ..., key = ..., region = ..., encrypt = true } }. true is a bare boolean — no quotes.",
+      "solution": "terraform {\n  backend \"s3\" {\n    bucket  = \"acme-tf-state\"\n    key     = \"prod/terraform.tfstate\"\n    region  = \"us-east-1\"\n    encrypt = true\n  }\n}\n\nresource \"aws_db_instance\" \"main\" {\n  identifier                  = \"prod-db\"\n  engine                      = \"postgres\"\n  instance_class              = \"db.t3.medium\"\n  allocated_storage           = 50\n  username                    = \"dbadmin\"\n  manage_master_user_password = true\n  deletion_protection         = true\n\n  lifecycle {\n    prevent_destroy = true\n  }\n}\n",
+      "fake_output": "Success! The configuration is valid.\n\n# later, a plan that tries to replace it:\nError: Instance cannot be destroyed\n  Resource aws_db_instance.main has lifecycle.prevent_destroy set.",
+      "explanation": "Two independent guards against deletion, and no secret in code or (thanks to AWS-managed credentials) in state.",
+      "why": "The layers catch different mistakes: prevent_destroy makes Terraform refuse any plan that would destroy the DB (the refactor in terraform-incident-003 would have errored instead of proceeding), deletion_protection makes AWS itself refuse — even from the console or CLI. manage_master_user_password keeps the password out of both code and the state file, the exact leak in terraform-incident-006. Remember the old password was in git history: rotate it."
+    }
+  ]
+}
