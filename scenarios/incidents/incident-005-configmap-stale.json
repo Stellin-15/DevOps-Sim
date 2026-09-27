@@ -1,0 +1,43 @@
+{
+  "id": "incident-005",
+  "type": "incident",
+  "category": "kubernetes",
+  "title": "ConfigMap Update Not Taking Effect",
+  "difficulty": "intermediate",
+  "tags": ["configmaps", "rollouts", "configuration"],
+  "intro": "A teammate updated a ConfigMap value an hour ago but the app is still using the old value. They're confused because 'the ConfigMap shows the new value.'",
+  "steps": [
+    {
+      "prompt": "Confirm the ConfigMap does show the updated value.",
+      "expected_commands": ["kubectl get configmap app-config -o yaml", "kubectl get cm app-config -o yaml"],
+      "fake_output": "data:\n  FEATURE_FLAG: enabled",
+      "hint": "Just confirm what the teammate said."
+    },
+    {
+      "prompt": "Check the running pods to see what they're actually using.",
+      "expected_commands": ["kubectl exec -it app-6b7c8d9-mnopq -- env", "kubectl exec -it app-6b7c8d9-mnopq -- printenv"],
+      "fake_output": "FEATURE_FLAG=disabled",
+      "hint": "Get a shell or run env inside a live pod to see what it actually loaded."
+    },
+    {
+      "prompt": "Confirmed — the pod is still running with the old value baked into its environment. Check how long the pod has been running.",
+      "expected_commands": ["kubectl get pods -l app=app"],
+      "fake_output": "NAME                    READY   STATUS    RESTARTS   AGE\napp-6b7c8d9-mnopq       1/1     Running   0          6h",
+      "hint": "Compare the pod's age to when the ConfigMap was changed."
+    },
+    {
+      "prompt": "The pod is older than the ConfigMap change. Trigger a rollout restart so pods pick up the new values.",
+      "expected_commands": ["kubectl rollout restart deployment app"],
+      "fake_output": "deployment.apps/app restarted",
+      "hint": "ConfigMaps mounted as env vars are only read at container start — updating the ConfigMap alone doesn't push the change to already-running pods."
+    },
+    {
+      "prompt": "Confirm the new pods have the updated value.",
+      "expected_commands": ["kubectl rollout status deployment app"],
+      "fake_output": "deployment \"app\" successfully rolled out",
+      "hint": "Wait for the rollout, then you could exec in again to double check env if you wanted."
+    }
+  ],
+  "resolution": "This is one of the most common ConfigMap gotchas: updating a ConfigMap does NOT automatically restart pods that consumed it as environment variables — those were baked in at container start. (Note: if the ConfigMap were mounted as a volume/file instead of env vars, the file contents would update live, though the app would still need to notice and reload it.) The fix is a rollout restart to force new pods to start fresh and pick up the current values.",
+  "real_commands_used": ["kubectl get configmap", "kubectl exec", "kubectl get pods", "kubectl rollout restart", "kubectl rollout status"]
+}

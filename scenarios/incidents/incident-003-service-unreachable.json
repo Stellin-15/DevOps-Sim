@@ -1,0 +1,46 @@
+{
+  "id": "incident-003",
+  "type": "incident",
+  "category": "kubernetes",
+  "title": "Service Unreachable — frontend can't reach auth-service",
+  "difficulty": "intermediate",
+  "tags": ["services", "networking", "labels", "selectors"],
+  "intro": "Support tickets say login is broken. The frontend pods look healthy, but requests to auth-service are timing out.",
+  "steps": [
+    {
+      "prompt": "Confirm the auth-service pods are actually running.",
+      "expected_commands": ["kubectl get pods -l app=auth-service", "kubectl get pods -l app=auth"],
+      "fake_output": "NAME                            READY   STATUS    RESTARTS   AGE\nauth-service-5c9f7b8d4-qw3rt    1/1     Running   0          3h\nauth-service-5c9f7b8d4-yu4io    1/1     Running   0          3h",
+      "hint": "The pods themselves might be totally fine — check first before assuming they're the problem."
+    },
+    {
+      "prompt": "Pods look healthy. Check the auth-service Service object itself.",
+      "expected_commands": ["kubectl describe svc auth-service"],
+      "fake_output": "Name: auth-service\nSelector: app=auth-svc\nType: ClusterIP\nIP: 10.96.12.44\nPort: 8080/TCP\nEndpoints: <none>",
+      "hint": "Look closely at the Selector line and compare it to the pod labels you just saw."
+    },
+    {
+      "prompt": "Endpoints is empty — the selector says 'app=auth-svc' but the pods are labeled differently. Confirm the pods' actual labels.",
+      "expected_commands": ["kubectl get pods -l app=auth-service --show-labels", "kubectl get pods --show-labels"],
+      "fake_output": "NAME                            LABELS\nauth-service-5c9f7b8d4-qw3rt    app=auth-service,env=prod\nauth-service-5c9f7b8d4-yu4io    app=auth-service,env=prod",
+      "hint": "Compare this to the service's selector you saw in the previous step."
+    },
+    {
+      "prompt": "Confirmed: service selector says 'app=auth-svc' but pods are labeled 'app=auth-service' — a typo mismatch. Patch the service's selector to match.",
+      "expected_commands": [
+        "kubectl patch svc auth-service -p '{\"spec\":{\"selector\":{\"app\":\"auth-service\"}}}'",
+        "kubectl edit svc auth-service"
+      ],
+      "fake_output": "service/auth-service patched",
+      "hint": "You can patch the selector field directly, or edit the service manifest."
+    },
+    {
+      "prompt": "Confirm the fix — check endpoints again.",
+      "expected_commands": ["kubectl get endpoints auth-service", "kubectl get ep auth-service"],
+      "fake_output": "NAME           ENDPOINTS                                AGE\nauth-service   10.244.1.12:8080,10.244.1.13:8080       3h",
+      "hint": "Endpoints should now be populated."
+    }
+  ],
+  "resolution": "Classic label/selector mismatch — the Service's selector didn't match any pod's actual labels, so it silently had zero endpoints. Nothing crashed, nothing logged an error; requests to the service just timed out with no explanation. This is exactly why 'describe svc' and checking Selector vs pod labels should be one of your first checks whenever something is 'unreachable' but pods look fine.",
+  "real_commands_used": ["kubectl get pods -l", "kubectl describe svc", "kubectl get pods --show-labels", "kubectl patch svc", "kubectl get endpoints"]
+}

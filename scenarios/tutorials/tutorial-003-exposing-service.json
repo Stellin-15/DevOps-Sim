@@ -1,0 +1,35 @@
+{
+  "id": "tutorial-003",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Exposing a Deployment with a Service",
+  "difficulty": "beginner",
+  "tags": ["services", "networking"],
+  "intro": "Pods get new IPs every time they restart, so nothing can reliably talk to them directly. A Service gives you a stable address. Let's expose the 'web' deployment.",
+  "steps": [
+    {
+      "prompt": "Expose the 'web' deployment on port 80, targeting container port 80, as a ClusterIP service.",
+      "expected_commands": ["kubectl expose deployment web --port=80 --target-port=80", "kubectl expose deployment web --port=80 --target-port=80 --type=ClusterIP"],
+      "fake_output": "service/web exposed",
+      "explanation": "ClusterIP is the default type — only reachable from inside the cluster. Good for internal service-to-service traffic."
+    },
+    {
+      "prompt": "Check the service was created.",
+      "expected_commands": ["kubectl get svc", "kubectl get services"],
+      "fake_output": "NAME   TYPE        CLUSTER-IP     PORT(S)   AGE\nweb    ClusterIP   10.96.45.210   80/TCP    5s",
+      "explanation": "That CLUSTER-IP is stable — it won't change even as pods behind it come and go."
+    },
+    {
+      "prompt": "See which actual pod IPs the service is routing to.",
+      "expected_commands": ["kubectl get endpoints", "kubectl get ep"],
+      "fake_output": "NAME   ENDPOINTS                                   AGE\nweb    10.244.0.5:80,10.244.0.6:80,10.244.0.7:80   10s",
+      "explanation": "This is the actual list of pod IPs behind the service — it updates automatically as pods change."
+    },
+    {
+      "prompt": "Get full details on the service.",
+      "expected_commands": ["kubectl describe svc web", "kubectl describe service web"],
+      "fake_output": "Name: web\nType: ClusterIP\nIP: 10.96.45.210\nPort: 80/TCP\nEndpoints: 10.244.0.5:80,10.244.0.6:80,10.244.0.7:80\nSelector: app=web",
+      "explanation": "The Selector line is key — the Service finds pods by matching labels, not by name."
+    }
+  ]
+}

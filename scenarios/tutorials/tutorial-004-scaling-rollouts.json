@@ -1,0 +1,41 @@
+{
+  "id": "tutorial-004",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Scaling and Rolling Updates",
+  "difficulty": "beginner",
+  "tags": ["deployments", "scaling", "rollouts"],
+  "intro": "Deployments make scaling and updating painless. Let's scale 'web' up, then push an image update, then roll it back.",
+  "steps": [
+    {
+      "prompt": "Scale the 'web' deployment to 5 replicas.",
+      "expected_commands": ["kubectl scale deployment web --replicas=5"],
+      "fake_output": "deployment.apps/web scaled",
+      "explanation": "This just updates the desired replica count — the ReplicaSet controller handles creating the extra pods."
+    },
+    {
+      "prompt": "Update the nginx container image to nginx:1.25.",
+      "expected_commands": ["kubectl set image deployment/web nginx=nginx:1.25"],
+      "fake_output": "deployment.apps/web image updated",
+      "explanation": "By default this triggers a RollingUpdate — old pods are replaced gradually so there's no downtime."
+    },
+    {
+      "prompt": "Watch the rollout status.",
+      "expected_commands": ["kubectl rollout status deployment web", "kubectl rollout status deployment/web"],
+      "fake_output": "Waiting for deployment \"web\" rollout to finish: 3 out of 5 new replicas have been updated...\ndeployment \"web\" successfully rolled out",
+      "explanation": "This blocks until the rollout finishes or fails — handy in scripts/CI."
+    },
+    {
+      "prompt": "Uh oh, turns out nginx:1.25 has a bug. Roll back to the previous version.",
+      "expected_commands": ["kubectl rollout undo deployment web", "kubectl rollout undo deployment/web"],
+      "fake_output": "deployment.apps/web rolled back",
+      "explanation": "Kubernetes keeps a revision history so you can undo instantly without remembering the old image tag."
+    },
+    {
+      "prompt": "Check the rollout history to confirm.",
+      "expected_commands": ["kubectl rollout history deployment web", "kubectl rollout history deployment/web"],
+      "fake_output": "REVISION  CHANGE-CAUSE\n1         <none>\n2         <none>\n3         <none>",
+      "explanation": "Tip: use --record or a change-cause annotation in real usage so this history is actually readable later."
+    }
+  ]
+}

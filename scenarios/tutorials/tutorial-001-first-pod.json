@@ -1,0 +1,36 @@
+{
+  "id": "tutorial-001",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Your First Pod",
+  "difficulty": "beginner",
+  "tags": ["pods", "basics"],
+  "intro": "Let's create your first pod. In real k8s, you'd use kubectl run for a quick one-off pod.",
+  "steps": [
+    {
+      "prompt": "Create a pod named 'my-first-pod' using the nginx image.",
+      "expected_commands": ["kubectl run my-first-pod --image=nginx", "kubectl run my-first-pod --image nginx"],
+      "fake_output": "pod/my-first-pod created",
+      "explanation": "kubectl run creates a single pod directly — no Deployment, no self-healing. Good for quick tests, not production.",
+      "hint": "Syntax: kubectl run <name> --image=<image>"
+    },
+    {
+      "prompt": "Now check that it's running.",
+      "expected_commands": ["kubectl get pods", "kubectl get pod my-first-pod"],
+      "fake_output": "NAME            READY   STATUS    RESTARTS   AGE\nmy-first-pod    1/1     Running   0          5s",
+      "explanation": "kubectl get pods lists everything in the current namespace."
+    },
+    {
+      "prompt": "Look at the full details of the pod.",
+      "expected_commands": ["kubectl describe pod my-first-pod"],
+      "fake_output": "Name: my-first-pod\nStatus: Running\nIP: 10.244.0.5\nNode: node-1\nContainers:\n  nginx:\n    Image: nginx\n    State: Running",
+      "explanation": "describe gives you the full picture — events, IP, container status, node it's on."
+    },
+    {
+      "prompt": "Clean up — delete the pod.",
+      "expected_commands": ["kubectl delete pod my-first-pod"],
+      "fake_output": "pod \"my-first-pod\" deleted",
+      "explanation": "Since this pod wasn't managed by a Deployment, deleting it is final — nothing recreates it."
+    }
+  ]
+}

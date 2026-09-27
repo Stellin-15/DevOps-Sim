@@ -1,0 +1,35 @@
+{
+  "id": "tutorial-006",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Reading Logs and Getting a Shell",
+  "difficulty": "beginner",
+  "tags": ["logs", "debugging", "exec"],
+  "intro": "These are the two commands you'll type more than any other in real life: logs and exec.",
+  "steps": [
+    {
+      "prompt": "View the logs of pod 'web-abc123'.",
+      "expected_commands": ["kubectl logs web-abc123"],
+      "fake_output": "2026-09-27 10:00:01 Server started on port 80\n2026-09-27 10:00:05 GET / 200",
+      "explanation": "By default this shows the current container's logs since it last started."
+    },
+    {
+      "prompt": "Follow the logs live (stream them).",
+      "expected_commands": ["kubectl logs web-abc123 -f"],
+      "fake_output": "2026-09-27 10:00:10 GET /health 200\n2026-09-27 10:00:15 GET /api/users 200\n(streaming... press Ctrl+C to stop)",
+      "explanation": "-f follows the log stream, just like tail -f on a regular file."
+    },
+    {
+      "prompt": "The pod crashed and restarted. View the logs from BEFORE the crash.",
+      "expected_commands": ["kubectl logs web-abc123 --previous"],
+      "fake_output": "2026-09-27 09:58:40 ERROR: out of memory\n2026-09-27 09:58:41 Container killed",
+      "explanation": "--previous shows the last terminated container's logs — essential for figuring out why something crashed, since the new container's logs won't show it."
+    },
+    {
+      "prompt": "Get an interactive shell inside the pod.",
+      "expected_commands": ["kubectl exec -it web-abc123 -- /bin/bash", "kubectl exec -it web-abc123 -- /bin/sh"],
+      "fake_output": "root@web-abc123:/#",
+      "explanation": "Useful for poking around live — checking env vars, testing DNS resolution, curling internal services. Not something to rely on for normal debugging though; logs/describe should usually be enough."
+    }
+  ]
+}

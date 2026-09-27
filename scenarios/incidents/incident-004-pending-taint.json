@@ -1,0 +1,37 @@
+{
+  "id": "incident-004",
+  "type": "incident",
+  "category": "kubernetes",
+  "title": "Pod Stuck Pending — new node not scheduling",
+  "difficulty": "beginner",
+  "tags": ["scheduling", "nodes", "pending"],
+  "intro": "You deployed a new batch-worker pod an hour ago and it's still not running.",
+  "steps": [
+    {
+      "prompt": "Check the pod's status.",
+      "expected_commands": ["kubectl get pods -l app=batch-worker"],
+      "fake_output": "NAME                            READY   STATUS    RESTARTS   AGE\nbatch-worker-9f8d7c6b5-zx1qw   0/1     Pending   0          1h",
+      "hint": "Start with a basic status check."
+    },
+    {
+      "prompt": "Find out why it's stuck Pending.",
+      "expected_commands": ["kubectl describe pod batch-worker-9f8d7c6b5-zx1qw"],
+      "fake_output": "Events:\n  Warning  FailedScheduling  1h  0/2 nodes are available: 2 node(s) had taint {dedicated: gpu}, that the pod didn't tolerate.",
+      "hint": "The Events section at the bottom of describe explains scheduling failures."
+    },
+    {
+      "prompt": "Check the nodes and their taints.",
+      "expected_commands": ["kubectl describe node node-1 | grep Taints", "kubectl get nodes"],
+      "fake_output": "node-1   Ready   <none>   10d\nnode-2   Ready   <none>   10d\n\nTaints: dedicated=gpu:NoSchedule",
+      "hint": "You want to see what taints exist on the available nodes."
+    },
+    {
+      "prompt": "This pod doesn't need a GPU node. Since editing the taint isn't appropriate here (other pods rely on it), add a toleration to the pod's deployment instead — for this exercise, just confirm you'd edit the deployment.",
+      "expected_commands": ["kubectl edit deployment batch-worker"],
+      "fake_output": "(opens deployment.apps/batch-worker in your editor — add a tolerations block matching the taint, or remove the requirement so it can land on any untainted node)",
+      "hint": "In real life you'd add a tolerations entry to spec.template.spec.tolerations matching key=dedicated, value=gpu, effect=NoSchedule — but only if this workload genuinely belongs on GPU nodes. Otherwise the real fix is provisioning a non-tainted node."
+    }
+  ],
+  "resolution": "All available nodes were tainted for GPU workloads, and this pod had no matching toleration, so the scheduler correctly refused to place it anywhere. Taints and tolerations exist precisely to reserve nodes for specific workloads — the fix is either giving the pod the right toleration (if it truly belongs there) or making sure non-GPU nodes exist for everything else.",
+  "real_commands_used": ["kubectl get pods", "kubectl describe pod", "kubectl describe node", "kubectl edit deployment"]
+}

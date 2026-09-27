@@ -1,0 +1,49 @@
+{
+  "id": "incident-001",
+  "type": "incident",
+  "category": "kubernetes",
+  "title": "CrashLoopBackOff in checkout-service",
+  "difficulty": "beginner",
+  "tags": ["pods", "debugging", "logs", "crashloop"],
+  "intro": "You're on call. PagerDuty says checkout-service is unstable in prod.",
+  "steps": [
+    {
+      "prompt": "What's your first move?",
+      "expected_commands": ["kubectl get pods", "kubectl get pods -A"],
+      "fake_output": "NAME                               READY   STATUS             RESTARTS   AGE\ncheckout-service-7f9d8b6c5-x2z9k   0/1     CrashLoopBackOff   5          4m",
+      "hint": "You need to see what's actually running first."
+    },
+    {
+      "prompt": "Investigate why it's crashing.",
+      "expected_commands": ["kubectl logs checkout-service-7f9d8b6c5-x2z9k", "kubectl logs checkout-service-7f9d8b6c5-x2z9k --previous"],
+      "fake_output": "Error: connection refused to db-service:5432\nFATAL: could not connect to database, exiting",
+      "hint": "Logs will show the failure reason. If the current container has no logs yet, try --previous."
+    },
+    {
+      "prompt": "Check if the database service it depends on even exists.",
+      "expected_commands": ["kubectl get svc db-service", "kubectl get svc"],
+      "fake_output": "NAME         TYPE        CLUSTER-IP    PORT(S)\ndb-service   ClusterIP   None          5432/TCP",
+      "hint": "The app is failing to reach 'db-service' — does that service exist and look healthy?"
+    },
+    {
+      "prompt": "The service exists but CLUSTER-IP is 'None' — check the endpoints to see if it actually has any pods behind it.",
+      "expected_commands": ["kubectl get endpoints db-service", "kubectl get ep db-service"],
+      "fake_output": "NAME         ENDPOINTS   AGE\ndb-service   <none>      2h",
+      "hint": "No endpoints means the service's label selector isn't matching any running pods."
+    },
+    {
+      "prompt": "Check the actual database pod status.",
+      "expected_commands": ["kubectl get pods -l app=db"],
+      "fake_output": "NAME       READY   STATUS    RESTARTS   AGE\ndb-0       0/1     Pending   0          2h",
+      "hint": "Look for pods matching the database's label."
+    },
+    {
+      "prompt": "The db pod is stuck Pending. Find out why.",
+      "expected_commands": ["kubectl describe pod db-0"],
+      "fake_output": "Events:\n  Warning  FailedScheduling  2h  0/3 nodes are available: 3 Insufficient memory.",
+      "hint": "describe shows scheduling events at the bottom."
+    }
+  ],
+  "resolution": "The database pod couldn't be scheduled due to insufficient memory on all nodes, so it never started, which meant db-service had no endpoints, which meant checkout-service couldn't connect and kept crash-looping. The real fix would be freeing up node memory (scaling the cluster, reducing other pods' requests, or increasing node size), not restarting checkout-service — that pod was innocent.",
+  "real_commands_used": ["kubectl get pods", "kubectl logs", "kubectl get svc", "kubectl get endpoints", "kubectl describe pod"]
+}

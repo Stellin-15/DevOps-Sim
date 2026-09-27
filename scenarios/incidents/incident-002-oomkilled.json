@@ -1,0 +1,46 @@
+{
+  "id": "incident-002",
+  "type": "incident",
+  "category": "kubernetes",
+  "title": "OOMKilled — payments-api keeps dying",
+  "difficulty": "intermediate",
+  "tags": ["pods", "resources", "oomkilled", "memory"],
+  "intro": "Alerts fired for payments-api. Pods keep restarting but there's nothing obvious in the app logs.",
+  "steps": [
+    {
+      "prompt": "Check the pod status first.",
+      "expected_commands": ["kubectl get pods -l app=payments-api"],
+      "fake_output": "NAME                          READY   STATUS      RESTARTS   AGE\npayments-api-6b7f8d9c-lm2np   0/1     OOMKilled   7          20m",
+      "hint": "Filter by the app's label."
+    },
+    {
+      "prompt": "Get the full details to confirm the reason.",
+      "expected_commands": ["kubectl describe pod payments-api-6b7f8d9c-lm2np"],
+      "fake_output": "Last State: Terminated\n  Reason: OOMKilled\n  Exit Code: 137\nLimits:\n  memory: 128Mi\nRequests:\n  memory: 64Mi",
+      "hint": "describe will show the termination reason and the configured memory limit."
+    },
+    {
+      "prompt": "Check actual memory usage against that limit.",
+      "expected_commands": ["kubectl top pod payments-api-6b7f8d9c-lm2np", "kubectl top pods -l app=payments-api"],
+      "fake_output": "NAME                          CPU(cores)   MEMORY(bytes)\npayments-api-6b7f8d9c-lm2np   120m         310Mi",
+      "hint": "kubectl top shows live resource usage."
+    },
+    {
+      "prompt": "The app is using ~310Mi but the limit is only 128Mi. Patch the deployment to raise the memory limit to 512Mi.",
+      "expected_commands": [
+        "kubectl patch deployment payments-api -p '{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"payments-api\",\"resources\":{\"limits\":{\"memory\":\"512Mi\"}}}]}}}}'",
+        "kubectl edit deployment payments-api"
+      ],
+      "fake_output": "deployment.apps/payments-api patched",
+      "hint": "You can patch it directly, or use kubectl edit to open it in your editor and change the memory limit under resources.limits."
+    },
+    {
+      "prompt": "Watch the rollout to confirm the fix is deploying.",
+      "expected_commands": ["kubectl rollout status deployment payments-api"],
+      "fake_output": "Waiting for deployment \"payments-api\" rollout to finish...\ndeployment \"payments-api\" successfully rolled out",
+      "hint": "rollout status blocks until the update finishes."
+    }
+  ],
+  "resolution": "The container's actual memory usage (310Mi) exceeded its configured limit (128Mi), so the kernel OOM-killed it every time it hit that ceiling — this is exit code 137, always worth recognizing immediately. Setting limits too low based on old traffic assumptions is one of the most common real-world causes of mystery restarts. Also worth noting: this only fixes the symptom — if 310Mi usage itself was a memory leak, that still needs investigating separately.",
+  "real_commands_used": ["kubectl get pods", "kubectl describe pod", "kubectl top pod", "kubectl patch deployment", "kubectl rollout status"]
+}

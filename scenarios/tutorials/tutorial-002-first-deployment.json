@@ -1,0 +1,35 @@
+{
+  "id": "tutorial-002",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Your First Deployment",
+  "difficulty": "beginner",
+  "tags": ["deployments", "basics"],
+  "intro": "A Deployment manages pods for you — if one dies, it gets replaced automatically. Let's create one.",
+  "steps": [
+    {
+      "prompt": "Create a deployment named 'web' using the nginx image with 3 replicas.",
+      "expected_commands": ["kubectl create deployment web --image=nginx --replicas=3"],
+      "fake_output": "deployment.apps/web created",
+      "explanation": "Under the hood this creates a Deployment, which creates a ReplicaSet, which creates 3 Pods."
+    },
+    {
+      "prompt": "Check the deployment's status.",
+      "expected_commands": ["kubectl get deployments", "kubectl get deploy"],
+      "fake_output": "NAME   READY   UP-TO-DATE   AVAILABLE   AGE\nweb    3/3     3            3           10s",
+      "explanation": "READY 3/3 means all 3 desired replicas are up and healthy."
+    },
+    {
+      "prompt": "See the actual pods it created.",
+      "expected_commands": ["kubectl get pods"],
+      "fake_output": "web-7d8f9c6b5-abcde   1/1   Running   0   10s\nweb-7d8f9c6b5-fghij   1/1   Running   0   10s\nweb-7d8f9c6b5-klmno   1/1   Running   0   10s",
+      "explanation": "Notice the pod names include a hash — that's the ReplicaSet's identifier, auto-generated."
+    },
+    {
+      "prompt": "Delete one of the pods on purpose and see what happens (try 'kubectl delete pod web-7d8f9c6b5-abcde').",
+      "expected_commands": ["kubectl delete pod web-7d8f9c6b5-abcde"],
+      "fake_output": "pod \"web-7d8f9c6b5-abcde\" deleted\n\n(a few seconds later)\nweb-7d8f9c6b5-pqrst   1/1   Running   0   2s",
+      "explanation": "This is the self-healing reconciliation loop in action — the Deployment noticed 2/3 pods and created a new one to get back to 3."
+    }
+  ]
+}
