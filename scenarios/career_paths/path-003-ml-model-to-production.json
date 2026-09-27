@@ -1,0 +1,19 @@
+{
+  "id": "path-003",
+  "type": "career_path",
+  "title": "Take an ML Model From Laptop to Production",
+  "difficulty": "advanced",
+  "tags": ["mlops", "docker", "serving", "canary"],
+  "intro": "The full lifecycle of a production model, in the order it really happens: pin the environment, version the data, train as a job, track the run, package it, serve it, roll it out carefully, and watch it once it's live.",
+  "steps": [
+    "mlops-tutorial-002",
+    "mlops-tutorial-005",
+    "mlops-tutorial-001",
+    "mlops-tutorial-004",
+    "docker-tutorial-008",
+    "mlops-tutorial-006",
+    "mlops-tutorial-010",
+    "mlops-tutorial-009"
+  ],
+  "resolution": "Every stage you just did answers a question someone will eventually ask about a production model: Which library versions? (pinned environment.) Which data? (DVC.) Which code and hyperparameters? (MLflow run.) What exactly is deployed? (a versioned image and storage URI.) Was it safe to roll out? (canary comparison.) Is it still right? (prediction-distribution monitoring.) Skip any one of them and there's an incident waiting — the MLOps incidents in this game are each one of these stages being skipped."
+}

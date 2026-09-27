@@ -1,0 +1,18 @@
+{
+  "id": "path-005",
+  "type": "career_path",
+  "title": "Build a Platform From Zero",
+  "difficulty": "advanced",
+  "tags": ["networking", "terraform", "linux", "kubernetes"],
+  "intro": "Before any app is deployed, someone has to design the network, provision machines safely, prepare their disks and services, and stand up the cluster. This is that someone's week.",
+  "steps": [
+    "networking-tutorial-010",
+    "terraform-tutorial-002",
+    "terraform-tutorial-007",
+    "linux-tutorial-011",
+    "linux-tutorial-006",
+    "tutorial-028",
+    "tutorial-021"
+  ],
+  "resolution": "Decisions made at the start of this path are the hardest to change later: CIDR ranges that overlap a future VPN or pod network, Terraform state kept on one laptop, a disk mounted without an fstab entry, a service started but not enabled, a pod network CIDR chosen without checking the VPC. Each one is cheap to get right on day one and genuinely painful to fix on day three hundred — which is why platform work rewards slowing down and verifying every step."
+}

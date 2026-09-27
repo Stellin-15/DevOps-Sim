@@ -171,9 +171,8 @@ commands/            one master command reference per category
                       scenario JSON for that category
 SPEC.md              the *original*, Kubernetes-only design spec — kept
                       for history; see CLAUDE.md for current architecture
-GAPS.md              honest self-assessment: does this actually prepare
-                      you for the CKA / real production incidents —
-                      currently scoped to Kubernetes only
+GAPS.md              honest self-assessment per category (and overall):
+                      what this prepares you for, what's still missing
 CLAUDE.md            working notes for AI-assisted development on this repo
 ```
 
@@ -227,52 +226,57 @@ every YAML lab's own solution passes its own validate spec; every career
 path's steps all resolve to real scenarios). Run this after any change to
 the engine, loader, sandbox, yaml_lab, career_path, or scenario content.
 
-## Is this enough to pass the CKA or handle production on your own?
+## What's in it
 
-Short answer, for the **Kubernetes** content specifically: helpful, not
-sufficient — see **GAPS.md** for the full honest self-assessment (it
-doesn't yet cover the other 7 categories, which are at an earlier content
-depth — see Status below). YAML Labs closed what used to be the biggest
-structural gap (no real manifest-editing practice), but there's still no
-exam timer, no real apiserver validating beyond each lab's specific
-checks, and no substitute for actual time on a real cluster (kind/
-minikube) before the exam.
+| Category | Tutorials | Incidents | Topics |
+|---|---|---|---|
+| Kubernetes | 29 | 10 | pods → operators, full CKA coverage incl. etcd, kubeadm, certs, security; plus 5 YAML Labs and Sandbox |
+| Docker | 10 | 5 | images/layers, volumes, networking, Compose, cleanup, Dockerfiles, runtime limits, container security |
+| Linux | 12 | 6 | find, text pipelines, processes/signals, systemd, networking, users/permissions, SSH, cron, disks, performance |
+| Terraform | 10 | 6 | safe CI workflow, variables/outputs, state inspection & refactoring, import, workspaces, remote state/locking, providers, debugging |
+| Networking | 10 | 6 | DNS, refused vs timeout, ports/nmap, routing/ARP, firewalls, TLS/openssl, HTTP/curl, in-cluster networking, CIDR |
+| CI/CD | 10 | 6 | git workflows, revert vs reset, tags/releases, GitHub Actions CLI, secrets/OIDC, local CI repro, rolling/blue-green/canary |
+| Monitoring | 10 | 6 | PromQL, golden signals, Prometheus ops, alerting/Alertmanager, journald, Elasticsearch, Loki, Grafana API |
+| MLOps | 10 | 6 | environments, GPUs, MLflow, DVC, serving, KServe/Kubeflow, profiling, model monitoring, model canaries |
+| **Total** | **101** | **51** | |
+
+Plus **6 Career Paths** chaining scenarios across categories: ship a
+feature end to end, a production incident chain, ML model from laptop to
+production, security hardening layer by layer, building a platform from
+zero, and "The Worst On-Call Night" (seven incidents, seven layers).
+
+Every tutorial step explains not just what the command does but *why*
+it beats the alternatives. Every incident ends with a debrief of the real
+root cause and how to prevent it.
+
+## Will this make me proficient in DevOps?
+
+Honest answer — see **GAPS.md**, which assesses every category
+individually (covered / still missing / readiness verdict) plus an
+overall verdict in Part 9. In short: completing everything here makes
+you a strong DevOps *operator* — you'll know the commands, the failure
+modes, and the debugging method. To be fully proficient you also need to
+practice *authoring* (Dockerfiles, Terraform, pipeline YAML, scripts),
+time on real infrastructure where things break in unscripted ways, and
+cloud-provider fundamentals. GAPS.md Part 9 lays out a concrete path.
+For the CKA specifically, see GAPS.md Part 1.
 
 ## Status / roadmap
 
 Built so far: hardcoded single scenario → JSON-driven scenarios with a
-menu → hint escalation → sandbox mode → progress tracking → full
-Kubernetes tutorial coverage → CKA/production-readiness gap-filling →
-YAML Labs → multi-category expansion (Docker, Linux, Terraform,
-Networking, CI/CD, Monitoring, MLOps) → Career Paths chaining categories
-together.
+menu → hint escalation → sandbox → progress tracking → full Kubernetes
+coverage → CKA gap-filling → YAML Labs → multi-category architecture →
+Career Paths → all 8 categories expanded to full depth.
 
-Content depth per category (tutorials / incidents):
-- **Kubernetes**: 29 / 10, plus 5 YAML labs — expanded specifically to
-  close CKA/production-readiness gaps (see GAPS.md)
-- **Docker, Linux**: 2 / 1 each
-- **Terraform, Networking, CI/CD, Monitoring, MLOps**: 1 / 1 each
-
-The 7 non-Kubernetes categories are at "starter content" depth — every
-tutorial still carries the `why` field and is fully tested, but there's
-much more of each category's real command surface (see `commands/*.md`)
-left to cover. Expanding them to Kubernetes-level depth is the next large
-body of work.
-
-2 Career Paths currently exist: a build-and-ship flow (Terraform → Docker
-→ Kubernetes → CI/CD → Monitoring) and an incident-response chain (Linux
-→ Networking → Kubernetes → Monitoring).
-
-Not yet built:
-- Deeper content for the 7 non-Kubernetes categories
+Next, in priority order (details in CLAUDE.md and GAPS.md):
+- **Authoring labs beyond Kubernetes manifests** — GitHub Actions
+  workflows and Prometheus alert rules (possible with existing YAML Lab
+  engine, content only), then Dockerfile, Terraform, and bash-script labs
+- Exam-specific gap passes for other certifications (CKAD, Terraform
+  Associate, AWS)
+- Topics each GAPS.md part lists as missing (tracing/SLOs, tcpdump,
+  feature stores, LLM serving, GitOps, shell scripting)
+- Sandbox modes for categories other than Kubernetes
 - A CLI scaffold for authoring new scenario JSON
-- Dynamic storage/volume mount failure scenarios, RBAC-denial as an
-  incident, PodDisruptionBudget-blocks-drain, admission controllers
-  (Kubernetes-specific, see GAPS.md)
-- Further sandbox resources (jobs/cronjobs, PVCs, HPA, RBAC) — and a
-  sandbox mode for other categories (a fake Docker host, a fake Linux
-  box) is a bigger, separate idea
-- More YAML labs (StatefulSet, Ingress, HPA, RBAC manifests)
 
-See CLAUDE.md for the detailed status against the original build order and
-notes for continuing development.
+See CLAUDE.md for architecture and notes for continuing development.

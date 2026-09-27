@@ -26,12 +26,13 @@ The source-of-truth docs, all already in the repo, are:
   matching file whenever writing new scenario JSON for that category, so
   the game always teaches syntax that matches the real tool.
 - **GAPS.md** — an honest, periodically-updated self-assessment of what
-  kube-sim does and doesn't prepare someone for (CKA exam readiness,
-  real production-incident readiness). Currently scoped to Kubernetes/CKA
-  specifically — the other 7 categories haven't had an equivalent gap
-  analysis yet. Read it before adding Kubernetes content so new scenarios
-  target actual gaps rather than duplicating well-covered ground. Update
-  it whenever a pass closes gaps it names.
+  kube-sim does and doesn't prepare someone for. Part 1 is the deepest
+  (Kubernetes / CKA); Parts 2-8 give each other category its own
+  covered / still-missing / readiness-verdict section; Part 9 is the
+  overall verdict on DevOps proficiency, with totals and a recommended
+  path. Read the relevant part before adding content so new scenarios
+  target real gaps. Update it in the same commit whenever content closes
+  a gap it names — future sessions should be able to trust it's current.
 
 Don't duplicate content from these files elsewhere — link to them.
 
@@ -129,6 +130,17 @@ can. `engine.normalize()` and `engine.read_input()` both strip it — if you
 add a new place that reads raw input, route it through `read_input`,
 not bare `input()`.
 
+## Matching-engine note
+
+`engine.normalize()` rewrites `--flag value` to `--flag=value` so both
+spellings match — but only when the next token is NOT itself a flag.
+(An earlier version merged `--permanent --add-port=x` into
+`--permanent=--add-port=x`, silently breaking reordered boolean flags;
+`test_engine.py` has regression tests for this.) A boolean long flag
+followed by a positional argument (`--rm alpine`) is still ambiguous and
+is normalized consistently on both sides, so it matches as long as
+argument order is the same as the expected command.
+
 ## Multi-category expansion (beyond SPEC.md entirely)
 
 SPEC.md's v1-v6 order was written when this was Kubernetes-only. The repo
@@ -144,20 +156,23 @@ unique). The Kubernetes-only `kubernetes.md` command reference is
 identical to (and replaces) the old root `COMMANDS.md`.
 
 Current per-category content depth (tutorials / incidents):
-- kubernetes: 29 / 10 (also has 5 YAML labs) — CKA-gap-filled per GAPS.md
-- docker: 2 / 1
-- linux: 2 / 1
-- terraform: 1 / 1
-- networking: 1 / 1
-- cicd: 1 / 1
-- monitoring: 1 / 1
-- mlops: 1 / 1
+- kubernetes: 29 / 10 (also has 5 YAML labs and Sandbox) — CKA-gap-filled
+- docker: 10 / 5
+- linux: 12 / 6
+- terraform: 10 / 6
+- networking: 10 / 6
+- cicd: 10 / 6
+- monitoring: 10 / 6
+- mlops: 10 / 6
+- **total: 101 tutorials, 51 incidents**
 
-The 7 non-Kubernetes categories are at "starter content" depth — the same
-stage Kubernetes was at before its CKA-gap-filling pass. Expanding them to
-similar depth (using each category's `commands/*.md` as source material,
-same pattern as the Kubernetes expansion) is the natural next large body
-of work — see "Likely next work" below.
+Every category was expanded from its `commands/*.md` reference until
+every command section there is covered by at least one tutorial, with
+incidents modeled on the failures that actually hurt teams in that area
+(each category's GAPS.md part lists them). Categories also carry a few
+production-critical topics their commands file lacks (e.g. container
+security in Docker, shell performance triage in Linux, OIDC and
+deployment strategies in CI/CD) — noted per category in GAPS.md.
 
 Every tutorial across every category has the `why` field (see below) —
 that bar was held even for the newly-imported starter content, not just
@@ -171,12 +186,15 @@ existing tutorial/incident ids by id — no new scenario authoring, purely
 composition of what already exists. `test_career_path_content.py` enforces
 every step id resolves to a real scenario (self-consistency, same pattern
 as the other content tests) and that a path spans at least 2 categories
-(the whole point is combining categories, not padding one). Currently 2
-paths: `path-001` (a happy-path build→ship flow: terraform → docker →
-kubernetes → cicd → monitoring) and `path-002` (an incident-response
-chain: linux → networking → kubernetes → monitoring). More paths are easy
-to add and don't require new scenario content — just new combinations of
-existing scenario ids in a sensible order.
+(the whole point is combining categories, not padding one). Currently 6 paths: `path-001`
+build→ship (terraform → docker → kubernetes → cicd → monitoring),
+`path-002` incident chain (linux → networking → kubernetes → monitoring),
+`path-003` ML model laptop→production (mlops + docker), `path-004`
+security hardening layer by layer (linux → networking → docker →
+kubernetes → cicd), `path-005` platform from zero (networking →
+terraform → linux → kubernetes), and `path-006` "The Worst On-Call
+Night" — seven incidents only, across seven categories. More paths need
+no new scenario content — just new orderings of existing ids.
 
 ## Build status vs. SPEC.md's v1–v6 order
 
@@ -193,8 +211,12 @@ existing scenario ids in a sensible order.
 - [x] (beyond SPEC.md) — YAML Labs mode: real file editing + structural
       validation (`yaml_lab.py`, `scenarios/yaml_labs/`), added to close
       the "no real YAML editing" gap GAPS.md named
+- [x] (beyond SPEC.md) — multi-category expansion to 8 categories, all
+      at full depth, plus Career Paths chaining them together
 
-Content: 29 tutorials, 10 incidents, 5 YAML labs, all in `scenarios/`.
+**Kubernetes content specifically** (the other categories are summarized
+under "Multi-category expansion" above and detailed in GAPS.md): 29
+tutorials, 10 incidents, 5 YAML labs.
 Tutorials/incidents are schema-valid per `tests/test_scenario_content.py`;
 YAML labs per `tests/test_yaml_lab_content.py` (which also proves every
 hand-written `solution` field actually passes its own `validate` spec —
@@ -303,23 +325,23 @@ exercise something the generic checks don't cover.
 
 ## Likely next work
 
-1. **Expand the 7 non-Kubernetes categories** to similar depth as
-   Kubernetes (each currently has 1-2 tutorials + 1 incident) — the
-   biggest single body of remaining work, using each `commands/*.md` as
-   source material the same way `commands/kubernetes.md` (formerly
-   `COMMANDS.md`) drove the Kubernetes expansion. Consider a GAPS.md-style
-   assessment per category before diving in, same discipline as
-   Kubernetes got.
-2. More career paths, once there's more per-category content to combine
-   — e.g. an MLOps-focused path (train → track → serve → monitor for
-   drift), or a security-focused one spanning RBAC, secrets, and
-   NetworkPolicy across categories.
-3. See GAPS.md's "still not covered" backlog for Kubernetes-specific
-   gaps: dynamic storage/volume mount failures, RBAC-denial as an
-   incident, PodDisruptionBudget-blocks-drain, admission controllers.
-4. Further Sandbox vocabulary (jobs/cronjobs, PVCs, HPA, RBAC) — still
-   Kubernetes-only; a Docker or Linux sandbox would be a bigger, separate
-   effort.
-5. v6 scenario-scaffolding CLI, once hand-authoring JSON gets tedious.
-6. Re-read GAPS.md periodically and update it — living assessment, not a
-   one-time writeup, currently scoped to Kubernetes/CKA only.
+See GAPS.md Part 9 for the reasoning. In priority order:
+
+1. **Authoring labs beyond Kubernetes manifests.** The biggest gap in
+   every category is writing, not operating. `yaml_lab.py` already
+   validates arbitrary YAML against dotted-path field specs, so a
+   GitHub Actions workflow lab or a Prometheus alert-rule lab needs only
+   new `scenarios/yaml_labs/*.json` content, no code. Dockerfile, HCL,
+   and bash-script labs need a small new validator each (a Dockerfile
+   instruction parser, `terraform validate`/HCL parsing, `bash -n` +
+   shellcheck-style checks) following yaml_lab.py's pattern.
+2. Per-category exam gap passes (like Part 1 did for the CKA): e.g.
+   Terraform Associate, CKAD, AWS certs.
+3. Topics each GAPS.md part lists as missing: tracing/SLOs (monitoring),
+   tcpdump/MTU (networking), feature stores and LLM serving (mlops),
+   GitOps and supply-chain security (cicd), shell scripting (linux).
+4. Sandbox modes for other categories (a fake Docker host, a fake Linux
+   box) — bigger, separate efforts; sandbox.py is Kubernetes-only.
+5. v6 scenario-scaffolding CLI — more valuable now that content volume
+   is large.
+6. Keep GAPS.md current: every content pass should update its part.

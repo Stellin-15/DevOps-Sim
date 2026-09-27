@@ -1,0 +1,19 @@
+{
+  "id": "path-004",
+  "type": "career_path",
+  "title": "Harden the Stack, Layer by Layer",
+  "difficulty": "advanced",
+  "tags": ["security", "linux", "networking", "docker", "kubernetes", "cicd"],
+  "intro": "Security isn't one tool — it's least privilege applied at every layer. This path walks from the host up through the network, containers, the cluster, and finally the pipeline that deploys everything.",
+  "steps": [
+    "linux-tutorial-008",
+    "linux-tutorial-009",
+    "networking-tutorial-006",
+    "networking-tutorial-007",
+    "docker-tutorial-010",
+    "tutorial-012",
+    "tutorial-027",
+    "cicd-tutorial-007"
+  ],
+  "resolution": "The same principle appeared eight times in eight forms: dedicated unprivileged users on the host, key-only SSH, firewall rules scoped to the one source that needs access, verified TLS instead of curl -k, non-root read-only containers, RBAC roles granting only needed verbs, Pod Security Admission blocking privileged pods, and environment-scoped short-lived pipeline credentials. An attacker needs only one layer to be weak; defense in depth means a failure at one layer is contained by the next."
+}

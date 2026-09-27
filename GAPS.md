@@ -473,7 +473,7 @@ gaps relative to what current MLOps roles ask for.
 | CI/CD | 10 | 6 | |
 | Monitoring | 10 | 6 | |
 | MLOps | 10 | 6 | |
-| **Total** | **101** | **51** | 5 labs, 2 career paths |
+| **Total** | **101** | **51** | 5 labs, 6 career paths |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -516,7 +516,8 @@ that no amount of additional scenario content can fully close:
    the point, not the syntax).
 2. Play every incident without hints first; read every resolution even
    when you solved it.
-3. Play both Career Paths to practice switching layers mid-problem.
+3. Play all six Career Paths to practice switching layers mid-problem —
+   especially "The Worst On-Call Night".
 4. Rebuild each incident for real on a local cluster/VM — break it on
    purpose, then fix it with the same commands.
 5. Write the artifacts yourself: a Dockerfile, a Terraform module, a

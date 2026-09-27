@@ -1,0 +1,18 @@
+{
+  "id": "path-006",
+  "type": "career_path",
+  "title": "The Worst On-Call Night",
+  "difficulty": "advanced",
+  "tags": ["incidents", "on-call", "networking", "cicd", "docker", "monitoring", "kubernetes", "terraform", "mlops"],
+  "intro": "Seven unrelated incidents, seven different layers, one shift. No tutorials — only incidents, back to back. Try to identify which layer each one lives in before touching anything.",
+  "steps": [
+    "networking-incident-002",
+    "cicd-incident-002",
+    "docker-incident-003",
+    "monitoring-incident-002",
+    "incident-008",
+    "terraform-incident-002",
+    "mlops-incident-005"
+  ],
+  "resolution": "An expired certificate, a bad merge, a full disk, blind dashboards, broken cluster DNS, an orphaned Terraform lock, and an OOM-killed model server. None of them required exotic knowledge — each fell to the same method: confirm the symptom, find which layer owns it, check that layer directly, fix the cause rather than the symptom, and verify. That method, not any single command, is what makes an engineer effective on call. Notice also how many of tonight's incidents were really missing monitoring: an expiry alert, a scrape-target alert, a disk alert. The best on-call nights are the ones where alerts caught problems days earlier."
+}
