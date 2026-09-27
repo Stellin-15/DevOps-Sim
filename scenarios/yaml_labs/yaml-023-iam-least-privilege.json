@@ -1,0 +1,32 @@
+{
+  "id": "yaml-023",
+  "type": "yaml_lab",
+  "category": "aws",
+  "title": "Rewrite an Over-Broad IAM Policy to Least Privilege",
+  "difficulty": "intermediate",
+  "tags": ["aws", "iam", "security", "least-privilege"],
+  "intro": "The uploads service's IAM policy grants every S3 action on every bucket in the account. It was 'temporary, to get it working'. If the service is ever compromised, the attacker can read or delete every bucket you own. Rewrite it so the service can do exactly what it needs and nothing more.",
+  "steps": [
+    {
+      "file": "policy.json",
+      "starter_content": "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [\n    {\n      \"Effect\": \"Allow\",\n      \"Action\": \"s3:*\",\n      \"Resource\": \"*\"\n    }\n  ]\n}\n",
+      "prompt": "Rewrite policy.json (it's JSON, which is also valid YAML) so that:\n(1) One statement, Sid \"ReadWriteObjects\", allows s3:GetObject and s3:PutObject on the objects in the bucket only: arn:aws:s3:::acme-app-uploads/*\n(2) A second statement, Sid \"ListBucket\", allows s3:ListBucket on the bucket itself: arn:aws:s3:::acme-app-uploads\n(3) No wildcard actions (s3:*) and no \"Resource\": \"*\" anywhere.\nKeep \"Version\": \"2012-10-17\".",
+      "apply_commands": ["aws iam create-policy-version --policy-arn arn:aws:iam::111122223333:policy/uploads-rw --policy-document file://policy.json --set-as-default", "aws iam create-policy --policy-name uploads-rw --policy-document file://policy.json", "check"],
+      "validate": {
+        "fields": {
+          "Version": "2012-10-17",
+          "Statement[*].Effect": "Allow",
+          "Statement[*].Sid": ["ReadWriteObjects", "ListBucket"],
+          "Statement[*].Action[*]": ["s3:GetObject", "s3:PutObject", "s3:ListBucket"],
+          "Statement[*].Resource": ["arn:aws:s3:::acme-app-uploads/*", "arn:aws:s3:::acme-app-uploads"]
+        },
+        "absent": ["s3:*", "\"Resource\": \"*\"", "\"Action\": \"*\""]
+      },
+      "hint": "Two statements in the Statement list. The object actions (Get/Put) need the ARN ending in /*; ListBucket needs the bucket ARN without /*. Write Action as a list: \"Action\": [\"s3:GetObject\", \"s3:PutObject\"].",
+      "solution": "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [\n    {\n      \"Sid\": \"ReadWriteObjects\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\"s3:GetObject\", \"s3:PutObject\"],\n      \"Resource\": \"arn:aws:s3:::acme-app-uploads/*\"\n    },\n    {\n      \"Sid\": \"ListBucket\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\"s3:ListBucket\"],\n      \"Resource\": \"arn:aws:s3:::acme-app-uploads\"\n    }\n  ]\n}\n",
+      "fake_output": "{\n    \"PolicyVersion\": {\n        \"VersionId\": \"v2\",\n        \"IsDefaultVersion\": true\n    }\n}",
+      "explanation": "The service can read, write, and list one bucket, and nothing else in the account.",
+      "why": "Two things trip people up. First, S3 actions apply to different resource types: GetObject and PutObject act on objects (bucket/*), while ListBucket acts on the bucket itself (no /*). Put them in the wrong statement and you get an AccessDenied that looks like a bug. Second, the blast radius: before, a stolen credential could read, overwrite, or delete every bucket; now it reaches one bucket. Verify with 'aws iam simulate-principal-policy' (aws-tutorial-006) rather than by trial and error, and in the real world add conditions (for example an encryption requirement) and prefer tools like IAM Access Analyzer's policy generation, which builds least-privilege policies from CloudTrail activity."
+    }
+  ]
+}

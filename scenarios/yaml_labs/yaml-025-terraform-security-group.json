@@ -1,0 +1,33 @@
+{
+  "id": "yaml-025",
+  "type": "yaml_lab",
+  "category": "terraform",
+  "title": "Fix a Security Group That Exposes SSH to the Internet",
+  "difficulty": "intermediate",
+  "tags": ["terraform", "aws", "security-groups", "security"],
+  "intro": "A security scan flagged this Terraform: the web servers' security group allows SSH from anywhere. The team now uses SSM Session Manager for shell access (aws-tutorial-003), so SSH doesn't need to be open at all.",
+  "steps": [
+    {
+      "file": "sg.tf",
+      "format": "hcl",
+      "starter_content": "resource \"aws_security_group\" \"web\" {\n  name   = \"web-sg\"\n  vpc_id = aws_vpc.main.id\n\n  ingress {\n    from_port   = 22\n    to_port     = 22\n    protocol    = \"tcp\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n\n  ingress {\n    from_port   = 443\n    to_port     = 443\n    protocol    = \"tcp\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n\n  egress {\n    from_port   = 0\n    to_port     = 0\n    protocol    = \"-1\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n}\n",
+      "prompt": "Edit sg.tf:\n(1) Remove the SSH ingress block entirely.\n(2) Keep HTTPS (443) ingress from 0.0.0.0/0, and give it a description = \"HTTPS from the internet\".\n(3) Add a description = \"Web servers: HTTPS only, shell access via SSM\" to the security group itself.\n(4) Keep the egress block.",
+      "apply_commands": ["terraform plan", "trivy config .", "check"],
+      "validate": {
+        "fields": {
+          "resource.aws_security_group.web.description": "Web servers: HTTPS only, shell access via SSM",
+          "resource.aws_security_group.web.ingress.from_port": 443,
+          "resource.aws_security_group.web.ingress.to_port": 443,
+          "resource.aws_security_group.web.ingress.description": "HTTPS from the internet",
+          "resource.aws_security_group.web.egress.protocol": "-1"
+        },
+        "absent": ["= 22"]
+      },
+      "hint": "Delete the whole first ingress { ... } block (the one with from_port = 22). Add description = \"...\" inside the remaining ingress block and at the top of the resource.",
+      "solution": "resource \"aws_security_group\" \"web\" {\n  name        = \"web-sg\"\n  description = \"Web servers: HTTPS only, shell access via SSM\"\n  vpc_id      = aws_vpc.main.id\n\n  ingress {\n    description = \"HTTPS from the internet\"\n    from_port   = 443\n    to_port     = 443\n    protocol    = \"tcp\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n\n  egress {\n    from_port   = 0\n    to_port     = 0\n    protocol    = \"-1\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n}\n",
+      "fake_output": "  # aws_security_group.web will be updated in-place\n  ~ resource \"aws_security_group\" \"web\" {\n      ~ ingress = [\n          - {\n              - cidr_blocks = [\"0.0.0.0/0\"]\n              - from_port   = 22\n              ...\n            },\n        ]\n    }\n\nPlan: 0 to add, 1 to change, 0 to destroy.\n\n$ trivy config .\nTests: 12 (SUCCESSES: 12, FAILURES: 0)",
+      "explanation": "SSH is no longer reachable from anywhere; HTTPS is unchanged. The plan is an in-place update (no downtime), and the scanner is clean.",
+      "why": "The best firewall rule is the one you don't need. With SSM Session Manager, admins get shells through IAM-authorised, logged sessions and port 22 can be closed entirely, which removes brute-force risk (security-incident-001) and key sprawl in one move. Descriptions aren't decoration: during an audit or incident, 'why does this rule exist?' should be answered by the rule itself. One gotcha: changing a security group's description forces Terraform to replace the group. Here that happens in the same apply, but on a live group, check the plan for '-/+' before applying."
+    }
+  ]
+}

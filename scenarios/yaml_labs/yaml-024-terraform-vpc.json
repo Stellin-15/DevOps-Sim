@@ -1,0 +1,42 @@
+{
+  "id": "yaml-024",
+  "type": "yaml_lab",
+  "category": "terraform",
+  "title": "Write a VPC with Public and Private Subnets in Terraform",
+  "difficulty": "advanced",
+  "tags": ["terraform", "aws", "vpc", "networking"],
+  "intro": "The AWS Sandbox's VPC (public subnet with an internet gateway route, private subnet reaching the internet through NAT) is the standard layout. Now write it yourself in Terraform. Most of the AWS mysteries are about pieces of this file being missing.",
+  "steps": [
+    {
+      "file": "vpc.tf",
+      "format": "hcl",
+      "starter_content": "",
+      "prompt": "Write vpc.tf with these resources:\n- aws_vpc \"main\": cidr_block \"10.0.0.0/16\"\n- aws_subnet \"public\": vpc_id = aws_vpc.main.id, cidr_block \"10.0.1.0/24\"\n- aws_subnet \"private\": vpc_id = aws_vpc.main.id, cidr_block \"10.0.2.0/24\"\n- aws_internet_gateway \"main\": vpc_id = aws_vpc.main.id\n- aws_eip \"nat\": domain = \"vpc\"\n- aws_nat_gateway \"main\": allocation_id = aws_eip.nat.id, subnet_id = aws_subnet.public.id\n- aws_route_table \"public\" with a route block: cidr_block \"0.0.0.0/0\", gateway_id = aws_internet_gateway.main.id\n- aws_route_table \"private\" with a route block: cidr_block \"0.0.0.0/0\", nat_gateway_id = aws_nat_gateway.main.id\n- aws_route_table_association \"public\" (subnet_id = aws_subnet.public.id, route_table_id = aws_route_table.public.id) and \"private\" (the private pair).",
+      "apply_commands": ["terraform validate", "terraform plan", "check"],
+      "validate": {
+        "fields": {
+          "resource.aws_vpc.main.cidr_block": "10.0.0.0/16",
+          "resource.aws_subnet.public.cidr_block": "10.0.1.0/24",
+          "resource.aws_subnet.private.cidr_block": "10.0.2.0/24",
+          "resource.aws_subnet.public.vpc_id": "aws_vpc.main.id",
+          "resource.aws_internet_gateway.main.vpc_id": "aws_vpc.main.id",
+          "resource.aws_nat_gateway.main.subnet_id": "aws_subnet.public.id",
+          "resource.aws_nat_gateway.main.allocation_id": "aws_eip.nat.id",
+          "resource.aws_route_table.public.route.cidr_block": "0.0.0.0/0",
+          "resource.aws_route_table.public.route.gateway_id": "aws_internet_gateway.main.id",
+          "resource.aws_route_table.private.route.cidr_block": "0.0.0.0/0",
+          "resource.aws_route_table.private.route.nat_gateway_id": "aws_nat_gateway.main.id",
+          "resource.aws_route_table_association.public.subnet_id": "aws_subnet.public.id",
+          "resource.aws_route_table_association.public.route_table_id": "aws_route_table.public.id",
+          "resource.aws_route_table_association.private.subnet_id": "aws_subnet.private.id",
+          "resource.aws_route_table_association.private.route_table_id": "aws_route_table.private.id"
+        }
+      },
+      "hint": "Each resource is: resource \"<type>\" \"<name>\" { ... }. The route is a nested block inside the route table: route { cidr_block = \"0.0.0.0/0\" gateway_id = aws_internet_gateway.main.id }. References are unquoted: vpc_id = aws_vpc.main.id. The key difference between the two route tables is gateway_id (IGW) vs nat_gateway_id (NAT). Note the NAT gateway lives in the PUBLIC subnet.",
+      "solution": "resource \"aws_vpc\" \"main\" {\n  cidr_block = \"10.0.0.0/16\"\n}\n\nresource \"aws_subnet\" \"public\" {\n  vpc_id     = aws_vpc.main.id\n  cidr_block = \"10.0.1.0/24\"\n}\n\nresource \"aws_subnet\" \"private\" {\n  vpc_id     = aws_vpc.main.id\n  cidr_block = \"10.0.2.0/24\"\n}\n\nresource \"aws_internet_gateway\" \"main\" {\n  vpc_id = aws_vpc.main.id\n}\n\nresource \"aws_eip\" \"nat\" {\n  domain = \"vpc\"\n}\n\nresource \"aws_nat_gateway\" \"main\" {\n  allocation_id = aws_eip.nat.id\n  subnet_id     = aws_subnet.public.id\n}\n\nresource \"aws_route_table\" \"public\" {\n  vpc_id = aws_vpc.main.id\n  route {\n    cidr_block = \"0.0.0.0/0\"\n    gateway_id = aws_internet_gateway.main.id\n  }\n}\n\nresource \"aws_route_table\" \"private\" {\n  vpc_id = aws_vpc.main.id\n  route {\n    cidr_block     = \"0.0.0.0/0\"\n    nat_gateway_id = aws_nat_gateway.main.id\n  }\n}\n\nresource \"aws_route_table_association\" \"public\" {\n  subnet_id      = aws_subnet.public.id\n  route_table_id = aws_route_table.public.id\n}\n\nresource \"aws_route_table_association\" \"private\" {\n  subnet_id      = aws_subnet.private.id\n  route_table_id = aws_route_table.private.id\n}\n",
+      "fake_output": "Success! The configuration is valid.\n\nPlan: 11 to add, 0 to change, 0 to destroy.",
+      "explanation": "A complete two-tier VPC: the public subnet routes to the IGW, and the private subnet routes out through a NAT gateway that sits in the public subnet.",
+      "why": "Every piece here matches a mystery. Leave out the public route and you get mystery-aws-001; leave out the private route and you get mystery-aws-002; forget an association and the subnet silently uses the VPC's main route table instead. Writing it as code is what prevents those: the whole network is reviewed in one diff and rebuilt identically in every environment. For production, use two or more availability zones (one public and private subnet pair and one NAT per AZ, with for_each), add S3/DynamoDB gateway endpoints (aws-incident-007), or use the well-tested terraform-aws-modules/vpc module."
+    }
+  ]
+}

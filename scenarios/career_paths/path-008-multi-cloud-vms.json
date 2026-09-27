@@ -1,0 +1,20 @@
+{
+  "id": "path-008",
+  "type": "career_path",
+  "title": "Multi-Cloud: The Same Job on AWS, Google Cloud, and Azure",
+  "difficulty": "intermediate",
+  "tags": ["aws", "gcp", "azure", "vm", "networking"],
+  "intro": "Many companies run on more than one cloud, and job ads rarely say which. The good news: the concepts are the same, only the names and CLIs differ. Do the same three jobs on each cloud in turn: know where you are, find your VMs, and understand the network they sit in. Keep the cross-cloud map in GAPS.md Part 11 open as you go.",
+  "steps": [
+    "aws-tutorial-001",
+    "aws-tutorial-002",
+    "aws-tutorial-004",
+    "gcp-tutorial-001",
+    "gcp-tutorial-002",
+    "gcp-tutorial-004",
+    "azure-tutorial-001",
+    "azure-tutorial-003",
+    "azure-tutorial-005"
+  ],
+  "resolution": "Three clouds, one pattern. Check your identity and scope first (profile, configuration, subscription); navigate VMs with filters and queries rather than consoles; and understand what makes something reachable, which is routes plus firewalls on every cloud, with different defaults: AWS subnets are public only via their route table, GCP VPCs are global with tag-based firewalls, and Azure NSGs use priorities with explicit denies. Next: play the AWS Sandbox and AWS mysteries to practise the networking hands-on, then take the Exam for each cloud."
+}

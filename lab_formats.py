@@ -320,11 +320,54 @@ def parse_bash(content: str):
     return parsed, []
 
 
+def parse_markdown(content: str):
+    """{'title', 'sections': {heading: body}, 'headings', 'lines', 'text',
+    'empty_section_count'}. Sections are split on level-2 headings
+    ('## '), keyed by the heading text lowercased. Labs usually check
+    structure with 'order' on lines (e.g. '## Impact' before '## Timeline')
+    and content with 'contains'/'absent' on the text."""
+    lines = content.splitlines()
+    title = next((l[2:].strip() for l in lines if l.startswith("# ")), "")
+    sections, current = {}, None
+    for line in lines:
+        if line.startswith("## "):
+            current = line[3:].strip().lower()
+            sections[current] = []
+        elif current is not None:
+            sections[current].append(line)
+    bodies = {k: "\n".join(v).strip() for k, v in sections.items()}
+    if not lines or not any(l.strip() for l in lines):
+        return None, ["Document is empty."]
+    return {
+        "title": title,
+        "sections": bodies,
+        "headings": list(bodies),
+        "lines": [l.strip() for l in lines if l.strip()],
+        "text": content,
+        "empty_section_count": sum(1 for b in bodies.values() if not b),
+    }, []
+
+
+def parse_ansible(content: str):
+    """An Ansible playbook is a YAML *list* of plays; the validator works on
+    mappings, so wrap it: {'plays': [...], 'lines', 'text'}."""
+    parsed, problems = parse_yaml(content)
+    if problems:
+        return None, problems
+    if not isinstance(parsed, list):
+        return None, ["A playbook must be a YAML list of plays (start the first play with '- name:' or '- hosts:')."]
+    return {"plays": parsed,
+            "lines": [l.strip() for l in content.splitlines() if l.strip() and not l.strip().startswith("#")],
+            "text": content}, []
+
+
 PARSERS = {
     "yaml": parse_yaml,
     "dockerfile": parse_dockerfile,
     "hcl": parse_hcl,
     "bash": parse_bash,
+    "markdown": parse_markdown,
+    "ansible": parse_ansible,
 }
 
 

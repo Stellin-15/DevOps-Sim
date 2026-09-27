@@ -33,9 +33,11 @@ string.
   The game writes a real file to `workspace/`, tells you what to build or
   fix, and you edit it in your actual editor (vim, nano, VS Code —
   whatever you'd really use). Typing the apply command reads your real
-  file and checks it field by field. 22 labs across seven formats:
+  file and checks it field by field. 28 labs across ten formats:
   Kubernetes manifests, GitHub Actions workflows, Prometheus alert rules,
-  Docker Compose files, Dockerfiles, Terraform (HCL), and bash scripts.
+  Docker Compose files, Dockerfiles, Terraform (AWS VPCs, security
+  groups, GCP firewalls), AWS IAM policies, Ansible playbooks, bash
+  scripts, and a blameless postmortem in Markdown.
   Half are "write from scratch", half are "fix this broken or dangerous
   file". This is the skill a command-matcher can't fake.
 - **Exam Mode** — pick a category and a number of questions; they're drawn
@@ -213,7 +215,8 @@ linux_sandbox.py    Linux sandbox (random broken server; reacts to fixes)
 aws_sandbox.py      AWS sandbox (a VPC with real layer-by-layer reachability)
 sandbox_common.py   shared sandbox loop, pipes, tables, save/discard
 yaml_lab.py         Writing Labs runner: real file editing + validation
-lab_formats.py      parsers for YAML, Dockerfile, HCL, and bash lab files
+lab_formats.py      parsers for YAML/JSON, Dockerfile, HCL, bash, Ansible,
+                     and Markdown lab files
 scenarios/
   kubernetes/tutorials/*.json, incidents/*.json
   docker/tutorials/*.json, incidents/*.json
@@ -333,18 +336,25 @@ the engine, loader, sandboxes, yaml_lab, career_path, mystery, or scenario conte
 | Security | 10 | 6 | nmap discovery/TLS checks, Trivy/kube-bench, Lynis/OpenSCAP CIS audits, SSH hardening, fail2ban, auditd, osquery/AIDE, secrets scanning, compromise triage; plus 2 hacked-server mysteries |
 | Server Fleet Ops | 11 | 6 | Ansible (inventories, safe playbook runs, rolling serial updates, Vault/lint), Debian and RHEL patching with rollback, kernels and reboots, SSM Patch Manager, chrony, LVM growth, backups with real restore tests |
 | SRE | 10 | 6 | incident first ten minutes, Argo Rollouts canaries, Istio resilience, capacity planning, load testing (k6/vegeta), chaos engineering, feature flags/kill switches, postmortem timelines, graceful degradation, production readiness reviews |
-| **Total** | **175** | **93** | + 22 Writing Labs |
+| **Total** | **175** | **93** | + 28 Writing Labs |
 
 The three clouds use different names for the same ideas (security group
 vs NSG vs firewall rule; CloudTrail vs Activity Log vs Audit Logs). The
 cross-cloud map at the end of GAPS.md Part 11 lines them up side by
 side.
 
-Plus **7 Career Paths** chaining scenarios across categories: ship a
-feature end to end, a production incident chain, ML model from laptop to
-production, security hardening layer by layer, building a platform from
-zero, "The Worst On-Call Night" (seven incidents, seven layers), and
-shipping a self-hosted LLM safely (build → sign → GitOps → serve → SLO).
+Plus **11 Career Paths** chaining scenarios across categories:
+- ship a feature end to end;
+- a production incident chain;
+- an ML model from laptop to production;
+- security hardening layer by layer;
+- building a platform from zero;
+- "The Worst On-Call Night" (seven incidents, seven layers);
+- shipping a self-hosted LLM safely (build → sign → GitOps → serve → SLO);
+- the same job on AWS, Google Cloud, and Azure;
+- security incident response end to end;
+- Patch Tuesday for a fleet;
+- SRE at scale, from readiness review to postmortem.
 
 Plus **12 Mystery Incidents**, symptom only:
 - Linux: an API down after a deploy, a disk alert that won't clear, a
@@ -388,15 +398,15 @@ supply chain, bisect, LLM serving, feature stores, strace, BuildKit,
 Terraform modules, and RBAC/PDB/storage incidents) → AWS category, VPC
 sandbox, and AWS mysteries → Azure and Google Cloud categories → Security
 category and hacked-server mysteries → Server Fleet Ops category → SRE
-category.
+category → cloud, Ansible, and postmortem Writing Labs, plus four more
+career paths.
 
 Next, in priority order (details in CLAUDE.md and GAPS.md):
-- **In progress:** Writing Labs for IAM policies, VPC Terraform, security
-  groups, GCP firewalls, Ansible, and postmortems, plus four new career
-  paths across the new categories
-- A stats screen and a spaced-repetition review mode
+- **A stats screen and a spaced-repetition review mode** (next up)
+- Azure and Google Cloud sandboxes, like the AWS one, and more AWS
+  mysteries
 - Exam-specific gap passes for other certifications (CKAD, Terraform
-  Associate, AWS)
+  Associate, AWS/Azure/GCP associate exams)
 - More mysteries, including Kubernetes ones (these need a reactive
   Kubernetes sandbox)
 - More sandboxes (Kubernetes, Docker, Linux, and AWS exist; Terraform

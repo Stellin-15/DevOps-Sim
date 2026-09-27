@@ -140,3 +140,39 @@ class TestOrderAndAbsent:
 
     def test_absent_passes_when_text_is_clean(self):
         assert yaml_lab.validate_manifest({"lines": []}, {"absent": ["hunter2"]}, text="ok") == []
+
+
+class TestMarkdown:
+    DOC = "# Postmortem: Outage\n\n## Summary\nIt broke.\n\n## Impact\n\n## Timeline (UTC)\n- 14:02 deploy\n"
+
+    def test_sections_title_and_empty_count(self):
+        parsed, problems = lab_formats.parse("markdown", self.DOC)
+        assert problems == []
+        assert parsed["title"] == "Postmortem: Outage"
+        assert parsed["headings"] == ["summary", "impact", "timeline (utc)"]
+        assert parsed["sections"]["summary"] == "It broke."
+        assert parsed["empty_section_count"] == 1
+
+    def test_order_check_on_headings(self):
+        parsed, _ = lab_formats.parse("markdown", self.DOC)
+        assert yaml_lab._check_order(parsed, ["## Summary", "## Impact", "## Timeline"]) == []
+        assert yaml_lab._check_order(parsed, ["## Impact", "## Summary"]) != []
+
+    def test_empty_document(self):
+        assert lab_formats.parse("markdown", "   \n")[0] is None
+
+
+class TestAnsible:
+    def test_playbook_list_is_wrapped_in_plays(self):
+        parsed, problems = lab_formats.parse("ansible", "- name: x\n  hosts: web\n  serial: 2\n  tasks: []\n")
+        assert problems == []
+        assert yaml_lab.get_values(parsed, "plays[0].hosts") == ["web"]
+        assert "serial: 2" in parsed["text"]
+
+    def test_mapping_is_rejected_with_a_helpful_message(self):
+        parsed, problems = lab_formats.parse("ansible", "hosts: web\ntasks: []\n")
+        assert parsed is None and "list of plays" in problems[0]
+
+    def test_yaml_errors_pass_through(self):
+        parsed, problems = lab_formats.parse("ansible", "- name: [unclosed\n")
+        assert parsed is None and "YAML syntax error" in problems[0]

@@ -601,8 +601,11 @@ route, a security group missing 443, and a stateless NACL dropping replies.
 
 ## Still missing
 
-- **Writing** IAM policies and VPC Terraform yourself. Planned as Writing Labs
-  (step 7 of the current expansion).
+- ~~Writing IAM policies and VPC Terraform yourself~~: **closed** by Writing
+  Labs yaml-023 (rewrite an over-broad policy to least privilege, including
+  the object-vs-bucket ARN split), yaml-024 (a full two-tier VPC with IGW,
+  NAT, and route tables), and yaml-025 (remove SSH from a security group
+  in favour of SSM).
 - RDS/Aurora operations (failover, parameter groups, snapshots and restore),
   DynamoDB capacity, and Lambda/serverless debugging.
 - Multi-account networking (Transit Gateway, VPC peering, PrivateLink) and
@@ -845,8 +848,10 @@ It is not a security-engineer or penetration-testing curriculum.
 
 ## Still missing
 
-- Writing Ansible roles and playbooks yourself. Planned as a Writing Lab (a
-  rolling patch playbook) in step 7 of the current expansion.
+- Writing Ansible: **partly closed** by Writing Lab yaml-026 (a rolling patch
+  playbook with serial, a failure limit, a conditional reboot, and a health
+  check). Writing reusable roles, and running them against real VMs, is
+  still hands-on work.
 - Other configuration-management tools (Puppet, Chef, Salt), and image
   pipelines (Packer golden images; immutable infrastructure as the
   alternative to patching in place, mentioned in debriefs).
@@ -958,7 +963,7 @@ hands-on companion.
 | Security | 10 | 6 | 2 hacked-server Mysteries (Linux sandbox) |
 | Server Fleet Ops | 11 | 6 | |
 | SRE | 10 | 6 | |
-| **Total** | **175** | **93** | 22 Writing Labs, 7 career paths, 4 sandboxes, 12 Mystery Incidents, Exam Mode |
+| **Total** | **175** | **93** | 28 Writing Labs, 11 career paths, 4 sandboxes, 12 Mystery Incidents, Exam Mode |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -977,10 +982,12 @@ builds judgment that command references alone never will.
 **It will not, on its own, make you fully proficient**, for four reasons
 that no amount of additional scenario content can fully close:
 
-1. **Authoring vs. operating.** Largely addressed: 22 Writing Labs now
+1. **Authoring vs. operating.** Largely addressed: 28 Writing Labs now
    have you write real Kubernetes manifests, GitHub Actions workflows,
-   Prometheus alert rules, Compose files, Dockerfiles, Terraform, and
-   bash scripts in your own editor. What remains is **depth and
+   Prometheus alert rules, Compose files, Dockerfiles, Terraform (AWS
+   VPCs and security groups, GCP firewalls), IAM policies, Ansible
+   playbooks, bash scripts, and a blameless postmortem, in your own
+   editor. What remains is **depth and
    realism**: the checkers are structural, not the real tools
    (`docker build`, `terraform validate`, shellcheck), so they confirm
    you wrote the right shape, not that it would actually run. Building
@@ -1019,7 +1026,7 @@ that no amount of additional scenario content can fully close:
    then retake it a week later. Spaced recall is what makes commands
    stick; a single pass right after the tutorials proves little.
 4. Complete the Writing Labs for each category.
-5. Play all seven Career Paths to practice switching layers mid-problem —
+5. Play all eleven Career Paths to practice switching layers mid-problem —
    especially "The Worst On-Call Night".
 6. Play every Mystery Incident, then replay it to aim for 100. Scoring
    near the expert's command count means you went straight to the right

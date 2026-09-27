@@ -1,0 +1,33 @@
+{
+  "id": "yaml-026",
+  "type": "yaml_lab",
+  "category": "servers",
+  "title": "Write a Rolling Patch Playbook in Ansible",
+  "difficulty": "advanced",
+  "tags": ["ansible", "patching", "rolling-update", "servers"],
+  "intro": "servers-incident-002 happened because every server patched and rebooted on its own schedule, all at the same minute. Write the replacement: one playbook that patches the web fleet a quarter at a time, reboots only when needed, and stops if anything goes wrong.",
+  "steps": [
+    {
+      "file": "patch.yml",
+      "format": "ansible",
+      "starter_content": "",
+      "prompt": "Write patch.yml with one play:\n- name: Patch web servers; hosts: web; become: true\n- serial: \"25%\" and max_fail_percentage: 0\n- tasks:\n  1. ansible.builtin.apt with upgrade: dist and update_cache: true\n  2. ansible.builtin.stat on path /var/run/reboot-required, register: reboot_required\n  3. ansible.builtin.reboot with reboot_timeout: 600, only when: reboot_required.stat.exists\n  4. ansible.builtin.uri to url http://localhost/healthz expecting status_code: 200 (a health check after each host)",
+      "apply_commands": ["ansible-playbook -i inventory.ini patch.yml --syntax-check", "ansible-playbook -i inventory.ini patch.yml --check", "ansible-lint patch.yml", "check"],
+      "validate": {
+        "fields": {
+          "plays[0].hosts": "web",
+          "plays[0].become": true,
+          "plays[0].serial": "25%",
+          "plays[0].max_fail_percentage": 0,
+          "text": {"contains": ["ansible.builtin.apt", "upgrade: dist", "ansible.builtin.stat", "/var/run/reboot-required", "register: reboot_required", "ansible.builtin.reboot", "when: reboot_required.stat.exists", "ansible.builtin.uri", "status_code: 200"]}
+        },
+        "order": ["ansible.builtin.apt", "ansible.builtin.stat", "ansible.builtin.reboot", "ansible.builtin.uri"]
+      },
+      "hint": "Top-level structure:\n- name: Patch web servers\n  hosts: web\n  become: true\n  serial: \"25%\"\n  max_fail_percentage: 0\n  tasks:\n    - name: Upgrade packages\n      ansible.builtin.apt:\n        upgrade: dist\n        update_cache: true\n    ... then the stat / reboot (with 'when:') / uri tasks, in that order.",
+      "solution": "- name: Patch web servers\n  hosts: web\n  become: true\n  serial: \"25%\"\n  max_fail_percentage: 0\n  tasks:\n    - name: Upgrade all packages\n      ansible.builtin.apt:\n        upgrade: dist\n        update_cache: true\n\n    - name: Check whether a reboot is required\n      ansible.builtin.stat:\n        path: /var/run/reboot-required\n      register: reboot_required\n\n    - name: Reboot if required\n      ansible.builtin.reboot:\n        reboot_timeout: 600\n      when: reboot_required.stat.exists\n\n    - name: Verify the host is healthy before moving on\n      ansible.builtin.uri:\n        url: http://localhost/healthz\n        status_code: 200\n",
+      "fake_output": "playbook: patch.yml\n\nPLAY [Patch web servers] ***** (batch 1/4)\nTASK [Upgrade all packages] ***  changed: [web-01] changed: [web-02]\nTASK [Check whether a reboot is required] ***  ok: [web-01] ok: [web-02]\nTASK [Reboot if required] ***  changed: [web-01] skipping: [web-02]\nTASK [Verify the host is healthy before moving on] ***  ok: [web-01] ok: [web-02]\n...\nPLAY RECAP ***  web-01..web-08: failed=0",
+      "explanation": "A quarter of the fleet at a time. Each host is patched, rebooted only if the kernel or core libraries need it, and health-checked before the next batch starts.",
+      "why": "Every line maps to a failure it prevents. serial limits the blast radius; max_fail_percentage: 0 stops the rollout at the first unhealthy host instead of breaking the whole fleet (servers-tutorial-003); the stat-then-conditional reboot avoids needless reboots; and the health check makes 'rebooted' mean 'serving again' before Ansible moves on. In production you'd add a pre_task that drains the host from the load balancer and a post_task that re-adds it, and you'd run this from CI with an approval, never from a laptop (servers-incident-005)."
+    }
+  ]
+}

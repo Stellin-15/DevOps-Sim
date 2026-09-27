@@ -111,11 +111,16 @@ Don't duplicate content from these files elsewhere — link to them.
   "yaml_lab" internally — `yaml_lab.py`, `scenarios/yaml_labs/`, type
   `yaml_lab` — renamed only in the menu, to avoid churning ids and
   progress keys). A lab step's `format` field picks the parser: `yaml`
-  (default), `dockerfile`, `hcl`, or `bash`. Each returns a plain nested
+  (default; also used for JSON such as IAM policies), `dockerfile`,
+  `hcl`, `bash`, `ansible`, or `markdown`. Each returns a plain nested
   dict so the same dotted-path / `[*]` / `contains` checks work on every
   format: Dockerfile → `{"lines": [...], "FROM": [args...], "RUN": [...]}`,
   HCL → `{"resource": {"aws_s3_bucket": {"logs": {...}}}, "variable": ...}`,
-  bash → `{"shebang", "lines", "text"}`. Two extra validate keys use
+  bash → `{"shebang", "lines", "text"}`, ansible → `{"plays": [...],
+  "lines", "text"}` (a playbook is a YAML *list*, which the validator
+  can't take directly), markdown → `{"title", "sections": {heading:
+  body}, "headings", "lines", "text", "empty_section_count"}`, where
+  sections are split on `## `. Two extra validate keys use
   them: `order` (substrings that must appear in `lines` in sequence —
   Dockerfile cache ordering, script structure) and `absent` (substrings
   that must NOT appear anywhere in the raw text — hardcoded secrets,
@@ -484,7 +489,8 @@ python -m pytest
   actually parses and passes its own `validate` spec — and the converse:
   a pre-filled (broken) `starter_content` must NOT already pass, or the
   "fix this file" lab teaches nothing
-- `test_lab_formats.py` — the Dockerfile, HCL, and bash parsers (line
+- `test_lab_formats.py` — the Dockerfile, HCL, bash, markdown, and
+  ansible parsers (line
   continuations, labels, nested maps, repeated blocks, comments, syntax
   errors, unbalanced blocks/quotes) and the `order`/`absent` checks
 - `test_exam.py` — question drawing (context, truncation, seeding),
@@ -538,23 +544,19 @@ exercise something the generic checks don't cover.
 
 See GAPS.md's final 'Overall' part for the reasoning. In priority order:
 
-0. **In progress: cloud, security, fleet ops, and SRE expansion.** The
-   user approved this ahead of the stats screen. There are six new
-   categories: aws, azure, gcp, security, servers (fleet ops: Ansible,
-   patching, backups), and sre. Their command references are already in
-   `commands/{aws,azure,gcp,security,servers,sre}.md`; write each
-   category's scenarios from its file. Remaining steps, in order:
-   1. ✓ aws, with the `aws_sandbox.py` VPC sandbox, sandbox-agnostic
-      mysteries, and 4 AWS mysteries;
-   2. ✓ azure and gcp; GAPS.md Parts 10–11 include a cross-cloud map;
-   3. ✓ security, plus hacked-server problems in linux_sandbox (a
-      cryptominer with cron persistence, an SSH backdoor);
-   4. ✓ servers (fleet ops);
-   5. ✓ sre;
-   6. (next) Writing Labs (IAM policy, Terraform VPC, security group, Ansible
-      rolling patch, GCP firewall, markdown postmortem) and career paths
-      008–011.
-1. **Stats screen and spaced-repetition review** (after the expansion, per the agreed
+0. ✓ **Done: the cloud, security, fleet ops, and SRE expansion.** It added
+   six categories (aws, azure, gcp, security, servers, sre), each
+   written from its `commands/*.md`, plus:
+   - the AWS VPC sandbox and sandbox-agnostic mysteries;
+   - hacked-server problems in linux_sandbox;
+   - Writing Labs yaml-023 to 028, with the `ansible` and `markdown`
+     formats;
+   - career paths 008 to 011.
+
+   Natural follow-ups: Azure and GCP sandboxes (the aws_sandbox pattern
+   of layered reachability plus hooks), more mysteries on the AWS
+   sandbox, and per-cloud exam gap passes.
+1. **Stats screen and spaced-repetition review** (next, per the agreed
    roadmap order: writing labs ✓ → exam mode ✓ → sandboxes ✓ →
    mystery incidents ✓ → new-topic content ✓ → stats/spaced-repetition
    review → more cert passes). progress.json already records attempts

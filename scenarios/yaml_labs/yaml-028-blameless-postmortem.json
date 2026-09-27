@@ -1,0 +1,32 @@
+{
+  "id": "yaml-028",
+  "type": "yaml_lab",
+  "category": "sre",
+  "title": "Write a Blameless Postmortem",
+  "difficulty": "intermediate",
+  "tags": ["sre", "postmortem", "incident-response", "writing"],
+  "intro": "Yesterday's checkout incident (sre-tutorial-001 and 008): a payments-client upgrade deployed at 14:02 UTC caused 31% of checkouts to fail. The alert fired at 14:09:30, the rollback started at 14:12, and error rates were back to normal at 14:19. About 4,100 checkout attempts failed. Write the postmortem. It's graded on structure and content, and on being blameless.",
+  "steps": [
+    {
+      "file": "postmortem.md",
+      "format": "markdown",
+      "starter_content": "# Postmortem: \n\n",
+      "prompt": "Write postmortem.md with a '# Postmortem: ...' title, then these level-2 sections, in this order, none of them empty:\n## Summary\n## Impact  (numbers: duration and failed checkouts)\n## Timeline (UTC)  (at least the times 14:02, 14:09, 14:12, 14:19)\n## Root cause and contributing factors\n## What went well\n## What went poorly\n## Action items  (each with an owner and a ticket)\nWrite it blamelessly: describe systems and decisions, not people's failings. Don't write 'human error', 'careless', or anyone's 'fault'.",
+      "apply_commands": ["git add postmortem.md", "check"],
+      "validate": {
+        "fields": {
+          "title": {"contains": "Postmortem"},
+          "empty_section_count": 0,
+          "text": {"contains": ["14:02", "14:09", "14:12", "14:19", "4,100", "owner", "ticket"]}
+        },
+        "order": ["## Summary", "## Impact", "## Timeline", "## Root cause", "## What went well", "## What went poorly", "## Action items"],
+        "absent": ["human error", "careless", "'s fault", "should have known"]
+      },
+      "hint": "Use exactly those '## ' headings, in that order. For the timeline, use a list like '- 14:02 release deployed'. For action items, something like '- Add canary analysis to checkout deploys (owner: payments team, ticket: SRE-812)'. Name mechanisms (no canary, alert delay) as root causes and contributing factors, not a person.",
+      "solution": "# Postmortem: Checkout failures after payments client 4.3 release\n\n## Summary\nA release upgrading the payments client library to 4.3 changed how payment timeouts are reported. Checkout treated them as hard failures, and 31% of checkout attempts failed for 17 minutes until the release was rolled back.\n\n## Impact\n- Duration: 17 minutes (14:02-14:19 UTC)\n- About 4,100 checkout attempts failed; no data loss and no double charges\n- Error budget: roughly 40% of checkout's monthly budget consumed\n\n## Timeline (UTC)\n- 14:02 release with payments client 4.3 deployed to all checkout pods\n- 14:04 checkout 5xx rate rises to 29-31%\n- 14:09 burn-rate alert pages the on-call engineer\n- 14:12 rollback to the previous revision started (mitigate first)\n- 14:15 error rate falling\n- 14:19 error rate back to baseline; incident resolved\n\n## Root cause and contributing factors\n- Root cause: payments client 4.3 returns a new timeout error type that checkout's error handling did not recognise, so retryable timeouts became hard failures.\n- Contributing: the release went to 100% of pods at once, with no canary step.\n- Contributing: integration tests use a payments stub that never returns timeouts.\n- Contributing: the alert fired about 5 minutes after impact began because of its evaluation windows.\n\n## What went well\n- Rollback was fast and safe, and restored service within 7 minutes of the page.\n- The deploy history and change-cause annotations made the triggering change obvious.\n\n## What went poorly\n- Detection took about 5 minutes.\n- The upgrade notes for 4.3 mentioned the new error type, but nothing in our process routes library changelogs to reviewers.\n\n## Action items\n- Handle the new timeout error type and add a test for it (owner: payments team, ticket: PAY-431)\n- Add an Argo Rollouts canary with automated analysis to checkout (owner: platform team, ticket: SRE-812)\n- Make the payments stub able to simulate timeouts (owner: payments team, ticket: PAY-432)\n- Evaluate a faster short-window burn-rate alert for checkout (owner: SRE on-call lead, ticket: SRE-813)\n",
+      "fake_output": "(postmortem.md staged; shared in #incidents for review before the postmortem meeting)",
+      "explanation": "A complete, blameless postmortem: impact in numbers, a timeline from evidence, several contributing factors, and owned action items.",
+      "why": "The blameless format isn't about being nice. People who fear blame hide details, and a postmortem without details can't prevent the next incident. Notice the structure: the 'root cause' is a mechanism (unrecognised error type), and most of the value is in the contributing factors, meaning why the process let it through (no canary, a stub that can't time out, slow detection). Each action item has an owner and a ticket, because action items without owners are the most common reason the same incident happens twice. Google's SRE book chapter on postmortem culture is the reference."
+    }
+  ]
+}

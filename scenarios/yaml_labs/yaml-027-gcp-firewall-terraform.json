@@ -1,0 +1,39 @@
+{
+  "id": "yaml-027",
+  "type": "yaml_lab",
+  "category": "gcp",
+  "title": "Write Tag-Scoped GCP Firewall Rules in Terraform",
+  "difficulty": "intermediate",
+  "tags": ["gcp", "terraform", "firewall", "iap"],
+  "intro": "Two GCP incidents came from firewall rules: one targeted the wrong network tag (gcp-incident-001), and one got deleted by a cleanup (gcp-incident-004). Write both rules as code, scoped tightly, so they're reviewed and can't silently drift.",
+  "steps": [
+    {
+      "file": "firewall.tf",
+      "format": "hcl",
+      "starter_content": "",
+      "prompt": "Write two google_compute_firewall resources on network \"prod-vpc\":\n1. \"allow_https_web\": direction \"INGRESS\", an allow block with protocol \"tcp\" and ports [\"443\"], source_ranges [\"0.0.0.0/0\"], target_tags [\"web\"].\n2. \"allow_iap_ssh\": direction \"INGRESS\", an allow block with protocol \"tcp\" and ports [\"22\"], source_ranges [\"35.235.240.0/20\"] (the IAP range only), and a description \"SSH via IAP only - do not delete\".\nEach needs a name attribute: \"allow-https-web\" and \"allow-iap-ssh\".",
+      "apply_commands": ["terraform validate", "terraform plan", "check"],
+      "validate": {
+        "fields": {
+          "resource.google_compute_firewall.allow_https_web.name": "allow-https-web",
+          "resource.google_compute_firewall.allow_https_web.network": "prod-vpc",
+          "resource.google_compute_firewall.allow_https_web.direction": "INGRESS",
+          "resource.google_compute_firewall.allow_https_web.allow.protocol": "tcp",
+          "resource.google_compute_firewall.allow_https_web.allow.ports": ["443"],
+          "resource.google_compute_firewall.allow_https_web.target_tags": ["web"],
+          "resource.google_compute_firewall.allow_https_web.source_ranges": ["0.0.0.0/0"],
+          "resource.google_compute_firewall.allow_iap_ssh.name": "allow-iap-ssh",
+          "resource.google_compute_firewall.allow_iap_ssh.direction": "INGRESS",
+          "resource.google_compute_firewall.allow_iap_ssh.allow.ports": ["22"],
+          "resource.google_compute_firewall.allow_iap_ssh.source_ranges": ["35.235.240.0/20"],
+          "resource.google_compute_firewall.allow_iap_ssh.description": {"contains": "IAP"}
+        }
+      },
+      "hint": "resource \"google_compute_firewall\" \"allow_https_web\" { name = \"allow-https-web\" network = \"prod-vpc\" direction = \"INGRESS\" allow { protocol = \"tcp\" ports = [\"443\"] } source_ranges = [\"0.0.0.0/0\"] target_tags = [\"web\"] }. The allow block is nested; ports is a list of strings.",
+      "solution": "resource \"google_compute_firewall\" \"allow_https_web\" {\n  name      = \"allow-https-web\"\n  network   = \"prod-vpc\"\n  direction = \"INGRESS\"\n\n  allow {\n    protocol = \"tcp\"\n    ports    = [\"443\"]\n  }\n\n  source_ranges = [\"0.0.0.0/0\"]\n  target_tags   = [\"web\"]\n}\n\nresource \"google_compute_firewall\" \"allow_iap_ssh\" {\n  name        = \"allow-iap-ssh\"\n  network     = \"prod-vpc\"\n  direction   = \"INGRESS\"\n  description = \"SSH via IAP only - do not delete\"\n\n  allow {\n    protocol = \"tcp\"\n    ports    = [\"22\"]\n  }\n\n  source_ranges = [\"35.235.240.0/20\"]\n}\n",
+      "fake_output": "Success! The configuration is valid.\n\nPlan: 2 to add, 0 to change, 0 to destroy.",
+      "explanation": "HTTPS reaches only VMs tagged 'web'; SSH reaches VMs only from Google's IAP proxy range.",
+      "why": "In GCP, the target_tags line is the whole scope of a rule: leave it out and the rule applies to every VM in the network. Writing rules in Terraform means a wrong tag shows up in code review, and a cleanup that deletes the IAP rule by hand shows up as drift on the next plan. For stronger scoping, use target_service_accounts instead of tags, since tags can be added by anyone who can edit a VM (gcp-tutorial-005)."
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "id": "path-011",
+  "type": "career_path",
+  "title": "SRE at Scale: Launching and Running a Service",
+  "difficulty": "advanced",
+  "tags": ["sre", "monitoring", "kubernetes", "reliability"],
+  "intro": "A new service is launching. Take it through the lifecycle SRE teams at large companies use: a production readiness review, capacity planning, load testing, SLOs and burn-rate alerts, safe progressive rollouts, maintenance that respects disruption budgets, chaos experiments, a real incident, and the postmortem that closes the loop.",
+  "steps": [
+    "sre-tutorial-010",
+    "sre-tutorial-004",
+    "sre-tutorial-005",
+    "monitoring-tutorial-012",
+    "sre-tutorial-002",
+    "incident-012",
+    "sre-tutorial-006",
+    "sre-incident-001",
+    "sre-tutorial-008"
+  ],
+  "resolution": "Reliability is designed in, measured, tested, and then defended. The readiness review found the gaps; capacity planning and load tests set the numbers; SLOs defined 'reliable enough'; canaries and PDBs made changes and maintenance safe; chaos tested the assumptions; and when the retry storm came anyway, the postmortem turned it into better defaults. That loop, not any single tool, is what SRE at Google-scale companies is. Finish with the postmortem Writing Lab (yaml-028)."
+}

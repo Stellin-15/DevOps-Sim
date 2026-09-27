@@ -1,0 +1,18 @@
+{
+  "id": "path-010",
+  "type": "career_path",
+  "title": "Patch Tuesday for a Fleet",
+  "difficulty": "intermediate",
+  "tags": ["servers", "security", "patching", "sre"],
+  "intro": "A critical CVE has been published, and you're responsible for 200 servers and a Kubernetes cluster. Find out what's affected, patch it without an outage, deal with kernels and reboots, and learn from the time automatic reboots took the whole fleet down.",
+  "steps": [
+    "security-incident-006",
+    "servers-tutorial-005",
+    "servers-tutorial-003",
+    "servers-tutorial-007",
+    "servers-tutorial-008",
+    "servers-incident-002",
+    "sre-tutorial-001"
+  ],
+  "resolution": "Patching well is mostly about what surrounds the package manager: an inventory of what's actually running, security-only updates where possible, restarting what uses the patched libraries, and rolling batches with failure limits. Reboot only what needs it, never all at once, and mitigate first when something breaks anyway. Finish with the Ansible Writing Lab (yaml-026) to write the rolling patch playbook yourself."
+}

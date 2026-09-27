@@ -1,0 +1,17 @@
+{
+  "id": "path-009",
+  "type": "career_path",
+  "title": "Security Incident Response, End to End",
+  "difficulty": "advanced",
+  "tags": ["security", "incident-response", "aws", "sre"],
+  "intro": "An alert says the shop server might be compromised. Work the incident the way a mature team does: triage without destroying evidence, find the entry point, reconstruct who did what, deal with the cloud credential the attacker got hold of, make sure the leak can't recur, and write it up. Warm up first with the two hacked-server Mystery Incidents if you haven't played them.",
+  "steps": [
+    "security-tutorial-010",
+    "security-incident-004",
+    "security-tutorial-007",
+    "aws-incident-004",
+    "security-incident-002",
+    "sre-tutorial-008"
+  ],
+  "resolution": "The order is the lesson. First look and preserve (process trees, connections, SIGSTOP rather than kill). Then find the way in (a web shell through an unsafe upload), rebuild the timeline from audit logs, and contain the credential the attacker used (deactivate first, then hunt for persistence). Close the root cause (secrets in git, rotated before history was rewritten), and finally write a blameless postmortem built from evidence. Each step is ordinary on its own; doing them in this order under pressure is what incident response is."
+}
