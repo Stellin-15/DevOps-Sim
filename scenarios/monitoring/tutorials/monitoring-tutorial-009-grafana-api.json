@@ -1,0 +1,39 @@
+{
+  "id": "monitoring-tutorial-009",
+  "type": "tutorial",
+  "category": "monitoring",
+  "title": "Dashboards as Code with the Grafana API",
+  "difficulty": "intermediate",
+  "tags": ["monitoring", "grafana", "api", "dashboards"],
+  "intro": "Dashboards built by clicking around in the UI get lost, drift between environments, and can't be reviewed. Exporting and importing them via the API lets you version them like any other code.",
+  "steps": [
+    {
+      "prompt": "Search for dashboards with 'checkout' in the title, authenticating with an API token.",
+      "expected_commands": ["curl -H \"Authorization: Bearer $GRAFANA_TOKEN\" \"http://localhost:3000/api/search?query=checkout\"", "curl -H 'Authorization: Bearer $GRAFANA_TOKEN' 'http://localhost:3000/api/search?query=checkout'"],
+      "fake_output": "[{\"uid\":\"chk01\",\"title\":\"Checkout Service Overview\",\"type\":\"dash-db\"}]",
+      "explanation": "Each dashboard has a stable uid.",
+      "why": "The uid, not the title, is how you reference a dashboard in API calls and links — titles can change, uids shouldn't."
+    },
+    {
+      "prompt": "Export the Checkout dashboard's full JSON definition to a file.",
+      "expected_commands": ["curl -H \"Authorization: Bearer $GRAFANA_TOKEN\" http://localhost:3000/api/dashboards/uid/chk01 > dashboard.json", "curl -H 'Authorization: Bearer $GRAFANA_TOKEN' http://localhost:3000/api/dashboards/uid/chk01 > dashboard.json"],
+      "fake_output": "(no output — saved to dashboard.json)",
+      "explanation": "Every panel, query, and variable is now in a file you can commit to git.",
+      "why": "Committed dashboards can be reviewed in PRs, rolled back, and promoted from staging to production identically."
+    },
+    {
+      "prompt": "Import that dashboard into another Grafana instance.",
+      "expected_commands": ["curl -X POST http://grafana-prod:3000/api/dashboards/db -H \"Content-Type: application/json\" -H \"Authorization: Bearer $GRAFANA_TOKEN\" -d @dashboard.json", "curl -X POST http://grafana-prod:3000/api/dashboards/db -H 'Content-Type: application/json' -H 'Authorization: Bearer $GRAFANA_TOKEN' -d @dashboard.json"],
+      "fake_output": "{\"id\":42,\"slug\":\"checkout-service-overview\",\"status\":\"success\",\"uid\":\"chk01\",\"version\":1}",
+      "explanation": "-d @file sends the file's contents as the request body.",
+      "why": "In practice, Grafana's provisioning (dashboard JSON files loaded from disk at startup) or Terraform's Grafana provider is the durable way to do this — but the API is how those tools work underneath, and how you script one-off migrations."
+    },
+    {
+      "prompt": "Check that Grafana itself is healthy and its database is reachable.",
+      "expected_commands": ["curl http://localhost:3000/api/health"],
+      "fake_output": "{\"commit\":\"a1b2c3d\",\"database\":\"ok\",\"version\":\"11.2.0\"}",
+      "explanation": "The health endpoint needs no authentication.",
+      "why": "Monitor your monitoring: a dead Grafana during an incident means flying blind. Point an uptime check at this endpoint from outside the system it monitors."
+    }
+  ]
+}

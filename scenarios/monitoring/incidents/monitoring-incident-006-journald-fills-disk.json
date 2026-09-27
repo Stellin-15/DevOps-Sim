@@ -1,0 +1,43 @@
+{
+  "id": "monitoring-incident-006",
+  "type": "incident",
+  "category": "monitoring",
+  "title": "Root Disk Full on a Server With No App Data",
+  "difficulty": "intermediate",
+  "tags": ["monitoring", "logging", "journald", "disk"],
+  "intro": "A small gateway server with barely any application data hit 100% disk. Services are crashing because they can't write temp files.",
+  "steps": [
+    {
+      "prompt": "Confirm disk usage.",
+      "expected_commands": ["df -h"],
+      "fake_output": "Filesystem  Size  Used  Avail  Use%  Mounted on\n/dev/sda1    20G   20G     0   100%  /",
+      "hint": "Start with the symptom."
+    },
+    {
+      "prompt": "Find which top-level directory under /var is biggest.",
+      "expected_commands": ["sudo du -sh /var/*", "du -sh /var/*"],
+      "fake_output": "16G   /var/log\n1.2G  /var/lib\n80M   /var/cache",
+      "hint": "Narrow down where the space went."
+    },
+    {
+      "prompt": "Almost all of it is logs. Check how much the systemd journal specifically is using.",
+      "expected_commands": ["journalctl --disk-usage"],
+      "fake_output": "Archived and active journals take up 15.6G in the file system.",
+      "hint": "journald stores its logs under /var/log/journal."
+    },
+    {
+      "prompt": "Find which service is producing the most log volume today.",
+      "expected_commands": ["journalctl --since today -o json | jq -r '._SYSTEMD_UNIT' | sort | uniq -c | sort -rn | head", "journalctl --since today | awk '{print $5}' | sort | uniq -c | sort -rn | head"],
+      "fake_output": " 8820114 gateway-proxy.service\n    2210 sshd.service\n     140 cron.service",
+      "hint": "The count-per-source pipeline from the Linux tutorials works here too."
+    },
+    {
+      "prompt": "gateway-proxy is logging every single request at debug level. Free space immediately by shrinking the journal to 1GB.",
+      "expected_commands": ["sudo journalctl --vacuum-size=1G", "journalctl --vacuum-size=1G"],
+      "fake_output": "Vacuuming done, freed 14.6G of archived journals from /var/log/journal.",
+      "hint": "vacuum-size limits total size; vacuum-time limits age."
+    }
+  ],
+  "resolution": "A proxy service had been left at debug log level, emitting a line per request — millions per day — and journald's default size cap (10% of the filesystem, up to 4GB) had been overridden in journald.conf during an earlier debugging session and never restored. Vacuuming restored service immediately. Permanent fixes: set SystemMaxUse=1G in /etc/systemd/journald.conf (and restart systemd-journald), return the proxy to info-level logging, and alert on root disk usage at 80%. This is the monitoring-category twin of linux-incident-002: logs are one of the most common causes of full disks, and log volume itself is worth watching.",
+  "real_commands_used": ["df -h", "du -sh", "journalctl --disk-usage", "journalctl -o json | jq", "journalctl --vacuum-size"]
+}

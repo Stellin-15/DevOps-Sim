@@ -1,0 +1,37 @@
+{
+  "id": "monitoring-incident-003",
+  "type": "incident",
+  "category": "monitoring",
+  "title": "The Alert That Pages Every Night and Resolves Itself",
+  "difficulty": "intermediate",
+  "tags": ["monitoring", "alerting", "on-call", "alert-fatigue"],
+  "intro": "On-call has been paged 23 times this week by 'HighLatency' on the search service. Every time, it resolves within a minute before anyone can even look. The team has started muting their phones.",
+  "steps": [
+    {
+      "prompt": "Look at the alert rule definition.",
+      "expected_commands": ["grep -A6 HighLatency alerts.yml", "grep -A 6 HighLatency alerts.yml", "cat alerts.yml"],
+      "fake_output": "- alert: HighLatency\n  expr: histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{service=\"search\"}[1m])) > 0.5\n  labels:\n    severity: page",
+      "hint": "Look at the window, the threshold, and what's missing."
+    },
+    {
+      "prompt": "No 'for:' clause and a 1-minute window — a single brief spike fires a page. Check what p99 latency does across a normal day, over 5 minute windows.",
+      "expected_commands": ["histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{service=\"search\"}[5m])) by (le))"],
+      "fake_output": "(graph: steady ~0.2s, with brief 0.6-0.9s spikes every night at 02:00 during the index rebuild job)",
+      "hint": "Correlate the spikes with anything scheduled."
+    },
+    {
+      "prompt": "Spikes only during the 02:00 index rebuild, lasting under a minute. After adding 'for: 10m', widening the window to 5m, and adding 'by (le)', validate the rules.",
+      "expected_commands": ["promtool check rules alerts.yml"],
+      "fake_output": "Checking alerts.yml\n  SUCCESS: 6 rules found",
+      "hint": "Validate before reloading."
+    },
+    {
+      "prompt": "Run the rule unit tests to confirm a 1-minute spike no longer fires, but a sustained 10+ minute degradation still does.",
+      "expected_commands": ["promtool test rules alert_tests.yml"],
+      "fake_output": "Unit Testing:  alert_tests.yml\n  SUCCESS",
+      "hint": "Prove both halves: no false positive, no false negative."
+    }
+  ],
+  "resolution": "The rule had no 'for:' duration, so any single evaluation above threshold paged immediately — and a 1-minute rate window is extremely sensitive to short bursts, like the nightly index rebuild. The page resolved before anyone could act, which is the definition of an unactionable alert. The fix: 'for: 10m' so only sustained problems page, a 5m window, and a missing 'by (le)' corrected (without it, histogram_quantile was quietly computing garbage). The deeper damage was alert fatigue: 23 useless pages trained people to mute their phones, which is exactly when a real outage gets missed. Every page should be urgent, actionable, and real — if an alert isn't, fix it or downgrade it to a ticket, the same day.",
+  "real_commands_used": ["grep -A alerts.yml", "histogram_quantile", "promtool check rules", "promtool test rules"]
+}

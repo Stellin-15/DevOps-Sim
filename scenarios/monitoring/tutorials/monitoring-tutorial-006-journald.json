@@ -1,0 +1,46 @@
+{
+  "id": "monitoring-tutorial-006",
+  "type": "tutorial",
+  "category": "monitoring",
+  "title": "Host Logs with journald",
+  "difficulty": "beginner",
+  "tags": ["monitoring", "logging", "journald"],
+  "intro": "Before any fancy log aggregation, there's the host's own journal. These filters get you from 'millions of lines' to 'the three lines that matter' in seconds.",
+  "steps": [
+    {
+      "prompt": "Show only error-level (and worse) messages from all services.",
+      "expected_commands": ["journalctl -p err", "journalctl -p 3"],
+      "fake_output": "Sep 27 09:12:44 db01 kernel: Out of memory: Killed process 920 (postgres)\nSep 27 09:40:02 db01 backup.sh[3100]: ERROR: disk write failed",
+      "explanation": "-p filters by syslog priority: err (3) and more severe (crit, alert, emerg).",
+      "why": "Filtering by priority across ALL services often reveals cross-service causes (like a kernel OOM) that looking at one service's logs never would."
+    },
+    {
+      "prompt": "Show everything logged since midnight.",
+      "expected_commands": ["journalctl --since today"],
+      "fake_output": "Sep 27 00:00:03 db01 systemd[1]: Starting Daily apt upgrade...\n...",
+      "explanation": "--since accepts 'today', 'yesterday', '1 hour ago', or exact timestamps.",
+      "why": "Combine it: 'journalctl -u postgres --since \"2026-09-27 09:00\" --until \"09:20\"' zooms straight into an incident window."
+    },
+    {
+      "prompt": "Show only kernel messages.",
+      "expected_commands": ["journalctl -k", "journalctl --dmesg"],
+      "fake_output": "Sep 27 09:12:44 db01 kernel: Out of memory: Killed process 920 (postgres)",
+      "explanation": "Equivalent to dmesg, but with real timestamps and persistent across reboots (if the journal is persistent).",
+      "why": "dmesg's ring buffer is lost on reboot; the journal keeps kernel messages from previous boots — add '-b -1' to see the previous boot, essential after a crash-and-reboot."
+    },
+    {
+      "prompt": "Check how much disk space the journal is using.",
+      "expected_commands": ["journalctl --disk-usage"],
+      "fake_output": "Archived and active journals take up 11.8G in the file system.",
+      "explanation": "Nearly 12GB of logs.",
+      "why": "Unbounded journals are a real cause of full disks (see monitoring-incident-006). Limits belong in /etc/systemd/journald.conf (SystemMaxUse=)."
+    },
+    {
+      "prompt": "Delete archived journal entries older than 7 days.",
+      "expected_commands": ["sudo journalctl --vacuum-time=7d", "journalctl --vacuum-time=7d"],
+      "fake_output": "Deleted archived journal /var/log/journal/.../system@0005f2.journal (128.0M).\n...\nVacuuming done, freed 10.2G of archived journals.",
+      "explanation": "Old archives are removed; the active journal is untouched.",
+      "why": "--vacuum-size=1G is the alternative when you care about disk rather than age. Either is a one-off fix; journald.conf limits make it permanent."
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "id": "monitoring-tutorial-002",
+  "type": "tutorial",
+  "category": "monitoring",
+  "title": "PromQL Fundamentals",
+  "difficulty": "intermediate",
+  "tags": ["monitoring", "prometheus", "promql"],
+  "intro": "PromQL is how you ask Prometheus questions. A handful of patterns — rate, sum by, ratios, and time windows — answer the vast majority of real questions.",
+  "steps": [
+    {
+      "prompt": "Show every scrape target and whether its last scrape succeeded.",
+      "expected_commands": ["up"],
+      "fake_output": "up{instance=\"web01:9100\", job=\"node\"}        1\nup{instance=\"web02:9100\", job=\"node\"}        0\nup{instance=\"api:8080\", job=\"checkout-service\"} 1",
+      "explanation": "1 = scraped OK, 0 = scrape failed. web02's exporter is unreachable.",
+      "why": "'up' is Prometheus's own synthetic metric for every target. It's the first thing to check when a dashboard shows 'No data' — it tells you whether Prometheus even has the data."
+    },
+    {
+      "prompt": "Show total requests per second, summed per service instead of per individual pod.",
+      "expected_commands": ["sum(rate(http_requests_total[5m])) by (service)", "sum by (service) (rate(http_requests_total[5m]))"],
+      "fake_output": "{service=\"checkout\"}  142.3\n{service=\"search\"}    880.1\n{service=\"auth\"}       61.7",
+      "explanation": "rate() first computes per-series per-second rates; sum by (service) then aggregates across pods.",
+      "why": "Always rate() BEFORE sum(). Summing raw counters first and then taking the rate breaks whenever any single pod restarts and its counter resets to zero."
+    },
+    {
+      "prompt": "How many 500 errors happened in the last hour, as a total count?",
+      "expected_commands": ["increase(http_requests_total{status=\"500\"}[1h])", "sum(increase(http_requests_total{status=\"500\"}[1h]))"],
+      "fake_output": "{service=\"checkout\", status=\"500\"}  412",
+      "explanation": "increase() gives the total growth over the window instead of a per-second rate.",
+      "why": "rate() suits graphs and alerts; increase() suits human-readable totals ('412 errors in the last hour'). Mathematically, increase is just rate × window length."
+    },
+    {
+      "prompt": "What fraction of memory is still available on each node?",
+      "expected_commands": ["node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes"],
+      "fake_output": "{instance=\"web01:9100\"}  0.62\n{instance=\"db01:9100\"}   0.04",
+      "explanation": "Division between series with matching labels. db01 has only 4% of memory available.",
+      "why": "Ratios are more useful than raw bytes for alerting — 'below 10% available' works for every node size, while a raw-bytes threshold needs a different number per machine."
+    },
+    {
+      "prompt": "Smooth out a spiky CPU metric by averaging it over the last 10 minutes.",
+      "expected_commands": ["avg_over_time(cpu_usage[10m])"],
+      "fake_output": "{instance=\"web01\"}  0.41",
+      "explanation": "Averages each series' raw samples across the window.",
+      "why": "*_over_time functions (avg, max, min) work on gauges like CPU or queue depth. Don't use them on counters — use rate() there. Mixing up gauges and counters is the most common PromQL mistake."
+    }
+  ]
+}

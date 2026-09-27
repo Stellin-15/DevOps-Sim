@@ -367,3 +367,48 @@ Good grounding in the day-to-day operational side of CI/CD — git hygiene,
 pipeline debugging, safe rollbacks, and secret handling. Authoring and
 designing pipelines is the next skill to build, and needs hands-on YAML
 writing that this game only partially supports today.
+
+---
+
+# Part 7 — Monitoring & Observability
+
+**Content:** 10 tutorials, 6 incidents.
+
+## Covered
+
+Every section of `commands/monitoring.md`: PromQL fundamentals (up, rate
+before sum, increase vs rate, ratios, *_over_time and the gauge/counter
+distinction), the four golden signals as real queries (error ratio not
+count, histogram_quantile's `by (le)`, saturation as the leading
+indicator), operating Prometheus (promtool check config, lifecycle
+reload, the targets API's lastError), alert rules and Alertmanager
+(promtool check/test rules, amtool silences that expire), journald
+(priority filters, time windows, previous-boot kernel logs, vacuum),
+Elasticsearch operations (health colors, daily indices, disk
+watermarks), Loki/LogQL (label selectors first, `| json`, log-derived
+metrics), Grafana dashboards via API, and Kubernetes-native monitoring
+(top --containers, all-container logs, events, API server metrics).
+Incidents cover the failures that blind or exhaust monitoring itself:
+silent scrape failures, alert fatigue from a flapping rule, Elasticsearch
+flood-stage read-only, a Prometheus cardinality explosion, and runaway
+journald volume.
+
+## Still missing
+
+- **Distributed tracing** (OpenTelemetry, Jaeger/Tempo) — the third
+  pillar of observability, absent entirely. Essential for microservices.
+- **SLOs and error budgets** — defining SLIs, burn-rate alerting
+  (multi-window, multi-burn-rate). Mentioned conceptually, not practiced.
+- Writing alert rule YAML and dashboards (authoring, again — the YAML Lab
+  engine could validate alert rule files with content only).
+- Hosted/commercial tools (Datadog, New Relic, CloudWatch) — different
+  syntax, same concepts.
+- Incident-response process itself: declaring an incident, comms,
+  writing a blameless post-mortem.
+
+## Readiness verdict
+
+Strong on the Prometheus/logging operator skills that most on-call
+rotations rely on, and on the specific ways monitoring systems fail.
+Tracing and SLO-based alerting are the major missing pieces for a
+modern observability practice.

@@ -1,0 +1,46 @@
+{
+  "id": "monitoring-tutorial-010",
+  "type": "tutorial",
+  "category": "monitoring",
+  "title": "Kubernetes-Native Monitoring Commands",
+  "difficulty": "intermediate",
+  "tags": ["monitoring", "kubernetes", "observability"],
+  "intro": "Before Prometheus or Grafana, kubectl itself can answer 'what's slow or erroring right now?'. This is the standard first-five-minutes sequence when a service degrades.",
+  "steps": [
+    {
+      "prompt": "Check CPU and memory usage per node.",
+      "expected_commands": ["kubectl top nodes"],
+      "fake_output": "NAME     CPU(cores)  CPU%  MEMORY(bytes)  MEMORY%\nnode-1   3810m       95%   11012Mi        70%\nnode-2   410m        10%   5120Mi         32%",
+      "explanation": "node-1 is nearly maxed on CPU while node-2 is mostly idle.",
+      "why": "A hot node with an idle neighbor often means poor pod spread — e.g. missing anti-affinity or topology spread constraints letting everything pile onto one node."
+    },
+    {
+      "prompt": "See per-container usage inside each pod, not just per-pod totals.",
+      "expected_commands": ["kubectl top pods --containers", "kubectl top pod --containers"],
+      "fake_output": "POD                 NAME        CPU(cores)  MEMORY(bytes)\ncheckout-7f9d-a1b2  checkout    1890m       610Mi\ncheckout-7f9d-a1b2  log-agent   12m         40Mi",
+      "explanation": "The app container itself is the heavy one, not the sidecar.",
+      "why": "Pod totals hide which container is responsible. With sidecars (log shippers, proxies, service mesh), --containers stops you from blaming the wrong process."
+    },
+    {
+      "prompt": "Pull recent logs from every container in every checkout pod at once.",
+      "expected_commands": ["kubectl logs -l app=checkout --all-containers --tail=100", "kubectl logs -l app=checkout --all-containers"],
+      "fake_output": "[checkout-7f9d-a1b2/checkout] level=warn msg=\"db pool exhausted, waiting\"\n[checkout-7f9d-c3d4/checkout] level=warn msg=\"db pool exhausted, waiting\"",
+      "explanation": "Every replica is waiting on the database connection pool.",
+      "why": "When every replica shows the same symptom, the cause is usually shared — a dependency, not one bad pod. That immediately shifts the investigation from 'which pod' to 'what do they all depend on'."
+    },
+    {
+      "prompt": "Show recent cluster events, newest last, to catch OOM kills, evictions, and failed probes.",
+      "expected_commands": ["kubectl get events --sort-by=.metadata.creationTimestamp", "kubectl get events -A --sort-by=.metadata.creationTimestamp"],
+      "fake_output": "LAST SEEN  TYPE     REASON     OBJECT                    MESSAGE\n4m         Warning  Unhealthy  pod/checkout-7f9d-a1b2    Readiness probe failed: timeout\n1m         Warning  Evicted    pod/report-x9            The node was low on resource: memory",
+      "explanation": "Readiness failures and a memory eviction.",
+      "why": "Events expire after about an hour by default — check them early in an incident, or ship them to your log system so they're still there for the post-mortem."
+    },
+    {
+      "prompt": "Pull raw metrics straight from the Kubernetes API server's /metrics endpoint.",
+      "expected_commands": ["kubectl get --raw /metrics | grep apiserver_request_total | head", "kubectl get --raw /metrics"],
+      "fake_output": "apiserver_request_total{code=\"200\",verb=\"GET\",resource=\"pods\"} 1.8e+06\napiserver_request_total{code=\"429\",verb=\"LIST\",resource=\"pods\"} 4120",
+      "explanation": "4120 requests throttled with 429 — something is hammering the API server with LIST calls.",
+      "why": "Control-plane components expose Prometheus metrics too. A runaway controller or script flooding the API server can slow down the entire cluster, and this is where it shows up."
+    }
+  ]
+}

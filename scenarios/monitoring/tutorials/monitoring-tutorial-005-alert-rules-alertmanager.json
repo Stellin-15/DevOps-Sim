@@ -1,0 +1,46 @@
+{
+  "id": "monitoring-tutorial-005",
+  "type": "tutorial",
+  "category": "monitoring",
+  "title": "Alert Rules and Alertmanager",
+  "difficulty": "advanced",
+  "tags": ["monitoring", "alerting", "alertmanager", "on-call"],
+  "intro": "Good alerts wake people up only for things that need a human, right now. Bad alerts train people to ignore pages. Validating rules and managing silences are part of keeping the signal clean.",
+  "steps": [
+    {
+      "prompt": "Validate your alert rules file before loading it.",
+      "expected_commands": ["promtool check rules alerts.yml"],
+      "fake_output": "Checking alerts.yml\n  SUCCESS: 6 rules found",
+      "explanation": "All six rules parse and their PromQL is valid.",
+      "why": "A typo in one rule's expression can prevent the whole rule group from loading — meaning alerts you think exist silently don't. Run this in CI on every change to alert rules."
+    },
+    {
+      "prompt": "Unit-test your alert rules against synthetic data to prove HighErrorRate actually fires when it should.",
+      "expected_commands": ["promtool test rules alert_tests.yml"],
+      "fake_output": "Unit Testing:  alert_tests.yml\n  SUCCESS",
+      "explanation": "promtool feeds fake time series into the rules and checks which alerts fire, and when.",
+      "why": "Syntax checking proves an alert is valid; tests prove it's correct. Without tests, the first time you learn an alert never fires is during the incident it should have caught."
+    },
+    {
+      "prompt": "Check which alerts are firing right now in Alertmanager.",
+      "expected_commands": ["amtool alert query", "amtool alert"],
+      "fake_output": "Alertname       Starts At        Summary\nHighErrorRate   10:02:11 UTC     Error rate above 5% for 10 minutes\nDiskWillFillIn4h 09:40:00 UTC   /var on db01 fills in ~4h",
+      "explanation": "Two active alerts, with their summary annotations.",
+      "why": "Note 'DiskWillFillIn4h' — predictive alerts (using predict_linear) give you hours to act instead of paging at 100% full. Alert on symptoms users feel plus a few key predictive causes."
+    },
+    {
+      "prompt": "You're doing planned maintenance on db01 for 2 hours. Silence its alerts so on-call isn't paged for expected noise.",
+      "expected_commands": ["amtool silence add instance=db01 --duration=2h --comment=\"planned maintenance\"", "amtool silence add instance=db01 --duration 2h --comment \"planned maintenance\""],
+      "fake_output": "7c8b3a2e-5d1f-4e6a-9b0c-1a2b3c4d5e6f",
+      "explanation": "Alerts matching instance=db01 are muted for 2 hours; the silence ID is returned.",
+      "why": "Always use an expiring silence with a comment — never disable the alert rule itself. Permanent 'temporary' mutes are how real outages go unnoticed weeks later."
+    },
+    {
+      "prompt": "Maintenance finished early. Remove the silence.",
+      "expected_commands": ["amtool silence expire 7c8b3a2e-5d1f-4e6a-9b0c-1a2b3c4d5e6f"],
+      "fake_output": "(no output — silence expired)",
+      "explanation": "Alerting for db01 is active again.",
+      "why": "Ending silences early restores coverage immediately rather than leaving a blind spot for the remaining window."
+    }
+  ]
+}

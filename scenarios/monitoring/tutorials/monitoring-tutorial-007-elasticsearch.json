@@ -1,0 +1,46 @@
+{
+  "id": "monitoring-tutorial-007",
+  "type": "tutorial",
+  "category": "monitoring",
+  "title": "Operating an Elasticsearch Log Cluster",
+  "difficulty": "intermediate",
+  "tags": ["monitoring", "elasticsearch", "elk", "logging"],
+  "intro": "In an ELK/EFK stack, Elasticsearch stores and searches the logs. When log search gets slow or stops ingesting, these are the calls you'll make first.",
+  "steps": [
+    {
+      "prompt": "Check overall cluster health.",
+      "expected_commands": ["curl -X GET \"localhost:9200/_cluster/health?pretty\"", "curl \"localhost:9200/_cluster/health?pretty\"", "curl localhost:9200/_cluster/health?pretty"],
+      "fake_output": "{\n  \"cluster_name\" : \"logs\",\n  \"status\" : \"yellow\",\n  \"number_of_nodes\" : 3,\n  \"unassigned_shards\" : 12\n}",
+      "explanation": "green = all shards assigned; yellow = all primaries assigned but some replicas aren't; red = some primary data is unavailable.",
+      "why": "Yellow means no data loss yet, but you've lost redundancy — one more node failure could turn it red. Always check why shards are unassigned."
+    },
+    {
+      "prompt": "List all indices with their size and document counts.",
+      "expected_commands": ["curl -X GET \"localhost:9200/_cat/indices?v\"", "curl \"localhost:9200/_cat/indices?v\"", "curl localhost:9200/_cat/indices?v"],
+      "fake_output": "health status index              docs.count  store.size\nyellow open   logs-2026.09.27    48210931    38.1gb\ngreen  open   logs-2026.09.26    51002110    40.2gb\ngreen  open   logs-2026.06.01    39120001    31.0gb",
+      "explanation": "One index per day — including a logs-2026.06.01 that's almost four months old.",
+      "why": "Daily indices make retention easy: deleting old days is cheap. Keeping months of verbose logs is a common reason clusters run out of disk."
+    },
+    {
+      "prompt": "Search today's logs for 'timeout'.",
+      "expected_commands": ["curl -X GET \"localhost:9200/logs-2026.09.27/_search?q=timeout\"", "curl \"localhost:9200/logs-2026.09.27/_search?q=timeout\""],
+      "fake_output": "{\"hits\":{\"total\":{\"value\":1840},\"hits\":[{\"_source\":{\"service\":\"payments-api\",\"message\":\"upstream timeout after 30s\"}}]}}",
+      "explanation": "1840 matching documents, most from payments-api.",
+      "why": "The q= query-string search is quick for ad-hoc checks from a terminal; Kibana's KQL (service:\"payments-api\" and message:timeout) is the everyday interface for humans."
+    },
+    {
+      "prompt": "Check disk usage per node — Elasticsearch stops allocating shards when disks fill past its watermarks.",
+      "expected_commands": ["curl -X GET \"localhost:9200/_cat/allocation?v\"", "curl \"localhost:9200/_cat/allocation?v\"", "curl localhost:9200/_cat/allocation?v"],
+      "fake_output": "shards disk.used disk.avail disk.percent node\n   140     456gb       44gb           91 es-node-1\n   138     401gb       99gb           80 es-node-2",
+      "explanation": "es-node-1 is at 91% — past the default 90% high watermark, so ES is moving shards off it and won't put new ones there.",
+      "why": "That's why shards were unassigned (yellow). At 95% (the flood-stage watermark) ES makes indices READ-ONLY, and log ingestion stops entirely (see monitoring-incident-004)."
+    },
+    {
+      "prompt": "Delete the ancient logs-2026.06.01 index to free space.",
+      "expected_commands": ["curl -X DELETE \"localhost:9200/logs-2026.06.01\"", "curl -X DELETE localhost:9200/logs-2026.06.01"],
+      "fake_output": "{\"acknowledged\":true}",
+      "explanation": "31GB freed instantly.",
+      "why": "Irreversible — double-check the exact index name first, and never use wildcards casually here. Index Lifecycle Management (ILM) automates this so nobody has to run deletes by hand."
+    }
+  ]
+}

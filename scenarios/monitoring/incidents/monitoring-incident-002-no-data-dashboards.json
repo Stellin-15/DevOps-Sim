@@ -1,0 +1,43 @@
+{
+  "id": "monitoring-incident-002",
+  "type": "incident",
+  "category": "monitoring",
+  "title": "Half the Dashboards Show 'No Data'",
+  "difficulty": "beginner",
+  "tags": ["monitoring", "prometheus", "scraping"],
+  "intro": "After a Kubernetes upgrade last night, the team's service dashboards are blank. Nobody noticed until a customer reported slow checkouts — meaning you've been flying blind for hours.",
+  "steps": [
+    {
+      "prompt": "Check which scrape targets Prometheus considers down.",
+      "expected_commands": ["up == 0"],
+      "fake_output": "up{job=\"checkout-service\", instance=\"10.244.1.8:8080\"}  0\nup{job=\"checkout-service\", instance=\"10.244.2.4:8080\"}  0",
+      "hint": "The 'up' metric exists for every target, even failing ones."
+    },
+    {
+      "prompt": "Every checkout target is down. Get the scrape error details from the targets API.",
+      "expected_commands": ["curl -s http://localhost:9090/api/v1/targets", "curl http://localhost:9090/api/v1/targets"],
+      "fake_output": "{\"labels\":{\"job\":\"checkout-service\"},\"health\":\"down\",\"lastError\":\"server returned HTTP status 404 Not Found\",\"scrapeUrl\":\"http://10.244.1.8:8080/metrics\"}",
+      "hint": "lastError explains why each scrape failed."
+    },
+    {
+      "prompt": "404 on /metrics — the endpoint moved. Check what path the app actually serves metrics on now.",
+      "expected_commands": ["kubectl exec -it deploy/checkout -- curl -s localhost:8080/actuator/prometheus | head", "kubectl exec deploy/checkout -- curl -s localhost:8080/actuator/prometheus"],
+      "fake_output": "# HELP http_server_requests_seconds\nhttp_server_requests_seconds_count{status=\"200\"} 88213",
+      "hint": "Test from inside the pod to bypass any networking questions."
+    },
+    {
+      "prompt": "After updating the scrape config's metrics_path to /actuator/prometheus, validate it before reloading.",
+      "expected_commands": ["promtool check config prometheus.yml"],
+      "fake_output": " SUCCESS: prometheus.yml is valid prometheus config file syntax",
+      "hint": "Never reload an unvalidated config."
+    },
+    {
+      "prompt": "Reload Prometheus.",
+      "expected_commands": ["curl -X POST http://localhost:9090/-/reload"],
+      "fake_output": "(no output — HTTP 200)",
+      "hint": "Targets should turn healthy within one scrape interval."
+    }
+  ],
+  "resolution": "The app's framework upgrade (bundled into last night's release) moved its metrics endpoint from /metrics to /actuator/prometheus. Prometheus got 404s, marked every target down, and dashboards went blank — but no alert fired, because nobody had an alert on scrape targets being down. The fix was a one-line metrics_path change. The real lesson is monitoring your monitoring: an alert like 'up{job=~\"...\"} == 0 for 5m' (or absent(up{job=\"checkout-service\"})) turns 'nobody noticed for hours' into a page within minutes. Missing data should itself be treated as an incident signal.",
+  "real_commands_used": ["up == 0", "curl /api/v1/targets", "kubectl exec curl", "promtool check config", "curl -X POST /-/reload"]
+}

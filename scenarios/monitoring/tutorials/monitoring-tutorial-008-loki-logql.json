@@ -1,0 +1,39 @@
+{
+  "id": "monitoring-tutorial-008",
+  "type": "tutorial",
+  "category": "monitoring",
+  "title": "Querying Logs with Loki and LogQL",
+  "difficulty": "intermediate",
+  "tags": ["monitoring", "loki", "logql", "logging"],
+  "intro": "Loki indexes only labels (app, namespace, pod), not full log text, which makes it cheap to run. LogQL queries start by selecting streams by label, then filter their content.",
+  "steps": [
+    {
+      "prompt": "Pull recent logs from every stream labeled app=checkout-service.",
+      "expected_commands": ["logcli query '{app=\"checkout-service\"}'", "logcli query \"{app=\\\"checkout-service\\\"}\""],
+      "fake_output": "2026-09-27T10:14:02Z {app=\"checkout-service\", pod=\"checkout-7f9d-a1b2\"} POST /checkout 200 142ms\n2026-09-27T10:14:02Z {app=\"checkout-service\", pod=\"checkout-7f9d-c3d4\"} POST /checkout 500 30012ms",
+      "explanation": "The stream selector {app=\"checkout-service\"} picks logs across every pod with that label.",
+      "why": "Unlike kubectl logs, Loki keeps logs after pods are deleted or rescheduled — essential when the pod that failed no longer exists by the time you investigate."
+    },
+    {
+      "prompt": "Filter to only lines containing 'error'.",
+      "expected_commands": ["logcli query '{app=\"checkout-service\"} |= \"error\"'"],
+      "fake_output": "2026-09-27T10:14:02Z {pod=\"checkout-7f9d-c3d4\"} level=error msg=\"payment gateway timeout\" order=88213",
+      "explanation": "|= keeps lines containing the string; != excludes them; |~ matches a regex.",
+      "why": "Always narrow with the label selector first, then the line filter. Loki only indexes labels, so a broad selector with a text filter scans far more data and is slow."
+    },
+    {
+      "prompt": "Parse JSON-formatted logs and keep only lines where status_code is 500.",
+      "expected_commands": ["logcli query '{app=\"checkout-service\"} | json | status_code=\"500\"'"],
+      "fake_output": "2026-09-27T10:14:02Z {status_code=\"500\", path=\"/checkout\", duration_ms=\"30012\"} {\"level\":\"error\",\"msg\":\"payment gateway timeout\"}",
+      "explanation": "| json extracts every JSON field as a label you can filter on.",
+      "why": "Structured (JSON) logging pays off here: filtering on an exact field is precise, while grepping for '500' also matches durations, IDs, and anything else containing those digits."
+    },
+    {
+      "prompt": "Turn logs into a metric: the rate of error lines per second over 5 minutes.",
+      "expected_commands": ["logcli query 'sum(rate({app=\"checkout-service\"} |= \"error\" [5m]))'"],
+      "fake_output": "{}  3.42",
+      "explanation": "About 3.4 error lines per second.",
+      "why": "LogQL metric queries let you graph and alert on log patterns in Grafana — useful for services that don't expose Prometheus metrics at all."
+    }
+  ]
+}

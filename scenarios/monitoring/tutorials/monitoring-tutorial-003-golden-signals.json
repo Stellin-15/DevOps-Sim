@@ -1,0 +1,39 @@
+{
+  "id": "monitoring-tutorial-003",
+  "type": "tutorial",
+  "category": "monitoring",
+  "title": "The Four Golden Signals as Real Queries",
+  "difficulty": "intermediate",
+  "tags": ["monitoring", "sre", "golden-signals", "promql"],
+  "intro": "Latency, traffic, errors, saturation. Google's SRE book argues that if you can only watch four things about a service, watch these. Here's each one as an actual query for the checkout service.",
+  "steps": [
+    {
+      "prompt": "TRAFFIC: requests per second hitting checkout.",
+      "expected_commands": ["sum(rate(http_requests_total{service=\"checkout\"}[5m]))"],
+      "fake_output": "{}  142.3",
+      "explanation": "About 142 requests per second.",
+      "why": "Traffic is context for everything else. 50 errors/sec means something very different at 100 req/s than at 10,000 req/s."
+    },
+    {
+      "prompt": "ERRORS: what percentage of checkout requests are failing with a 5xx?",
+      "expected_commands": ["sum(rate(http_requests_total{service=\"checkout\",status=~\"5..\"}[5m])) / sum(rate(http_requests_total{service=\"checkout\"}[5m]))"],
+      "fake_output": "{}  0.023",
+      "explanation": "2.3% of requests are failing. =~\"5..\" is a regex matching any 5xx status.",
+      "why": "Always alert on error RATIO, not error count. A count threshold fires constantly at peak traffic and never at night; a ratio means the same thing at any load."
+    },
+    {
+      "prompt": "LATENCY: the 99th percentile request duration for checkout.",
+      "expected_commands": ["histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{service=\"checkout\"}[5m])) by (le))"],
+      "fake_output": "{}  1.84",
+      "explanation": "1% of requests take longer than 1.84 seconds.",
+      "why": "The 'by (le)' is essential: histogram_quantile needs the bucket boundary label to survive the sum. Dropping it is the most common reason this query returns nothing."
+    },
+    {
+      "prompt": "SATURATION: how close is checkout to its CPU limit?",
+      "expected_commands": ["sum(rate(container_cpu_usage_seconds_total{container=\"checkout\"}[5m])) / sum(kube_pod_container_resource_limits{container=\"checkout\",resource=\"cpu\"})"],
+      "fake_output": "{}  0.91",
+      "explanation": "Using 91% of its CPU limit — it's about to be throttled.",
+      "why": "Saturation is the leading indicator: latency and errors usually spike AFTER saturation hits 100%. Watching it lets you scale before users notice, instead of after."
+    }
+  ]
+}

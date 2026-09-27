@@ -1,0 +1,39 @@
+{
+  "id": "monitoring-tutorial-004",
+  "type": "tutorial",
+  "category": "monitoring",
+  "title": "Operating Prometheus Itself",
+  "difficulty": "intermediate",
+  "tags": ["monitoring", "prometheus", "operations"],
+  "intro": "Monitoring is only useful if the monitoring system is healthy. Validating config before reloading, and inspecting scrape targets, keeps you from silently losing visibility.",
+  "steps": [
+    {
+      "prompt": "You edited prometheus.yml to add a new scrape job. Validate it before applying.",
+      "expected_commands": ["promtool check config prometheus.yml"],
+      "fake_output": "Checking prometheus.yml\n  SUCCESS: 2 rule files found\n SUCCESS: prometheus.yml is valid prometheus config file syntax",
+      "explanation": "Syntax and semantics are both valid.",
+      "why": "A broken config plus a reload can leave Prometheus refusing the new config — or, on restart, not starting at all. Validation first is the equivalent of 'nginx -t' before reload."
+    },
+    {
+      "prompt": "Tell the running Prometheus to reload its configuration without restarting.",
+      "expected_commands": ["curl -X POST http://localhost:9090/-/reload"],
+      "fake_output": "(no output — HTTP 200)",
+      "explanation": "The new config takes effect; in-memory data and scrape state are preserved.",
+      "why": "This endpoint only works if Prometheus runs with --web.enable-lifecycle. A full restart works too, but loses the in-memory head block briefly and causes a gap in recent data."
+    },
+    {
+      "prompt": "Check the health of every scrape target, including the last error for any that are failing.",
+      "expected_commands": ["curl -s http://localhost:9090/api/v1/targets", "curl http://localhost:9090/api/v1/targets"],
+      "fake_output": "{\"activeTargets\":[{\"labels\":{\"job\":\"node\",\"instance\":\"web02:9100\"},\"health\":\"down\",\"lastError\":\"Get \\\"http://web02:9100/metrics\\\": dial tcp 10.0.4.22:9100: i/o timeout\"}]}",
+      "explanation": "lastError gives the exact reason: an i/o timeout reaching web02:9100.",
+      "why": "'up == 0' tells you a target is down; this tells you WHY. A timeout points at a firewall (see networking-incident-005), while 'connection refused' means the exporter isn't running."
+    },
+    {
+      "prompt": "Query Prometheus's HTTP API directly for current memory availability — how dashboards and scripts get data.",
+      "expected_commands": ["curl -s 'http://localhost:9090/api/v1/query?query=node_memory_MemAvailable_bytes'", "curl 'http://localhost:9090/api/v1/query?query=node_memory_MemAvailable_bytes'"],
+      "fake_output": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{\"instance\":\"web01:9100\"},\"value\":[1727430000,\"5032118272\"]}]}}",
+      "explanation": "Any PromQL query can be run via /api/v1/query and returns JSON.",
+      "why": "Quote the whole URL in real shells — PromQL's braces, brackets, and quotes otherwise get mangled by the shell. /api/v1/query_range returns a time series over a window instead of a single point."
+    }
+  ]
+}

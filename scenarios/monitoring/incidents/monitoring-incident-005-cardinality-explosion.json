@@ -1,0 +1,37 @@
+{
+  "id": "monitoring-incident-005",
+  "type": "incident",
+  "category": "monitoring",
+  "title": "Prometheus Keeps Running Out of Memory",
+  "difficulty": "advanced",
+  "tags": ["monitoring", "prometheus", "cardinality", "performance"],
+  "intro": "Prometheus has been OOM-killed three times today, each time a few hours after restart. Its memory graph climbs steadily until it dies. Nothing changed in Prometheus's own config.",
+  "steps": [
+    {
+      "prompt": "Check how many active time series Prometheus is tracking.",
+      "expected_commands": ["prometheus_tsdb_head_series"],
+      "fake_output": "prometheus_tsdb_head_series  8412900",
+      "hint": "Memory usage scales roughly with the number of active series."
+    },
+    {
+      "prompt": "8.4 million series is enormous for this environment. Find which metric names have the most series.",
+      "expected_commands": ["topk(10, count by (__name__)({__name__=~\".+\"}))"],
+      "fake_output": "{__name__=\"http_requests_total\"}         7902211\n{__name__=\"node_cpu_seconds_total\"}      1920\n{__name__=\"container_memory_usage_bytes\"} 1410",
+      "hint": "One metric is responsible for almost all of it."
+    },
+    {
+      "prompt": "Check the TSDB status API to see which LABEL has the most distinct values.",
+      "expected_commands": ["curl -s http://localhost:9090/api/v1/status/tsdb", "curl http://localhost:9090/api/v1/status/tsdb"],
+      "fake_output": "\"labelValueCountByLabelName\": [\n  {\"name\": \"user_id\", \"value\": 7801340},\n  {\"name\": \"path\", \"value\": 41210},\n  {\"name\": \"pod\", \"value\": 212}\n]",
+      "hint": "Look for a label with millions of distinct values."
+    },
+    {
+      "prompt": "Someone added a 'user_id' label to http_requests_total — every user creates a brand new time series. Find when that code shipped.",
+      "expected_commands": ["git log -S user_id --oneline", "git log -S \"user_id\" --oneline -- src/metrics.js", "git log -S user_id"],
+      "fake_output": "7d8e9f0 feat: per-user request metrics for analytics dashboard",
+      "hint": "git log -S finds the commit that added or removed a string."
+    }
+  ],
+  "resolution": "A well-intentioned change added user_id as a label on http_requests_total. In Prometheus, every unique combination of label values is a separate time series held in memory, so millions of users meant millions of new series — a 'cardinality explosion'. Memory grew until the OOM killer stepped in, and restarts just replayed the same growth. The fix: remove the user_id label (per-user analytics belongs in logs or an analytics database, not metrics), then drop existing series with a metric_relabel_configs rule while the code fix rolls out. Rule of thumb: labels should have small, bounded sets of values — status code, method, route template — never user IDs, emails, request IDs, or raw URLs. Alerting on prometheus_tsdb_head_series growth catches this in hours instead of after three crashes.",
+  "real_commands_used": ["prometheus_tsdb_head_series", "topk(count by __name__)", "curl /api/v1/status/tsdb", "git log -S"]
+}

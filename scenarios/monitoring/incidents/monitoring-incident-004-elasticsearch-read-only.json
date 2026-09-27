@@ -1,0 +1,43 @@
+{
+  "id": "monitoring-incident-004",
+  "type": "incident",
+  "category": "monitoring",
+  "title": "Logs Stopped Arriving in Kibana",
+  "difficulty": "advanced",
+  "tags": ["monitoring", "elasticsearch", "logging", "disk"],
+  "intro": "Kibana shows no logs newer than 03:14 this morning. The log shippers' own logs are full of '403 Forbidden' errors from Elasticsearch.",
+  "steps": [
+    {
+      "prompt": "Check Elasticsearch cluster health.",
+      "expected_commands": ["curl -X GET \"localhost:9200/_cluster/health?pretty\"", "curl \"localhost:9200/_cluster/health?pretty\"", "curl localhost:9200/_cluster/health?pretty"],
+      "fake_output": "{\n  \"status\" : \"yellow\",\n  \"number_of_nodes\" : 3,\n  \"unassigned_shards\" : 8\n}",
+      "hint": "Yellow isn't red — data is available. So why are writes rejected?"
+    },
+    {
+      "prompt": "Check disk usage per node.",
+      "expected_commands": ["curl -X GET \"localhost:9200/_cat/allocation?v\"", "curl \"localhost:9200/_cat/allocation?v\"", "curl localhost:9200/_cat/allocation?v"],
+      "fake_output": "disk.used disk.avail disk.percent node\n    476gb       24gb           95 es-node-1\n    471gb       29gb           94 es-node-2\n    468gb       32gb           94 es-node-3",
+      "hint": "95% is Elasticsearch's flood-stage watermark."
+    },
+    {
+      "prompt": "At the flood-stage watermark, ES blocks writes to protect itself. Confirm the indices were marked read-only.",
+      "expected_commands": ["curl -X GET \"localhost:9200/logs-*/_settings/index.blocks*?pretty\"", "curl \"localhost:9200/logs-*/_settings/index.blocks*?pretty\""],
+      "fake_output": "\"logs-2026.09.27\" : { \"settings\" : { \"index\" : { \"blocks\" : { \"read_only_allow_delete\" : \"true\" } } } }",
+      "hint": "Look for read_only_allow_delete."
+    },
+    {
+      "prompt": "Free space by deleting the oldest log indices (older than the 30-day retention policy).",
+      "expected_commands": ["curl -X DELETE \"localhost:9200/logs-2026.06.*\"", "curl -X DELETE localhost:9200/logs-2026.06.*"],
+      "fake_output": "{\"acknowledged\":true}",
+      "hint": "Freeing space is the actual fix; the read-only flag is the symptom."
+    },
+    {
+      "prompt": "Check disk usage again to confirm nodes are back below the watermarks.",
+      "expected_commands": ["curl -X GET \"localhost:9200/_cat/allocation?v\"", "curl \"localhost:9200/_cat/allocation?v\"", "curl localhost:9200/_cat/allocation?v"],
+      "fake_output": "disk.used disk.avail disk.percent node\n    301gb      199gb           60 es-node-1\n    298gb      202gb           59 es-node-2",
+      "hint": "Recent ES versions remove the read-only block automatically once usage falls back below the high watermark."
+    }
+  ],
+  "resolution": "Retention was never enforced, so indices from months ago kept piling up until every node crossed Elasticsearch's 95% flood-stage watermark. ES responded exactly as designed: it marked indices read_only_allow_delete to avoid filling disks completely and corrupting data, which is why shippers got 403s and logs silently stopped. Deleting indices older than the 30-day policy freed ~170GB per node; newer ES versions lift the block automatically once disk drops below the high watermark (older ones need a manual settings update). Permanent fixes: an Index Lifecycle Management policy that deletes indices after 30 days automatically, and an alert on ES disk usage at ~80% — well before the watermarks start changing cluster behavior.",
+  "real_commands_used": ["curl _cluster/health", "curl _cat/allocation", "curl _settings/index.blocks", "curl -X DELETE index"]
+}
