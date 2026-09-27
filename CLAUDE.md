@@ -126,7 +126,30 @@ Don't duplicate content from these files elsewhere — link to them.
   Python, `bash` resolved to a launcher that hung indefinitely. The
   trade-off (documented in GAPS.md): checks confirm the right shape, not
   that `docker build`/`terraform validate`/shellcheck would pass.
-- **sandbox.py** — separate free-form mode. `generate_state()` builds a
+- **sandbox_common.py** — shared by all three sandboxes: `render_table`,
+  shell-style pipes (`split_pipes` respects quotes; `apply_pipe` supports
+  grep [-i -v -c], head/tail [-n N | -N], wc -l, sort [-r]),
+  `SandboxStore(kind)` for keep/discard persistence (Kubernetes keeps the
+  original `sandbox_data/` root so previously saved sessions still load;
+  others use `sandbox_data/<kind>/`), and `run_loop(kind, noun,
+  generate_state, handle_command, describe_state)`. A sandbox module only
+  supplies those three functions.
+- **docker_sandbox.py** — a fake Docker host: 4-6 containers, 1-2 of the
+  app containers (web/api/worker — never db/cache/proxy) with a random
+  problem (oom, crash, restart_loop, unhealthy), plus dangling images and
+  volumes. Read-only. Containers resolve by name or unique id prefix;
+  `docker inspect --format` supports a fixed set of Go-template fields
+  (INSPECT_FORMATS). `generate_state(seed)` is deterministic per seed.
+- **linux_sandbox.py** — a fake server with exactly 2 of 4 random
+  problems (failed_service, disk_full, runaway_cpu, memory_hog). Unlike
+  the others it is **reactive**: `kill`, `systemctl restart|start`, `rm`,
+  and `truncate` mutate state, and fixes only work in the right order
+  (restarting app fails while the stray process still holds port 8080;
+  postgres gets OOM-killed again while the java hog runs). Models the
+  deleted-but-open-file trap: `rm` on a file a running service holds
+  leaves `df` unchanged and shows up in `lsof +L1` until that service
+  restarts. `df` is capped at the disk size (it once showed 102%).
+- **sandbox.py** — the Kubernetes sandbox. `generate_state()` builds a
   random fake cluster: for each of 4-6 randomly chosen services, a
   Deployment (1-3 replica pods), a ClusterIP Service, plus 3 nodes, an
   `app-config` ConfigMap, an `app-secrets` Secret, and an event log
@@ -344,7 +367,7 @@ final `resolution` debrief instead).
 python -m pytest
 ```
 
-(`pytest.ini` points it at `tests/`.) Twelve files:
+(`pytest.ini` points it at `tests/`.) Fifteen files:
 - `test_engine.py` — matching/normalization logic, proven kubectl-agnostic
 - `test_scenario_loader.py` — category-aware JSON loading (`list_categories`,
   category-filtered vs. aggregated `load_tutorials`/`load_incidents`,
@@ -377,6 +400,14 @@ python -m pytest
 - `test_game.py` — smoke tests that import game.py and drive the real
   main menu with scripted input. Added after a syntax error in game.py
   slipped past a fully green suite because nothing imported it.
+- `test_sandbox_common.py` — pipes (quoted `|`, every supported filter),
+  table rendering, and SandboxStore save/keep/discard in a temp dir
+- `test_docker_sandbox.py` — invariants over 200 seeds (1-2 problems,
+  only app containers break, every problem type occurs) and the
+  evidence each problem leaves in real commands
+- `test_linux_sandbox.py` — invariants over 200 seeds (exactly 2
+  problems, df never above 100%) and each problem's full diagnose-and-
+  fix workflow, including the rm-on-an-open-file trap
 - `test_career_path.py` — the run loop: completes all steps, records each
   sub-scenario into `progress` as it goes, stops cleanly on quit, skips
   (doesn't crash on) a missing scenario id
@@ -405,19 +436,22 @@ exercise something the generic checks don't cover.
 
 See GAPS.md Part 9 for the reasoning. In priority order:
 
-1. **Sandboxes for Docker and Linux** (next, per the agreed roadmap
-   order: writing labs ✓ → exam mode ✓ → sandboxes → mystery incidents
-   → new-topic content from GAPS.md → stats/spaced-repetition review →
-   more cert passes). A fake Docker host and a fake Linux box to explore
-   freely, following sandbox.py's pattern (random broken state,
-   token-dispatched commands, keep/discard on exit).
+1. **Mystery incidents** (next, per the agreed roadmap order: writing
+   labs ✓ → exam mode ✓ → sandboxes ✓ → mystery incidents → new-topic
+   content from GAPS.md → stats/spaced-repetition review → more cert
+   passes). Free-form diagnosis: a symptom, any command in any order,
+   scored on finding the root cause. The Linux sandbox's reactive
+   state model (hidden problems + actions that change state) is the
+   natural foundation — a mystery incident is roughly "a sandbox state
+   with one known root cause, a goal check, and a score".
 2. Per-category exam gap passes (like Part 1 did for the CKA): e.g.
    Terraform Associate, CKAD, AWS certs.
 3. Topics each GAPS.md part lists as missing: tracing/SLOs (monitoring),
    tcpdump/MTU (networking), feature stores and LLM serving (mlops),
    GitOps and supply-chain security (cicd), shell scripting (linux).
-4. Sandbox modes for other categories (a fake Docker host, a fake Linux
-   box) — bigger, separate efforts; sandbox.py is Kubernetes-only.
+4. More sandboxes (Terraform state explorer, networking) — Kubernetes,
+   Docker, and Linux exist; new ones only need generate_state() and
+   handle_command() plus a SANDBOXES entry in game.py.
 5. v6 scenario-scaffolding CLI — more valuable now that content volume
    is large.
 6. Keep GAPS.md current: every content pass should update its part.

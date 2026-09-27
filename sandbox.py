@@ -1,26 +1,19 @@
 """
-Sandbox mode — no scoring, no steps. Generates a random fake cluster (pods
-with random names, statuses, and resource usage) and lets the player poke at
-it with free-form kubectl-style commands.
+Kubernetes sandbox — no scoring, no steps. Generates a random fake cluster
+(pods with random names, statuses, and resource usage) and lets the player
+poke at it with free-form kubectl-style commands.
 
-State is written to a local JSON file while the session is active. On exit,
-the player chooses to keep it (saved under sandbox_data/saved/ for future
-sessions to load) or discard it (the file is deleted).
+Persistence (keep/discard, saved sessions under sandbox_data/saved/) and
+the interactive loop live in sandbox_common.py, shared with the Docker and
+Linux sandboxes.
 """
 
-import json
 import random
-import re
 import string
 from datetime import datetime
-from pathlib import Path
 
-from engine import normalize, read_input
-
-BASE_DIR = Path(__file__).parent
-SANDBOX_DIR = BASE_DIR / "sandbox_data"
-SAVED_DIR = SANDBOX_DIR / "saved"
-CURRENT_FILE = SANDBOX_DIR / "current_session.json"
+from engine import normalize
+from sandbox_common import render_table, run_loop
 
 SERVICE_NAMES = [
     "checkout-service", "auth-service", "payment-gateway", "frontend",
@@ -193,33 +186,6 @@ def find_pod(state: dict, name: str):
         if pod["name"].lower() == name:
             return pod
     return None
-
-
-def render_table(headers: list, rows: list, prefix: str = "") -> str:
-    """Renders a table with column widths sized to fit the widest cell in
-    each column (plus the header), so long resource names never collide
-    with the next column — unlike a fixed-width format string."""
-    col_count = len(headers)
-    widths = [len(h) for h in headers]
-    for row in rows:
-        for i in range(col_count):
-            cell = str(row[i])
-            if i == 0:
-                cell = prefix + cell
-            widths[i] = max(widths[i], len(cell))
-    widths = [w + 2 for w in widths]
-
-    def render_row(cells, is_first_col_prefixed=False):
-        parts = []
-        for i, cell in enumerate(cells):
-            text = (prefix + str(cell)) if (i == 0 and is_first_col_prefixed) else str(cell)
-            parts.append(text.ljust(widths[i]))
-        return "".join(parts).rstrip()
-
-    lines = [render_row(headers)]
-    for row in rows:
-        lines.append(render_row(row, is_first_col_prefixed=True))
-    return "\n".join(lines)
 
 
 def format_pod_row(pod: dict, wide: bool) -> list:
@@ -593,66 +559,14 @@ def handle_command(state: dict, raw: str):
     return "Unknown command. Type 'help' for a list of supported commands."
 
 
-def list_saved_sessions() -> list:
-    if not SAVED_DIR.exists():
-        return []
-    return sorted(SAVED_DIR.glob("*.json"))
-
-
-def save_current(state: dict) -> None:
-    SANDBOX_DIR.mkdir(exist_ok=True)
-    with open(CURRENT_FILE, "w", encoding="utf-8") as f:
-        json.dump(state, f, indent=2)
-
-
-def choose_or_generate_state() -> dict:
-    saved = list_saved_sessions()
-    if saved:
-        print("\nYou have saved cluster states:")
-        for i, path in enumerate(saved, start=1):
-            print(f"  {i}. {path.stem}")
-        print(f"  {len(saved) + 1}. Generate a new random cluster")
-        choice = read_input("\nChoose an option: ")
-        if choice.isdigit() and 1 <= int(choice) <= len(saved):
-            with open(saved[int(choice) - 1], "r", encoding="utf-8") as f:
-                return json.load(f)
-    return generate_state()
-
-
-def prompt_keep(state: dict) -> None:
-    choice = read_input("\nKeep this cluster state for future reference? (y/N): ").lower()
-    if choice == "y":
-        SAVED_DIR.mkdir(parents=True, exist_ok=True)
-        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-        dest = SAVED_DIR / f"session-{ts}.json"
-        dest.write_text(json.dumps(state, indent=2), encoding="utf-8")
-        print(f"Saved. You can pick this cluster again next time you enter Sandbox.")
-    else:
-        if CURRENT_FILE.exists():
-            CURRENT_FILE.unlink()
-        print("Discarded — this cluster state is gone.")
+def describe_state(state: dict) -> list:
+    return [
+        f"Cluster snapshot generated at {state['generated_at']} (namespace: {state['namespace']})",
+        f"{len(state['pods'])} pods across {len(state.get('deployments', []))} deployments, "
+        f"{len(state.get('services', []))} services, {len(state.get('nodes', []))} nodes. "
+        "Explore with kubectl commands — find out what's broken.",
+    ]
 
 
 def run_sandbox() -> None:
-    print("\n=== Sandbox Mode ===")
-    state = choose_or_generate_state()
-    save_current(state)
-
-    print(f"\nCluster snapshot generated at {state['generated_at']} (namespace: {state['namespace']})")
-    print(
-        f"{len(state['pods'])} pods across {len(state.get('deployments', []))} deployments, "
-        f"{len(state.get('services', []))} services, {len(state.get('nodes', []))} nodes. "
-        "Explore with kubectl commands — find out what's broken."
-    )
-    print("Type 'help' for supported commands, 'exit' to leave sandbox.")
-
-    while True:
-        raw = read_input("\n$ ")
-        if not raw:
-            continue
-        output = handle_command(state, raw)
-        if output is None:
-            break
-        print(f"\n{output}")
-
-    prompt_keep(state)
+    run_loop("kubernetes", "cluster", generate_state, handle_command, describe_state)

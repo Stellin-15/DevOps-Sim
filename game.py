@@ -7,6 +7,8 @@ import random
 import career_path
 import exam
 import progress as progress_module
+import docker_sandbox
+import linux_sandbox
 import sandbox
 import yaml_lab
 from engine import read_input, run_scenario
@@ -145,6 +147,25 @@ def exam_menu(progress: dict) -> None:
     progress_module.save_progress(progress)
 
 
+SANDBOXES = [
+    ("Kubernetes — a random cluster with broken pods", sandbox.run_sandbox),
+    ("Docker — a host with crashed, OOM-killed, or unhealthy containers", docker_sandbox.run_sandbox),
+    ("Linux — a server with two real problems to find AND fix", linux_sandbox.run_sandbox),
+]
+
+
+def sandbox_menu() -> None:
+    print("\n=== Choose a Sandbox ===")
+    for i, (label, _) in enumerate(SANDBOXES, start=1):
+        print(f"  {i}. {label}")
+    print("  b. Back")
+    choice = read_input("\nChoose one: ").lower()
+    if choice.isdigit() and 1 <= int(choice) <= len(SANDBOXES):
+        SANDBOXES[int(choice) - 1][1]()
+    elif choice not in ("b", "back", "exit", "quit"):
+        print("Invalid choice.")
+
+
 def main_menu_loop() -> None:
     progress = progress_module.load_progress()
 
@@ -154,7 +175,7 @@ def main_menu_loop() -> None:
         print("  2. Career Paths (chained scenarios across categories)")
         print("  3. Writing Labs (write real config files and scripts in your own editor)")
         print("  4. Exam Mode (timed, no hints, scored)")
-        print("  5. Sandbox (random cluster)")
+        print("  5. Sandbox (Kubernetes, Docker, or Linux — explore freely)")
         print("  q. Quit")
 
         choice = read_input("\nChoose: ").lower()
@@ -173,7 +194,7 @@ def main_menu_loop() -> None:
         elif choice == "4":
             exam_menu(progress)
         elif choice == "5":
-            sandbox.run_sandbox()
+            sandbox_menu()
         else:
             print("Invalid choice.")
 

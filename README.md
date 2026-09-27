@@ -44,14 +44,20 @@ string.
   reviewed with the correct command, and your best score per category is
   remembered. The rest of the game is forgiving on purpose; this is the
   part that tells you whether it stuck.
-- **Sandbox** — no scoring, no steps. The game generates a random fake
-  Kubernetes cluster: several services, each with a Deployment, a
-  Service, and 1-3 pods (some healthy, some randomly broken with
-  `CrashLoopBackOff`/`OOMKilled`/`Pending`/`Error`), plus nodes, a
-  ConfigMap, a Secret, and an event log — all consistent with each other.
-  Explore it freely with `kubectl get/describe/logs/top`. On exit you
-  choose to keep that cluster state for next time or throw it away.
-  (Kubernetes-only for now.)
+- **Sandbox** — no scoring, no steps: a randomly generated broken
+  environment to explore with real commands. Three to pick from:
+  - **Kubernetes** — a cluster of Deployments, Services, and pods (some
+    `CrashLoopBackOff`/`OOMKilled`/`Pending`/`Error`), plus nodes, a
+    ConfigMap, a Secret, and an event log, all consistent with each other.
+  - **Docker** — a host where one or two app containers were OOM-killed,
+    crashed on startup, are stuck in a restart loop, or are failing their
+    healthcheck, plus dangling images and volumes wasting disk.
+  - **Linux** — a server with two hidden problems (a failed service, a
+    full disk, a runaway process, a memory hog) that you must find **and
+    fix**: `kill`, `systemctl restart`, `rm`, and `truncate` really change
+    the state, so fixes only work if you've understood the cause.
+  Pipes work everywhere (`ps aux | grep python`, `docker ps -a | grep
+  Exited`). On exit you can keep the state for next time or throw it away.
 
 At every prompt — menu, a tutorial/incident/career-path step, a YAML lab
 step, or inside sandbox — you can type `exit` or `quit` to back out.
@@ -96,6 +102,25 @@ individual stage's own tutorial/incident, so it also shows as done if you
 browse that category directly afterward.
 
 ## Playing sandbox mode
+
+Type `help` inside any sandbox for its full command list. Every sandbox
+supports pipes: `| grep [-i -v -c]`, `| head -N`, `| tail -N`, `| wc -l`,
+`| sort`.
+
+**Docker sandbox:** `docker ps [-a]`, `images`, `logs [--tail N]`,
+`inspect <c> [--format '{{.State.ExitCode}}']` (also `.State.OOMKilled`,
+`.State.Health.Status`, `.RestartCount`, and more), `stats`, `top`,
+`exec <c> env`, `volume ls -f dangling=true`, `network ls/inspect`,
+`system df`. Containers can be referenced by name or id prefix.
+
+**Linux sandbox:** `uptime`, `nproc`, `free -h`, `df -h`, `du -sh <dir>/*`,
+`ls -lh`, `ps aux --sort=-%cpu|-%mem`, `top`, `systemctl status|--failed|
+restart <svc>`, `journalctl -u <svc> | -p err`, `dmesg -T`, `ss -tulnp`,
+`lsof +L1`, and the fixes: `kill [-9] <pid>`, `rm <file>`,
+`truncate -s 0 <file>`. Two things are wrong each time — you're done when
+both are fixed and `systemctl --failed` and `df -h` look healthy.
+
+**Kubernetes sandbox:**
 
 ```
 kubectl get pods [-o wide]
@@ -157,7 +182,10 @@ career_path.py       chains existing scenarios across categories into
 progress.py         reads/writes progress.json (completion + attempt
                      counts, flat across all categories — ids are
                      globally unique)
-sandbox.py          random cluster generator + free-form command handling
+sandbox.py          Kubernetes sandbox (random cluster)
+docker_sandbox.py   Docker sandbox (random broken host)
+linux_sandbox.py    Linux sandbox (random broken server; reacts to fixes)
+sandbox_common.py   shared sandbox loop, pipes, tables, save/discard
                      (Kubernetes-only)
 yaml_lab.py         Writing Labs runner: real file editing + validation
 lab_formats.py      parsers for YAML, Dockerfile, HCL, and bash lab files
@@ -288,16 +316,17 @@ Built so far: hardcoded single scenario → JSON-driven scenarios with a
 menu → hint escalation → sandbox → progress tracking → full Kubernetes
 coverage → CKA gap-filling → Writing Labs → multi-category architecture →
 Career Paths → all 8 categories expanded to full depth → Dockerfile,
-Terraform, and bash Writing Labs → Exam Mode.
+Terraform, and bash Writing Labs → Exam Mode → Docker and Linux sandboxes.
 
 Next, in priority order (details in CLAUDE.md and GAPS.md):
-- **Sandboxes for Docker and Linux** (next up), then "mystery incidents"
-  (free-form diagnosis in any order)
+- **Mystery incidents** (next up) — free-form diagnosis: a symptom, any
+  command in any order, scored on finding the root cause
 - Exam-specific gap passes for other certifications (CKAD, Terraform
   Associate, AWS)
 - Topics each GAPS.md part lists as missing (tracing/SLOs, tcpdump,
   feature stores, LLM serving, GitOps, shell scripting)
-- Sandbox modes for categories other than Kubernetes
+- More sandboxes (Kubernetes, Docker, and Linux exist; Terraform and
+  networking would be next)
 - A CLI scaffold for authoring new scenario JSON
 
 See CLAUDE.md for architecture and notes for continuing development.

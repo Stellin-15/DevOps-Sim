@@ -159,7 +159,9 @@ on-call rotation, shadowed, before being the primary responder.*
 
 # Part 2 — Docker
 
-**Content:** 10 tutorials, 5 incidents.
+**Content:** 10 tutorials, 5 incidents, 3 Writing Labs, and a Sandbox (a random
+host with OOM-killed, crashed, restart-looping, or unhealthy containers
+and dangling images/volumes to find with real docker commands and pipes).
 
 ## Covered
 
@@ -201,7 +203,13 @@ Docker" from "can containerize an app well."
 
 # Part 3 — Linux
 
-**Content:** 12 tutorials, 6 incidents.
+**Content:** 12 tutorials, 6 incidents, 2 Writing Labs, and an interactive
+Sandbox: a server with two random real problems (failed service blocked by
+a stray process, disk filled by a log held open by a process, runaway CPU,
+memory hog that got postgres OOM-killed) that you must find AND fix with
+kill / systemctl restart / rm / truncate. It models real consequences —
+deleting a log a process still holds open frees nothing until you restart
+that process — which unscripted practice needs and scripted steps can't give.
 
 ## Covered
 
@@ -483,14 +491,14 @@ gaps relative to what current MLOps roles ask for.
 | Category | Tutorials | Incidents | Extra |
 |---|---|---|---|
 | Kubernetes | 29 | 10 | 9 Writing Labs, Sandbox |
-| Docker | 10 | 5 | 3 Writing Labs (Dockerfile, Compose) |
-| Linux | 12 | 6 | 2 Writing Labs (bash) |
+| Docker | 10 | 5 | 3 Writing Labs (Dockerfile, Compose), Sandbox |
+| Linux | 12 | 6 | 2 Writing Labs (bash), interactive Sandbox |
 | Terraform | 10 | 6 | 2 Writing Labs (HCL) |
 | Networking | 10 | 6 | |
 | CI/CD | 10 | 6 | 3 Writing Labs (Actions) |
 | Monitoring | 10 | 6 | 2 Writing Labs (alert rules) |
 | MLOps | 10 | 6 | |
-| **Total** | **101** | **51** | 21 Writing Labs, 6 career paths |
+| **Total** | **101** | **51** | 21 Writing Labs, 6 career paths, 3 sandboxes, Exam Mode |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
