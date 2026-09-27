@@ -1,0 +1,46 @@
+{
+  "id": "terraform-tutorial-003",
+  "type": "tutorial",
+  "category": "terraform",
+  "title": "Variables, tfvars Files, and Outputs",
+  "difficulty": "beginner",
+  "tags": ["terraform", "variables", "outputs"],
+  "intro": "The same Terraform code should build dev, staging, and prod — only the inputs differ. Variables are how you parameterize it; outputs are how you get useful values back out.",
+  "steps": [
+    {
+      "prompt": "Plan with a one-off override of the 'instance_type' variable set to t3.large.",
+      "expected_commands": ["terraform plan -var=\"instance_type=t3.large\"", "terraform plan -var='instance_type=t3.large'", "terraform plan -var instance_type=t3.large"],
+      "fake_output": "  ~ instance_type = \"t3.micro\" -> \"t3.large\"\nPlan: 0 to add, 1 to change, 0 to destroy.",
+      "explanation": "-var overrides a single variable for this one run.",
+      "why": "Fine for quick experiments, but anything typed on the command line isn't recorded anywhere — nobody can later tell what values produced the current infrastructure. Real environments use tfvars files committed to version control."
+    },
+    {
+      "prompt": "Plan using all the production values from prod.tfvars instead.",
+      "expected_commands": ["terraform plan -var-file=\"prod.tfvars\"", "terraform plan -var-file=prod.tfvars", "terraform plan -var-file prod.tfvars"],
+      "fake_output": "  ~ instance_type = \"t3.micro\" -> \"m5.xlarge\"\n  ~ min_size      = 1 -> 3\nPlan: 0 to add, 2 to change, 0 to destroy.",
+      "explanation": "Every value in prod.tfvars is applied at once, from a file you can review and version.",
+      "why": "One tfvars file per environment (dev.tfvars, prod.tfvars) with shared code is the standard pattern. Note: a file named exactly terraform.tfvars or *.auto.tfvars is loaded automatically without -var-file — convenient, but easy to forget it's being applied."
+    },
+    {
+      "prompt": "Show all outputs as JSON, for consumption by a script.",
+      "expected_commands": ["terraform output -json"],
+      "fake_output": "{\n  \"instance_ip\": {\"sensitive\": false, \"type\": \"string\", \"value\": \"54.12.34.56\"},\n  \"db_endpoint\": {\"sensitive\": false, \"type\": \"string\", \"value\": \"prod-db.abc.rds.amazonaws.com\"}\n}",
+      "explanation": "Machine-readable outputs, including type and sensitivity metadata.",
+      "why": "Parsing the human-readable 'terraform output' with grep/awk is fragile. -json is stable and pipes cleanly into jq — this is how Terraform hands values to Ansible, CI scripts, or other tools."
+    },
+    {
+      "prompt": "Get just the raw value of 'db_endpoint', without quotes, for use in a shell variable.",
+      "expected_commands": ["terraform output -raw db_endpoint"],
+      "fake_output": "prod-db.abc.rds.amazonaws.com",
+      "explanation": "-raw prints only the string value — no quotes, no newline decoration.",
+      "why": "'terraform output db_endpoint' prints it with surrounding quotes, which break things like DB_HOST=$(terraform output db_endpoint). -raw is the one to use inside $(...)."
+    },
+    {
+      "prompt": "Open an interactive console to test an expression against the current state before putting it in code.",
+      "expected_commands": ["terraform console"],
+      "fake_output": "> upper(var.environment)\n\"PROD\"\n> length(aws_instance.worker)\n3",
+      "explanation": "The console evaluates Terraform expressions and functions against your real variables and state.",
+      "why": "Iterating on a tricky expression (a for loop, a cidrsubnet() calculation) by running plan over and over is slow. The console gives instant feedback — like a Python REPL, but for HCL."
+    }
+  ]
+}

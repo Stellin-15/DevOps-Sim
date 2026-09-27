@@ -1,0 +1,43 @@
+{
+  "id": "terraform-incident-005",
+  "type": "incident",
+  "category": "terraform",
+  "title": "Nobody Changed Any Code, But Plan Is Broken",
+  "difficulty": "intermediate",
+  "tags": ["terraform", "providers", "versions", "ci"],
+  "intro": "CI plans passed yesterday. Today, with zero code changes, every plan fails with 'Unsupported argument' errors on S3 buckets.",
+  "steps": [
+    {
+      "prompt": "Check which provider versions this CI run actually installed.",
+      "expected_commands": ["terraform version"],
+      "fake_output": "Terraform v1.9.5\n+ provider registry.terraform.io/hashicorp/aws v6.0.0",
+      "hint": "Compare against what the project was using before."
+    },
+    {
+      "prompt": "AWS provider 6.0.0 — a major version. Check the constraint that allowed it.",
+      "expected_commands": ["terraform providers"],
+      "fake_output": "Providers required by configuration:\n.\n└── provider[registry.terraform.io/hashicorp/aws] >= 4.0",
+      "hint": "What does '>= 4.0' allow?"
+    },
+    {
+      "prompt": "'>= 4.0' allows any future major version. Check whether the lock file that would have prevented this is in the repo.",
+      "expected_commands": ["git ls-files .terraform.lock.hcl", "git status", "cat .gitignore"],
+      "fake_output": ".terraform/\n.terraform.lock.hcl\n*.tfstate",
+      "hint": "The lock file records exact provider versions — but only if it's committed."
+    },
+    {
+      "prompt": "The lock file is gitignored, so every CI run resolves the newest allowed version. After changing the constraint to '~> 5.0' in code, reinitialize to pick a compatible version.",
+      "expected_commands": ["terraform init -upgrade"],
+      "fake_output": "- Finding hashicorp/aws versions matching \"~> 5.0\"...\n- Installing hashicorp/aws v5.68.0...\nTerraform has created a lock file .terraform.lock.hcl",
+      "hint": "-upgrade is needed to move DOWN from 6.0.0 to the newest 5.x."
+    },
+    {
+      "prompt": "Confirm the plan works again.",
+      "expected_commands": ["terraform plan"],
+      "fake_output": "No changes. Your infrastructure matches the configuration.",
+      "hint": "Then remove .terraform.lock.hcl from .gitignore and commit it."
+    }
+  ],
+  "resolution": "Two mistakes combined: a loose version constraint ('>= 4.0' permits any future major version, including breaking ones) and a gitignored .terraform.lock.hcl. Together they meant every CI run silently picked up the newest provider, and the day a major version with breaking changes shipped, every pipeline broke with no code change at all. The lock file exists precisely to make provider versions reproducible — it should always be committed (only the .terraform/ directory should be ignored). Pin providers with '~>' to a major version, commit the lock file, and upgrade deliberately in its own pull request, where the plan diff can be reviewed.",
+  "real_commands_used": ["terraform version", "terraform providers", "git ls-files", "terraform init -upgrade", "terraform plan"]
+}

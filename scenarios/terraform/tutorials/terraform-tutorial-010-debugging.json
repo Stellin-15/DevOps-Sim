@@ -1,0 +1,39 @@
+{
+  "id": "terraform-tutorial-010",
+  "type": "tutorial",
+  "category": "terraform",
+  "title": "Debugging Terraform",
+  "difficulty": "advanced",
+  "tags": ["terraform", "debugging", "logging"],
+  "intro": "When Terraform fails with a vague provider error, or applies take forever, these are the tools for seeing what's actually happening underneath.",
+  "steps": [
+    {
+      "prompt": "An apply fails with a cryptic 'error creating resource: 400'. Re-run it with full debug logging.",
+      "expected_commands": ["TF_LOG=DEBUG terraform apply", "TF_LOG=debug terraform apply", "TF_LOG=TRACE terraform apply"],
+      "fake_output": "[DEBUG] provider.terraform-provider-aws: HTTP Request Sent: POST https://ec2.us-east-1.amazonaws.com/\n[DEBUG] provider.terraform-provider-aws: HTTP Response Received: 400 InvalidParameterValue: Value (t3.nano-typo) for parameter instanceType is invalid.",
+      "explanation": "The debug log shows the raw API request and response — including the actual cloud provider's error message.",
+      "why": "Terraform's summary error often loses detail the cloud API actually returned. TF_LOG=DEBUG is extremely verbose; add TF_LOG_PATH=./tf.log to write it to a file instead of flooding your terminal — and scrub it before sharing, since it can contain credentials."
+    },
+    {
+      "prompt": "Generate the dependency graph to understand why Terraform creates resources in the order it does.",
+      "expected_commands": ["terraform graph", "terraform graph | dot -Tpng > graph.png"],
+      "fake_output": "digraph {\n  \"aws_instance.web\" -> \"aws_security_group.web\"\n  \"aws_instance.web\" -> \"module.vpc.aws_subnet.private\"\n  \"module.vpc.aws_subnet.private\" -> \"module.vpc.aws_vpc.main\"\n}",
+      "explanation": "Output is in DOT format — an edge from A to B means A depends on B.",
+      "why": "Terraform infers order from references between resources. When something is created in the wrong order, the graph usually reveals a missing reference — fixed by referencing an attribute, or as a last resort with depends_on."
+    },
+    {
+      "prompt": "An apply is hitting the cloud provider's API rate limits. Re-run it with fewer concurrent operations.",
+      "expected_commands": ["terraform apply -parallelism=2", "terraform apply -parallelism=1"],
+      "fake_output": "aws_route53_record.a[0]: Creating...\naws_route53_record.a[1]: Creating...\n...\nApply complete! Resources: 40 added, 0 changed, 0 destroyed.",
+      "explanation": "Default parallelism is 10 concurrent operations; lowering it slows things down but stays under rate limits.",
+      "why": "-parallelism=1 also turns a confusing interleaved log into a sequential one — sometimes the fastest way to pin down which resource actually triggers an error."
+    },
+    {
+      "prompt": "Print the full plan as JSON to feed it into a policy check that blocks any plan destroying a database.",
+      "expected_commands": ["terraform show -json tfplan", "terraform show -json tfplan > plan.json"],
+      "fake_output": "{\"format_version\":\"1.2\",\"resource_changes\":[{\"address\":\"aws_db_instance.main\",\"change\":{\"actions\":[\"delete\",\"create\"]}}]}",
+      "explanation": "The JSON plan lists each resource change with its exact actions.",
+      "why": "This is how policy-as-code tools (OPA/Conftest, Sentinel, Checkov) inspect plans in CI. Here it caught a database about to be destroyed and recreated — the kind of change a human skimming plan output at 6pm might miss."
+    }
+  ]
+}

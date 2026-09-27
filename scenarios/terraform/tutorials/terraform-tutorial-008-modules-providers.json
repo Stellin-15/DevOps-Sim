@@ -1,0 +1,46 @@
+{
+  "id": "terraform-tutorial-008",
+  "type": "tutorial",
+  "category": "terraform",
+  "title": "Modules, Providers, and Version Pinning",
+  "difficulty": "intermediate",
+  "tags": ["terraform", "modules", "providers", "versions"],
+  "intro": "Real Terraform code is built from reusable modules and depends on provider plugins — both of which change over time. Controlling those versions is what keeps a plan from mysteriously changing between Tuesday and Wednesday.",
+  "steps": [
+    {
+      "prompt": "Check the Terraform CLI version and installed provider versions.",
+      "expected_commands": ["terraform version"],
+      "fake_output": "Terraform v1.9.5\non linux_amd64\n+ provider registry.terraform.io/hashicorp/aws v5.31.0\n+ provider registry.terraform.io/hashicorp/random v3.6.0",
+      "explanation": "Both the core binary and each provider have independent versions.",
+      "why": "Pasting this output into bug reports and incident notes saves a round-trip — 'which version were you on?' is always the first question."
+    },
+    {
+      "prompt": "Show which providers this configuration requires, and which modules require them.",
+      "expected_commands": ["terraform providers"],
+      "fake_output": "Providers required by configuration:\n.\n├── provider[registry.terraform.io/hashicorp/aws] ~> 5.0\n└── module.vpc\n    └── provider[registry.terraform.io/hashicorp/aws] >= 4.0",
+      "explanation": "~> 5.0 means 'any 5.x, but not 6.0' — the root module pins the major version.",
+      "why": "This tree explains conflicts: if one module demands aws >= 6.0 and another ~> 5.0, init fails, and this is how you see who's asking for what."
+    },
+    {
+      "prompt": "You added a new module block from the registry. Download it (and update existing modules to their newest allowed versions).",
+      "expected_commands": ["terraform get -update", "terraform init"],
+      "fake_output": "Downloading registry.terraform.io/terraform-aws-modules/rds/aws 6.4.0 for rds...\n- rds in .terraform/modules/rds",
+      "explanation": "Modules are downloaded into .terraform/modules — same as providers go into .terraform/providers.",
+      "why": "'terraform init' also downloads new modules. Always pin module versions (version = \"6.4.0\") in real code — an unpinned registry module can change underneath you on any future init."
+    },
+    {
+      "prompt": "Upgrade providers to the newest versions allowed by your version constraints.",
+      "expected_commands": ["terraform init -upgrade"],
+      "fake_output": "Initializing provider plugins...\n- Finding hashicorp/aws versions matching \"~> 5.0\"...\n- Installing hashicorp/aws v5.68.0...\n\nTerraform has made some changes to the provider dependency selections recorded in the .terraform.lock.hcl file.",
+      "explanation": "Moves from 5.31.0 to 5.68.0 — still within ~> 5.0 — and updates the lock file.",
+      "why": "Without -upgrade, init keeps using exactly the versions recorded in .terraform.lock.hcl, which is the point of the lock file. Upgrading is a deliberate act: do it, run plan, and commit the updated lock file in its own change."
+    },
+    {
+      "prompt": "Record provider checksums for every platform your team uses (Linux CI runners and Mac laptops) in the lock file.",
+      "expected_commands": ["terraform providers lock -platform=linux_amd64 -platform=darwin_arm64"],
+      "fake_output": "- Obtained hashicorp/aws checksums for linux_amd64\n- Obtained hashicorp/aws checksums for darwin_arm64\nSuccess! Terraform has updated the lock file.",
+      "explanation": "The lock file now contains verified checksums for both platforms.",
+      "why": "Otherwise a lock file generated on a Mac only has Mac checksums, and CI on Linux fails with checksum mismatches — a very common 'works on my machine' Terraform problem."
+    }
+  ]
+}

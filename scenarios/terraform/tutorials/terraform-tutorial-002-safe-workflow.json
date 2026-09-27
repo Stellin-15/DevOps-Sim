@@ -1,0 +1,46 @@
+{
+  "id": "terraform-tutorial-002",
+  "type": "tutorial",
+  "category": "terraform",
+  "title": "The Safe Workflow: fmt, validate, and Saved Plans",
+  "difficulty": "beginner",
+  "tags": ["terraform", "workflow", "ci"],
+  "intro": "Running plan then apply works, but there's a gap: infrastructure can change between the two, so apply might do something you never reviewed. Saved plan files close that gap — this is how Terraform runs safely in CI.",
+  "steps": [
+    {
+      "prompt": "Format all .tf files in this directory and every subdirectory to the canonical style.",
+      "expected_commands": ["terraform fmt -recursive"],
+      "fake_output": "main.tf\nmodules/vpc/variables.tf",
+      "explanation": "It prints the files it changed. Consistent formatting makes code review diffs show real changes, not whitespace noise.",
+      "why": "Plain 'terraform fmt' only touches the current directory — -recursive also covers modules/. In CI you'd use 'terraform fmt -check -recursive' instead, which fails the build rather than modifying files."
+    },
+    {
+      "prompt": "Check the configuration for syntax errors and internal consistency, without touching any real infrastructure.",
+      "expected_commands": ["terraform validate"],
+      "fake_output": "Success! The configuration is valid.",
+      "explanation": "validate catches typos, missing required arguments, and references to undefined variables — offline, in a second.",
+      "why": "plan would catch these too, but plan needs credentials and calls cloud APIs. validate is instant and free, making it the right first gate in a CI pipeline before anything expensive runs."
+    },
+    {
+      "prompt": "Create a plan and save it to a file called tfplan.",
+      "expected_commands": ["terraform plan -out=tfplan", "terraform plan -out tfplan"],
+      "fake_output": "Plan: 2 to add, 1 to change, 0 to destroy.\n\nSaved the plan to: tfplan\n\nTo perform exactly these actions, run:\n    terraform apply \"tfplan\"",
+      "explanation": "The plan file records exactly which changes were proposed.",
+      "why": "This is what makes review meaningful: someone approves THIS plan, and only this plan gets applied. Without -out, a later 'terraform apply' recalculates from scratch and could include changes nobody looked at."
+    },
+    {
+      "prompt": "Apply exactly that saved plan.",
+      "expected_commands": ["terraform apply tfplan", "terraform apply \"tfplan\""],
+      "fake_output": "aws_security_group.web: Modifying...\naws_instance.worker[0]: Creating...\nApply complete! Resources: 2 added, 1 changed, 0 destroyed.",
+      "explanation": "No confirmation prompt this time — the plan file itself IS the approval.",
+      "why": "If infrastructure changed since the plan was saved, Terraform refuses to apply a stale plan instead of guessing — exactly the safety property you want in automated pipelines."
+    },
+    {
+      "prompt": "Confirm nothing is left to change after the apply.",
+      "expected_commands": ["terraform plan"],
+      "fake_output": "No changes. Your infrastructure matches the configuration.",
+      "explanation": "A clean plan after apply confirms config, state, and real infrastructure all agree.",
+      "why": "If this plan still shows changes right after an apply, something is fighting Terraform — a default the provider keeps resetting, or another tool modifying the same resource. That's worth investigating before it causes drift."
+    }
+  ]
+}

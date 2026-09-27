@@ -1,0 +1,39 @@
+{
+  "id": "terraform-tutorial-009",
+  "type": "tutorial",
+  "category": "terraform",
+  "title": "Targeted Operations and Forced Replacement",
+  "difficulty": "advanced",
+  "tags": ["terraform", "target", "replace", "operations"],
+  "intro": "Sometimes you need to act on exactly one resource — recreate a broken server, or preview changes to one component. These are sharp tools: useful in emergencies, dangerous as a habit.",
+  "steps": [
+    {
+      "prompt": "A worker instance is in a bad state and needs to be rebuilt from scratch. Preview replacing only aws_instance.worker[1].",
+      "expected_commands": ["terraform plan -replace=\"aws_instance.worker[1]\"", "terraform plan -replace='aws_instance.worker[1]'", "terraform plan -replace=aws_instance.worker[1]"],
+      "fake_output": "# aws_instance.worker[1] will be replaced, as requested\n-/+ resource \"aws_instance\" \"worker\" {\n      ~ id = \"i-0abc\" -> (known after apply)\n    }\nPlan: 1 to add, 0 to change, 1 to destroy.",
+      "explanation": "-/+ means destroy then create. Only this one instance is affected.",
+      "why": "This replaces the old 'terraform taint' command, which was deprecated because it modified state immediately — before anyone reviewed a plan. -replace only takes effect as part of a normal, reviewable plan/apply."
+    },
+    {
+      "prompt": "Apply that replacement.",
+      "expected_commands": ["terraform apply -replace=\"aws_instance.worker[1]\"", "terraform apply -replace='aws_instance.worker[1]'", "terraform apply -replace=aws_instance.worker[1]"],
+      "fake_output": "aws_instance.worker[1]: Destroying...\naws_instance.worker[1]: Creating...\nApply complete! Resources: 1 added, 0 changed, 1 destroyed.",
+      "explanation": "A fresh instance replaces the broken one.",
+      "why": "If the resource has create_before_destroy in its lifecycle block, the new one is built before the old one is removed — worth setting on anything that serves traffic."
+    },
+    {
+      "prompt": "Preview changes to ONLY the security group, ignoring everything else in the configuration.",
+      "expected_commands": ["terraform plan -target=aws_security_group.web", "terraform plan -target aws_security_group.web"],
+      "fake_output": "Warning: Resource targeting is in effect\n\n  ~ ingress { ... }\nPlan: 0 to add, 1 to change, 0 to destroy.",
+      "explanation": "Terraform warns you: this is a partial view.",
+      "why": "-target is for emergencies and debugging, not routine use. It deliberately ignores other pending changes, so your real infrastructure and code can quietly drift apart. Always follow up with a full, untargeted plan."
+    },
+    {
+      "prompt": "Check for pending changes in a way a CI job can act on automatically: exit code 0 = no changes, 2 = changes present, 1 = error.",
+      "expected_commands": ["terraform plan -detailed-exitcode"],
+      "fake_output": "Plan: 0 to add, 1 to change, 0 to destroy.\n(exit code: 2)",
+      "explanation": "Exit code 2 signals that changes exist.",
+      "why": "This is the foundation of scheduled drift detection: run it nightly against production, and alert on exit code 2. That catches manual console changes (terraform-incident-001) within a day instead of at the next deploy."
+    }
+  ]
+}

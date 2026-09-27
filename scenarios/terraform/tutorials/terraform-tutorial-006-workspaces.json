@@ -1,0 +1,46 @@
+{
+  "id": "terraform-tutorial-006",
+  "type": "tutorial",
+  "category": "terraform",
+  "title": "Workspaces",
+  "difficulty": "intermediate",
+  "tags": ["terraform", "workspaces", "environments"],
+  "intro": "Workspaces let one configuration keep several independent state files — a quick way to spin up isolated copies of the same infrastructure.",
+  "steps": [
+    {
+      "prompt": "List existing workspaces.",
+      "expected_commands": ["terraform workspace list"],
+      "fake_output": "* default\n  staging",
+      "explanation": "The * marks the currently selected workspace.",
+      "why": "Every Terraform project starts in 'default'. Always know which workspace you're in before applying — they share code but not state."
+    },
+    {
+      "prompt": "Create a new workspace for a short-lived feature test environment called 'feature-login'.",
+      "expected_commands": ["terraform workspace new feature-login"],
+      "fake_output": "Created and switched to workspace \"feature-login\"!\n\nYou're now on a new, empty workspace.",
+      "explanation": "A brand new, empty state — applying here builds a completely separate copy of everything.",
+      "why": "This is the strongest use case for workspaces: temporary, disposable copies of an environment for testing a branch, torn down afterward."
+    },
+    {
+      "prompt": "Confirm which workspace is active before applying anything.",
+      "expected_commands": ["terraform workspace show"],
+      "fake_output": "feature-login",
+      "explanation": "Prints just the current workspace name.",
+      "why": "Your config can reference it as terraform.workspace, e.g. naming resources \"app-${terraform.workspace}\" so copies don't collide. Many teams also add it to their shell prompt to avoid applying in the wrong one."
+    },
+    {
+      "prompt": "Testing's done and you've destroyed its resources. Switch back to staging.",
+      "expected_commands": ["terraform workspace select staging"],
+      "fake_output": "Switched to workspace \"staging\".",
+      "explanation": "Subsequent plans and applies now use staging's state.",
+      "why": "Forgetting to switch back is the classic workspace accident: the next apply meant for staging goes to a different state entirely."
+    },
+    {
+      "prompt": "Delete the now-empty feature-login workspace.",
+      "expected_commands": ["terraform workspace delete feature-login"],
+      "fake_output": "Deleted workspace \"feature-login\"!",
+      "explanation": "Terraform refuses to delete a workspace whose state still has resources, unless forced.",
+      "why": "That refusal is a safety net: deleting a non-empty workspace would orphan real, still-running (still-billing) infrastructure with no state tracking it. Many teams prefer separate directories or separate backend configs over workspaces for dev/staging/prod precisely because it's harder to mix them up."
+    }
+  ]
+}

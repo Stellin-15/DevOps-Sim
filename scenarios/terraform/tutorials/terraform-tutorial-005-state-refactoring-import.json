@@ -1,0 +1,46 @@
+{
+  "id": "terraform-tutorial-005",
+  "type": "tutorial",
+  "category": "terraform",
+  "title": "Refactoring State: mv, rm, and import",
+  "difficulty": "advanced",
+  "tags": ["terraform", "state", "import", "refactoring"],
+  "intro": "Code changes, but infrastructure shouldn't be destroyed just because you renamed something. These commands change what Terraform thinks it manages without touching the real resources.",
+  "steps": [
+    {
+      "prompt": "You renamed resource 'aws_instance.web' to 'aws_instance.frontend' in the code. Tell Terraform it's the same resource, just moved to a new address.",
+      "expected_commands": ["terraform state mv aws_instance.web aws_instance.frontend"],
+      "fake_output": "Move \"aws_instance.web\" to \"aws_instance.frontend\"\nSuccessfully moved 1 object(s).",
+      "explanation": "The real server is untouched — only its address in state changes.",
+      "why": "Without this, plan sees 'web' removed from code (destroy!) and 'frontend' added (create!) — replacing a production server just because of a rename. Modern Terraform (1.1+) also supports a 'moved {}' block in code, which does the same thing but gets reviewed in a pull request — preferable for teams."
+    },
+    {
+      "prompt": "Confirm the rename produced no real changes.",
+      "expected_commands": ["terraform plan"],
+      "fake_output": "No changes. Your infrastructure matches the configuration.",
+      "explanation": "The server is now tracked under its new name, with nothing to create or destroy.",
+      "why": "Always plan immediately after state surgery. If plan wants to destroy anything, the mv didn't do what you expected — stop and investigate before any apply."
+    },
+    {
+      "prompt": "An old S3 bucket, 'legacy-logs', should no longer be managed by Terraform, but must NOT be deleted. Remove it from state only.",
+      "expected_commands": ["terraform state rm aws_s3_bucket.legacy_logs"],
+      "fake_output": "Removed aws_s3_bucket.legacy_logs\nSuccessfully removed 1 resource instance(s).",
+      "explanation": "Terraform forgets the bucket exists; the bucket and its data stay in AWS.",
+      "why": "Just deleting the resource block from code would make the next apply DESTROY the bucket. 'state rm' plus deleting the block from code is how you hand a resource off to be managed some other way, safely."
+    },
+    {
+      "prompt": "A security group, sg-0a1b2c3d4e, was created manually in the console. You've written a matching 'aws_security_group.admin' block — now bring the real one under Terraform's management.",
+      "expected_commands": ["terraform import aws_security_group.admin sg-0a1b2c3d4e"],
+      "fake_output": "aws_security_group.admin: Importing from ID \"sg-0a1b2c3d4e\"...\nImport successful!\n\nThe resources that were imported are shown above. These resources are now in your Terraform state and will henceforth be managed by Terraform.",
+      "explanation": "The existing resource is recorded in state under your address, without being recreated.",
+      "why": "Import only writes state — it doesn't write your .tf code. That's why the next step matters. Terraform 1.5+ also offers 'import {}' blocks and 'plan -generate-config-out' to draft the code for you."
+    },
+    {
+      "prompt": "Check whether your hand-written code actually matches the imported resource.",
+      "expected_commands": ["terraform plan"],
+      "fake_output": "# aws_security_group.admin will be updated in-place\n  ~ description = \"Managed by Terraform\" -> \"Admin access\"\nPlan: 0 to add, 1 to change, 0 to destroy.",
+      "explanation": "One mismatch: your code's description differs from the real one.",
+      "why": "The goal after an import is a clean plan. Adjust your code to match reality (here, set description = \"Admin access\") rather than letting apply 'correct' a live resource you only just started managing — some changes, like a security group description, force full replacement."
+    }
+  ]
+}

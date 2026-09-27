@@ -1,0 +1,37 @@
+{
+  "id": "terraform-incident-003",
+  "type": "incident",
+  "category": "terraform",
+  "title": "A Code Cleanup Wants to Destroy the Production Database",
+  "difficulty": "advanced",
+  "tags": ["terraform", "state", "refactoring", "safety"],
+  "intro": "A pull request titled 'refactor: move database into a module' passed review. The deploy pipeline's plan step posted its output — and someone noticed it before approving the apply.",
+  "steps": [
+    {
+      "prompt": "Look at the plan that was posted.",
+      "expected_commands": ["terraform plan"],
+      "fake_output": "# aws_db_instance.main will be destroyed\n# module.database.aws_db_instance.main will be created\nPlan: 1 to add, 0 to change, 1 to destroy.",
+      "hint": "Read every 'destroy' line in a plan. A refactor should never destroy anything."
+    },
+    {
+      "prompt": "Terraform sees the old address as removed and the new module address as brand new. Confirm the existing database's current state address.",
+      "expected_commands": ["terraform state list | grep db_instance", "terraform state list"],
+      "fake_output": "aws_db_instance.main",
+      "hint": "The resource is still recorded in state under its old, root-level address."
+    },
+    {
+      "prompt": "Back up state, then move the database's state entry to its new address inside the module.",
+      "expected_commands": ["terraform state mv aws_db_instance.main module.database.aws_db_instance.main"],
+      "fake_output": "Move \"aws_db_instance.main\" to \"module.database.aws_db_instance.main\"\nSuccessfully moved 1 object(s).",
+      "hint": "state mv changes only the address Terraform uses to track it; the database itself is untouched."
+    },
+    {
+      "prompt": "Re-run the plan to confirm the destroy is gone.",
+      "expected_commands": ["terraform plan"],
+      "fake_output": "No changes. Your infrastructure matches the configuration.",
+      "hint": "A correct refactor ends with zero changes."
+    }
+  ],
+  "resolution": "Moving a resource into a module changes its address (aws_db_instance.main became module.database.aws_db_instance.main). Terraform matches resources by address, so it concluded the old database should be destroyed and a new, empty one created — which would have wiped production data. The plan made this visible, but only because someone actually read it. Fixes, in order of preference: (1) put a 'moved { from = aws_db_instance.main, to = module.database.aws_db_instance.main }' block in the same PR, so the refactor is safe by construction and reviewed as code; (2) add 'lifecycle { prevent_destroy = true }' to databases and other stateful resources, which makes Terraform refuse any plan that destroys them; (3) have CI fail or require extra approval whenever a plan contains a destroy on production. Any one of these would have stopped this on its own.",
+  "real_commands_used": ["terraform plan", "terraform state list", "terraform state mv"]
+}

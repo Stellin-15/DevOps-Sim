@@ -1,0 +1,43 @@
+{
+  "id": "terraform-incident-002",
+  "type": "incident",
+  "category": "terraform",
+  "title": "Every Pipeline Blocked by a State Lock",
+  "difficulty": "intermediate",
+  "tags": ["terraform", "state", "locking", "ci"],
+  "intro": "All Terraform pipelines have been failing for an hour with 'Error acquiring the state lock'. Nobody on the team thinks they're running anything.",
+  "steps": [
+    {
+      "prompt": "Run a plan to see the full lock error, including who holds it.",
+      "expected_commands": ["terraform plan"],
+      "fake_output": "Error: Error acquiring the state lock\n\nLock Info:\n  ID:        9f2c-44e1-b7a0\n  Path:      my-tf-state/prod/terraform.tfstate\n  Operation: OperationTypeApply\n  Who:       runner@ci-runner-7\n  Created:   2026-09-27 09:02:11 UTC",
+      "hint": "The lock info tells you exactly which machine and operation acquired it, and when."
+    },
+    {
+      "prompt": "The lock was taken by an apply on ci-runner-7 over an hour ago. Check that pipeline's runs to see whether that apply is actually still running.",
+      "expected_commands": ["gh run list --workflow=terraform.yml", "gh run list"],
+      "fake_output": "STATUS     NAME           WORKFLOW        EVENT  ELAPSED\ncancelled  apply prod     terraform.yml   push   2m14s   (09:02)",
+      "hint": "Confirm the lock holder is really dead before touching the lock."
+    },
+    {
+      "prompt": "That run was cancelled mid-apply at 09:04 — it died without releasing its lock. Before unlocking, verify state is intact by pulling it.",
+      "expected_commands": ["terraform state pull > state-backup.json", "terraform state pull"],
+      "fake_output": "(state saved — serial 143, 38 resources)",
+      "hint": "Always take a backup before any lock or state surgery."
+    },
+    {
+      "prompt": "Release the orphaned lock.",
+      "expected_commands": ["terraform force-unlock 9f2c-44e1-b7a0"],
+      "fake_output": "Terraform state has been successfully unlocked!",
+      "hint": "Use the exact lock ID from the error message."
+    },
+    {
+      "prompt": "The cancelled apply may have left things half-done. Run a plan to see what reality looks like now.",
+      "expected_commands": ["terraform plan"],
+      "fake_output": "# aws_instance.worker[2] will be created\nPlan: 1 to add, 0 to change, 0 to destroy.",
+      "hint": "An interrupted apply often leaves some resources created and others not."
+    }
+  ],
+  "resolution": "A pipeline run was cancelled halfway through an apply. Cancelling killed Terraform before it could release its state lock, so every later run was blocked. force-unlock was safe here ONLY because the run was confirmed dead — unlocking a lock held by a still-running apply allows two concurrent writes, which is exactly how state gets corrupted. The post-unlock plan also showed the interrupted apply had created 2 of 3 workers; finishing with a normal apply reconciles that. Process fixes: configure CI so Terraform receives a graceful interrupt (SIGINT) on cancel rather than being killed, serialize applies per environment with a pipeline concurrency group, and treat 'cancel during apply' as something to avoid rather than a routine action.",
+  "real_commands_used": ["terraform plan", "gh run list", "terraform state pull", "terraform force-unlock"]
+}

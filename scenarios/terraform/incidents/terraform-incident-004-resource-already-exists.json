@@ -1,0 +1,37 @@
+{
+  "id": "terraform-incident-004",
+  "type": "incident",
+  "category": "terraform",
+  "title": "Apply Fails: Resource Already Exists",
+  "difficulty": "intermediate",
+  "tags": ["terraform", "import", "state"],
+  "intro": "You wrote Terraform for the company's existing 'assets-prod' S3 bucket so it can finally be managed as code. The apply fails immediately.",
+  "steps": [
+    {
+      "prompt": "Run the apply to see the exact error.",
+      "expected_commands": ["terraform apply"],
+      "fake_output": "aws_s3_bucket.assets: Creating...\nError: creating S3 Bucket (assets-prod): BucketAlreadyOwnedByYou: Your previous request to create the named bucket succeeded and you already own it.",
+      "hint": "Terraform tried to CREATE something that already exists."
+    },
+    {
+      "prompt": "Terraform doesn't know the bucket exists because it isn't in state. Confirm that.",
+      "expected_commands": ["terraform state list"],
+      "fake_output": "aws_iam_role.app\naws_instance.web",
+      "hint": "Is aws_s3_bucket.assets in the list?"
+    },
+    {
+      "prompt": "Bring the existing bucket under Terraform's management instead of creating a new one.",
+      "expected_commands": ["terraform import aws_s3_bucket.assets assets-prod"],
+      "fake_output": "aws_s3_bucket.assets: Importing from ID \"assets-prod\"...\nImport successful!",
+      "hint": "import records an existing resource in state at the address you wrote in code."
+    },
+    {
+      "prompt": "Check whether your code matches the real bucket's configuration.",
+      "expected_commands": ["terraform plan"],
+      "fake_output": "# aws_s3_bucket_versioning.assets will be created\n  + versioning_configuration { status = \"Suspended\" }\nPlan: 1 to add, 0 to change, 0 to destroy.",
+      "hint": "After an import, plan shows every difference between your code and reality."
+    }
+  ],
+  "resolution": "Terraform only manages what's in its state. A resource created by hand (or by a different Terraform project) is invisible to it, so writing a resource block for it makes Terraform try to create a duplicate. 'terraform import' fixes that by recording the existing resource at your code's address. The follow-up plan matters just as much: it revealed the code would change versioning to 'Suspended' — but the real bucket has versioning ENABLED, and suspending it would stop protecting objects from accidental overwrites. Adjust the code to match reality first, get a clean plan, and only then start making deliberate changes. On Terraform 1.5+, an 'import {}' block does the same thing reviewably in a pull request.",
+  "real_commands_used": ["terraform apply", "terraform state list", "terraform import", "terraform plan"]
+}

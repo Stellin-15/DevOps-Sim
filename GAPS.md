@@ -232,3 +232,48 @@ Strong on operating and troubleshooting an existing Linux server — the
 incident set here covers problems that genuinely trip up experienced
 engineers. Not yet enough for automating Linux work, which requires
 scripting practice this game doesn't offer.
+
+---
+
+# Part 4 — Terraform
+
+**Content:** 10 tutorials, 6 incidents.
+
+## Covered
+
+Every section of `commands/terraform.md`: the core workflow plus the safe
+CI variant (fmt -recursive, validate, plan -out, apply tfplan), variables
+and tfvars (and why -var leaves no record), outputs (-json, -raw),
+console, state inspection (list/show/pull), state refactoring (mv, rm,
+import — plus the modern `moved {}`/`import {}` blocks), workspaces,
+remote state migration and locking (-migrate-state vs -reconfigure,
+force-unlock), modules/providers/lock files (init -upgrade, cross-
+platform `providers lock`), targeted and forced-replacement operations
+(-replace superseding the deprecated `taint`, -target's dangers,
+-detailed-exitcode for drift detection), and debugging (TF_LOG, graph,
+parallelism, plan JSON for policy checks). Incidents cover the failures
+that actually hurt Terraform teams: manual-console drift, orphaned state
+locks from cancelled pipelines, a refactor that would destroy a
+production database, importing pre-existing resources, a floating
+provider version breaking CI, and secrets leaked through a committed
+state file.
+
+## Still missing
+
+- **Writing HCL** — as with Dockerfiles, you learn to *operate* Terraform
+  here, not to *author* it. A "Terraform Lab" validating a real .tf file
+  (via `terraform validate` or HCL parsing) would close this.
+- Writing reusable modules (inputs/outputs/versioning), `for_each` vs
+  `count` trade-offs, `dynamic` blocks, data sources.
+- Cloud-provider knowledge itself (VPCs, IAM, subnets) — Terraform is
+  only as useful as your understanding of what it's creating. This is the
+  largest real-world prerequisite and is out of scope for a CLI game.
+- Terraform Cloud / Atlantis / OpenTofu workflows, Terragrunt.
+
+## Readiness verdict
+
+Good preparation for safely operating Terraform in a team — the incident
+set targets the mistakes that cause real outages and data loss. Pair it
+with actual HCL authoring on a free-tier cloud account and cloud
+fundamentals study (e.g. an AWS Solutions Architect Associate level) to
+be genuinely productive.

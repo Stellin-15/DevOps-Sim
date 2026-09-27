@@ -1,0 +1,39 @@
+{
+  "id": "terraform-tutorial-004",
+  "type": "tutorial",
+  "category": "terraform",
+  "title": "Inspecting State",
+  "difficulty": "intermediate",
+  "tags": ["terraform", "state"],
+  "intro": "The state file is Terraform's memory of what it built. Reading it safely is the foundation for every state-related fix you'll ever do.",
+  "steps": [
+    {
+      "prompt": "List every resource Terraform is tracking in state.",
+      "expected_commands": ["terraform state list"],
+      "fake_output": "aws_instance.web\naws_instance.worker[0]\naws_instance.worker[1]\naws_security_group.web\nmodule.vpc.aws_subnet.private[0]\nmodule.vpc.aws_vpc.main",
+      "explanation": "Resource addresses: type.name, [index] for count/for_each, and module.name. prefixes for resources inside modules.",
+      "why": "These exact addresses are what every other state command takes as input — you'll copy-paste from this list constantly."
+    },
+    {
+      "prompt": "Show every attribute Terraform has recorded for the first worker instance.",
+      "expected_commands": ["terraform state show aws_instance.worker[0]", "terraform state show 'aws_instance.worker[0]'", "terraform state show \"aws_instance.worker[0]\""],
+      "fake_output": "resource \"aws_instance\" \"worker\" {\n    ami           = \"ami-12345\"\n    id            = \"i-0abc123def456\"\n    instance_type = \"t3.micro\"\n    private_ip    = \"10.0.1.14\"\n}",
+      "explanation": "Includes computed values like id and private_ip that you never wrote in your config.",
+      "why": "Quote addresses containing brackets in real shells — [0] can be interpreted as a glob pattern and silently mangled before Terraform even sees it."
+    },
+    {
+      "prompt": "Show the entire state in human-readable form.",
+      "expected_commands": ["terraform show"],
+      "fake_output": "# aws_instance.web:\nresource \"aws_instance\" \"web\" {\n    id = \"i-0fed987cba654\"\n    ...\n}\n# aws_security_group.web:\n...",
+      "explanation": "Everything at once — useful for small projects, overwhelming for large ones.",
+      "why": "'state show <address>' is the targeted version. For large projects, 'terraform show -json | jq' lets you query specific values across the whole state programmatically."
+    },
+    {
+      "prompt": "Download the raw state file from the remote backend to inspect it locally.",
+      "expected_commands": ["terraform state pull > state.json", "terraform state pull"],
+      "fake_output": "{\n  \"version\": 4,\n  \"terraform_version\": \"1.9.5\",\n  \"serial\": 142,\n  \"lineage\": \"a1b2c3d4-...\",\n  \"resources\": [...]\n}",
+      "explanation": "The raw JSON state, including the 'serial' (incremented on every write) and 'lineage' (identifies this state's history).",
+      "why": "This is also your manual backup before any risky state surgery. The state file often contains secrets in plain text (database passwords, private keys) — treat any pulled copy as sensitive and delete it when done."
+    }
+  ]
+}

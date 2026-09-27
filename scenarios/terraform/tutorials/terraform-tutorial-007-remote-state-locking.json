@@ -1,0 +1,39 @@
+{
+  "id": "terraform-tutorial-007",
+  "type": "tutorial",
+  "category": "terraform",
+  "title": "Remote State and Locking",
+  "difficulty": "intermediate",
+  "tags": ["terraform", "state", "backend", "teams"],
+  "intro": "A local terraform.tfstate file on your laptop works for one person. The moment a second person or a CI pipeline runs Terraform, you need shared remote state with locking — otherwise two applies can corrupt it.",
+  "steps": [
+    {
+      "prompt": "You've added an S3 backend block to terraform {} in your config. Initialize and migrate your existing local state into it.",
+      "expected_commands": ["terraform init -migrate-state"],
+      "fake_output": "Initializing the backend...\nDo you want to copy existing state to the new backend?\n  Enter a value: yes\n\nSuccessfully configured the backend \"s3\"!",
+      "explanation": "The local state is copied into S3; from now on every run reads and writes state there.",
+      "why": "Plain 'terraform init' also detects the backend change and asks to migrate. -migrate-state makes the intent explicit, which matters in scripts. Keep a backup of the old local file until you've confirmed the remote state works."
+    },
+    {
+      "prompt": "Confirm the resources are all still tracked after the migration.",
+      "expected_commands": ["terraform state list"],
+      "fake_output": "aws_instance.web\naws_security_group.web\nmodule.vpc.aws_vpc.main",
+      "explanation": "Same resources as before — now read from S3.",
+      "why": "If this came back empty, the migration went wrong — and the next plan would try to create everything from scratch, duplicating (or conflicting with) all your live infrastructure."
+    },
+    {
+      "prompt": "You changed the backend's bucket name in config and want to start fresh against it, without migrating anything.",
+      "expected_commands": ["terraform init -reconfigure"],
+      "fake_output": "Initializing the backend...\nSuccessfully configured the backend \"s3\"!",
+      "explanation": "-reconfigure ignores any previously-saved backend configuration and uses what's in the code now.",
+      "why": "-migrate-state copies state over; -reconfigure deliberately does NOT. Mixing them up either duplicates state where you didn't want it, or leaves you pointing at an empty backend. Know which one you mean."
+    },
+    {
+      "prompt": "A plan is failing with 'Error acquiring the state lock'. Check the lock ID in the error, then confirm with your team the lock-holder is gone, and release lock 9f2c-44e1.",
+      "expected_commands": ["terraform force-unlock 9f2c-44e1"],
+      "fake_output": "Do you really want to force-unlock?\n  Enter a value: yes\n\nTerraform state has been successfully unlocked!",
+      "explanation": "Locks prevent two runs from writing state at once. A crashed or killed run can leave a lock behind.",
+      "why": "force-unlock is only safe when you're CERTAIN no run is still in progress — releasing a lock held by a live apply lets two applies write state simultaneously, which is exactly what corrupts it. Always check first (see terraform-incident-002)."
+    }
+  ]
+}
