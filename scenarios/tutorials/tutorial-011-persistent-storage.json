@@ -1,0 +1,39 @@
+{
+  "id": "tutorial-011",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Persistent Storage: PV, PVC & StorageClass",
+  "difficulty": "intermediate",
+  "tags": ["storage", "volumes", "pvc"],
+  "intro": "Pods are ephemeral — their disk disappears when they do. PersistentVolumes and PersistentVolumeClaims are how you keep data around.",
+  "steps": [
+    {
+      "prompt": "List the available StorageClasses in the cluster.",
+      "expected_commands": ["kubectl get storageclass", "kubectl get sc"],
+      "fake_output": "NAME                 PROVISIONER             AGE\nstandard (default)   kubernetes.io/aws-ebs   30d",
+      "explanation": "A StorageClass defines HOW storage gets provisioned (which disk type, which cloud provider) — you request storage by class, not by manually creating disks.",
+      "why": "Without a StorageClass, someone has to manually pre-create PersistentVolumes one at a time — dynamic provisioning via a class is what lets a PVC just work automatically."
+    },
+    {
+      "prompt": "Check the PersistentVolumeClaims in the namespace.",
+      "expected_commands": ["kubectl get pvc", "kubectl get persistentvolumeclaims"],
+      "fake_output": "NAME      STATUS   VOLUME     CAPACITY   STORAGECLASS   AGE\ndb-data   Bound    pvc-8f2a   10Gi       standard       2h",
+      "explanation": "A PVC is a request for storage from a pod's perspective. STATUS 'Bound' means it successfully got matched to an actual volume.",
+      "why": "A pod references the PVC by name, not the underlying disk directly — that indirection is what lets the same pod spec work whether storage comes from AWS EBS, a local disk, or anything else."
+    },
+    {
+      "prompt": "See the actual PersistentVolume backing that claim.",
+      "expected_commands": ["kubectl get pv", "kubectl get persistentvolumes"],
+      "fake_output": "NAME       CAPACITY   STATUS   CLAIM             STORAGECLASS   AGE\npvc-8f2a   10Gi       Bound    default/db-data   standard       2h",
+      "explanation": "The PV is the actual piece of storage; the PVC is the claim/reservation on it. Most day-to-day work only touches PVCs — PVs are usually provisioned automatically.",
+      "why": "You'd inspect the PV directly (instead of just the PVC) when the claim is stuck Pending — that's where you'd find out if there's simply no matching storage available."
+    },
+    {
+      "prompt": "Get the full details of the 'db-data' PVC to check why it might be stuck.",
+      "expected_commands": ["kubectl describe pvc db-data"],
+      "fake_output": "Name: db-data\nStatus: Bound\nVolume: pvc-8f2a\nCapacity: 10Gi\nAccess Modes: RWO\nEvents: <none>",
+      "explanation": "Events at the bottom would show scheduling/provisioning failures, same pattern as describing a Pod.",
+      "why": "This is the same describe-for-events pattern as pods and deployments — whatever the resource type, 'describe' is usually where the actual failure reason shows up, not 'get'."
+    }
+  ]
+}

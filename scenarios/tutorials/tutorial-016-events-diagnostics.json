@@ -1,0 +1,39 @@
+{
+  "id": "tutorial-016",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Events, Diagnostics & Introspection",
+  "difficulty": "intermediate",
+  "tags": ["events", "debugging", "introspection"],
+  "intro": "Beyond logs and describe, kubectl has tools for seeing the raw event stream and looking up what any resource type/field actually means.",
+  "steps": [
+    {
+      "prompt": "See the most recent cluster events, oldest first.",
+      "expected_commands": ["kubectl get events --sort-by=.metadata.creationTimestamp"],
+      "fake_output": "LAST SEEN   TYPE      REASON        OBJECT       MESSAGE\n5m          Warning   BackOff       pod/web-abc  Back-off restarting failed container\n1m          Normal    Scheduled     pod/db-1     Successfully assigned",
+      "explanation": "Plain 'kubectl get events' isn't sorted by default and can be confusing — this flag puts them in actual chronological order.",
+      "why": "You could also filter to one object specifically with --field-selector=involvedObject.name=<pod>, which is better once you know exactly what you're investigating rather than scanning everything."
+    },
+    {
+      "prompt": "You don't remember every field a Pod spec supports — look it up.",
+      "expected_commands": ["kubectl explain pod.spec"],
+      "fake_output": "KIND: Pod\nVERSION: v1\n\nFIELD: spec <PodSpec>\n\nDESCRIPTION:\n  Specification of the desired behavior of the pod.\n  containers, volumes, nodeSelector, restartPolicy, ...",
+      "explanation": "'explain' pulls field documentation straight from the API server — no need to leave the terminal or guess at YAML structure.",
+      "why": "This beats searching the web for k8s API docs since it's guaranteed to match the exact API version your actual cluster is running, not just whatever version a search result happens to describe."
+    },
+    {
+      "prompt": "Extract just the phase of pod 'web-abc' directly, without eyeballing full output.",
+      "expected_commands": ["kubectl get pod web-abc -o jsonpath='{.status.phase}'"],
+      "fake_output": "Running",
+      "explanation": "jsonpath pulls exactly one field out of the object — useful for scripting instead of parsing describe's human-readable text.",
+      "why": "'kubectl get pod web-abc -o yaml' has this too, but jsonpath returns ONLY the value you asked for — much easier to use inside a shell script's if-statement."
+    },
+    {
+      "prompt": "See which API resource types exist in this cluster (useful when you're not sure of a resource's short name).",
+      "expected_commands": ["kubectl api-resources"],
+      "fake_output": "NAME          SHORTNAMES   APIVERSION   NAMESPACED   KIND\npods          po           v1           true         Pod\ndeployments   deploy       apps/v1      true         Deployment",
+      "explanation": "This is the master list every short name (po, deploy, svc...) you've been using throughout these tutorials actually comes from.",
+      "why": "This is the fastest way to discover a resource type's exact name/shortname/API group when you're working with something less common than pods or deployments, instead of guessing or searching docs."
+    }
+  ]
+}

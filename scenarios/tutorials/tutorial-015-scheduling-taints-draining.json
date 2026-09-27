@@ -1,0 +1,39 @@
+{
+  "id": "tutorial-015",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Scheduling: Taints, Tolerations & Draining Nodes",
+  "difficulty": "advanced",
+  "tags": ["scheduling", "nodes", "taints"],
+  "intro": "Sometimes a pod won't schedule, or you need to safely take a node out of rotation for maintenance. This is how you control where pods do and don't run.",
+  "steps": [
+    {
+      "prompt": "List the nodes in the cluster with extra detail.",
+      "expected_commands": ["kubectl get nodes -o wide"],
+      "fake_output": "NAME     STATUS   ROLES    AGE   VERSION\nnode-1   Ready    <none>  30d   v1.29.0\nnode-2   Ready    <none>  30d   v1.29.0",
+      "explanation": "-o wide adds extra columns like internal IP and OS image — the plain 'get nodes' only shows status and age.",
+      "why": "'kubectl describe node <name>' gives you way more (capacity, allocated resources, taints) for one node at a time — 'get nodes -o wide' is for scanning all of them quickly."
+    },
+    {
+      "prompt": "Mark node-2 as unschedulable so no new pods land there (you're about to do maintenance).",
+      "expected_commands": ["kubectl cordon node-2"],
+      "fake_output": "node/node-2 cordoned",
+      "explanation": "Cordon only blocks NEW pods — existing pods on node-2 keep running untouched.",
+      "why": "This is deliberately less disruptive than drain — cordon is the first step when you want to stop new scheduling without yet evicting anything."
+    },
+    {
+      "prompt": "Now actually evict the existing pods off node-2 safely, ignoring DaemonSet-managed pods.",
+      "expected_commands": ["kubectl drain node-2 --ignore-daemonsets"],
+      "fake_output": "node/node-2 already cordoned\nevicting pod default/web-abc\nnode/node-2 drained",
+      "explanation": "Drain respects PodDisruptionBudgets and gracefully evicts pods (letting Deployments reschedule them elsewhere) rather than just killing them.",
+      "why": "--ignore-daemonsets is required because DaemonSet pods are meant to run on every node and would otherwise block the drain forever, since they can't be 'moved' anywhere else."
+    },
+    {
+      "prompt": "Maintenance done — bring node-2 back into rotation.",
+      "expected_commands": ["kubectl uncordon node-2"],
+      "fake_output": "node/node-2 uncordoned",
+      "explanation": "This just undoes the cordon — new pods can schedule there again. It does NOT move the pods that got drained away back.",
+      "why": "There's no 'undrain' — uncordon only reopens scheduling; anything that moved off during drain stays where it rescheduled to."
+    }
+  ]
+}

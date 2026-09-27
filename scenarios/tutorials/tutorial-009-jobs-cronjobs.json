@@ -1,0 +1,39 @@
+{
+  "id": "tutorial-009",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Jobs & CronJobs",
+  "difficulty": "intermediate",
+  "tags": ["jobs", "cronjobs"],
+  "intro": "Not everything runs forever. Jobs run a task to completion once; CronJobs run one on a schedule.",
+  "steps": [
+    {
+      "prompt": "Run a one-off Job named 'db-migrate' using the migrate-tool image.",
+      "expected_commands": ["kubectl create job db-migrate --image=migrate-tool"],
+      "fake_output": "job.batch/db-migrate created",
+      "explanation": "A Job creates a pod, waits for it to exit successfully, and is done — no restarting on success like a Deployment would.",
+      "why": "This is different from 'kubectl run' — run makes a bare pod that's expected to keep running; a Job is specifically for something meant to finish."
+    },
+    {
+      "prompt": "Check the Job's status.",
+      "expected_commands": ["kubectl get jobs"],
+      "fake_output": "NAME          COMPLETIONS   DURATION   AGE\ndb-migrate    1/1           8s         15s",
+      "explanation": "COMPLETIONS 1/1 means the task ran and exited 0 — done.",
+      "why": "'kubectl get pods' would also show the underlying pod, but 'get jobs' gives you the completion status directly instead of having to interpret pod phase yourself."
+    },
+    {
+      "prompt": "Create a CronJob named 'nightly-backup' using the backup-tool image, running at 2am every day.",
+      "expected_commands": ["kubectl create cronjob nightly-backup --image=backup-tool --schedule=\"0 2 * * *\""],
+      "fake_output": "cronjob.batch/nightly-backup created",
+      "explanation": "The schedule is standard cron syntax — this one means minute 0, hour 2, every day.",
+      "why": "A CronJob is really just a template that stamps out a new Job on schedule — everything you just learned about Jobs applies to each run it creates."
+    },
+    {
+      "prompt": "You don't want to wait until 2am to test it — trigger a manual run of the CronJob right now.",
+      "expected_commands": ["kubectl create job --from=cronjob/nightly-backup manual-test-run"],
+      "fake_output": "job.batch/manual-test-run created",
+      "explanation": "This creates a Job using the CronJob's pod template, immediately, without touching the schedule.",
+      "why": "This is the standard way to test a CronJob's behavior without waiting for its actual schedule or temporarily editing the cron expression."
+    }
+  ]
+}

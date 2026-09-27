@@ -1,0 +1,39 @@
+{
+  "id": "tutorial-010",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Ingress & Network Policies",
+  "difficulty": "intermediate",
+  "tags": ["ingress", "networking", "security"],
+  "intro": "A ClusterIP Service isn't reachable from outside the cluster. Ingress handles external HTTP(S) routing; NetworkPolicies control which pods can talk to which.",
+  "steps": [
+    {
+      "prompt": "List the Ingress resources in the namespace.",
+      "expected_commands": ["kubectl get ingress", "kubectl get ing"],
+      "fake_output": "NAME      CLASS   HOSTS              ADDRESS        PORTS   AGE\nweb-ing   nginx   web.example.com    203.0.113.10   80      1h",
+      "explanation": "An Ingress routes external HTTP traffic (by hostname/path) to internal Services — it's how 'web.example.com' actually reaches the 'web' Service.",
+      "why": "A LoadBalancer Service could also expose something externally, but that's one IP per Service. Ingress lets many hostnames/paths share a single external IP and load balancer."
+    },
+    {
+      "prompt": "Get the full routing details of the 'web-ing' Ingress.",
+      "expected_commands": ["kubectl describe ingress web-ing"],
+      "fake_output": "Name: web-ing\nHost: web.example.com\nPath: /\nBackend: web:80\nAnnotations: kubernetes.io/ingress.class: nginx",
+      "explanation": "This confirms exactly which Service and port the hostname/path is wired to.",
+      "why": "'kubectl get ingress web-ing -o yaml' shows the same rules, but describe is faster to read when you just need to confirm the backend Service and port."
+    },
+    {
+      "prompt": "Check if there are any NetworkPolicies restricting traffic in this namespace.",
+      "expected_commands": ["kubectl get networkpolicies", "kubectl get netpol"],
+      "fake_output": "NAME              POD-SELECTOR   AGE\ndeny-from-other   app=db          3d",
+      "explanation": "If a pod suddenly can't reach another pod it could reach yesterday, a NetworkPolicy — not a Service or DNS issue — is a common, easy-to-miss cause.",
+      "why": "There's no NetworkPolicy equivalent of 'describe pod' style troubleshooting on the receiving end — you have to explicitly check for policies, since by default all traffic is allowed unless one exists."
+    },
+    {
+      "prompt": "Get the details of the 'deny-from-other' policy to see exactly what it blocks.",
+      "expected_commands": ["kubectl describe networkpolicy deny-from-other"],
+      "fake_output": "Name: deny-from-other\nPod Selector: app=db\nAllowing ingress traffic:\n  From: PodSelector app=web\nPolicy Types: Ingress",
+      "explanation": "This policy means: pods labeled app=db only accept incoming traffic from pods labeled app=web — everything else is dropped.",
+      "why": "NetworkPolicies are allow-lists, not block-lists — once any policy selects a pod, everything not explicitly allowed is denied, which is why 'nothing matches' silently breaks things instead of erroring."
+    }
+  ]
+}

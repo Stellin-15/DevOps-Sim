@@ -1,0 +1,39 @@
+{
+  "id": "tutorial-014",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Labels, Selectors & Annotations",
+  "difficulty": "intermediate",
+  "tags": ["labels", "selectors", "annotations"],
+  "intro": "Almost everything in Kubernetes finds its targets through labels, not names. Let's use them deliberately instead of just relying on them working automatically.",
+  "steps": [
+    {
+      "prompt": "Show all pods along with their labels.",
+      "expected_commands": ["kubectl get pods --show-labels"],
+      "fake_output": "NAME      READY   STATUS    LABELS\nweb-abc   1/1     Running   app=web,env=prod,tier=frontend\ndb-0      1/1     Running   app=db,env=prod,tier=backend",
+      "explanation": "Labels are just key-value tags — Services, Deployments, and NetworkPolicies all use them to decide which pods they apply to.",
+      "why": "Without --show-labels, 'get pods' hides this entirely — you'd have to describe each pod one at a time to see its labels otherwise."
+    },
+    {
+      "prompt": "Find only the pods labeled tier=frontend.",
+      "expected_commands": ["kubectl get pods -l tier=frontend"],
+      "fake_output": "NAME      READY   STATUS\nweb-abc   1/1     Running",
+      "explanation": "This is exactly the same selection logic a Service uses internally to decide which pods to route to.",
+      "why": "You could grep the --show-labels output instead, but -l does real server-side filtering — it scales to thousands of pods where grepping a full list wouldn't."
+    },
+    {
+      "prompt": "Find pods in either 'prod' or 'staging' environments in one query.",
+      "expected_commands": ["kubectl get pods -l 'env in (prod,staging)'"],
+      "fake_output": "NAME      READY   STATUS    LABELS\nweb-abc   1/1     Running   env=prod\nweb-stg   1/1     Running   env=staging",
+      "explanation": "The 'in (...)' set-based syntax lets you match multiple values for one key in a single command instead of running it twice and merging results.",
+      "why": "Simple '-l key=value' can only match one exact value — set-based selectors ('in', 'notin', 'exists') are what you need once you're matching more than one possible value."
+    },
+    {
+      "prompt": "Add an annotation to the 'web-abc' pod noting who deployed it, without touching its labels.",
+      "expected_commands": ["kubectl annotate pod web-abc deployed-by=alice"],
+      "fake_output": "pod/web-abc annotated",
+      "explanation": "Annotations and labels look similar but serve different purposes: labels are for selection/grouping, annotations are for arbitrary metadata that nothing selects on.",
+      "why": "You could technically cram this into a label instead, but Selectors would then start matching on it accidentally — annotations exist specifically so you can attach metadata that nothing queries against."
+    }
+  ]
+}

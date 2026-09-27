@@ -1,0 +1,39 @@
+{
+  "id": "tutorial-017",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Applying & Diffing Manifests",
+  "difficulty": "intermediate",
+  "tags": ["manifests", "apply", "gitops"],
+  "intro": "Typing one-off imperative commands (like earlier tutorials) is great for learning and quick fixes, but real infrastructure lives in version-controlled YAML files applied declaratively.",
+  "steps": [
+    {
+      "prompt": "Apply a manifest file 'deployment.yaml' to the cluster.",
+      "expected_commands": ["kubectl apply -f deployment.yaml"],
+      "fake_output": "deployment.apps/web configured",
+      "explanation": "apply is declarative — it compares the file to the cluster's current state and only changes what's different, unlike 'create' which fails if the object already exists.",
+      "why": "Every imperative command from earlier tutorials ('kubectl create deployment', 'kubectl scale'...) has a YAML+apply equivalent — apply is what you'd actually use in CI/CD since it's repeatable and diffable."
+    },
+    {
+      "prompt": "Before applying a change, preview exactly what would be different.",
+      "expected_commands": ["kubectl diff -f deployment.yaml"],
+      "fake_output": "- image: nginx:1.24\n+ image: nginx:1.25",
+      "explanation": "This shows a diff against the live cluster state without changing anything — a safety check before you actually apply.",
+      "why": "This is the closest thing kubectl has to a dry-run-with-explanation — '--dry-run=client' would validate the file, but diff specifically shows what would CHANGE versus what's live right now."
+    },
+    {
+      "prompt": "Apply every YAML file in the './manifests/' directory at once.",
+      "expected_commands": ["kubectl apply -f ./manifests/"],
+      "fake_output": "deployment.apps/web configured\nservice/web unchanged\nconfigmap/app-config unchanged",
+      "explanation": "Pointing -f at a directory applies every manifest inside it — 'unchanged' means that particular object already matched, so nothing happened to it.",
+      "why": "This is how most teams actually deploy — one 'apply -f ./manifests/' rather than remembering and re-running a dozen individual imperative commands."
+    },
+    {
+      "prompt": "Back up the current live state of the 'web' deployment to a file before making a risky change.",
+      "expected_commands": ["kubectl get deployment web -o yaml > backup.yaml"],
+      "fake_output": "(no terminal output — the deployment's current spec was written to backup.yaml)",
+      "explanation": "This captures the exact current spec as YAML, so if a change goes wrong you have something concrete to apply back.",
+      "why": "This isn't a real substitute for actual version control (git), but it's a fast, no-setup safety net for a risky one-off change made outside your normal GitOps flow."
+    }
+  ]
+}

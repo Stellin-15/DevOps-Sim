@@ -1,0 +1,39 @@
+{
+  "id": "tutorial-008",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "ReplicaSets, StatefulSets & DaemonSets",
+  "difficulty": "intermediate",
+  "tags": ["replicasets", "statefulsets", "daemonsets"],
+  "intro": "Deployments aren't the only thing that manages pods for you. Let's look at the other controllers and when you'd actually reach for them.",
+  "steps": [
+    {
+      "prompt": "List the ReplicaSets in the namespace (these are what a Deployment creates under the hood).",
+      "expected_commands": ["kubectl get replicasets", "kubectl get rs"],
+      "fake_output": "NAME              DESIRED   CURRENT   READY   AGE\nweb-7d8f9c6b5     3         3         3       5m",
+      "explanation": "You rarely manage ReplicaSets directly — Deployments own them and create a new one on every rollout.",
+      "why": "You'd only touch a ReplicaSet directly for advanced cases like manually scaling down an old revision — normally you talk to the Deployment instead and let it manage the ReplicaSet for you."
+    },
+    {
+      "prompt": "A 'db' StatefulSet gives your database stable identity and storage — check its status.",
+      "expected_commands": ["kubectl get statefulsets", "kubectl get sts"],
+      "fake_output": "NAME   READY   AGE\ndb     3/3     2h",
+      "explanation": "Unlike a Deployment's pods, StatefulSet pods get stable, predictable names (db-0, db-1, db-2) and each keeps its own persistent storage even after a restart.",
+      "why": "Use a Deployment when pods are interchangeable (a stateless web server); use a StatefulSet when they're not (a database where each replica has its own disk and identity)."
+    },
+    {
+      "prompt": "Scale the 'db' StatefulSet down to 1 replica.",
+      "expected_commands": ["kubectl scale statefulset db --replicas=1"],
+      "fake_output": "statefulset.apps/db scaled",
+      "explanation": "Same 'scale' command as a Deployment — StatefulSets just scale pods down in reverse ordinal order (db-2 goes first, not db-0).",
+      "why": "It's the same 'kubectl scale' syntax as scaling a Deployment — one flag (--replicas) works across every workload type that supports scaling."
+    },
+    {
+      "prompt": "Check the DaemonSet that runs a log collector on every node.",
+      "expected_commands": ["kubectl get daemonsets", "kubectl get ds"],
+      "fake_output": "NAME          DESIRED   CURRENT   READY   NODE SELECTOR   AGE\nlog-agent     3         3         3       <none>          10d",
+      "explanation": "A DaemonSet runs exactly one pod per node automatically — you don't set a replica count, it just tracks how many nodes exist.",
+      "why": "There's no 'kubectl scale daemonset' — the pod count is driven entirely by node count, which is the whole point of a DaemonSet (log/metrics agents, network plugins)."
+    }
+  ]
+}

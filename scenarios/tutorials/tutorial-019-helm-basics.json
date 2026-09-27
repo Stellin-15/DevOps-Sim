@@ -1,0 +1,39 @@
+{
+  "id": "tutorial-019",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Helm Basics",
+  "difficulty": "intermediate",
+  "tags": ["helm", "package-manager"],
+  "intro": "Helm is Kubernetes' package manager — instead of hand-writing and applying a dozen YAML files, you install a 'chart' that bundles them all with configurable values.",
+  "steps": [
+    {
+      "prompt": "Search the default Helm repo for a redis chart.",
+      "expected_commands": ["helm search repo redis"],
+      "fake_output": "NAME                CHART VERSION   APP VERSION\nbitnami/redis       18.4.0          7.2.4",
+      "explanation": "This searches charts from repos you've already added locally with 'helm repo add' — it's not a live internet search.",
+      "why": "This is the Helm equivalent of browsing a package registry like npm or pip before installing — confirms the chart exists and which versions are available."
+    },
+    {
+      "prompt": "Install that redis chart as a release named 'my-cache'.",
+      "expected_commands": ["helm install my-cache bitnami/redis"],
+      "fake_output": "NAME: my-cache\nSTATUS: deployed\nREVISION: 1",
+      "explanation": "This one command creates every Kubernetes object the chart defines — Deployment, Service, Secret, etc — all at once, wired together per the chart's defaults.",
+      "why": "Doing this by hand would mean writing and applying several separate YAML manifests yourself, staying in sync with upstream's recommended config — the chart already encodes all of that."
+    },
+    {
+      "prompt": "Override the default password by installing (or upgrading) with a custom value.",
+      "expected_commands": ["helm upgrade --install my-cache bitnami/redis --set auth.password=hunter2"],
+      "fake_output": "Release \"my-cache\" has been upgraded. Happy Helming!",
+      "explanation": "'upgrade --install' is the idempotent form — it installs if the release doesn't exist yet, or upgrades it if it does, so the same command works either way.",
+      "why": "Plain 'helm install' would fail if 'my-cache' already exists — 'upgrade --install' is what you'd actually put in a CI/CD pipeline since it works whether this is the first deploy or the hundredth."
+    },
+    {
+      "prompt": "Something's wrong after that change — roll the release back to revision 1.",
+      "expected_commands": ["helm rollback my-cache 1"],
+      "fake_output": "Rollback was a success! Happy Helming!",
+      "explanation": "Like 'kubectl rollout undo' for Deployments, Helm keeps its own revision history per release so you can revert instantly.",
+      "why": "This reverts every object the chart manages back to that revision's state in one command — doing it manually would mean remembering and reapplying the old values for every object individually."
+    }
+  ]
+}

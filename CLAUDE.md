@@ -74,8 +74,28 @@ not bare `input()`.
       choice on exit, saved sessions live in `sandbox_data/saved/`)
 - [ ] v6 (optional) — `python game.py add-scenario` CLI scaffold
 
-Content: 6 tutorials, 5 incidents, all in `scenarios/`, all schema-valid
-per `tests/test_scenario_content.py`.
+Content: 20 tutorials, 5 incidents, all in `scenarios/`, all schema-valid
+per `tests/test_scenario_content.py`. Tutorials now cover every COMMANDS.md
+category except "Tooling & Shortcuts" (aliases/shell completion/
+`export KUBECONFIG` — deliberately skipped, see below) — tutorial-001
+through 006 were the original set (pods, deployments, services, scaling/
+rollouts, configmaps/secrets, logs/exec); 007–020 cover cluster/context/
+namespaces, replicasets/statefulsets/daemonsets, jobs/cronjobs, ingress/
+netpol, storage (pv/pvc/storageclass), RBAC/service accounts, resource
+quotas/HPA, labels/selectors/annotations, scheduling (taints/cordon/
+drain), events/diagnostics (explain, jsonpath, api-resources), apply/diff/
+manifests, CRDs, Helm, and kubeconfig/multi-cluster. Several steps
+deliberately combine multiple flags in one command (set-based label
+selectors, `--sort-by` + events, `autoscale` with three flags at once,
+`auth can-i --as=`) rather than teaching one flag at a time.
+
+"Tooling & Shortcuts" (aliases, `kubectl completion`, `export KUBECONFIG`)
+has no dedicated tutorial — those are shell configuration, not commands
+with meaningful simulated kubectl output. Their actual content (short
+resource names: po, deploy, svc, ns, cm, rs, sts, ds, cj, pv, pvc, sc, sa,
+ep, ing, netpol, hpa, crd) is still taught implicitly — every tutorial
+that uses a resource type accepts both its full name and short alias in
+`expected_commands`.
 
 **Extension beyond the original SPEC.md schema**: every tutorial step also
 carries an optional `why` field, shown after `explanation` on a correct
@@ -125,6 +145,7 @@ something the generic checks don't cover.
 1. Expand Sandbox's command vocabulary using COMMANDS.md as the source
    list (deployments, services, configmaps/secrets, nodes, events are the
    natural next additions beyond pods) — this is next up.
-2. More scenario content, especially incidents, pulling `expected_commands`
-   phrasing straight from COMMANDS.md.
+2. More incident content — only 5 exist vs. 20 tutorials now; incidents
+   for the newer topics (RBAC denial, PVC stuck Pending, HPA not scaling,
+   Ingress misrouting) would pair naturally with the tutorials just added.
 3. v6 scenario-scaffolding CLI, once hand-authoring JSON gets tedious.

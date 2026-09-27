@@ -1,0 +1,39 @@
+{
+  "id": "tutorial-018",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Custom Resources & CRDs",
+  "difficulty": "advanced",
+  "tags": ["crd", "custom-resources"],
+  "intro": "Kubernetes lets you define entirely new resource types beyond the built-in ones (Pod, Deployment...). Operators and many add-ons work this way.",
+  "steps": [
+    {
+      "prompt": "List the CustomResourceDefinitions installed in the cluster.",
+      "expected_commands": ["kubectl get crd", "kubectl get customresourcedefinitions"],
+      "fake_output": "NAME                          CREATED AT\ncertificates.cert-manager.io  2026-08-01T00:00:00Z",
+      "explanation": "A CRD is what teaches the Kubernetes API about a new resource type — here, cert-manager registered a 'Certificate' kind.",
+      "why": "This is how you tell whether something like cert-manager or a database operator is actually installed — if its CRD isn't listed, its custom resources can't exist yet either."
+    },
+    {
+      "prompt": "Get the full definition of the 'certificates.cert-manager.io' CRD.",
+      "expected_commands": ["kubectl describe crd certificates.cert-manager.io"],
+      "fake_output": "Name: certificates.cert-manager.io\nGroup: cert-manager.io\nKind: Certificate\nScope: Namespaced",
+      "explanation": "This tells you the Kind name ('Certificate') and API group you'd actually use to interact with resources of this new type.",
+      "why": "You need the Kind and group from here before you can run 'kubectl get certificates' — the CRD is effectively the schema registration, not a resource you work with directly day-to-day."
+    },
+    {
+      "prompt": "Now list the actual custom resources of that new 'Certificate' kind.",
+      "expected_commands": ["kubectl get certificates"],
+      "fake_output": "NAME          READY   SECRET        AGE\nweb-tls       True    web-tls-cert  4h",
+      "explanation": "Once the CRD exists, custom resources of that kind behave just like built-in ones — same get/describe/delete verbs work on them.",
+      "why": "This is the entire point of CRDs — 'kubectl get certificates' works identically to 'kubectl get pods' from a usage standpoint, even though Certificate isn't a resource Kubernetes ships with by default."
+    },
+    {
+      "prompt": "See every resource type available under the cert-manager.io API group specifically.",
+      "expected_commands": ["kubectl api-resources --api-group=cert-manager.io"],
+      "fake_output": "NAME           SHORTNAMES   APIVERSION            NAMESPACED   KIND\ncertificates   cert         cert-manager.io/v1   true         Certificate",
+      "explanation": "This scopes the api-resources list down to just one add-on's types instead of scrolling through every built-in resource too.",
+      "why": "Handy specifically after installing a new operator/CRD, to quickly see everything it just registered without the built-in Kubernetes types cluttering the list."
+    }
+  ]
+}

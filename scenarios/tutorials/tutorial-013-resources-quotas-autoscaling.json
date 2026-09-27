@@ -1,0 +1,39 @@
+{
+  "id": "tutorial-013",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Resource Requests, Limits & Autoscaling",
+  "difficulty": "advanced",
+  "tags": ["resources", "hpa", "quotas"],
+  "intro": "Pods that don't declare resource requests/limits can starve their neighbors or get OOMKilled unpredictably. Let's look at how usage, limits, and autoscaling fit together.",
+  "steps": [
+    {
+      "prompt": "Check current CPU/memory usage across all pods.",
+      "expected_commands": ["kubectl top pods"],
+      "fake_output": "NAME      CPU(cores)   MEMORY(bytes)\nweb-abc   120m         85Mi\ndb-0      340m         512Mi",
+      "explanation": "This is live usage, not the requests/limits configured in the spec — comparing the two is how you catch a pod that's about to hit its memory limit.",
+      "why": "'kubectl describe pod' shows configured limits but not live usage — 'top' is the only place you see what's actually being consumed right now."
+    },
+    {
+      "prompt": "Check if this namespace has a ResourceQuota capping total usage.",
+      "expected_commands": ["kubectl get resourcequotas", "kubectl get quota"],
+      "fake_output": "NAME      REQUESTS.CPU   REQUESTS.MEMORY   LIMITS.CPU   LIMITS.MEMORY\ncompute   2/4            4Gi/8Gi           4/8          8Gi/16Gi",
+      "explanation": "A ResourceQuota caps the TOTAL requests/limits across every pod in the namespace — this is why a new pod can fail to schedule even when individual nodes have room.",
+      "why": "This is a namespace-wide cap, different from a single pod's own limits — a pod can be well within its own resource limit and still get rejected if the namespace as a whole is already at quota."
+    },
+    {
+      "prompt": "Check if there's a HorizontalPodAutoscaler configured for the 'web' deployment.",
+      "expected_commands": ["kubectl get hpa"],
+      "fake_output": "NAME   REFERENCE          TARGETS         MINPODS   MAXPODS   REPLICAS   AGE\nweb    Deployment/web     45%/80% cpu     2         10        3          1h",
+      "explanation": "An HPA watches a metric (here, CPU) and adjusts the Deployment's replica count automatically between MINPODS and MAXPODS.",
+      "why": "This replaces manually running 'kubectl scale' during traffic spikes — once an HPA exists, don't fight it by scaling manually, since it'll just override your manual change on its next check."
+    },
+    {
+      "prompt": "Create an HPA for the 'web' deployment: scale between 2 and 10 pods, targeting 80% CPU.",
+      "expected_commands": ["kubectl autoscale deployment web --min=2 --max=10 --cpu-percent=80"],
+      "fake_output": "horizontalpodautoscaler.autoscaling/web autoscaled",
+      "explanation": "This is the quick way to create an HPA — equivalent to writing and applying a full HPA manifest.",
+      "why": "For anything beyond simple CPU-percent scaling (custom metrics, scaling on requests-per-second) you'd need a full HPA YAML instead — 'autoscale' only covers this common CPU-based case."
+    }
+  ]
+}

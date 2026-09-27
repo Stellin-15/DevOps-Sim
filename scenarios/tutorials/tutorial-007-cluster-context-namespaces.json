@@ -1,0 +1,39 @@
+{
+  "id": "tutorial-007",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Cluster Info, Contexts & Namespaces",
+  "difficulty": "beginner",
+  "tags": ["cluster", "context", "namespaces"],
+  "intro": "Before you touch pods, you need to know which cluster and namespace you're even pointed at — that's what causes 'it's not there!' panics more than anything else.",
+  "steps": [
+    {
+      "prompt": "Check what cluster kubectl is currently talking to.",
+      "expected_commands": ["kubectl cluster-info"],
+      "fake_output": "Kubernetes control plane is running at https://10.0.0.1:6443\nCoreDNS is running at https://10.0.0.1:6443/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy",
+      "explanation": "This confirms you actually have a working connection before you waste time debugging 'nothing works'.",
+      "why": "'kubectl version' also confirms connectivity but only returns version numbers — cluster-info is the one that actually shows you the control plane and DNS endpoints."
+    },
+    {
+      "prompt": "See which context (cluster+user+namespace combo) you're currently using.",
+      "expected_commands": ["kubectl config current-context"],
+      "fake_output": "docker-desktop",
+      "explanation": "Multiple clusters (prod, staging, local) usually live in one kubeconfig — this tells you which one is active right now.",
+      "why": "'kubectl config get-contexts' lists all of them with a * next to the active one — current-context is faster when you just need the one answer."
+    },
+    {
+      "prompt": "List all namespaces in the cluster.",
+      "expected_commands": ["kubectl get ns", "kubectl get namespaces"],
+      "fake_output": "NAME              STATUS   AGE\ndefault           Active   30d\nkube-system       Active   30d\nproduction        Active   12d",
+      "explanation": "Resources are scoped to a namespace by default — if you don't see something with kubectl get pods, it might just be in a different namespace.",
+      "why": "'ns' is the short alias for 'namespaces', same idea as 'po' for pods or 'deploy' for deployments."
+    },
+    {
+      "prompt": "Switch your active namespace to 'production' so you don't have to type -n production on every command.",
+      "expected_commands": ["kubectl config set-context --current --namespace=production"],
+      "fake_output": "Context \"docker-desktop\" modified.",
+      "explanation": "This changes the default namespace for the current context — every following command now targets 'production' unless you override it.",
+      "why": "You could add '-n production' to every single command instead, but that gets old fast and is easy to forget on the one time it matters most."
+    }
+  ]
+}

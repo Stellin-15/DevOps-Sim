@@ -117,14 +117,28 @@ loader, sandbox, or scenario content.
 ## Status / roadmap
 
 Built so far: hardcoded single scenario → JSON-driven scenarios with a
-menu → hint escalation → sandbox mode → progress tracking. 6 tutorials
-(each step explaining both what a command does and why it's the right
-pick over alternatives) and 5 incidents included.
+menu → hint escalation → sandbox mode → progress tracking → full tutorial
+coverage of COMMANDS.md. 20 tutorials (each step explaining both what a
+command does and why it's the right pick over alternatives) and 5
+incidents included.
+
+Tutorial topics: pods, deployments, services, scaling/rollouts,
+configmaps/secrets, logs/exec, cluster/context/namespaces, replicasets/
+statefulsets/daemonsets, jobs/cronjobs, ingress/network policies,
+persistent storage, RBAC/service accounts, resource quotas/autoscaling,
+labels/selectors/annotations, scheduling/node draining, events/
+diagnostics, applying/diffing manifests, CRDs, Helm, and kubeconfig/
+multi-cluster contexts — every COMMANDS.md category except "Tooling &
+Shortcuts" (aliases and shell completion aren't things with meaningful
+simulated output; their short resource names like `po`/`deploy`/`sts` are
+still accepted throughout the other tutorials).
 
 Not yet built:
 - A CLI scaffold for authoring new scenario JSON
 - Broader sandbox command support (deployments, services,
   configmaps/secrets, nodes, events — see COMMANDS.md)
+- More incident scenarios for the newer topics (only 5 incidents exist
+  against 20 tutorials)
 
 See CLAUDE.md for the detailed status against the original build order and
 notes for continuing development.
