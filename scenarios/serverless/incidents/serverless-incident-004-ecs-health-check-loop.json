@@ -1,0 +1,49 @@
+{
+  "id": "serverless-incident-004",
+  "type": "incident",
+  "category": "serverless",
+  "title": "The new release never becomes healthy, and ECS keeps starting it",
+  "difficulty": "intermediate",
+  "tags": ["ecs", "fargate", "health-checks", "deployments"],
+  "intro": "A deploy of the api service on the ECS cluster shop has been 'in progress' for 40 minutes. The old tasks are still serving, so users are unaffected, but the new version isn't out. The new release added a start-up step that warms a cache before the app starts listening. The team says the image works when run locally.",
+  "steps": [
+    {
+      "prompt": "Read what ECS has been doing: the latest 5 events of the service api in the cluster shop.",
+      "expected_commands": ["aws ecs describe-services --cluster shop --services api --query 'services[0].events[:5]'", "aws ecs describe-services --cluster shop --services api --query \"services[0].events[:5]\"", "aws ecs describe-services --services api --cluster shop --query 'services[0].events[:5]'", "aws ecs describe-services --cluster shop --services api"],
+      "fake_output": "[\n  {\"message\": \"(service api) has started 2 tasks: (task 7f6e5d4c3b2a) (task 1a2b3c4d5e6f).\"},\n  {\"message\": \"(service api) (task 9d3c1b7a2f6e) failed ELB health checks in (target-group api-tg).\"},\n  {\"message\": \"(service api) has started 2 tasks: (task 9d3c1b7a2f6e) (task b5a4c93e1d0f).\"},\n  {\"message\": \"(service api) (task e1d0f76a8b9c) failed ELB health checks in (target-group api-tg).\"},\n  {\"message\": \"(service api) has started 2 tasks: (task e1d0f76a8b9c) (task 2f6e8a0c4d1b).\"}\n]",
+      "hint": "aws ecs describe-services --cluster shop --services api --query 'services[0].events[:5]'"
+    },
+    {
+      "prompt": "A loop: start tasks, fail the load balancer's health check, replace, repeat. Check one stopped task's reason: task 9d3c1b7a2f6e.",
+      "expected_commands": ["aws ecs describe-tasks --cluster shop --tasks 9d3c1b7a2f6e --query 'tasks[0].[stoppedReason,containers[0].reason]'", "aws ecs describe-tasks --cluster shop --tasks 9d3c1b7a2f6e --query \"tasks[0].[stoppedReason,containers[0].reason]\"", "aws ecs describe-tasks --cluster shop --tasks 9d3c1b7a2f6e", "aws ecs describe-tasks --tasks 9d3c1b7a2f6e --cluster shop --query 'tasks[0].[stoppedReason,containers[0].reason]'"],
+      "fake_output": "[\n  \"Task failed ELB health checks in (target-group arn:aws:elasticloadbalancing:us-east-1:111122223333:targetgroup/api-tg/0a1b2c3d4e5f6071)\",\n  null\n]",
+      "hint": "aws ecs describe-tasks --cluster shop --tasks 9d3c1b7a2f6e --query 'tasks[0].[stoppedReason,containers[0].reason]'"
+    },
+    {
+      "prompt": "ECS killed it for failing health checks; the container itself reported no error. See what the app was doing when it was stopped: tail the service's log group /ecs/api for the last 10 minutes.",
+      "expected_commands": ["aws logs tail /ecs/api --since 10m", "aws logs tail --since 10m /ecs/api", "aws logs tail /ecs/api --since 10m --follow"],
+      "fake_output": "13:20:01 [boot] warming product cache (120000 items)...\n13:20:31 [boot] 30% warmed\n13:21:01 [boot] 61% warmed\n13:21:22 received SIGTERM, shutting down\n13:22:10 [boot] warming product cache (120000 items)...\n13:22:40 [boot] 29% warmed",
+      "hint": "aws logs tail /ecs/api --since 10m"
+    },
+    {
+      "prompt": "The app is killed about 80 seconds into a warm-up that needs around 100 seconds, before it ever starts listening. Check how long ECS waits before counting health check failures: show the service's healthCheckGracePeriodSeconds.",
+      "expected_commands": ["aws ecs describe-services --cluster shop --services api --query 'services[0].healthCheckGracePeriodSeconds'", "aws ecs describe-services --cluster shop --services api --query \"services[0].healthCheckGracePeriodSeconds\"", "aws ecs describe-services --services api --cluster shop --query 'services[0].healthCheckGracePeriodSeconds'"],
+      "fake_output": "0",
+      "hint": "aws ecs describe-services --cluster shop --services api --query 'services[0].healthCheckGracePeriodSeconds'"
+    },
+    {
+      "prompt": "Zero: failures count from the first second. Give new tasks 180 seconds to start before health checks can stop them.",
+      "expected_commands": ["aws ecs update-service --cluster shop --service api --health-check-grace-period-seconds 180", "aws ecs update-service --service api --cluster shop --health-check-grace-period-seconds 180"],
+      "fake_output": "{\n  \"service\": {\"serviceName\": \"api\", \"healthCheckGracePeriodSeconds\": 180}\n}",
+      "hint": "aws ecs update-service --cluster shop --service api --health-check-grace-period-seconds 180"
+    },
+    {
+      "prompt": "Watch the events again for the deployment to settle.",
+      "expected_commands": ["aws ecs describe-services --cluster shop --services api --query 'services[0].events[:5]'", "aws ecs describe-services --cluster shop --services api --query \"services[0].events[:5]\"", "aws ecs describe-services --services api --cluster shop --query 'services[0].events[:5]'", "aws ecs describe-services --cluster shop --services api"],
+      "fake_output": "[\n  {\"message\": \"(service api) has reached a steady state.\"},\n  {\"message\": \"(service api) (deployment ecs-svc/4410218) deployment completed.\"},\n  {\"message\": \"(service api) registered 2 targets in (target-group api-tg)\"}\n]",
+      "hint": "The same command as the first step."
+    }
+  ],
+  "resolution": "The image was fine and the health check was fine; the timing between them wasn't. The new release warms a cache for about 100 seconds before it opens its port. The load balancer began probing the task as soon as it was registered, got no answer, and after a few failed checks marked it unhealthy. With a health check grace period of zero, ECS acts on that immediately: it stopped the task at around 80 seconds, always before the warm-up could finish, and started a replacement that met the same fate. 'Works locally' was true and irrelevant, because nothing kills a container on a laptop for being slow to start. ECS kept the old tasks running throughout, since a rolling deployment only removes old tasks once new ones are healthy, which is why users saw nothing. The service's events showed the loop, the stopped task's reason named the health check, and the application log showed it being interrupted mid-start. This is the ECS form of a failure every orchestrator has: Kubernetes kills slow starters with a liveness probe that has no startup probe (tutorial-021). The grace period fixed the timing. Better still is to make the app listen at once and report 'not ready' until the cache is warm, so that start-up time and health are separate things, and to ask whether a 100-second warm-up belongs at start-up at all, since it also slows every scale-out and every recovery. Finally, a deployment that can't succeed shouldn't loop for 40 minutes: enable the deployment circuit breaker with rollback, and the service reverts by itself after a few failed tasks and tells you so.",
+  "real_commands_used": ["aws ecs describe-services --query 'services[0].events[:5]'", "aws ecs describe-tasks --query stoppedReason", "aws logs tail /ecs/<service>", "aws ecs describe-services --query healthCheckGracePeriodSeconds", "aws ecs update-service --health-check-grace-period-seconds"]
+}

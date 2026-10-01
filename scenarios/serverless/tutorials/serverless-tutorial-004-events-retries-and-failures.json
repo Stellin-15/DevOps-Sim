@@ -1,0 +1,48 @@
+{
+  "id": "serverless-tutorial-004",
+  "type": "tutorial",
+  "category": "serverless",
+  "title": "Events, Retries, and Where Failed Invocations Go",
+  "difficulty": "intermediate",
+  "tags": ["lambda", "events", "retries", "dead-letter"],
+  "intro": "Most functions aren't called by a person; they're triggered by an event: a file landing in a bucket, a message on a queue, a schedule. When such a function fails, nobody is waiting for the answer, so what happens next depends entirely on how the trigger retries. The function process-order reads from an SQS queue; resize-image is triggered by S3.",
+  "steps": [
+    {
+      "prompt": "See what feeds process-order: list its event source mappings.",
+      "expected_commands": ["aws lambda list-event-source-mappings --function-name process-order"],
+      "fake_output": "{\n  \"EventSourceMappings\": [{\n    \"UUID\": \"c1d2e3f4-0000-4a5b-8c7d-example00001\",\n    \"EventSourceArn\": \"arn:aws:sqs:us-east-1:111122223333:orders\",\n    \"BatchSize\": 10,\n    \"State\": \"Enabled\",\n    \"FunctionResponseTypes\": []\n  }]\n}",
+      "explanation": "Lambda polls the orders queue and hands the function batches of up to 10 messages.",
+      "why": "An event source mapping is Lambda's own poller for queues and streams. 'State' matters: a mapping that's Disabled means the function is healthy and never invoked, with the queue growing behind it. The empty FunctionResponseTypes is the detail to notice, and the next step explains why."
+    },
+    {
+      "prompt": "The function receives 10 messages and fails on the seventh. With the settings above, what happens to the batch?\n  a) Only the seventh is retried\n  b) The whole batch fails: all 10 return to the queue and are processed again, including the six that succeeded\n  c) The batch is deleted\n  d) The function is disabled\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "default                          : one failure -> all 10 messages retried\nReportBatchItemFailures enabled  : function returns the failed ids -> only those are retried",
+      "hint": "By default the batch succeeds or fails as a unit.",
+      "explanation": "One bad message makes the whole batch repeat.",
+      "why": "So nine good messages are processed twice, or more, and one poison message can make them loop until everything lands in the dead-letter queue. Turning on partial batch responses (FunctionResponseTypes: ReportBatchItemFailures) and returning the ids that failed fixes it. Either way the function must be idempotent, because at-least-once delivery means duplicates."
+    },
+    {
+      "prompt": "resize-image is invoked asynchronously by S3. Check how its failed asynchronous invocations are handled.",
+      "expected_commands": ["aws lambda get-function-event-invoke-config --function-name resize-image"],
+      "fake_output": "An error occurred (ResourceNotFoundException) when calling the GetFunctionEventInvokeConfig operation: The function resize-image doesn't have an EventInvokeConfig",
+      "explanation": "Nothing is configured, so the defaults apply: two retries, then the event is discarded.",
+      "why": "For asynchronous events, Lambda retries twice over a few minutes and then throws the event away, silently. No error reaches anyone. A photo that failed to resize is simply never resized. This default is the most common cause of 'it just didn't happen' in event-driven systems."
+    },
+    {
+      "prompt": "Send events that still fail after one retry to the queue arn:aws:sqs:us-east-1:111122223333:resize-failures.",
+      "expected_commands": ["aws lambda put-function-event-invoke-config --function-name resize-image --maximum-retry-attempts 1 --destination-config '{\"OnFailure\":{\"Destination\":\"arn:aws:sqs:us-east-1:111122223333:resize-failures\"}}'", "aws lambda put-function-event-invoke-config --function-name resize-image --destination-config '{\"OnFailure\":{\"Destination\":\"arn:aws:sqs:us-east-1:111122223333:resize-failures\"}}' --maximum-retry-attempts 1"],
+      "fake_output": "{\n  \"MaximumRetryAttempts\": 1,\n  \"DestinationConfig\": {\"OnFailure\": {\"Destination\": \"arn:aws:sqs:us-east-1:111122223333:resize-failures\"}}\n}",
+      "hint": "aws lambda put-function-event-invoke-config --function-name resize-image --maximum-retry-attempts 1 --destination-config '{\"OnFailure\":{\"Destination\":\"arn:aws:sqs:us-east-1:111122223333:resize-failures\"}}'",
+      "explanation": "Failed events now land in a queue, with the error attached, instead of vanishing.",
+      "why": "A failure destination records the original event and why it failed, so it can be inspected and replayed. It's only useful with an alarm on that queue's depth. The function's role needs permission to send to the destination, or the failures are lost anyway."
+    },
+    {
+      "prompt": "See which events trigger functions from the bucket shop-uploads.",
+      "expected_commands": ["aws s3api get-bucket-notification-configuration --bucket shop-uploads"],
+      "fake_output": "{\n  \"LambdaFunctionConfigurations\": [{\n    \"LambdaFunctionArn\": \"arn:aws:lambda:us-east-1:111122223333:function:resize-image\",\n    \"Events\": [\"s3:ObjectCreated:*\"],\n    \"Filter\": {\"Key\": {\"FilterRules\": [{\"Name\": \"prefix\", \"Value\": \"originals/\"}]}}\n  }]\n}",
+      "explanation": "Any object created under originals/ in that bucket invokes resize-image.",
+      "why": "The prefix filter is a safety feature, not a convenience. A function that's triggered by a bucket and writes its output back to the same bucket, with no filter separating input from output, triggers itself for ever (serverless-incident-003). Write results to a different bucket, or at least a different prefix that the trigger excludes."
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "id": "serverless-tutorial-005",
+  "type": "tutorial",
+  "category": "serverless",
+  "title": "API Gateway in Front of Functions: Routes, Limits, and Error Codes",
+  "difficulty": "intermediate",
+  "tags": ["api-gateway", "lambda", "http", "timeouts"],
+  "intro": "A function on its own has no URL. API Gateway gives it one: it accepts HTTPS requests, routes them to functions, and adds throttling and authentication. It's a managed reverse proxy, with a reverse proxy's failure modes and a few hard limits of its own. The account has an HTTP API named shop-api.",
+  "steps": [
+    {
+      "prompt": "List the HTTP APIs in the account.",
+      "expected_commands": ["aws apigatewayv2 get-apis"],
+      "fake_output": "{\n  \"Items\": [{\n    \"ApiId\": \"a1b2c3d4e5\",\n    \"Name\": \"shop-api\",\n    \"ProtocolType\": \"HTTP\",\n    \"ApiEndpoint\": \"https://a1b2c3d4e5.execute-api.us-east-1.amazonaws.com\"\n  }]\n}",
+      "explanation": "One HTTP API, with its id and public endpoint.",
+      "why": "'apigatewayv2' covers HTTP APIs and WebSocket APIs; the older REST APIs use 'aws apigateway' and have more features (usage plans, request validation) at a higher price. Know which kind you have before reading documentation, because the commands and limits differ."
+    },
+    {
+      "prompt": "List the routes of the API a1b2c3d4e5.",
+      "expected_commands": ["aws apigatewayv2 get-routes --api-id a1b2c3d4e5"],
+      "fake_output": "{\n  \"Items\": [\n    {\"RouteKey\": \"POST /checkout\", \"Target\": \"integrations/k7m2x9\"},\n    {\"RouteKey\": \"GET /orders/{id}\", \"Target\": \"integrations/p4t8w1\"},\n    {\"RouteKey\": \"POST /reports/export\", \"Target\": \"integrations/z3n6q0\"}\n  ]\n}",
+      "explanation": "Three routes, each a method and path mapped to an integration.",
+      "why": "A request that matches no route gets 404 from the gateway itself, and the function is never invoked, so there's nothing in the function's logs. That's the first thing to check when 'the Lambda isn't being called': does a route exist for exactly that method and path?"
+    },
+    {
+      "prompt": "Users report that POST /reports/export fails. Time a request to it: print the status code and total time.",
+      "expected_commands": ["curl -s -o /dev/null -w \"%{http_code} %{time_total}\\n\" -X POST https://a1b2c3d4e5.execute-api.us-east-1.amazonaws.com/reports/export", "curl -s -o /dev/null -w '%{http_code} %{time_total}\\n' -X POST https://a1b2c3d4e5.execute-api.us-east-1.amazonaws.com/reports/export", "curl -s -o /dev/null -X POST -w \"%{http_code} %{time_total}\\n\" https://a1b2c3d4e5.execute-api.us-east-1.amazonaws.com/reports/export"],
+      "fake_output": "503 30.012",
+      "hint": "curl -s -o /dev/null -w \"%{http_code} %{time_total}\\n\" -X POST https://a1b2c3d4e5.execute-api.us-east-1.amazonaws.com/reports/export",
+      "explanation": "A 503 after almost exactly 30 seconds.",
+      "why": "Exactly 30 seconds is a limit, not a duration. HTTP APIs give an integration at most 30 seconds (REST APIs 29 by default), whatever the function's own timeout says. The function here is allowed 900 seconds and carries on running after the gateway has already answered the user with an error."
+    },
+    {
+      "prompt": "The export function legitimately takes two minutes. What's the right design?\n  a) Raise the gateway timeout to 120 seconds\n  b) Make it asynchronous: the API starts the job and returns 202 with a job id at once, and the client polls a status route or is notified when the result is ready\n  c) Tell users to retry\n  d) Give the function more memory until it takes under 30 seconds\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "POST /reports/export        -> 202 {\"job_id\": \"j-8812\"}        (queues the work)\nGET  /reports/export/j-8812 -> 200 {\"status\": \"running\"}\nGET  /reports/export/j-8812 -> 200 {\"status\": \"done\", \"url\": \"https://...\"}",
+      "hint": "The limit can't be raised far enough, and a held-open HTTP request is the wrong tool for a two-minute job.",
+      "explanation": "Accept, queue, and let the client check back.",
+      "why": "The same answer as for the nginx export incident (webservers-incident-003), for the same reason: long work doesn't belong inside a request. Here the platform enforces it with a hard limit. A queue plus a worker function, or Step Functions for multi-step jobs, is the standard shape."
+    },
+    {
+      "prompt": "Check the throttling configured on the prod stage of the API.",
+      "expected_commands": ["aws apigatewayv2 get-stage --api-id a1b2c3d4e5 --stage-name prod"],
+      "fake_output": "{\n  \"StageName\": \"prod\",\n  \"AutoDeploy\": true,\n  \"DefaultRouteSettings\": {\n    \"ThrottlingBurstLimit\": 200,\n    \"ThrottlingRateLimit\": 100.0\n  }\n}",
+      "explanation": "100 requests a second sustained, with bursts to 200, across the stage.",
+      "why": "Beyond the limit the gateway returns 429 without invoking anything, which protects the functions and the databases behind them. It's a blunt, shared limit; per-client limits need usage plans and API keys (REST APIs) or a WAF rate rule. With AutoDeploy on, any change to the API is live immediately, so changes should come from infrastructure code and review, not the console."
+    }
+  ]
+}

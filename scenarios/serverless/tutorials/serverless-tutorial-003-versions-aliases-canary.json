@@ -1,0 +1,49 @@
+{
+  "id": "serverless-tutorial-003",
+  "type": "tutorial",
+  "category": "serverless",
+  "title": "Versions, Aliases, and a Canary Release for a Function",
+  "difficulty": "intermediate",
+  "tags": ["lambda", "deployments", "aliases", "canary"],
+  "intro": "By default, updating a Lambda function replaces what every caller gets, at once, with no way back except deploying again. Versions and aliases fix that: a version is an immutable snapshot, and an alias is a movable name that callers use. The function is checkout-api, and production callers invoke the alias named live.",
+  "steps": [
+    {
+      "prompt": "See which version the alias live points to.",
+      "expected_commands": ["aws lambda get-alias --function-name checkout-api --name live"],
+      "fake_output": "{\n  \"AliasArn\": \"arn:aws:lambda:us-east-1:111122223333:function:checkout-api:live\",\n  \"Name\": \"live\",\n  \"FunctionVersion\": \"12\"\n}",
+      "explanation": "Production traffic goes to version 12.",
+      "why": "API Gateway and the other triggers are configured with the alias's ARN, not the function's. So moving the alias changes what production runs without touching any trigger. Callers that use the bare function name get $LATEST, the mutable working copy, which is how untested code reaches production by accident."
+    },
+    {
+      "prompt": "New code has been uploaded to $LATEST. Freeze it as a new immutable version.",
+      "expected_commands": ["aws lambda publish-version --function-name checkout-api"],
+      "fake_output": "{\n  \"FunctionName\": \"checkout-api\",\n  \"Version\": \"13\",\n  \"CodeSha256\": \"x7Qk2mB9T1uVwYz0example=\",\n  \"State\": \"Active\"\n}",
+      "explanation": "Version 13 now exists, with its code and configuration fixed for ever.",
+      "why": "A version captures the code and the settings (memory, timeout, environment) together, so rolling back restores both. Nothing uses version 13 yet: publishing and releasing are separate steps, which is the point."
+    },
+    {
+      "prompt": "Send 10% of live traffic to version 13 while 90% stays on version 12.",
+      "expected_commands": ["aws lambda update-alias --function-name checkout-api --name live --function-version 12 --routing-config 'AdditionalVersionWeights={\"13\"=0.1}'", "aws lambda update-alias --function-name checkout-api --name live --function-version 12 --routing-config \"AdditionalVersionWeights={\\\"13\\\"=0.1}\"", "aws lambda update-alias --function-name checkout-api --name live --routing-config 'AdditionalVersionWeights={\"13\"=0.1}' --function-version 12"],
+      "fake_output": "{\n  \"Name\": \"live\",\n  \"FunctionVersion\": \"12\",\n  \"RoutingConfig\": {\"AdditionalVersionWeights\": {\"13\": 0.1}}\n}",
+      "hint": "aws lambda update-alias --function-name checkout-api --name live --function-version 12 --routing-config 'AdditionalVersionWeights={\"13\"=0.1}'",
+      "explanation": "One invocation in ten now runs version 13.",
+      "why": "This is a canary, built into the alias. Watch version 13's errors and duration separately (metrics are reported per version when invoked through an alias). CodeDeploy, SAM, and the Serverless Framework automate the whole sequence: shift 10%, wait, check alarms, shift the rest, or roll back by themselves."
+    },
+    {
+      "prompt": "Version 13's error rate is climbing. Roll back: point the alias fully at version 12 and remove the split.",
+      "expected_commands": ["aws lambda update-alias --function-name checkout-api --name live --function-version 12 --routing-config 'AdditionalVersionWeights={}'", "aws lambda update-alias --function-name checkout-api --name live --function-version 12 --routing-config \"AdditionalVersionWeights={}\"", "aws lambda update-alias --function-name checkout-api --name live --routing-config 'AdditionalVersionWeights={}' --function-version 12"],
+      "fake_output": "{\n  \"Name\": \"live\",\n  \"FunctionVersion\": \"12\",\n  \"RoutingConfig\": {\"AdditionalVersionWeights\": {}}\n}",
+      "hint": "aws lambda update-alias --function-name checkout-api --name live --function-version 12 --routing-config 'AdditionalVersionWeights={}'",
+      "explanation": "All traffic is back on version 12, within seconds.",
+      "why": "Rollback is a pointer change, not a redeploy: no build, no upload, no waiting. That's only true if the old version still works with the current state of everything else. A database schema change that version 12 can't read turns a rollback into a second outage, which is why schema changes go out separately and compatibly (cicd-tutorial-014)."
+    },
+    {
+      "prompt": "You deploy functions as container images. Why should the image be referenced by digest (image@sha256:...) and not by a tag like :latest?\n  a) Digests are shorter\n  b) A tag can be moved to a different image, so two 'identical' deploys could run different code; a digest always means the same bytes\n  c) Lambda doesn't support tags\n  d) Tags cost more\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "aws lambda update-function-code --function-name checkout-api \\\n    --image-uri 111122223333.dkr.ecr.us-east-1.amazonaws.com/checkout-api@sha256:4f5a6b7c8d9e...",
+      "hint": "The same reason as for Kubernetes and for registries.",
+      "explanation": "A digest pins the exact image.",
+      "why": "Lambda resolves a tag to a digest when you update the function, so later pushes to that tag don't change a published version. But the deploy itself isn't repeatable unless it names a digest: re-running last week's pipeline with ':latest' deploys today's image. Build once, record the digest, and promote that digest through environments (cicd-tutorial-018)."
+    }
+  ]
+}

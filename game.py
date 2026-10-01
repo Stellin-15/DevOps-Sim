@@ -50,6 +50,7 @@ CATEGORY_LABELS = {
     "identity": "Identity & Secrets",
     "scripting": "Scripting",
     "messaging": "Messaging",
+    "serverless": "Serverless",
 }
 
 

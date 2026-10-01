@@ -1,0 +1,48 @@
+{
+  "id": "serverless-tutorial-002",
+  "type": "tutorial",
+  "category": "serverless",
+  "title": "Cold Starts and Concurrency: How Lambda Really Scales",
+  "difficulty": "intermediate",
+  "tags": ["lambda", "concurrency", "cold-start", "throttling"],
+  "intro": "Lambda scales by running more copies of your function at once, one request per copy. Two consequences drive most of its performance problems: a new copy takes time to start (a cold start), and the account has a ceiling on how many copies can run at once, shared by every function. The API function is checkout-api.",
+  "steps": [
+    {
+      "prompt": "See the account-wide concurrency limit.",
+      "expected_commands": ["aws lambda get-account-settings"],
+      "fake_output": "{\n  \"AccountLimit\": {\n    \"ConcurrentExecutions\": 1000,\n    \"UnreservedConcurrentExecutions\": 1000\n  },\n  \"AccountUsage\": {\"FunctionCount\": 41}\n}",
+      "explanation": "1,000 concurrent executions for the whole account and region, all in one shared pool.",
+      "why": "Concurrency is how many invocations are running at the same instant: roughly requests per second times average duration. All 41 functions draw from the same 1,000. So one function that spikes, or slows down, can use the whole pool, and every other function is then throttled: the noisy-neighbour problem inside your own account (serverless-incident-001)."
+    },
+    {
+      "prompt": "Look for cold starts in checkout-api's recent logs: tail the last 15 minutes, keeping only lines containing 'Init Duration'.",
+      "expected_commands": ["aws logs tail /aws/lambda/checkout-api --since 15m --filter-pattern \"Init Duration\"", "aws logs tail /aws/lambda/checkout-api --since 15m --filter-pattern 'Init Duration'", "aws logs tail /aws/lambda/checkout-api --since 15m | grep \"Init Duration\"", "aws logs tail /aws/lambda/checkout-api --filter-pattern \"Init Duration\" --since 15m"],
+      "fake_output": "REPORT RequestId: a1f9...  Duration: 48.20 ms   Billed Duration: 1904 ms  Memory Size: 512 MB  Max Memory Used: 188 MB  Init Duration: 1855.41 ms\nREPORT RequestId: 7c2b...  Duration: 51.03 ms   Billed Duration: 1921 ms  Memory Size: 512 MB  Max Memory Used: 190 MB  Init Duration: 1869.77 ms",
+      "explanation": "The handler takes about 50 ms, but on a cold start the user waits another 1.9 seconds for initialisation.",
+      "why": "A cold start happens whenever Lambda needs a new copy: after a deploy, after idle time, and whenever traffic rises faster than existing copies can absorb. Init time is your code loading: the runtime, your dependencies, and anything created outside the handler. Shrinking the package, importing less, and choosing a lighter runtime reduce it. Work done outside the handler is reused by later requests on the same copy, so create database clients there, once."
+    },
+    {
+      "prompt": "For a user-facing API, 1.9 seconds on some requests is too much. Which feature removes cold starts for a known level of traffic?\n  a) A larger timeout\n  b) Provisioned concurrency: a number of copies kept initialised and ready, paid for whether used or not\n  c) More environment variables\n  d) Retrying the request\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "aws lambda put-provisioned-concurrency-config --function-name checkout-api --qualifier live \\\n    --provisioned-concurrent-executions 20\n\nfirst 20 concurrent requests: no init delay\nbeyond 20: ordinary on-demand copies, with cold starts",
+      "hint": "The fix is to have the copies started before the request arrives.",
+      "explanation": "Provisioned concurrency keeps copies warm, at a fixed cost.",
+      "why": "It applies to a published version or alias, not to $LATEST, and costs money every hour, so size it from real traffic and schedule it to follow the daily pattern. The old trick of pinging a function every few minutes keeps one copy warm and does nothing for the second concurrent request. For some runtimes, SnapStart restores a pre-initialised snapshot instead and costs little."
+    },
+    {
+      "prompt": "Protect checkout-api from other functions using up the pool: reserve 200 concurrent executions for it.",
+      "expected_commands": ["aws lambda put-function-concurrency --function-name checkout-api --reserved-concurrent-executions 200"],
+      "fake_output": "{\n  \"ReservedConcurrentExecutions\": 200\n}",
+      "explanation": "200 of the account's 1,000 are now set aside for checkout-api, and it can't use more than 200.",
+      "why": "Reserved concurrency does two things at once: it guarantees that capacity, and it caps the function at that number. The cap is as useful as the guarantee: set on a function that calls a database, it limits how many connections Lambda can open (the connection-exhaustion problem from System Design). Setting it to 0 stops a function completely, which is the emergency brake for one that's misbehaving."
+    },
+    {
+      "prompt": "What does a caller see when a function is at its concurrency limit and another request arrives through an API?\n  a) The request waits in a queue until a copy is free\n  b) The invocation is throttled: a synchronous caller gets a 429 (TooManyRequestsException) straight away\n  c) Lambda adds capacity beyond the limit\n  d) The function restarts\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "synchronous (API Gateway, direct invoke) : 429 to the caller, immediately\nasynchronous (S3, SNS, EventBridge)      : Lambda retries for up to 6 hours\nqueue or stream (SQS, Kinesis)           : the messages wait and are retried",
+      "hint": "There's no queue in front of a synchronous invocation.",
+      "explanation": "Synchronous invocations are rejected at once; event-driven ones are retried later.",
+      "why": "How a throttle shows up depends on who invoked the function. For an API it's errors for users, so alert on the Throttles metric. For asynchronous events it's delay, and for queues it's a growing backlog. Raise the account limit with a quota request well before you need it; the request isn't instant."
+    }
+  ]
+}

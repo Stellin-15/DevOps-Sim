@@ -1,0 +1,49 @@
+{
+  "id": "serverless-incident-001",
+  "type": "incident",
+  "category": "serverless",
+  "title": "Checkout returns 429, and checkout's traffic hasn't changed",
+  "difficulty": "advanced",
+  "tags": ["lambda", "concurrency", "throttling", "noisy-neighbour"],
+  "intro": "Since 14:05 about half of the calls to the checkout-api function fail with 429 TooManyRequestsException. Checkout traffic is normal for a Monday. At 14:00 the marketing team bulk-uploaded 400,000 product photos to the shop-uploads bucket, which triggers the resize-image function for each one.",
+  "steps": [
+    {
+      "prompt": "A 429 from Lambda means throttling. Check the account's concurrency limit and how much of it is unreserved.",
+      "expected_commands": ["aws lambda get-account-settings"],
+      "fake_output": "{\n  \"AccountLimit\": {\n    \"ConcurrentExecutions\": 1000,\n    \"UnreservedConcurrentExecutions\": 1000\n  }\n}",
+      "hint": "aws lambda get-account-settings"
+    },
+    {
+      "prompt": "1,000 in total, and all of it unreserved: every function shares one pool. Check whether checkout-api has any capacity reserved for itself.",
+      "expected_commands": ["aws lambda get-function-concurrency --function-name checkout-api"],
+      "fake_output": "{}",
+      "hint": "aws lambda get-function-concurrency --function-name checkout-api"
+    },
+    {
+      "prompt": "Nothing reserved. And resize-image?",
+      "expected_commands": ["aws lambda get-function-concurrency --function-name resize-image"],
+      "fake_output": "{}",
+      "hint": "aws lambda get-function-concurrency --function-name resize-image"
+    },
+    {
+      "prompt": "No limit on it either. 400,000 upload events are invoking resize-image as fast as Lambda allows, and it's taking the whole pool. Confirm it's running hot: tail resize-image's logs for the last minute and count the START lines.",
+      "expected_commands": ["aws logs tail /aws/lambda/resize-image --since 1m | grep -c START", "aws logs tail /aws/lambda/resize-image --since 1m | grep START | wc -l", "aws logs tail /aws/lambda/resize-image --since 1m --filter-pattern START | wc -l"],
+      "fake_output": "8812",
+      "hint": "aws logs tail /aws/lambda/resize-image --since 1m | grep -c START"
+    },
+    {
+      "prompt": "Nearly 9,000 starts in a minute. Cap it. Resizing photos isn't urgent: limit resize-image to 100 concurrent executions.",
+      "expected_commands": ["aws lambda put-function-concurrency --function-name resize-image --reserved-concurrent-executions 100"],
+      "fake_output": "{\n  \"ReservedConcurrentExecutions\": 100\n}",
+      "hint": "aws lambda put-function-concurrency --function-name resize-image --reserved-concurrent-executions 100"
+    },
+    {
+      "prompt": "Now guarantee checkout its share regardless of what else happens: reserve 300 concurrent executions for checkout-api.",
+      "expected_commands": ["aws lambda put-function-concurrency --function-name checkout-api --reserved-concurrent-executions 300"],
+      "fake_output": "{\n  \"ReservedConcurrentExecutions\": 300\n}",
+      "hint": "aws lambda put-function-concurrency --function-name checkout-api --reserved-concurrent-executions 300"
+    }
+  ],
+  "resolution": "Every Lambda function in an account and region draws on one concurrency pool, 1,000 here. Nothing had been reserved or capped, so the pool was first come, first served. The bulk upload produced 400,000 S3 events, and Lambda's response to a flood of asynchronous events is to scale the function as far as it's allowed. resize-image took essentially all 1,000 slots. When a checkout request arrived, there was no slot, and because API Gateway invokes synchronously, Lambda couldn't queue it: it returned 429 at once. The photo resizing itself was fine, since throttled asynchronous events are simply retried later. The damage fell entirely on the function that had done nothing unusual, which is what makes a shared limit dangerous. Two settings fixed it. A cap on the background function: reserved concurrency of 100 means it can never use more than 100, so the upload finishes in an hour instead of minutes and nobody notices. And a reservation for the critical one: 300 set aside for checkout-api is capacity no other function can touch. Reserved concurrency is both a guarantee and a ceiling, so don't set checkout's lower than its real peak. Longer term: put a queue between S3 and the resizer so that the backlog is visible and the consumption rate is a setting; request a higher account limit before you need one; alert on the account-level ConcurrentExecutions and on Throttles per function; and treat 'unreserved concurrency' as a shared resource to budget, the same way you'd budget database connections. In a larger organisation the cleanest isolation is separate accounts for workloads with different criticality.",
+  "real_commands_used": ["aws lambda get-account-settings", "aws lambda get-function-concurrency", "aws logs tail /aws/lambda/<fn> --since 1m | grep -c START", "aws lambda put-function-concurrency --reserved-concurrent-executions"]
+}

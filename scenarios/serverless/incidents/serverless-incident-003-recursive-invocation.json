@@ -1,0 +1,49 @@
+{
+  "id": "serverless-incident-003",
+  "type": "incident",
+  "category": "serverless",
+  "title": "A billing alarm at 3am: one function has run 40 million times",
+  "difficulty": "intermediate",
+  "tags": ["lambda", "s3", "recursion", "cost"],
+  "intro": "A cost anomaly alarm fired overnight. The make-thumbnail function, which normally runs a few thousand times a day, has been invoked 40 million times since 18:00, and the shop-media bucket has grown by 40 million objects. A change deployed at 17:55 made the function save thumbnails 'next to the original' instead of in a separate bucket.",
+  "steps": [
+    {
+      "prompt": "Every minute costs money and adds objects. Stop the function first, without deleting anything: set its reserved concurrency to 0.",
+      "expected_commands": ["aws lambda put-function-concurrency --function-name make-thumbnail --reserved-concurrent-executions 0"],
+      "fake_output": "{\n  \"ReservedConcurrentExecutions\": 0\n}",
+      "hint": "aws lambda put-function-concurrency --function-name make-thumbnail --reserved-concurrent-executions 0"
+    },
+    {
+      "prompt": "It can no longer run. Now find the loop. See what triggers the function: show the notification configuration of the bucket shop-media.",
+      "expected_commands": ["aws s3api get-bucket-notification-configuration --bucket shop-media"],
+      "fake_output": "{\n  \"LambdaFunctionConfigurations\": [{\n    \"LambdaFunctionArn\": \"arn:aws:lambda:us-east-1:111122223333:function:make-thumbnail\",\n    \"Events\": [\"s3:ObjectCreated:*\"]\n  }]\n}",
+      "hint": "aws s3api get-bucket-notification-configuration --bucket shop-media"
+    },
+    {
+      "prompt": "Every object created anywhere in the bucket invokes the function: there's no prefix filter. See what it writes: list a few of the newest object keys in the bucket.",
+      "expected_commands": ["aws s3 ls s3://shop-media/ --recursive | tail -5", "aws s3 ls s3://shop-media --recursive | tail -5", "aws s3 ls s3://shop-media/ --recursive | tail -n 5", "aws s3 ls s3://shop-media/ --recursive | tail"],
+      "fake_output": "2026-09-29 03:01:44    2204 photos/p-8812.jpg.thumb.jpg.thumb.jpg.thumb.jpg.thumb.jpg\n2026-09-29 03:01:44    2204 photos/p-8812.jpg.thumb.jpg.thumb.jpg.thumb.jpg.thumb.jpg.thumb.jpg\n2026-09-29 03:01:45    2198 photos/p-1204.jpg.thumb.jpg.thumb.jpg.thumb.jpg\n2026-09-29 03:01:45    2198 photos/p-1204.jpg.thumb.jpg.thumb.jpg.thumb.jpg.thumb.jpg\n2026-09-29 03:01:45    2190 photos/p-0031.jpg.thumb.jpg",
+      "hint": "aws s3 ls s3://shop-media/ --recursive | tail -5"
+    },
+    {
+      "prompt": "Thumbnails of thumbnails of thumbnails. The function writes its output into the bucket that triggers it, so each thumbnail is a new 'object created' event. A corrected notification configuration is in notification.json: it only triggers on the prefix originals/ . Apply it to the bucket.",
+      "expected_commands": ["aws s3api put-bucket-notification-configuration --bucket shop-media --notification-configuration file://notification.json", "aws s3api put-bucket-notification-configuration --notification-configuration file://notification.json --bucket shop-media"],
+      "fake_output": "(no output)",
+      "hint": "aws s3api put-bucket-notification-configuration --bucket shop-media --notification-configuration file://notification.json"
+    },
+    {
+      "prompt": "The function's code has also been fixed to write to the prefix thumbs/ , which the trigger no longer covers. Release the brake: remove the function's concurrency limit.",
+      "expected_commands": ["aws lambda delete-function-concurrency --function-name make-thumbnail"],
+      "fake_output": "(no output)",
+      "hint": "aws lambda delete-function-concurrency --function-name make-thumbnail"
+    },
+    {
+      "prompt": "40 million junk objects remain. Deleting them one by one would take days and cost money. What's the cheap way to remove them?\n  a) A loop of 'aws s3 rm' in a shell script\n  b) An S3 lifecycle rule that expires objects matching the junk pattern, which S3 applies itself at no charge for the deletions\n  c) Delete the bucket\n  d) Leave them\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "lifecycle rule: filter on prefix photos/ and tag junk=true (or a size range), Expiration: 1 day\nS3 removes matching objects in the background; no per-request delete cost, no script to babysit",
+      "hint": "Let the storage service do it."
+    }
+  ],
+  "resolution": "The function was triggered by 'any object created in shop-media', and after the 17:55 change it created an object in shop-media. Each thumbnail it wrote fired the trigger again, producing a thumbnail of the thumbnail, and so on, without end: a recursive invocation loop. Lambda scaled it up exactly as designed, which is what makes this failure expensive: nothing errors, nothing slows down, and the loop runs as fast as the account's concurrency allows, billing for every invocation, every write, and every stored object. It ran for nine hours before a cost alarm caught it. The first move was the right one for any runaway function: reserved concurrency of 0 stops it instantly without deleting the function, its configuration, or the evidence. Then the cause: the trigger had no prefix filter, and the output went to the same place as the input. Either safeguard alone would have prevented it. The durable rule is that a function must never write to the location that triggers it. Use a separate output bucket, which makes the loop impossible by construction; if it must be one bucket, the trigger gets a prefix filter and the output goes to a prefix it excludes. AWS now detects some of these loops and stops them (it covers S3, SQS, and SNS), but don't rely on it. Other guards worth having: a concurrency cap on every event-driven function, so a loop is bounded; a budget alarm with a short evaluation period, and an anomaly alert on invocation count; and a review question for any change to what a function writes: 'does anything trigger on that?' The clean-up is a lifecycle rule, because asking S3 to expire objects costs nothing per object.",
+  "real_commands_used": ["aws lambda put-function-concurrency --reserved-concurrent-executions 0", "aws s3api get-bucket-notification-configuration", "aws s3 ls --recursive | tail", "aws s3api put-bucket-notification-configuration", "aws lambda delete-function-concurrency"]
+}

@@ -1,0 +1,46 @@
+{
+  "id": "serverless-tutorial-007",
+  "type": "tutorial",
+  "category": "serverless",
+  "title": "Cloud Run and Azure Functions: The Same Ideas on Other Clouds",
+  "difficulty": "intermediate",
+  "tags": ["cloud-run", "gcp", "azure-functions", "serverless"],
+  "intro": "Google's Cloud Run takes any container that listens on a port and runs it with a URL, scaling from zero to many copies. It's the simplest of the serverless container services, and its model, revisions and traffic splits, is a clean one to learn. The service is shop-api in region europe-west1. The last step looks at Azure Functions.",
+  "steps": [
+    {
+      "prompt": "Describe the Cloud Run service shop-api in europe-west1.",
+      "expected_commands": ["gcloud run services describe shop-api --region europe-west1", "gcloud run services describe shop-api --region=europe-west1"],
+      "fake_output": "✔ Service shop-api in region europe-west1\n\nURL:     https://shop-api-x7k2m9q4ta-ew.a.run.app\nIngress: all\nTraffic:\n  100% shop-api-00041-kez\n\nLast updated on 2026-09-27T16:02:11Z by ci@shop-prod.iam.gserviceaccount.com:\n  Revision shop-api-00041-kez\n  Container: europe-west1-docker.pkg.dev/shop-prod/app/shop-api@sha256:4f5a6b7c\n  Concurrency: 80\n  Memory: 512Mi   CPU: 1\n  Min instances: 0   Max instances: 20",
+      "explanation": "One revision serves all traffic; each instance handles up to 80 requests at once; it scales between 0 and 20 instances.",
+      "why": "Two differences from Lambda stand out. Concurrency: one Cloud Run instance serves many requests at once, so it needs far fewer instances, and fewer cold starts, for the same traffic. And it's any container, so there's no special runtime. Min instances 0 means it scales to nothing when idle, and the first request after that waits for a cold start; set a minimum of 1 for user-facing services."
+    },
+    {
+      "prompt": "A new revision was deployed with --no-traffic for testing. List the revisions of shop-api.",
+      "expected_commands": ["gcloud run revisions list --service shop-api --region europe-west1", "gcloud run revisions list --service=shop-api --region=europe-west1", "gcloud run revisions list --region europe-west1 --service shop-api"],
+      "fake_output": "   REVISION            ACTIVE  SERVICE   DEPLOYED                 DEPLOYED BY\n✔  shop-api-00042-wuf  yes     shop-api  2026-09-28 12:55:02 UTC  ci@shop-prod.iam.gserviceaccount.com\n✔  shop-api-00041-kez  yes     shop-api  2026-09-27 16:02:11 UTC  ci@shop-prod.iam.gserviceaccount.com",
+      "explanation": "Revision 42 exists and is ready, and revision 41 still has all the traffic.",
+      "why": "Every deploy creates an immutable revision, like a Lambda version. Deploying with --no-traffic separates 'the new version exists' from 'users get it', and each revision can be given a tag with its own URL for testing before any real traffic arrives."
+    },
+    {
+      "prompt": "Send 10% of traffic to shop-api-00042-wuf and keep 90% on shop-api-00041-kez.",
+      "expected_commands": ["gcloud run services update-traffic shop-api --region europe-west1 --to-revisions shop-api-00042-wuf=10,shop-api-00041-kez=90", "gcloud run services update-traffic shop-api --region=europe-west1 --to-revisions=shop-api-00042-wuf=10,shop-api-00041-kez=90", "gcloud run services update-traffic shop-api --region europe-west1 --to-revisions shop-api-00041-kez=90,shop-api-00042-wuf=10"],
+      "fake_output": "✓ Updating traffic... Done.\nTraffic:\n  90% shop-api-00041-kez\n  10% shop-api-00042-wuf",
+      "explanation": "A 90/10 canary between two revisions.",
+      "why": "The same canary as Lambda's weighted alias and Gateway API's weighted backends: one line, reversible in seconds. Rolling back is 'update-traffic --to-revisions shop-api-00041-kez=100'. The pattern is the same on every platform; only the command changes."
+    },
+    {
+      "prompt": "Read the service's last 20 log lines.",
+      "expected_commands": ["gcloud run services logs read shop-api --region europe-west1 --limit 20", "gcloud run services logs read shop-api --region=europe-west1 --limit=20", "gcloud run services logs read shop-api --limit 20 --region europe-west1"],
+      "fake_output": "2026-09-28 12:58:01 POST 200 /checkout 41ms\n2026-09-28 12:58:02 GET 200 /orders/8812 12ms\n2026-09-28 12:58:04 POST 500 /checkout 2204ms\n2026-09-28 12:58:04 ERROR psycopg.OperationalError: connection to server at \"10.20.0.5\", port 5432 failed: timeout expired",
+      "explanation": "Request logs and the application's own output, together. One checkout failed reaching the database at a private address.",
+      "why": "Cloud Run collects whatever the container writes to stdout and stderr, plus a request log, with no agent to install. That error is the classic serverless-networking problem: reaching a private address needs a VPC connector or direct VPC egress configured on the service. Lambda has the mirror-image problem, covered in serverless-incident-002."
+    },
+    {
+      "prompt": "On Azure, check whether the function app shop-func in resource group shop-rg is running.",
+      "expected_commands": ["az functionapp show -g shop-rg -n shop-func --query state", "az functionapp show --resource-group shop-rg --name shop-func --query state", "az functionapp show -n shop-func -g shop-rg --query state", "az functionapp show -g shop-rg -n shop-func --query state -o tsv"],
+      "fake_output": "\"Running\"",
+      "explanation": "The function app is running.",
+      "why": "An Azure function app is a container for functions that share a plan, settings, and scaling. The hosting plan decides the behaviour: Consumption scales to zero and has cold starts and a 5 to 10 minute limit; Premium keeps instances warm; Flex Consumption sits between them. The concepts carry straight over: triggers and bindings are event sources, slots are aliases, and 'az functionapp log tail' is the log stream."
+    }
+  ]
+}

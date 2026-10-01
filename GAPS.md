@@ -1531,7 +1531,73 @@ tenancy) is a job in itself.
 
 ---
 
-# Part 22 — The backlog: everything that isn't in the game yet
+# Part 22 — Serverless
+
+**Content:** 7 tutorials, 4 incidents.
+
+Compute you don't patch or scale yourself: functions (AWS Lambda is the
+main example) and managed containers (ECS on Fargate, Cloud Run). The
+limits you hit are different from a server's: concurrency, timeouts,
+cold starts, and how each event source retries.
+
+## Covered
+
+Every section of `commands/serverless.md`:
+- **Lambda basics:** configuration, invoking with a payload, the
+  `FunctionError` trap, the REPORT log line, memory and timeout.
+- **Scaling:** the shared account concurrency pool, cold starts and
+  init time, provisioned and reserved concurrency, and how throttling
+  looks to each kind of caller.
+- **Releases:** versions, aliases, a weighted canary, instant rollback,
+  and images by digest.
+- **Events:** event source mappings, whole-batch retries and partial
+  batch responses, silent loss of failed asynchronous events, failure
+  destinations, and S3 trigger filters.
+- **API Gateway:** routes, the 30-second integration limit, the
+  asynchronous job pattern, and stage throttling.
+- **ECS on Fargate:** service events, stopped-task reasons, ECS Exec,
+  and forcing a deployment.
+- **Other clouds:** Cloud Run revisions, traffic splits, and logs; an
+  Azure function app's state and plans.
+
+Incidents:
+- checkout throttled because a bulk job used the account's whole
+  concurrency pool;
+- a function attached to a VPC that lost its route to the internet;
+- a function triggering itself through its own S3 output, 40 million
+  times;
+- an ECS deployment looping because slow-starting tasks were killed by
+  health checks.
+
+## Still missing
+
+- **A real account.** Everything is pre-written output. The free tiers
+  of Lambda and Cloud Run cover real practice.
+- Writing function code and its tests, layers, and packaging.
+- Infrastructure code for serverless: SAM, the Serverless Framework,
+  CDK, and Terraform modules.
+- Step Functions and other workflow engines; EventBridge rules and
+  schemas.
+- DynamoDB as the usual serverless datastore (capacity modes, hot
+  partitions, single-table design).
+- Observability specific to functions: X-Ray, structured logs,
+  Lambda Insights, and cost per invocation.
+- Cloud Functions and Azure Functions in depth; Azure Container Apps;
+  App Service.
+- Knative and OpenFaaS on Kubernetes.
+
+## Readiness verdict
+
+Enough to operate serverless workloads someone else built: read a
+function's logs and limits, recognise throttling, cold starts, and
+timeouts for what they are, release and roll back safely, and spot the
+event-driven failure modes that produce silence instead of errors.
+Designing a serverless system well, especially its data model and its
+cost profile, takes building one.
+
+---
+
+# Part 23 — The backlog: everything that isn't in the game yet
 
 The parts above each list what's missing *inside* a category. This part
 lists whole topics with no category at all, in three tiers. Nobody needs
@@ -1574,8 +1640,10 @@ employer uses it.
    Helm chart authoring, Gateway API, VPA/KEDA/Karpenter, Flux, and
    Linkerd; cert-manager is in Identity and Secrets. Still open:
    external-dns, and CKAD and CKS exam passes.
-8. **Serverless and managed compute.** Lambda, Cloud Functions, Azure
-   Functions, API gateways, ECS/Fargate, Cloud Run, App Service.
+8. ~~**Serverless and managed compute**~~: **now a category**
+   (Serverless): Lambda, API Gateway, ECS on Fargate, Cloud Run, and
+   Azure Functions. Step Functions, DynamoDB, and serverless
+   infrastructure code are under that part's "Still missing".
 9. **Logging pipelines.** Fluent Bit, Vector, Logstash, OpenSearch,
    log-based metrics, and retention and cost control.
 10. **Performance engineering.** Flame graphs (perf, py-spy,
@@ -1654,12 +1722,12 @@ If content is added in the order that helps most people soonest:
 5. ~~Jenkins and GitLab CI~~ (done);
 6. ~~Python for automation, as Writing Labs~~ (done);
 7. ~~Kafka operations~~ (done);
-8. serverless;
+8. ~~serverless~~ (done);
 9. then tier B by demand.
 
 ---
 
-# Part 23 — Overall: will this make you proficient in DevOps?
+# Part 24 — Overall: will this make you proficient in DevOps?
 
 ## By the numbers
 
@@ -1686,7 +1754,8 @@ If content is added in the order that helps most people soonest:
 | Identity & Secrets | 9 | 5 | 2 Writing Labs (Vault policy, cert-manager) |
 | Scripting | 8 | 4 | 2 Writing Labs (Python) |
 | Messaging | 7 | 4 | |
-| **Total** | **266** | **136** | 41 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
+| Serverless | 7 | 4 | |
+| **Total** | **273** | **140** | 41 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -1698,7 +1767,7 @@ command beats the alternatives — not just what it does.
 will know the commands, the failure modes, and — most importantly — the
 debugging method** (check the layer before guessing the fix; refused vs
 timeout; verify after every change; revoke before cleaning up; revert
-don't force-push). The 136 incidents are modeled on the kinds of problems
+don't force-push). The 140 incidents are modeled on the kinds of problems
 that genuinely trip up working engineers, and working through them
 builds judgment that command references alone never will.
 

@@ -1,0 +1,46 @@
+{
+  "id": "serverless-tutorial-006",
+  "type": "tutorial",
+  "category": "serverless",
+  "title": "ECS on Fargate: Containers Without Nodes",
+  "difficulty": "intermediate",
+  "tags": ["ecs", "fargate", "containers", "aws"],
+  "intro": "Fargate runs your containers without you managing any machines: you describe a task (the containers, CPU, and memory), and a service keeps a number of them running behind a load balancer. It's the middle ground between a function and a Kubernetes cluster. The cluster is named shop, and the service is api.",
+  "steps": [
+    {
+      "prompt": "Read the service's recent events, the first place ECS explains itself: show the latest 5 events of the service api in the cluster shop.",
+      "expected_commands": ["aws ecs describe-services --cluster shop --services api --query 'services[0].events[:5]'", "aws ecs describe-services --cluster shop --services api --query \"services[0].events[:5]\"", "aws ecs describe-services --services api --cluster shop --query 'services[0].events[:5]'", "aws ecs describe-services --cluster shop --services api"],
+      "fake_output": "[\n  {\"createdAt\": \"2026-09-28T12:50:11Z\", \"message\": \"(service api) has started 2 tasks: (task 4e8a9f2b7c1d).\"},\n  {\"createdAt\": \"2026-09-28T12:49:40Z\", \"message\": \"(service api) deregistered 2 targets in (target-group api-tg)\"},\n  {\"createdAt\": \"2026-09-28T12:49:38Z\", \"message\": \"(service api) (task 9d3c1b7a2f6e) failed container health checks.\"},\n  {\"createdAt\": \"2026-09-28T12:44:02Z\", \"message\": \"(service api) has reached a steady state.\"}\n]",
+      "explanation": "The service was steady, then tasks failed health checks, were removed, and replacements were started.",
+      "why": "Service events are ECS's equivalent of 'kubectl describe': a plain-language log of what the scheduler did and why. 'has reached a steady state' is the healthy message. A service that keeps starting tasks without reaching it is in a loop, and the reason is in the stopped tasks."
+    },
+    {
+      "prompt": "List the stopped tasks of the service api in the cluster shop.",
+      "expected_commands": ["aws ecs list-tasks --cluster shop --service-name api --desired-status STOPPED", "aws ecs list-tasks --cluster shop --desired-status STOPPED --service-name api"],
+      "fake_output": "{\n  \"taskArns\": [\n    \"arn:aws:ecs:us-east-1:111122223333:task/shop/9d3c1b7a2f6e\",\n    \"arn:aws:ecs:us-east-1:111122223333:task/shop/b5a4c93e1d0f\"\n  ]\n}",
+      "explanation": "Two tasks that ECS stopped recently.",
+      "why": "Stopped tasks are only kept for about an hour, so look promptly. By default 'list-tasks' shows running tasks only, which is why people think there's nothing to inspect. For history beyond an hour, the task state changes can be sent to EventBridge and stored."
+    },
+    {
+      "prompt": "Find out why task 9d3c1b7a2f6e stopped: show its stoppedReason and its first container's reason.",
+      "expected_commands": ["aws ecs describe-tasks --cluster shop --tasks 9d3c1b7a2f6e --query 'tasks[0].[stoppedReason,containers[0].reason]'", "aws ecs describe-tasks --cluster shop --tasks 9d3c1b7a2f6e --query \"tasks[0].[stoppedReason,containers[0].reason]\"", "aws ecs describe-tasks --cluster shop --tasks 9d3c1b7a2f6e", "aws ecs describe-tasks --tasks 9d3c1b7a2f6e --cluster shop --query 'tasks[0].[stoppedReason,containers[0].reason]'"],
+      "fake_output": "[\n  \"Essential container in task exited\",\n  \"OutOfMemoryError: Container killed due to memory usage\"\n]",
+      "explanation": "The container was killed for exceeding its memory limit.",
+      "why": "stoppedReason is the task-level cause and the container's reason is the detail. The common ones: 'OutOfMemoryError' (raise the task's memory or fix the leak), 'CannotPullContainerError' (image name, registry permissions, or no route to the registry), 'Task failed ELB health checks' (the app is slow to start or the check path is wrong), and a plain exit code, which sends you to the application's logs."
+    },
+    {
+      "prompt": "Open a shell inside a running container to look around: task 4e8a9f2b7c1d, container api, in the cluster shop.",
+      "expected_commands": ["aws ecs execute-command --cluster shop --task 4e8a9f2b7c1d --container api --interactive --command \"/bin/sh\"", "aws ecs execute-command --cluster shop --task 4e8a9f2b7c1d --container api --interactive --command /bin/sh", "aws ecs execute-command --cluster shop --task 4e8a9f2b7c1d --container api --interactive --command '/bin/sh'", "aws ecs execute-command --cluster shop --task 4e8a9f2b7c1d --container api --command \"/bin/sh\" --interactive"],
+      "fake_output": "The Session Manager plugin was installed successfully. Use the AWS CLI to start a session.\n\nStarting session with SessionId: ecs-execute-command-0a1b2c3d4e5f\n/app #",
+      "explanation": "A shell in the container, through Systems Manager, with no SSH and no open port.",
+      "why": "This is Fargate's 'kubectl exec'. It works over SSM, so access is controlled by IAM and sessions can be logged. It must be enabled on the service ('enableExecuteCommand') before the task starts, and the task role needs SSM permissions, so turn it on before the incident. There's no node to SSH into: with Fargate the container is all you can reach."
+    },
+    {
+      "prompt": "The task definition has been updated with more memory. Roll the service onto it by forcing a new deployment.",
+      "expected_commands": ["aws ecs update-service --cluster shop --service api --force-new-deployment", "aws ecs update-service --service api --cluster shop --force-new-deployment"],
+      "fake_output": "{\n  \"service\": {\n    \"serviceName\": \"api\",\n    \"deployments\": [\n      {\"status\": \"PRIMARY\", \"rolloutState\": \"IN_PROGRESS\", \"desiredCount\": 4, \"runningCount\": 0},\n      {\"status\": \"ACTIVE\", \"desiredCount\": 4, \"runningCount\": 4}\n    ]\n  }\n}",
+      "explanation": "A new deployment is starting tasks, with the old ones still serving.",
+      "why": "ECS rolls like a Kubernetes Deployment: new tasks start, pass health checks, then old ones drain. Turn on the deployment circuit breaker with rollback, so that a release whose tasks never become healthy is reverted automatically instead of retrying for ever. --force-new-deployment is also how you make a service re-pull an image tag, though deploying by digest avoids needing to."
+    }
+  ]
+}

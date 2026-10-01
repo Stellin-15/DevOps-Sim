@@ -1,0 +1,47 @@
+{
+  "id": "serverless-tutorial-001",
+  "type": "tutorial",
+  "category": "serverless",
+  "title": "Lambda from the Command Line: Inspect, Invoke, Read the Logs",
+  "difficulty": "beginner",
+  "tags": ["lambda", "aws", "serverless", "logs"],
+  "intro": "A Lambda function is code that AWS runs when an event arrives, with no server for you to manage. There is still plenty to operate: its memory and timeout, its permissions, and its logs. You're working with a function named resize-image in an AWS account with the CLI configured.",
+  "steps": [
+    {
+      "prompt": "List the functions in the account as a table of name, runtime, memory, and timeout.",
+      "expected_commands": ["aws lambda list-functions --query 'Functions[].[FunctionName,Runtime,MemorySize,Timeout]' --output table", "aws lambda list-functions --query \"Functions[].[FunctionName,Runtime,MemorySize,Timeout]\" --output table", "aws lambda list-functions --output table --query 'Functions[].[FunctionName,Runtime,MemorySize,Timeout]'", "aws lambda list-functions"],
+      "fake_output": "-------------------------------------------------\n|                 ListFunctions                 |\n+------------------+-------------+-------+------+\n|  checkout-api    |  nodejs20.x |  512  |  10  |\n|  resize-image    |  python3.12 |  128  |  3   |\n|  nightly-report  |  python3.12 |  1024 |  900 |\n+------------------+-------------+-------+------+",
+      "explanation": "Three functions. resize-image has 128 MB of memory and a 3-second timeout, the defaults.",
+      "why": "Memory and timeout are the two settings that matter most. The defaults (128 MB, 3 seconds) are too small for almost any real work, and a function left on them fails in confusing ways under load. The maximum timeout is 900 seconds: anything longer isn't a Lambda job."
+    },
+    {
+      "prompt": "Show the full configuration of resize-image.",
+      "expected_commands": ["aws lambda get-function-configuration --function-name resize-image"],
+      "fake_output": "{\n  \"FunctionName\": \"resize-image\",\n  \"Runtime\": \"python3.12\",\n  \"Role\": \"arn:aws:iam::111122223333:role/resize-image-role\",\n  \"Handler\": \"app.handler\",\n  \"Timeout\": 3,\n  \"MemorySize\": 128,\n  \"Environment\": {\"Variables\": {\"BUCKET\": \"shop-thumbnails\"}},\n  \"State\": \"Active\",\n  \"LastUpdateStatus\": \"Successful\"\n}",
+      "explanation": "Its runtime, entry point, execution role, limits, and environment.",
+      "why": "'Role' is the function's identity: what it's allowed to do in AWS comes from that role, so AccessDenied errors are fixed there. 'Handler' names the file and function that AWS calls. Environment variables are visible to anyone who can read the configuration, so secrets belong in Secrets Manager or Parameter Store, fetched at run time."
+    },
+    {
+      "prompt": "Invoke the function with the test event in event.json, writing its response to out.json. Pass --cli-binary-format raw-in-base64-out so the payload file can be plain JSON.",
+      "expected_commands": ["aws lambda invoke --function-name resize-image --payload file://event.json --cli-binary-format raw-in-base64-out out.json", "aws lambda invoke --function-name resize-image --cli-binary-format raw-in-base64-out --payload file://event.json out.json"],
+      "fake_output": "{\n  \"StatusCode\": 200,\n  \"FunctionError\": \"Unhandled\",\n  \"ExecutedVersion\": \"$LATEST\"\n}",
+      "hint": "aws lambda invoke --function-name resize-image --payload file://event.json --cli-binary-format raw-in-base64-out out.json",
+      "explanation": "StatusCode 200, and FunctionError: Unhandled.",
+      "why": "A trap: StatusCode 200 only means Lambda ran your function. Whether the function succeeded is the FunctionError field, and the details are in out.json. Scripts that check only the status code report success for a function that crashed. The --cli-binary-format flag lets you pass plain JSON; without it the CLI expects the payload base64-encoded."
+    },
+    {
+      "prompt": "Read the function's recent logs: tail its log group for the last 5 minutes.",
+      "expected_commands": ["aws logs tail /aws/lambda/resize-image --since 5m", "aws logs tail /aws/lambda/resize-image --since 5m --follow", "aws logs tail --since 5m /aws/lambda/resize-image"],
+      "fake_output": "START RequestId: 9f1c2e7a-41bb-4c08-8e11-f47a2d90be01 Version: $LATEST\n[INFO] downloading s3://shop-uploads/photo-0001.jpg (8.4 MB)\n2026-09-28T12:40:03Z 9f1c2e7a Task timed out after 3.00 seconds\nEND RequestId: 9f1c2e7a-41bb-4c08-8e11-f47a2d90be01\nREPORT RequestId: 9f1c2e7a-41bb-4c08-8e11-f47a2d90be01  Duration: 3000.00 ms  Billed Duration: 3000 ms  Memory Size: 128 MB  Max Memory Used: 127 MB  Init Duration: 412.20 ms",
+      "explanation": "It timed out at 3 seconds while downloading an 8 MB photo, and used 127 of its 128 MB.",
+      "why": "Every invocation ends with a REPORT line, which is the most useful line in Lambda. Duration equal to the timeout means it was cut off. 'Max Memory Used' at the limit means it was about to be killed for memory as well. 'Init Duration' appears only on a cold start: the time to load your code before the handler ran."
+    },
+    {
+      "prompt": "Give the function room: set its memory to 1024 MB and its timeout to 30 seconds.",
+      "expected_commands": ["aws lambda update-function-configuration --function-name resize-image --memory-size 1024 --timeout 30", "aws lambda update-function-configuration --function-name resize-image --timeout 30 --memory-size 1024"],
+      "fake_output": "{\n  \"FunctionName\": \"resize-image\",\n  \"Timeout\": 30,\n  \"MemorySize\": 1024,\n  \"LastUpdateStatus\": \"InProgress\"\n}",
+      "explanation": "The new limits are being applied.",
+      "why": "In Lambda, memory also buys CPU: the processor share scales with the memory setting. So more memory often makes a function faster, and since you pay for memory times duration, sometimes cheaper as well. Tune it by measuring (the Power Tuning tool automates that), not by guessing. In real use this change belongs in the infrastructure code, or the next deploy puts it back."
+    }
+  ]
+}

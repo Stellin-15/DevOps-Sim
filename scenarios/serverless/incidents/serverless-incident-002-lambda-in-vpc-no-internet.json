@@ -1,0 +1,43 @@
+{
+  "id": "serverless-incident-002",
+  "type": "incident",
+  "category": "serverless",
+  "title": "The function reaches the database now, and has stopped reaching everything else",
+  "difficulty": "advanced",
+  "tags": ["lambda", "vpc", "nat", "networking"],
+  "intro": "The send-receipt function used to work. Yesterday it was attached to the VPC so that it could read from the private RDS database, and that part works. Since then every invocation times out when it calls the payment provider's API on the internet to fetch the receipt. Nothing else changed.",
+  "steps": [
+    {
+      "prompt": "Confirm the symptom in the logs: tail send-receipt's logs for the last 10 minutes.",
+      "expected_commands": ["aws logs tail /aws/lambda/send-receipt --since 10m", "aws logs tail --since 10m /aws/lambda/send-receipt", "aws logs tail /aws/lambda/send-receipt --since 10m --follow"],
+      "fake_output": "START RequestId: a1f9c3e2-...\n[INFO] loaded order 4812906 from database\n[INFO] GET https://api.payments.example.com/v1/receipts/4812906\n2026-09-28T13:10:33Z a1f9c3e2 Task timed out after 30.00 seconds\nREPORT RequestId: a1f9c3e2-...  Duration: 30000.00 ms",
+      "hint": "aws logs tail /aws/lambda/send-receipt --since 10m"
+    },
+    {
+      "prompt": "The database read works; the outbound HTTPS call hangs until the function's timeout. A hang, not a refusal, means packets are going nowhere. See which subnets the function was attached to: show its VPC configuration.",
+      "expected_commands": ["aws lambda get-function-configuration --function-name send-receipt --query VpcConfig", "aws lambda get-function-configuration --function-name send-receipt --query 'VpcConfig'", "aws lambda get-function-configuration --function-name send-receipt"],
+      "fake_output": "{\n  \"SubnetIds\": [\"subnet-0aa11bb22cc33dd44\"],\n  \"SecurityGroupIds\": [\"sg-0f1e2d3c4b5a69788\"],\n  \"VpcId\": \"vpc-0123456789abcdef0\"\n}",
+      "hint": "aws lambda get-function-configuration --function-name send-receipt --query VpcConfig"
+    },
+    {
+      "prompt": "One subnet. Check where that subnet sends internet-bound traffic: show the routes of the route table associated with subnet-0aa11bb22cc33dd44.",
+      "expected_commands": ["aws ec2 describe-route-tables --filters Name=association.subnet-id,Values=subnet-0aa11bb22cc33dd44 --query 'RouteTables[0].Routes'", "aws ec2 describe-route-tables --filters Name=association.subnet-id,Values=subnet-0aa11bb22cc33dd44 --query \"RouteTables[0].Routes\"", "aws ec2 describe-route-tables --filters Name=association.subnet-id,Values=subnet-0aa11bb22cc33dd44", "aws ec2 describe-route-tables --filters \"Name=association.subnet-id,Values=subnet-0aa11bb22cc33dd44\" --query 'RouteTables[0].Routes'"],
+      "fake_output": "[\n  {\"DestinationCidrBlock\": \"10.0.0.0/16\", \"GatewayId\": \"local\", \"State\": \"active\"}\n]",
+      "hint": "aws ec2 describe-route-tables --filters Name=association.subnet-id,Values=subnet-0aa11bb22cc33dd44 --query 'RouteTables[0].Routes'"
+    },
+    {
+      "prompt": "Only the local route: this is an isolated database subnet with no path to the internet at all. A function in a VPC has no public IP address, so it needs a NAT gateway to reach the internet. The VPC's application subnets already route through NAT gateway nat-0b1c2d3e4f5a60718. The route table here is rtb-0c9d8e7f6a5b41302. Add a default route through that NAT gateway.",
+      "expected_commands": ["aws ec2 create-route --route-table-id rtb-0c9d8e7f6a5b41302 --destination-cidr-block 0.0.0.0/0 --nat-gateway-id nat-0b1c2d3e4f5a60718", "aws ec2 create-route --route-table-id rtb-0c9d8e7f6a5b41302 --nat-gateway-id nat-0b1c2d3e4f5a60718 --destination-cidr-block 0.0.0.0/0"],
+      "fake_output": "{\n  \"Return\": true\n}",
+      "hint": "aws ec2 create-route --route-table-id rtb-0c9d8e7f6a5b41302 --destination-cidr-block 0.0.0.0/0 --nat-gateway-id nat-0b1c2d3e4f5a60718"
+    },
+    {
+      "prompt": "Test it: invoke send-receipt with the event in event.json, writing the response to out.json. Pass --cli-binary-format raw-in-base64-out.",
+      "expected_commands": ["aws lambda invoke --function-name send-receipt --payload file://event.json --cli-binary-format raw-in-base64-out out.json", "aws lambda invoke --function-name send-receipt --cli-binary-format raw-in-base64-out --payload file://event.json out.json"],
+      "fake_output": "{\n  \"StatusCode\": 200,\n  \"ExecutedVersion\": \"$LATEST\"\n}",
+      "hint": "aws lambda invoke --function-name send-receipt --payload file://event.json --cli-binary-format raw-in-base64-out out.json"
+    }
+  ],
+  "resolution": "A Lambda function outside a VPC reaches the internet through AWS's own network and can't reach your private resources. Attach it to a VPC and it's the other way round: it gets a network interface in your subnets, with a private address only, and its traffic follows those subnets' route tables like any other private host. Putting it in a public subnet doesn't help, because Lambda interfaces never get a public IP. To reach the internet it needs a route to a NAT gateway. This function was attached to the isolated database subnet, whose route table has only the local route. So the database, inside the VPC, was reachable, and the payment provider's API was not: packets left the function and went nowhere, and the call hung until the 30-second function timeout. Timeouts with no error are the signature of a missing route (the lesson of the AWS networking mysteries). The same applies to AWS's own APIs: a VPC-attached function calling S3, Secrets Manager, or SQS needs either NAT or VPC endpoints for those services, and the symptom is the same hang. Adding the default route fixed it. A cleaner design is to attach functions to the private application subnets that already have NAT, in at least two availability zones, and reach the database through its security group. Two more lessons. Give outbound HTTP calls their own short timeout, well under the function's, so a network problem fails in 5 seconds with a clear error instead of consuming 30 seconds of billed time on every invocation. And a change like 'attach to the VPC' should be tested end to end in a staging account, since it changes every network path the function has, not just the one you were thinking about.",
+  "real_commands_used": ["aws logs tail /aws/lambda/<fn>", "aws lambda get-function-configuration --query VpcConfig", "aws ec2 describe-route-tables --filters Name=association.subnet-id,Values=<subnet>", "aws ec2 create-route --nat-gateway-id", "aws lambda invoke"]
+}
