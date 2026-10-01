@@ -1,0 +1,49 @@
+{
+  "id": "monitoring-incident-007",
+  "type": "incident",
+  "category": "monitoring",
+  "title": "The logs from the outage are missing, and only from the outage",
+  "difficulty": "advanced",
+  "tags": ["fluent-bit", "logging", "backpressure", "daemonset"],
+  "intro": "Yesterday's 20-minute checkout outage is being reviewed, and the logs for those 20 minutes are mostly not there: the log system has a thin trickle from that window where there should be a flood. Before and after, logs look normal. Logs are shipped by a Fluent Bit DaemonSet (namespace logging) to Elasticsearch.",
+  "steps": [
+    {
+      "prompt": "Check the collectors themselves. List the Fluent Bit pods in namespace logging with their restart counts.",
+      "expected_commands": ["kubectl get pods -n logging", "kubectl get pods -n logging -o wide", "kubectl get pods -n logging -l app.kubernetes.io/name=fluent-bit", "kubectl get po -n logging"],
+      "fake_output": "NAME               READY   STATUS    RESTARTS       AGE\nfluent-bit-2xkq4   1/1     Running   9 (22h ago)    14d\nfluent-bit-7hm2n   1/1     Running   11 (22h ago)   14d\nfluent-bit-b4t9w   1/1     Running   8 (22h ago)    14d\nfluent-bit-k2m4x   1/1     Running   0              14d",
+      "hint": "kubectl get pods -n logging"
+    },
+    {
+      "prompt": "Three of the four restarted around 10 times each, 22 hours ago: during the outage. Find out why one died: describe pod fluent-bit-7hm2n and look at its last state.",
+      "expected_commands": ["kubectl describe pod fluent-bit-7hm2n -n logging", "kubectl describe pod -n logging fluent-bit-7hm2n", "kubectl describe po fluent-bit-7hm2n -n logging"],
+      "fake_output": "Containers:\n  fluent-bit:\n    State:          Running\n    Last State:     Terminated\n      Reason:       OOMKilled\n      Exit Code:    137\n    Restart Count:  11\n    Limits:\n      memory:  100Mi",
+      "hint": "kubectl describe pod fluent-bit-7hm2n -n logging"
+    },
+    {
+      "prompt": "OOMKilled at a 100Mi limit. The collector ran out of memory when log volume spiked. Look at how its buffering is configured: print the tail input section from the ConfigMap fluent-bit in namespace logging, showing the lines after the word tail.",
+      "expected_commands": ["kubectl get configmap fluent-bit -n logging -o yaml | grep -A8 tail", "kubectl get cm fluent-bit -n logging -o yaml | grep -A8 tail", "kubectl get configmap fluent-bit -n logging -o yaml | grep -A 8 tail", "kubectl get configmap fluent-bit -n logging -o yaml"],
+      "fake_output": "    [INPUT]\n        Name              tail\n        Path              /var/log/containers/*.log\n        Refresh_Interval  5\n        Skip_Long_Lines   On\n        # no Mem_Buf_Limit, no storage.type",
+      "hint": "kubectl get configmap fluent-bit -n logging -o yaml | grep -A8 tail"
+    },
+    {
+      "prompt": "No memory buffer limit and no disk buffering: when the destination is slow, the agent holds everything in memory until it's killed. Was the destination slow? Check Elasticsearch's write thread pool for rejections. ES holds the cluster's address.",
+      "expected_commands": ["curl -s \"$ES/_cat/thread_pool/write?v&h=node_name,active,queue,rejected\"", "curl -s \"$ES/_cat/thread_pool/write?v\"", "curl -s $ES/_cat/thread_pool/write?v", "curl -s \"$ES/_cat/thread_pool/write?v&h=node_name,queue,rejected\""],
+      "fake_output": "node_name  active  queue  rejected\nes-data-0       2      0    412044\nes-data-1       1      0    398120\nes-data-2       3      0    401877",
+      "hint": "curl -s \"$ES/_cat/thread_pool/write?v&h=node_name,active,queue,rejected\""
+    },
+    {
+      "prompt": "Over a million rejected writes: Elasticsearch couldn't take the spike and pushed back. An updated ConfigMap in fluent-bit-buffered.yaml sets Mem_Buf_Limit 50MB and storage.type filesystem on the input, and the DaemonSet's memory limit is raised to 300Mi in the same file. Apply it.",
+      "expected_commands": ["kubectl apply -f fluent-bit-buffered.yaml", "kubectl apply -f fluent-bit-buffered.yaml -n logging"],
+      "fake_output": "configmap/fluent-bit configured\ndaemonset.apps/fluent-bit configured",
+      "hint": "kubectl apply -f fluent-bit-buffered.yaml"
+    },
+    {
+      "prompt": "Wait for the DaemonSet to finish rolling out.",
+      "expected_commands": ["kubectl rollout status daemonset/fluent-bit -n logging", "kubectl rollout status ds/fluent-bit -n logging", "kubectl rollout status daemonset fluent-bit -n logging"],
+      "fake_output": "daemon set \"fluent-bit\" successfully rolled out",
+      "hint": "kubectl rollout status daemonset/fluent-bit -n logging"
+    }
+  ],
+  "resolution": "The logging pipeline failed at the moment it was needed, because the outage itself was the load test it had never had. When checkout broke, every service logged errors and stack traces at many times the usual rate. Elasticsearch couldn't index that fast and started rejecting bulk writes. The collectors, configured with no limit on in-memory buffering and no disk buffer, kept reading log files and holding everything they couldn't send. Within a minute each hit its 100Mi memory limit and was OOM-killed. On restart it began again, was overwhelmed again, and died again, ten times over. Each death lost what was in memory, and while the agent was down the container log files rotated, so those lines were never read at all. The one collector that survived was on a quiet node. Everything in this chain is a default: Fluent Bit doesn't limit memory buffering unless told to, and a small memory limit on a DaemonSet looks prudent. The fix puts a buffer where the pressure is: a memory cap on the input so the agent pauses reading instead of growing, filesystem buffering so the backlog waits on disk and survives a restart, and a limit sized for real spikes. With that, the logs would have arrived late instead of never. Three wider lessons. A logging system has to be sized for the worst hour, not the average one, because incidents are exactly when volume multiplies. Monitor the pipeline itself: collector restarts, dropped and retried records, and the destination's rejections were all visible in metrics during the outage and nobody was looking (monitoring-tutorial-014). And during an incident, 'kubectl logs' still reads straight from the node, which is the fallback when the pipeline is down, as long as you get there before the files rotate.",
+  "real_commands_used": ["kubectl get pods -n logging (restart counts)", "kubectl describe pod (OOMKilled)", "kubectl get configmap -o yaml | grep -A8 tail", "curl $ES/_cat/thread_pool/write (rejected)", "kubectl apply -f", "kubectl rollout status daemonset"]
+}

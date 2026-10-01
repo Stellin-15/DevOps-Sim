@@ -1,0 +1,32 @@
+{
+  "id": "yaml-044",
+  "type": "yaml_lab",
+  "category": "monitoring",
+  "title": "Add a Manual OpenTelemetry Span to a Function",
+  "difficulty": "advanced",
+  "tags": ["opentelemetry", "tracing", "python", "instrumentation"],
+  "intro": "Auto-instrumentation (monitoring-tutorial-013) traces HTTP calls and database queries. It can't see your business logic: 'apply discount' is just time between two queries. A manual span makes that step visible in a trace, with the attributes you'd want when debugging it. Instrument the function below with the OpenTelemetry API.",
+  "steps": [
+    {
+      "file": "discounts.py",
+      "format": "python",
+      "starter_content": "\"\"\"Discount logic for checkout.\"\"\"\n\n\nclass DiscountNotFound(Exception):\n    pass\n\n\ndef lookup_discount(code):\n    table = {\"WELCOME10\": 1000, \"AUTUMN5\": 500}\n    if code not in table:\n        raise DiscountNotFound(code)\n    return table[code]\n\n\ndef apply_discount(order, code):\n    discount = lookup_discount(code)\n    order[\"total_cents\"] -= discount\n    return order\n",
+      "prompt": "Edit discounts.py:\n\n(1) Add the imports:\n      from opentelemetry import trace\n      from opentelemetry.trace import Status, StatusCode\n(2) Create a module-level tracer:  tracer = trace.get_tracer(__name__)\n(3) In apply_discount, wrap the body in a span:\n      with tracer.start_as_current_span(\"apply_discount\") as span:\n(4) Inside the span, record two attributes with span.set_attribute:\n      \"order.id\" from order[\"id\"], and \"discount.code\" from code\n(5) Catch DiscountNotFound around the lookup. In the handler call span.record_exception(exc) and\n      span.set_status(Status(StatusCode.ERROR)), then re-raise with a bare 'raise'.\n(6) After a successful lookup, record \"discount.cents\" with the discount amount.\n\nDon't record anything personal about the customer (no name, address, or card details).",
+      "apply_commands": ["python -m py_compile discounts.py", "pytest -q", "check"],
+      "validate": {
+        "fields": {
+          "imports[*]": ["opentelemetry", "opentelemetry.trace"],
+          "functions[*]": ["apply_discount", "lookup_discount"],
+          "calls[*]": ["trace.get_tracer", "tracer.start_as_current_span", "span.set_attribute", "span.record_exception", "span.set_status"],
+          "text": {"contains": ["tracer = trace.get_tracer(__name__)", "\"apply_discount\"", "\"order.id\"", "\"discount.code\"", "\"discount.cents\"", "except DiscountNotFound", "StatusCode.ERROR", "raise"]}
+        },
+        "absent": ["except:", "card_number", "customer_name"]
+      },
+      "hint": "def apply_discount(order, code):\n    with tracer.start_as_current_span(\"apply_discount\") as span:\n        span.set_attribute(\"order.id\", order[\"id\"])\n        span.set_attribute(\"discount.code\", code)\n        try:\n            discount = lookup_discount(code)\n        except DiscountNotFound as exc:\n            span.record_exception(exc)\n            span.set_status(Status(StatusCode.ERROR))\n            raise\n        span.set_attribute(\"discount.cents\", discount)\n        order[\"total_cents\"] -= discount\n        return order",
+      "solution": "\"\"\"Discount logic for checkout.\"\"\"\nfrom opentelemetry import trace\nfrom opentelemetry.trace import Status, StatusCode\n\ntracer = trace.get_tracer(__name__)\n\n\nclass DiscountNotFound(Exception):\n    pass\n\n\ndef lookup_discount(code):\n    table = {\"WELCOME10\": 1000, \"AUTUMN5\": 500}\n    if code not in table:\n        raise DiscountNotFound(code)\n    return table[code]\n\n\ndef apply_discount(order, code):\n    with tracer.start_as_current_span(\"apply_discount\") as span:\n        span.set_attribute(\"order.id\", order[\"id\"])\n        span.set_attribute(\"discount.code\", code)\n        try:\n            discount = lookup_discount(code)\n        except DiscountNotFound as exc:\n            span.record_exception(exc)\n            span.set_status(Status(StatusCode.ERROR))\n            raise\n        span.set_attribute(\"discount.cents\", discount)\n        order[\"total_cents\"] -= discount\n        return order\n",
+      "fake_output": "trace 9f1c2e7a41bb\n  POST /checkout                      212ms\n    SELECT orders                       4ms\n    apply_discount                      1ms   order.id=4812906 discount.code=AUTUMN5 discount.cents=500\n    POST payments /v1/charge          190ms",
+      "explanation": "The business step now appears in every checkout trace, with the order and the discount that was applied.",
+      "why": "The span is opened with a context manager, so it's closed and timed even when an exception passes through, and it becomes the parent of anything called inside it. Attributes are what make a span useful for debugging: with order.id you can search for one order's trace, and with discount.code you can ask which codes are slow or failing. Use dotted, lower-case names, and follow the OpenTelemetry semantic conventions where one exists. On failure, record_exception attaches the stack trace as an event, and set_status marks the span as an error so that it shows red and counts in error rates; then re-raise, because instrumentation must never change what the code does. Two cautions. Attribute values are stored and widely readable, so never put personal data, tokens, or card details in them. And attribute values with unlimited variety are fine in traces (that's what traces are for) but must not be copied into metric labels. Add manual spans sparingly: one per meaningful business step, not one per function."
+    }
+  ]
+}

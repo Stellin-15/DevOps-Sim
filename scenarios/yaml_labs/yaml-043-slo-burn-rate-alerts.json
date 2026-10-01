@@ -1,0 +1,37 @@
+{
+  "id": "yaml-043",
+  "type": "yaml_lab",
+  "category": "monitoring",
+  "title": "Write Multi-Window Burn-Rate Alerts for an SLO",
+  "difficulty": "advanced",
+  "tags": ["slo", "burn-rate", "prometheus", "alerting"],
+  "intro": "monitoring-tutorial-012 read burn-rate alerts; now write them. Checkout has a 99.9% availability SLO, so its error budget is 0.1% of requests (0.001). Recording rules already exist that give the error ratio over several windows: slo:checkout_error_ratio:rate5m, :rate30m, :rate1h, and :rate6h. Write the two alerts that page for a fast burn and open a ticket for a slow one.",
+  "steps": [
+    {
+      "file": "checkout-slo-alerts.yml",
+      "starter_content": "groups:\n  - name: checkout-slo-burn\n    rules: []\n",
+      "prompt": "Complete checkout-slo-alerts.yml. In the group checkout-slo-burn, write two alert rules:\n\n(1) alert: CheckoutErrorBudgetFastBurn\n    expr: both the 1h and the 5m error ratio are above 14.4 times the budget:\n      slo:checkout_error_ratio:rate1h > (14.4 * 0.001) and slo:checkout_error_ratio:rate5m > (14.4 * 0.001)\n    for: 2m\n    labels: severity: page\n    annotations: a summary\n\n(2) alert: CheckoutErrorBudgetSlowBurn\n    expr: both the 6h and the 30m error ratio are above 6 times the budget:\n      slo:checkout_error_ratio:rate6h > (6 * 0.001) and slo:checkout_error_ratio:rate30m > (6 * 0.001)\n    for: 15m\n    labels: severity: ticket\n    annotations: a summary",
+      "apply_commands": ["promtool check rules checkout-slo-alerts.yml", "check"],
+      "validate": {
+        "fields": {
+          "groups[0].name": "checkout-slo-burn",
+          "groups[0].rules[0].alert": "CheckoutErrorBudgetFastBurn",
+          "groups[0].rules[0].expr": {"contains": ["slo:checkout_error_ratio:rate1h", "slo:checkout_error_ratio:rate5m", "14.4", "0.001", " and "]},
+          "groups[0].rules[0].for": "2m",
+          "groups[0].rules[0].labels.severity": "page",
+          "groups[0].rules[0].annotations.summary": "ANY",
+          "groups[0].rules[1].alert": "CheckoutErrorBudgetSlowBurn",
+          "groups[0].rules[1].expr": {"contains": ["slo:checkout_error_ratio:rate6h", "slo:checkout_error_ratio:rate30m", "6 * 0.001", " and "]},
+          "groups[0].rules[1].for": "15m",
+          "groups[0].rules[1].labels.severity": "ticket",
+          "groups[0].rules[1].annotations.summary": "ANY"
+        }
+      },
+      "hint": "rules:\n  - alert: CheckoutErrorBudgetFastBurn\n    expr: slo:checkout_error_ratio:rate1h > (14.4 * 0.001) and slo:checkout_error_ratio:rate5m > (14.4 * 0.001)\n    for: 2m\n    labels:\n      severity: page\n    annotations:\n      summary: \"...\"\nThe second rule has the same shape with rate6h, rate30m, 6, 15m, and ticket.",
+      "solution": "groups:\n  - name: checkout-slo-burn\n    rules:\n      - alert: CheckoutErrorBudgetFastBurn\n        expr: slo:checkout_error_ratio:rate1h > (14.4 * 0.001) and slo:checkout_error_ratio:rate5m > (14.4 * 0.001)\n        for: 2m\n        labels:\n          severity: page\n        annotations:\n          summary: \"Checkout is burning its 30-day error budget 14.4x too fast\"\n      - alert: CheckoutErrorBudgetSlowBurn\n        expr: slo:checkout_error_ratio:rate6h > (6 * 0.001) and slo:checkout_error_ratio:rate30m > (6 * 0.001)\n        for: 15m\n        labels:\n          severity: ticket\n        annotations:\n          summary: \"Checkout is burning its 30-day error budget 6x too fast\"\n",
+      "fake_output": "Checking checkout-slo-alerts.yml\n  SUCCESS: 2 rules found",
+      "explanation": "A page for an outage-speed burn, and a ticket for a slow leak, both measured against the error budget.",
+      "why": "A burn rate of 1 uses the budget exactly over the SLO period. At 14.4, a 30-day budget is gone in about two days, and 2% of it burns in one hour: worth waking someone. At 6 it lasts five days: worth fixing this week, not tonight. Each alert checks two windows joined by 'and'. The long window (1h, 6h) shows the problem is significant, so a brief blip doesn't page. The short window (5m, 30m) shows it's still happening, so the alert stops soon after the problem does instead of ringing for an hour on stale data. That pairing is what removes both the flapping and the false pages that plain threshold alerts produce. The thresholds are written as multiples of the budget (14.4 * 0.001) so the SLO is visible in the rule. Test them with 'promtool test rules' and synthetic series before trusting them."
+    }
+  ]
+}

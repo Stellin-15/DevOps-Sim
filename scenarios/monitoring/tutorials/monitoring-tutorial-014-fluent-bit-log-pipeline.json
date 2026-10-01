@@ -1,0 +1,47 @@
+{
+  "id": "monitoring-tutorial-014",
+  "type": "tutorial",
+  "category": "monitoring",
+  "title": "Log Pipelines: How Logs Get from a Pod to a Search Box, with Fluent Bit",
+  "difficulty": "intermediate",
+  "tags": ["fluent-bit", "logging", "pipelines", "kubernetes"],
+  "intro": "The earlier tutorials queried logs that had already arrived. Something has to collect them: an agent on every node that tails container log files, adds Kubernetes metadata, and ships them to storage. Fluent Bit is the most common one. When logs are missing during an incident, this pipeline is where to look. It runs as a DaemonSet named fluent-bit in the namespace logging.",
+  "steps": [
+    {
+      "prompt": "Check the agent is running on every node.",
+      "expected_commands": ["kubectl get daemonset -n logging", "kubectl get ds -n logging", "kubectl get daemonsets -n logging", "kubectl get daemonset fluent-bit -n logging"],
+      "fake_output": "NAME         DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR   AGE\nfluent-bit   14        14        13      14           13          <none>          200d",
+      "explanation": "14 nodes, 13 ready agents. One node's logs aren't being collected.",
+      "why": "A DaemonSet runs one pod per node, because each agent reads the log files on its own node's disk. DESIRED and READY differing means some node has no working collector, and every pod on that node is invisible in the log system while looking perfectly healthy otherwise. New nodes with a taint the DaemonSet doesn't tolerate are the usual cause."
+    },
+    {
+      "prompt": "The config was edited. Check it parses, without starting a pipeline: dry-run the file fluent-bit.conf.",
+      "expected_commands": ["fluent-bit -c fluent-bit.conf --dry-run", "fluent-bit --dry-run -c fluent-bit.conf", "fluent-bit -c fluent-bit.conf -D"],
+      "fake_output": "Fluent Bit v3.1.7\n[error] [config] section 'FILTER' tried to instance a plugin name that doesn't exist: kubernets\nconfiguration test failed",
+      "explanation": "A typo in a filter's name: 'kubernets'.",
+      "why": "A pipeline is inputs, then parsers and filters, then outputs. A config error stops the agent on every node at the next restart, and with it all logging, so validate in CI as you would nginx or Prometheus. The kubernetes filter is the one that attaches pod name, namespace, and labels to each line; without it you can't search by app."
+    },
+    {
+      "prompt": "Fluent Bit exposes its own metrics on port 2020. From inside an agent pod, show the output section, which says what happened to records at the destination.",
+      "expected_commands": ["curl -s localhost:2020/api/v1/metrics | jq '.output'", "curl -s localhost:2020/api/v1/metrics | jq .output", "curl -s http://localhost:2020/api/v1/metrics | jq '.output'", "curl -s 127.0.0.1:2020/api/v1/metrics | jq '.output'"],
+      "fake_output": "{\n  \"es.0\": {\n    \"proc_records\": 91200440,\n    \"proc_bytes\": 48120441204,\n    \"errors\": 4410,\n    \"retries\": 18204,\n    \"retries_failed\": 1204,\n    \"dropped_records\": 310442\n  }\n}",
+      "explanation": "91 million records delivered, 18,204 retries, and 310,442 records dropped.",
+      "why": "This is the number nobody watches until logs are missing. 'retries' means the destination was slow or refusing; 'retries_failed' and 'dropped_records' are logs that are gone. The agent drops when its buffer is full and the destination can't keep up. Scrape these metrics into Prometheus and alert on drops, because a logging system that loses logs does so precisely during incidents, when volume spikes."
+    },
+    {
+      "prompt": "An application logs Java stack traces, and each line of a trace arrives as a separate log entry. What fixes that?\n  a) A bigger buffer\n  b) A multiline parser, which joins continuation lines into one record before shipping\n  c) Logging less\n  d) A faster destination\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "before: 40 records, one per line  -> a search for the exception finds a line with no context\nafter : 1 record                  -> the whole trace, searchable and countable as one error",
+      "hint": "The agent reads the file line by line and has to be told which lines belong together.",
+      "explanation": "Multiline parsing reassembles a trace into one event.",
+      "why": "Container runtimes write one entry per line, so a stack trace is split at the source. Fluent Bit has built-in multiline parsers for Java, Python, and Go. The better fix is at the application: log structured JSON, with the stack trace as a field, so that no parser has to guess where an entry ends."
+    },
+    {
+      "prompt": "Check what the agent is buffering right now: show its storage metrics.",
+      "expected_commands": ["curl -s localhost:2020/api/v1/storage | jq", "curl -s localhost:2020/api/v1/storage | jq .", "curl -s http://localhost:2020/api/v1/storage | jq", "curl -s localhost:2020/api/v1/storage"],
+      "fake_output": "{\n  \"storage_layer\": {\n    \"chunks\": {\"total_chunks\": 412, \"mem_chunks\": 412, \"fs_chunks\": 0, \"fs_chunks_up\": 0}\n  },\n  \"input_chunks\": {\n    \"tail.0\": {\"status\": {\"overlimit\": true, \"mem_size\": \"50.0M\", \"mem_limit\": \"50.0M\"}}\n  }\n}",
+      "explanation": "412 chunks waiting, all in memory, and the tail input is over its 50 MB limit.",
+      "why": "'overlimit: true' with only memory buffering means the agent has stopped reading files until the backlog clears, and if the log files rotate before it catches up, those lines are never read. Filesystem buffering (storage.type filesystem) lets the backlog spill to disk and survive a restart. Size it for the destination being down for as long as it realistically might be."
+    }
+  ]
+}

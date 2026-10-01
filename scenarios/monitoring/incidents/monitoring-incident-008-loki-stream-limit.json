@@ -1,0 +1,49 @@
+{
+  "id": "monitoring-incident-008",
+  "type": "incident",
+  "category": "monitoring",
+  "title": "A helpful change to the logging config, and now nothing is ingested",
+  "difficulty": "advanced",
+  "tags": ["loki", "cardinality", "labels", "logging"],
+  "intro": "Since this morning's deploy of the log collector's configuration, no new logs from the shop namespace appear in Grafana. The collector pods are healthy and busy. The change was small and well meant: to make traces easier to find, the trace id was added as a label on every log line. Loki runs in the namespace logging; logcli is configured.",
+  "steps": [
+    {
+      "prompt": "The collector is running, so ask it what happens when it sends. Search the collector DaemonSet's recent logs for errors: daemonset promtail in namespace logging, last 20 lines containing 'error'.",
+      "expected_commands": ["kubectl logs -n logging daemonset/promtail --tail=200 | grep -i error | tail -20", "kubectl logs -n logging ds/promtail --tail=200 | grep -i error | tail -20", "kubectl logs daemonset/promtail -n logging --tail=200 | grep -i error", "kubectl logs -n logging daemonset/promtail --tail=200 | grep -i error"],
+      "fake_output": "level=error msg=\"final error sending batch\" status=429 error=\"server returned HTTP status 429 Too Many Requests: Maximum active stream limit exceeded, reduce the number of active streams (reduce labels or reduce label values), or contact your Loki administrator to see if the limit can be increased, user: 'fake'\"",
+      "hint": "kubectl logs -n logging daemonset/promtail --tail=200 | grep -i error | tail -20"
+    },
+    {
+      "prompt": "Loki is refusing batches: 'Maximum active stream limit exceeded'. A stream is one unique combination of labels. See which label is responsible: analyse the labels on the shop namespace's streams.",
+      "expected_commands": ["logcli series '{namespace=\"shop\"}' --analyze-labels", "logcli series \"{namespace=\\\"shop\\\"}\" --analyze-labels", "logcli series --analyze-labels '{namespace=\"shop\"}'"],
+      "fake_output": "Total Streams:  9120044\nUnique Labels:  6\n\nLabel Name   Unique Values   Found In Streams\ntrace_id     9118310         9118310\npod          212             9120044\napp          9               9120044\nlevel        4               9120044\nnamespace    1               9120044\ncontainer    3               9120044",
+      "hint": "logcli series '{namespace=\"shop\"}' --analyze-labels"
+    },
+    {
+      "prompt": "Nine million streams, and trace_id accounts for nearly all of them: every request created a brand-new stream. The fix is to revert the label. The previous collector config is the prior revision of the DaemonSet. Roll the DaemonSet promtail in namespace logging back.",
+      "expected_commands": ["kubectl rollout undo daemonset/promtail -n logging", "kubectl rollout undo ds/promtail -n logging", "kubectl rollout undo daemonset promtail -n logging"],
+      "fake_output": "daemonset.apps/promtail rolled back",
+      "hint": "kubectl rollout undo daemonset/promtail -n logging"
+    },
+    {
+      "prompt": "Wait for the rollback to complete.",
+      "expected_commands": ["kubectl rollout status daemonset/promtail -n logging", "kubectl rollout status ds/promtail -n logging", "kubectl rollout status daemonset promtail -n logging"],
+      "fake_output": "daemon set \"promtail\" successfully rolled out",
+      "hint": "kubectl rollout status daemonset/promtail -n logging"
+    },
+    {
+      "prompt": "Confirm logs are flowing again: query the last 3 lines from the api app in namespace shop.",
+      "expected_commands": ["logcli query '{namespace=\"shop\", app=\"api\"}' --limit 3", "logcli query --limit 3 '{namespace=\"shop\", app=\"api\"}'", "logcli query '{namespace=\"shop\",app=\"api\"}' --limit 3", "logcli query '{app=\"api\", namespace=\"shop\"}' --limit 3"],
+      "fake_output": "2026-09-28T13:41:07Z {app=\"api\"} {\"level\":\"info\",\"msg\":\"GET /orders/8812 200\",\"trace_id\":\"9f1c2e7a41bb\"}\n2026-09-28T13:41:06Z {app=\"api\"} {\"level\":\"info\",\"msg\":\"POST /checkout 200\",\"trace_id\":\"c08e11f47a2d\"}\n2026-09-28T13:41:06Z {app=\"api\"} {\"level\":\"info\",\"msg\":\"GET /cart 200\",\"trace_id\":\"90be0131d2c4\"}",
+      "hint": "logcli query '{namespace=\"shop\", app=\"api\"}' --limit 3"
+    },
+    {
+      "prompt": "The trace id is in each line's JSON. How do people find the logs for one trace without it being a label?\n  a) They can't\n  b) With a filter at query time: {app=\"api\"} | json | trace_id=\"9f1c2e7a41bb\"\n  c) By raising Loki's stream limit to ten million\n  d) By adding the label back\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "{namespace=\"shop\"} | json | trace_id=\"9f1c2e7a41bb\"\n\nor configure a 'derived field' in Grafana so the trace id in a log line is a link to the trace",
+      "hint": "Labels pick streams; filters search inside them."
+    }
+  ],
+  "resolution": "In Loki, labels aren't tags you add freely: each distinct combination of label values is a separate stream, with its own index entry and its own chunks in memory. The change made trace_id a label, and a trace id is unique per request. So every request created a new stream that would receive two or three lines and never be written to again. Within minutes there were nine million streams. Loki has a limit on active streams per tenant, there to stop exactly this from exhausting the ingesters' memory, and once it was hit every push was rejected with 429. The collector kept trying and logged the reason, in full, including the advice to reduce labels. Nothing new was stored until the change was rolled back. The goal behind the change was fine: jump from a trace to its logs. Loki's way to do that is a filter at query time, since the id is already in the line, or Grafana's derived fields, which turn the id into a clickable link, or structured metadata in recent Loki versions, which attaches high-cardinality values to lines without making them part of the stream's identity. Raising the limit would have traded a clean rejection for a slow, expensive, unstable Loki. The general rule is the one from Prometheus: labels must have few, bounded values. Before adding a label ask how many distinct values it can take; anything per-request, per-user, or per-session is content, not a label. And the change itself deserved a test: a staging Loki with the same limits, or 'logcli series --analyze-labels' as a check after rollout, would have shown the stream count exploding before production did.",
+  "real_commands_used": ["kubectl logs daemonset/promtail | grep -i error", "logcli series '{...}' --analyze-labels", "kubectl rollout undo daemonset", "kubectl rollout status daemonset", "logcli query '{...}' --limit 3"]
+}

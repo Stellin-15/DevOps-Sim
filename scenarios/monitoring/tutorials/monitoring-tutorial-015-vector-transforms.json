@@ -1,0 +1,48 @@
+{
+  "id": "monitoring-tutorial-015",
+  "type": "tutorial",
+  "category": "monitoring",
+  "title": "Vector: Shaping, Filtering, and Testing a Log Pipeline",
+  "difficulty": "intermediate",
+  "tags": ["vector", "logging", "pipelines", "transforms"],
+  "intro": "Collecting logs is half the job. The other half is what you do to them on the way: parse, drop what nobody reads, remove secrets, and route. Vector is a pipeline tool built around that, with a small language (VRL) for transforms and, unusually, unit tests for them. The config is vector.yaml.",
+  "steps": [
+    {
+      "prompt": "Validate the configuration file vector.yaml.",
+      "expected_commands": ["vector validate vector.yaml", "vector validate --config-yaml vector.yaml", "vector validate -c vector.yaml"],
+      "fake_output": "√ Loaded [\"vector.yaml\"]\n√ Component configuration\n√ Health check \"loki\"\nx Health check \"s3_archive\": the access key ID or security token is invalid\n-----------------------------------------------------------\n                                             Validated with warnings",
+      "explanation": "The config is valid. One destination, the S3 archive, fails its health check: bad credentials.",
+      "why": "validate goes further than a syntax check: it builds the pipeline graph and contacts each destination. That catches the failure a syntax check can't, a sink that will reject everything. It also reports a transform whose output nothing consumes, the 'defined but not wired in' mistake."
+    },
+    {
+      "prompt": "The config contains tests for its transforms. Run them.",
+      "expected_commands": ["vector test vector.yaml", "vector test --config-yaml vector.yaml", "vector test -c vector.yaml"],
+      "fake_output": "Running tests\ntest parse_nginx_line ... passed\ntest drop_health_checks ... passed\ntest redact_card_numbers ... failed\n\nfailures:\n  test redact_card_numbers:\n    check[0] failed: expected .message to not contain \"0000000000000000\", got \"payment ok card=0000000000000000\"",
+      "explanation": "The redaction transform doesn't remove a card number in this format.",
+      "why": "A transform that parses or redacts is code, and untested code that handles sensitive data is how secrets end up in a log system that a hundred people can search. Vector's tests feed a sample event through a transform and assert on the result, with no infrastructure needed, so they run in CI. Few logging tools offer this, and it's a strong reason to choose one that does."
+    },
+    {
+      "prompt": "Health-check requests make up a third of the access logs and nobody ever searches for them. Where is the best place to remove them?\n  a) In the storage system, with a delete job each night\n  b) In the pipeline, with a filter transform that drops them before they're shipped or stored\n  c) In the dashboard, by hiding them\n  d) Nowhere: keep everything\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "transforms:\n  drop_health_checks:\n    type: filter\n    inputs: [parse_nginx]\n    condition: '!includes([\"/health\", \"/ready\", \"/metrics\"], .path)'",
+      "hint": "You pay to ship, index, and store a log line. Where is it cheapest to stop paying?",
+      "explanation": "Drop at the source: it's never transmitted, indexed, or billed.",
+      "why": "Log cost is driven by volume ingested, and most volume is repetitive lines of no value. Dropping or sampling them in the pipeline is the single most effective cost control. Do it deliberately and visibly, in reviewed config with a test, and keep a count of what was dropped as a metric, so that 'where did those logs go?' has an answer."
+    },
+    {
+      "prompt": "Vector is running. Watch live throughput for each component.",
+      "expected_commands": ["vector top"],
+      "fake_output": "ID                  Kind       Type        Events In   Events Out   Errors\nkubernetes_logs     source     kubernetes  -           8,812/s      0\nparse_nginx         transform  remap       8,812/s     8,812/s      12\ndrop_health_checks  transform  filter      8,812/s     5,904/s      0\nloki                sink       loki        5,904/s     5,904/s      0\ns3_archive          sink       aws_s3      5,904/s     0/s          4,410",
+      "explanation": "8,812 events a second in; the filter removes about a third; Loki receives everything it's sent; the S3 archive is failing.",
+      "why": "This shows the pipeline as a graph with a rate at every stage, so you can see where events are lost or held up. Here the filter is working, and the archive sink has errors on every batch, matching the failed health check. 'vector tap <component>' prints the actual events passing through one stage, the tool for debugging a transform against live data."
+    },
+    {
+      "prompt": "The parse_nginx transform shows 12 errors: lines it couldn't parse. What should a pipeline do with an event that fails to parse?\n  a) Drop it silently\n  b) Crash the agent\n  c) Keep it, unparsed, with a field marking the failure, and route it somewhere it can be inspected\n  d) Retry for ever\nType the letter.",
+      "expected_commands": ["c"],
+      "fake_output": "parsed, err = parse_nginx_log(.message, \"combined\")\nif err != null {\n  .parse_error = err          # keep the raw line and say why\n} else {\n  . = merge(., parsed)\n}",
+      "hint": "The line that doesn't match the pattern is often the interesting one.",
+      "explanation": "Never lose the raw event: tag it and keep it.",
+      "why": "Lines that don't fit the expected format are disproportionately the ones you want: a stack trace, a panic, an error printed before the logger was set up. Dropping them hides exactly what you're looking for. VRL makes this explicit: a function that can fail returns an error you must handle, so 'silently dropped on parse failure' can't happen by accident."
+    }
+  ]
+}

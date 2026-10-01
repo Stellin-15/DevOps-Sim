@@ -34,7 +34,7 @@ string.
   The game writes a real file to `workspace/`, tells you what to build or
   fix, and you edit it in your actual editor (vim, nano, VS Code —
   whatever you'd really use). Typing the apply command reads your real
-  file and checks it field by field. 41 labs across thirteen formats:
+  file and checks it field by field. 44 labs across thirteen formats:
   Kubernetes manifests, GitHub Actions workflows, Prometheus alert rules,
   Docker Compose files, Dockerfiles, Terraform (AWS VPCs, security
   groups, GCP firewalls, a reusable module), AWS IAM policies, Ansible
@@ -357,7 +357,7 @@ the engine, loader, sandboxes, yaml_lab, career_path, mystery, or scenario conte
 | Terraform | 12 | 6 | safe CI workflow, modules/for_each/moved blocks, writing modules (validation, dynamic blocks, terraform test), variables/outputs, state inspection & refactoring, import, workspaces, remote state/locking, providers, debugging; plus 5 HCL Writing Labs |
 | Networking | 12 | 7 | DNS, refused vs timeout, ports/nmap, routing/ARP, firewalls, TLS/openssl, HTTP/curl, in-cluster networking, CIDR, tcpdump, MTU black holes, IPv6 |
 | CI/CD | 20 | 8 | git workflows, revert vs reset, git bisect, tags/releases, GitHub Actions CLI, secrets/OIDC, local CI repro, rolling/blue-green/canary, GitOps (Argo CD), SBOMs/scanning/signing, SLSA provenance, zero-downtime database migrations, GitLab CI, Jenkins, artifact registries and promotion, release automation (semver, Renovate), flaky and contract tests; plus 4 pipeline Writing Labs |
-| Monitoring | 13 | 6 | PromQL, golden signals, tracing (OTel/Jaeger), OpenTelemetry instrumentation, SLOs and burn-rate alerts, Prometheus ops, alerting/Alertmanager, journald, Elasticsearch, Loki, Grafana API; plus 2 alert-rule Writing Labs |
+| Monitoring | 17 | 8 | PromQL, golden signals, tracing (OTel/Jaeger), OpenTelemetry instrumentation, SLOs and burn-rate alerts, Prometheus ops, alerting/Alertmanager, journald, Elasticsearch, Loki, Grafana API, log pipelines (Fluent Bit, Vector), log volume and cardinality, Datadog and Sentry; plus 5 Writing Labs (alert rules, burn-rate alerts, a dashboard, manual spans) |
 | MLOps | 14 | 7 | environments, GPUs, MLflow, DVC, serving, KServe/Kubeflow, profiling, model monitoring, model canaries, LLM serving (vLLM), feature stores (Feast), distributed training, Airflow pipelines |
 | AWS | 13 | 7 | profiles/identity, EC2, SSM vs SSH, VPC anatomy, security groups vs NACLs, IAM, S3, CloudWatch/CloudTrail, ALB/ASG, EKS/ECR, cost, RDS, Route 53; plus a VPC Sandbox |
 | Azure | 10 | 6 | subscriptions, resource groups/locks, VMs (stop vs deallocate), Run Command/Bastion/az ssh, VNets/NSGs, UDRs/Network Watcher, RBAC/managed identity, Key Vault/storage, Monitor/KQL, AKS |
@@ -373,7 +373,7 @@ the engine, loader, sandboxes, yaml_lab, career_path, mystery, or scenario conte
 | Scripting | 8 | 4 | Python environments and pinned dependencies, running and debugging scripts, pytest/ruff/mypy, jq in depth, yq, regular expressions, Makefiles, building and testing Go tools; plus 2 Python Writing Labs |
 | Messaging | 7 | 4 | Kafka (topics and replication, reading a topic by hand, consumer groups and lag, retention and compaction, broker operations), RabbitMQ alarms and queue limits, SQS visibility timeouts and dead-letter queues |
 | Serverless | 7 | 4 | Lambda (invoke and logs, cold starts and concurrency, versions/aliases/canaries, event retries and failure destinations), API Gateway limits, ECS on Fargate, Cloud Run revisions and traffic, Azure Functions |
-| **Total** | **273** | **140** | + 41 Writing Labs |
+| **Total** | **277** | **142** | + 44 Writing Labs |
 
 The three clouds use different names for the same ideas (security group
 vs NSG vs firewall rule; CloudTrail vs Activity Log vs Audit Logs). The

@@ -1,0 +1,50 @@
+{
+  "id": "monitoring-tutorial-016",
+  "type": "tutorial",
+  "category": "monitoring",
+  "title": "Log Volume, Cardinality, and Cost",
+  "difficulty": "intermediate",
+  "tags": ["logging", "loki", "cost", "cardinality"],
+  "intro": "Observability bills grow faster than the systems they watch, and logs are usually the biggest part. Controlling that isn't about logging less across the board; it's about finding the few sources that produce most of the volume and the labels that multiply it. The logs are in Loki; logcli is configured. The namespace is shop.",
+  "steps": [
+    {
+      "prompt": "Find who's producing the volume: show the top 5 apps in namespace shop by bytes logged over the last hour.",
+      "expected_commands": ["logcli query 'topk(5, sum by (app) (bytes_over_time({namespace=\"shop\"}[1h])))'", "logcli query \"topk(5, sum by (app) (bytes_over_time({namespace=\\\"shop\\\"}[1h])))\"", "logcli instant-query 'topk(5, sum by (app) (bytes_over_time({namespace=\"shop\"}[1h])))'"],
+      "fake_output": "{app=\"recommender\"}   41204410112\n{app=\"api\"}            2804410220\n{app=\"checkout\"}       1904122044\n{app=\"cart\"}            880410212\n{app=\"worker\"}          310442018",
+      "hint": "logcli query 'topk(5, sum by (app) (bytes_over_time({namespace=\"shop\"}[1h])))'",
+      "explanation": "The recommender logged 41 GB in an hour, about fifteen times the API.",
+      "why": "Log volume is nearly always this lopsided: one or two sources produce most of it. Ranking by bytes finds them in one query. Fixing the top producer is worth more than any amount of general tidying, so always start here."
+    },
+    {
+      "prompt": "See what the recommender is logging: count its lines by level over the last hour.",
+      "expected_commands": ["logcli query 'sum by (level) (count_over_time({app=\"recommender\"} | json [1h]))'", "logcli query \"sum by (level) (count_over_time({app=\\\"recommender\\\"} | json [1h]))\"", "logcli instant-query 'sum by (level) (count_over_time({app=\"recommender\"} | json [1h]))'"],
+      "fake_output": "{level=\"debug\"}   88120441\n{level=\"info\"}       410220\n{level=\"warn\"}         1204\n{level=\"error\"}          31",
+      "hint": "logcli query 'sum by (level) (count_over_time({app=\"recommender\"} | json [1h]))'",
+      "explanation": "88 million debug lines against 31 errors.",
+      "why": "Debug logging left on in production is the most common cause of a logging bill. The level should be a setting changeable at run time, default info, so that debug can be switched on for ten minutes when needed. Sampling is the other tool: keep every error and one in a hundred routine lines."
+    },
+    {
+      "prompt": "Volume is one cost; the number of distinct label combinations is another. Analyse the labels in use in namespace shop.",
+      "expected_commands": ["logcli series '{namespace=\"shop\"}' --analyze-labels", "logcli series \"{namespace=\\\"shop\\\"}\" --analyze-labels", "logcli series --analyze-labels '{namespace=\"shop\"}'"],
+      "fake_output": "Total Streams:  1904122\nUnique Labels:  6\n\nLabel Name    Unique Values   Found In Streams\nrequest_id    1900441         1900441\npod           212             1904122\napp           9               1904122\nlevel         4               1904122\nnamespace     1               1904122\ncontainer     3               1904122",
+      "explanation": "1.9 million streams, almost all created by one label: request_id.",
+      "why": "In Loki every distinct combination of label values is a stream, with its own index entry and chunks. A label with a unique value per request creates millions of tiny streams, which makes ingestion and queries slow and expensive, and can hit a hard limit that rejects logs. This is the same cardinality problem as in Prometheus (monitoring-incident-005). Labels are for a few bounded values: app, namespace, level."
+    },
+    {
+      "prompt": "The request id is still needed for searching. Where should it go?\n  a) Keep it as a label\n  b) Into the log line itself (a field in the JSON), found at query time with a filter such as | json | request_id=\"...\"\n  c) Into a separate log system\n  d) Delete it\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "{app=\"api\"} | json | request_id=\"9f1c2e7a\"\n\nlabels  : few, bounded -> choose which streams to read\ncontent : anything      -> filtered while reading",
+      "hint": "Labels select streams; filters search inside them.",
+      "explanation": "High-cardinality values belong in the log content, not in labels.",
+      "why": "Loki's design is a small index over labels and a brute-force scan of the selected streams' content. That's cheap as long as labels narrow things down a little and stay few. Elasticsearch makes the opposite trade: it indexes every field, so any field is fast to search and every field costs storage. Knowing which model your system uses tells you what's expensive."
+    },
+    {
+      "prompt": "Not every log needs to be kept the same length of time. Which retention plan is the sensible one?\n  a) Keep everything for ever, in the fastest storage\n  b) Tier it: recent logs searchable for a couple of weeks, audit and security logs kept longer as required, the rest archived cheaply or deleted\n  c) Keep nothing past a day\n  d) Let each developer decide\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "application logs : 14 days searchable\naudit / security : 1 year (compliance), cheap object storage\ndebug            : not shipped, or 1 day\naccess logs      : 30 days, then aggregated into metrics",
+      "hint": "Different logs have different value and different legal requirements.",
+      "explanation": "Retention by class of log, set from need and from regulation.",
+      "why": "Almost all log searches are for the last few days. Paying for a year of searchable debug output buys nothing, while deleting audit logs early can break a compliance obligation. Classify logs, set retention per class, and where you need a long-term trend, turn logs into metrics: a counter is thousands of times cheaper to keep than the lines it summarises."
+    }
+  ]
+}

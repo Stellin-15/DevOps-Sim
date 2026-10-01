@@ -1,0 +1,47 @@
+{
+  "id": "monitoring-tutorial-017",
+  "type": "tutorial",
+  "category": "monitoring",
+  "title": "Hosted Observability: The Datadog Agent and Sentry Releases",
+  "difficulty": "intermediate",
+  "tags": ["datadog", "sentry", "saas", "error-tracking"],
+  "intro": "Many companies buy observability as a service instead of running Prometheus and Grafana. The concepts are the same; what you operate is an agent on each host and the integration with your deploys. Datadog is the most common full platform, and Sentry the most common error tracker. You're on a host, web-1, with the Datadog agent installed.",
+  "steps": [
+    {
+      "prompt": "Check the Datadog agent's health and what it's collecting.",
+      "expected_commands": ["sudo datadog-agent status", "datadog-agent status"],
+      "fake_output": "Agent (v7.57.0)\n  Status date: 2026-09-28 13:20:11 UTC\n  API Keys status: API key ending with a1f9c: API Key valid\n\nCollector\n  Running Checks\n    cpu, disk, memory, network        [OK]\n    nginx (7.0.0)                     [ERROR]  Last Error: HTTPConnectionPool(host='localhost', port=81): Max retries exceeded with url: /nginx_status\n    postgres (22.0.0)                 [OK]\n\nLogs Agent\n  Sending compressed logs in HTTPS to agent-http-intake.logs.datadoghq.com\n  BytesSent: 4812044102\n\nAPM Agent\n  Status: Running   Receiver: localhost:8126",
+      "explanation": "The agent is connected with a valid key. The nginx check is failing: it's looking for the status page on port 81.",
+      "why": "This one command answers 'why is there no data?': it shows whether the agent can reach the service, and the state of every integration. A failing check means that dashboard is empty, and an alert built on 'value above threshold' stays silent when there's no value at all. Alert on missing data as well as on bad data."
+    },
+    {
+      "prompt": "The nginx check's config has been corrected to the right port. Run that one check by hand to test it.",
+      "expected_commands": ["sudo datadog-agent check nginx", "datadog-agent check nginx"],
+      "fake_output": "=== Series ===\n  nginx.net.connections   2204   host:web-1\n  nginx.net.request_per_s 412.4  host:web-1\n=== Service Checks ===\n  nginx.can_connect  OK\n\nCheck has run only once, if some metrics are missing you can try again with --check-rate",
+      "explanation": "The check connects and reports metrics.",
+      "why": "Running a check once shows exactly what it would send, without waiting for the next interval or looking in the web UI. It's the same loop as testing a Prometheus exporter with curl. Restart the agent afterwards for the new config to take effect in the running collector."
+    },
+    {
+      "prompt": "Every metric and log can carry tags, and Datadog charges for custom metrics by the number of distinct tag combinations. Which tag would be a costly mistake on a request-count metric?\n  a) env:prod\n  b) service:checkout\n  c) user_id:8812\n  d) region:us-east-1\nType the letter.",
+      "expected_commands": ["c"],
+      "fake_output": "requests{env, service, region}            ->  2 x 9 x 3      =         54 series\nrequests{env, service, region, user_id}   ->  54 x 910,000   = 49,140,000 series",
+      "hint": "Which one has an unbounded number of values?",
+      "explanation": "A user id as a tag multiplies the metric by the number of users.",
+      "why": "The same cardinality rule as Prometheus labels and Loki labels, now with an invoice attached: each combination is a billable custom metric. Tags should come from small fixed sets: environment, service, version, region. Per-user or per-request detail belongs in traces and logs, which are built for it."
+    },
+    {
+      "prompt": "Sentry groups application errors and can tell you which release introduced one, if it knows about releases. In the deploy pipeline, create a release named shop-api@1.8.3.",
+      "expected_commands": ["sentry-cli releases new shop-api@1.8.3"],
+      "fake_output": "Created release shop-api@1.8.3",
+      "explanation": "Sentry now has a release to attach errors and commits to.",
+      "why": "With releases, an error report says 'first seen in 1.8.3, deployed 14 minutes ago', and Sentry can list the commits in that release that touched the failing file. That turns 'something is throwing errors' into 'this change did it'. The application has to report the same release string, usually from an environment variable set at build time."
+    },
+    {
+      "prompt": "Attach the commits in this release automatically from the repository.",
+      "expected_commands": ["sentry-cli releases set-commits shop-api@1.8.3 --auto", "sentry-cli releases set-commits --auto shop-api@1.8.3"],
+      "fake_output": "Stored 7 commits for shop-api@1.8.3 (a1f9c3e..e1d0f76)",
+      "explanation": "Seven commits are linked to the release.",
+      "why": "This is what enables 'suspect commits'. For browser JavaScript one more step matters, 'sentry-cli sourcemaps upload', or stack traces show minified names like 'a.b is not a function'. Finish with 'releases finalize' and a deploy marker. All of it belongs in the pipeline: error tracking that knows about deploys is far more useful than error tracking that doesn't."
+    }
+  ]
+}

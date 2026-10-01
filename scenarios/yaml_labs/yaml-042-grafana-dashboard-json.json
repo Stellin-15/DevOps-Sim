@@ -1,0 +1,41 @@
+{
+  "id": "yaml-042",
+  "type": "yaml_lab",
+  "category": "monitoring",
+  "title": "Write a Grafana Dashboard as Code: Rate, Errors, Duration",
+  "difficulty": "intermediate",
+  "tags": ["grafana", "dashboards", "promql", "json"],
+  "intro": "A dashboard built by clicking lives in one Grafana and has no history. As a JSON file in Git it can be reviewed, reused for every service, and restored. Write the smallest useful service dashboard: request rate, error ratio, and p99 latency, with a variable for the namespace. Grafana's dashboard format is JSON.",
+  "steps": [
+    {
+      "file": "checkout-dashboard.json",
+      "starter_content": "",
+      "prompt": "Write checkout-dashboard.json, a JSON object with:\n\n- \"title\": \"Checkout Service\", \"uid\": \"checkout-overview\", \"refresh\": \"30s\"\n- \"time\": {\"from\": \"now-6h\", \"to\": \"now\"}\n- \"templating\": {\"list\": [ one variable ]} where the variable has \"name\": \"namespace\", \"type\": \"query\", and\n  \"query\": \"label_values(http_requests_total, namespace)\"\n- \"panels\": three panels, each with \"type\": \"timeseries\", a \"title\", a \"targets\" list holding one object with an \"expr\",\n  and \"fieldConfig\": {\"defaults\": {\"unit\": ...}}:\n\n  1. \"Request rate\", unit \"reqps\":\n     sum(rate(http_requests_total{service=\"checkout\",namespace=\"$namespace\"}[5m]))\n  2. \"Error ratio\", unit \"percentunit\":\n     sum(rate(http_requests_total{service=\"checkout\",namespace=\"$namespace\",status=~\"5..\"}[5m])) / sum(rate(http_requests_total{service=\"checkout\",namespace=\"$namespace\"}[5m]))\n  3. \"p99 latency\", unit \"s\":\n     histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{service=\"checkout\",namespace=\"$namespace\"}[5m])))\n\nInside JSON strings, escape the inner double quotes as \\\".",
+      "apply_commands": ["jq . checkout-dashboard.json", "check"],
+      "validate": {
+        "fields": {
+          "title": "Checkout Service",
+          "uid": "checkout-overview",
+          "refresh": "30s",
+          "time.from": "now-6h",
+          "templating.list[0].name": "namespace",
+          "templating.list[0].type": "query",
+          "templating.list[0].query": {"contains": ["label_values(", "namespace"]},
+          "panels[*].title": ["Request rate", "Error ratio", "p99 latency"],
+          "panels[*].type": "timeseries",
+          "panels[*].targets[0].expr": [
+            {"contains": ["sum(rate(http_requests_total", "$namespace", "[5m]"]},
+            {"contains": ["5..", "/", "$namespace"]},
+            {"contains": ["histogram_quantile(0.99", "by (le)", "_bucket", "$namespace"]}
+          ],
+          "panels[*].fieldConfig.defaults.unit": ["reqps", "percentunit", "s"]
+        }
+      },
+      "hint": "Overall shape:\n{\n  \"title\": \"Checkout Service\",\n  \"uid\": \"checkout-overview\",\n  \"refresh\": \"30s\",\n  \"time\": {\"from\": \"now-6h\", \"to\": \"now\"},\n  \"templating\": {\"list\": [{\"name\": \"namespace\", \"type\": \"query\", \"query\": \"label_values(http_requests_total, namespace)\"}]},\n  \"panels\": [\n    {\"title\": \"Request rate\", \"type\": \"timeseries\",\n     \"targets\": [{\"expr\": \"sum(rate(http_requests_total{service=\\\"checkout\\\",namespace=\\\"$namespace\\\"}[5m]))\"}],\n     \"fieldConfig\": {\"defaults\": {\"unit\": \"reqps\"}}},\n    ...\n  ]\n}\nNo trailing commas: JSON doesn't allow them.",
+      "solution": "{\n  \"title\": \"Checkout Service\",\n  \"uid\": \"checkout-overview\",\n  \"refresh\": \"30s\",\n  \"time\": {\"from\": \"now-6h\", \"to\": \"now\"},\n  \"templating\": {\n    \"list\": [\n      {\"name\": \"namespace\", \"type\": \"query\", \"query\": \"label_values(http_requests_total, namespace)\"}\n    ]\n  },\n  \"panels\": [\n    {\n      \"title\": \"Request rate\",\n      \"type\": \"timeseries\",\n      \"targets\": [{\"expr\": \"sum(rate(http_requests_total{service=\\\"checkout\\\",namespace=\\\"$namespace\\\"}[5m]))\"}],\n      \"fieldConfig\": {\"defaults\": {\"unit\": \"reqps\"}}\n    },\n    {\n      \"title\": \"Error ratio\",\n      \"type\": \"timeseries\",\n      \"targets\": [{\"expr\": \"sum(rate(http_requests_total{service=\\\"checkout\\\",namespace=\\\"$namespace\\\",status=~\\\"5..\\\"}[5m])) / sum(rate(http_requests_total{service=\\\"checkout\\\",namespace=\\\"$namespace\\\"}[5m]))\"}],\n      \"fieldConfig\": {\"defaults\": {\"unit\": \"percentunit\"}}\n    },\n    {\n      \"title\": \"p99 latency\",\n      \"type\": \"timeseries\",\n      \"targets\": [{\"expr\": \"histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{service=\\\"checkout\\\",namespace=\\\"$namespace\\\"}[5m])))\"}],\n      \"fieldConfig\": {\"defaults\": {\"unit\": \"s\"}}\n    }\n  ]\n}\n",
+      "fake_output": "(valid JSON)\n\n$ curl -s -X POST -H \"Authorization: Bearer $GRAFANA_TOKEN\" -H \"Content-Type: application/json\" \\\n    -d \"{\\\"dashboard\\\": $(cat checkout-dashboard.json), \\\"overwrite\\\": true}\" $GRAFANA_URL/api/dashboards/db\n{\"status\":\"success\",\"uid\":\"checkout-overview\",\"version\":1}",
+      "explanation": "Three panels that answer 'how much traffic, how many errors, how slow' for one service, in any namespace.",
+      "why": "Rate, errors, and duration (RED) are the three graphs every request-serving service needs, and they come first on a dashboard because they're what users experience. Details that matter. The fixed uid gives the dashboard a stable URL and lets the same file update it in place instead of creating copies. The variable turns one dashboard into one per namespace; a second variable for the service would make it a template for every service. The error panel is a ratio, not a count, so it means the same thing at 3 a.m. and at peak. The latency panel is a percentile from a histogram, grouped 'by (le)' (leaving that out is the bug in monitoring-incident-003), and never an average, which hides the slow requests. Units make the axes readable: 'percentunit' shows 0.05 as 5%. Load the file with Grafana's provisioning or the API from a pipeline, and turn off editing in the UI so the file stays the truth."
+    }
+  ]
+}

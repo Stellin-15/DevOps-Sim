@@ -108,3 +108,42 @@ kubectl get events --sort-by=.metadata.creationTimestamp
 curl -o /dev/null -s -w "%{time_total}\n" <url>
 journalctl -u <service> --since "10 minutes ago"
 ```
+
+## Log Pipelines: Fluent Bit and Vector
+
+```
+kubectl get daemonset -n logging
+kubectl logs -n logging daemonset/fluent-bit --tail=50
+fluent-bit -c fluent-bit.conf --dry-run
+curl -s localhost:2020/api/v1/metrics | jq '.output'       # records sent, retried, failed, dropped
+curl -s localhost:2020/api/v1/storage | jq                 # buffer chunks waiting
+
+vector validate vector.yaml
+vector test vector.yaml                                    # unit tests for transforms
+vector top                                                 # live events per component
+vector tap <component-id>
+```
+
+## Log Volume and Cost
+
+```
+logcli series '{namespace="shop"}' --analyze-labels        # label cardinality
+logcli query 'topk(5, sum by (app) (bytes_over_time({namespace="shop"}[1h])))'
+logcli query 'sum by (level) (count_over_time({app="api"} | json [1h]))'
+curl -s $ES/_cat/indices?v\&s=store.size:desc | head
+```
+
+## Hosted Observability: Datadog and Sentry
+
+```
+sudo datadog-agent status
+sudo datadog-agent check <integration>
+sudo datadog-agent configcheck
+sudo datadog-agent flare                                   # bundle for vendor support
+curl -s -H "DD-API-KEY: $DD_API_KEY" https://api.datadoghq.com/api/v1/validate
+sentry-cli releases new <version>
+sentry-cli releases set-commits <version> --auto
+sentry-cli sourcemaps upload --release <version> ./dist
+sentry-cli releases finalize <version>
+sentry-cli send-event -m "test event"
+```

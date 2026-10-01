@@ -404,7 +404,7 @@ Current per-category content depth (tutorials / incidents):
 - terraform: 12 / 6 (+5 Writing Labs: HCL, including a three-file module)
 - networking: 12 / 7
 - cicd: 20 / 8 (+4 Writing Labs: GitHub Actions, GitLab CI)
-- monitoring: 13 / 6 (+2 Writing Labs: alert rules)
+- monitoring: 17 / 8 (+5 Writing Labs: alert rules, burn-rate alerts, a Grafana dashboard, manual OTel spans)
 - mlops: 14 / 7
 - aws: 13 / 7 (+1 Writing Lab, AWS VPC sandbox, 4 mysteries)
 - azure: 10 / 6 (+ Azure sandbox, 3 mysteries)
@@ -436,7 +436,7 @@ Current per-category content depth (tutorials / incidents):
 - scripting: 8 / 4 (+2 Writing Labs in the `python` format, parsed with `ast`, never executed): Python tooling, jq, yq, regex, make, Go
 - messaging: 7 / 4 (Kafka operations, RabbitMQ, SQS; `$BS` is the bootstrap-server variable used throughout)
 - serverless: 7 / 4 (Lambda, API Gateway, ECS on Fargate, Cloud Run, Azure Functions)
-- **total: 273 tutorials, 140 incidents, 41 Writing Labs, 14 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
+- **total: 277 tutorials, 142 incidents, 44 Writing Labs, 14 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with

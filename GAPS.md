@@ -487,7 +487,7 @@ writing that this game only partially supports today.
 
 # Part 7 — Monitoring & Observability
 
-**Content:** 13 tutorials, 6 incidents, 2 Writing Labs.
+**Content:** 17 tutorials, 8 incidents, 2 Writing Labs.
 
 ## Covered
 
@@ -515,18 +515,30 @@ journald volume.
   finding services missing from Jaeger, filtering traces by duration,
   reading a span tree). Instrumenting is now covered by
   monitoring-tutorial-013 (auto-instrumentation, the `OTEL_*`
-  variables, head vs tail sampling, `otelcol validate`). Writing manual
-  spans in code isn't practiced.
+  variables, head vs tail sampling, `otelcol validate`). Manual spans
+  are **closed** by Writing Lab yaml-044 (a span, attributes, and error
+  status around a business step, in Python).
 - ~~SLOs and error budgets~~: **closed** by monitoring-tutorial-012 (a
   good/total SLI, budget remaining, burn rate, multi-window 14.4x
-  paging, and `promtool test rules`). Writing the burn-rate rule file
-  yourself would make a good future Writing Lab.
+  paging, and `promtool test rules`). Writing the rules is **closed**
+  by Writing Lab yaml-043 (fast and slow multi-window burn alerts).
 - ~~Writing alert rule YAML~~ — **closed**: YAML Labs yaml-009 (write a
   ratio-based, `for:`-guarded paging rule) and yaml-010 (fix the flapping
   rule from monitoring-incident-003, including its missing `by (le)`).
-  Writing Grafana dashboards by hand is still not practiced.
-- Hosted/commercial tools (Datadog, New Relic, CloudWatch) — different
-  syntax, same concepts.
+  Dashboards are **closed** by Writing Lab yaml-042 (a rate, errors,
+  and duration dashboard as JSON, with a template variable).
+- ~~Log pipelines~~: **closed** by monitoring-tutorial-014 (Fluent Bit:
+  DaemonSet health, dropped and retried records, multiline, buffering),
+  monitoring-tutorial-015 (Vector: validation, transform tests, dropping
+  at the source), and monitoring-tutorial-016 (volume by source, label
+  cardinality, retention tiers), with incidents monitoring-incident-007
+  (collectors OOM-killed during an outage) and monitoring-incident-008
+  (a per-request label hitting Loki's stream limit). Logstash and
+  OpenSearch-specific operations aren't covered.
+- ~~Hosted tools~~: **partly closed** by monitoring-tutorial-017 (the
+  Datadog agent's status and checks, tag cardinality as cost, Sentry
+  releases and commits). New Relic, CloudWatch in depth, and building
+  monitors and dashboards inside those products aren't covered.
 - Incident-response process: **partly covered** by SRE (Part 14). It
   covers severity from user impact, mitigate-first, rebuilding the
   timeline, and the postmortem structure. Live comms practice is still
@@ -537,8 +549,9 @@ journald volume.
 Strong on the Prometheus/logging operator skills that most on-call
 rotations rely on, and on the specific ways monitoring systems fail.
 Tracing and SLO burn-rate alerting are now covered at the operator
-level, and so is auto-instrumenting a service. What's left is
-authoring: manual spans in code, and writing dashboards.
+level, and so is auto-instrumenting a service. Authoring is now
+practised too: a manual span, a dashboard, and burn-rate rules each have
+a Writing Lab. What's left is the vendor products themselves.
 
 ---
 
@@ -1644,16 +1657,19 @@ employer uses it.
    (Serverless): Lambda, API Gateway, ECS on Fargate, Cloud Run, and
    Azure Functions. Step Functions, DynamoDB, and serverless
    infrastructure code are under that part's "Still missing".
-9. **Logging pipelines.** Fluent Bit, Vector, Logstash, OpenSearch,
-   log-based metrics, and retention and cost control.
+9. ~~**Logging pipelines**~~: **done** inside Monitoring
+   (monitoring-tutorial-014 to 016, two incidents). Logstash and
+   OpenSearch operations are still open.
 10. **Performance engineering.** Flame graphs (perf, py-spy,
     async-profiler), eBPF tools (bcc, bpftrace), continuous profiling,
     and JVM garbage-collection basics.
 11. **FinOps.** Cost allocation by tag, rightsizing, commitments (Savings
     Plans, committed use), spot and preemptible capacity, Kubecost or
     OpenCost, and data-transfer costs.
-12. **Hosted observability.** Datadog, New Relic, CloudWatch in depth,
-    Sentry, and building Grafana dashboards.
+12. ~~**Hosted observability**~~: **mostly done** inside Monitoring
+    (monitoring-tutorial-017 for Datadog and Sentry; Writing Lab
+    yaml-042 for Grafana dashboards). New Relic and CloudWatch in depth
+    are still open.
 
 ## Tier B: valuable, depends on the role
 
@@ -1683,8 +1699,9 @@ employer uses it.
 - **System design depth:** the list under Part 16.
 - ~~**Testing in delivery**~~: **done** in cicd-tutorial-020.
 - **Authoring gaps named in earlier parts:** Kyverno policies and Falco
-  rules, an Airflow DAG, manual OpenTelemetry spans, Grafana dashboards,
-  and a burn-rate alert rule file. Each would be one Writing Lab.
+  rules, and an Airflow DAG. Each would be one Writing Lab. (Manual
+  OpenTelemetry spans, a Grafana dashboard, and burn-rate alert rules
+  are done: yaml-042 to 044.)
 
 ## Tier C: less popular, legacy, or niche
 
@@ -1739,7 +1756,7 @@ If content is added in the order that helps most people soonest:
 | Terraform | 12 | 6 | 5 Writing Labs (HCL, including a module) |
 | Networking | 12 | 7 | |
 | CI/CD | 20 | 8 | 4 Writing Labs (Actions, GitLab CI) |
-| Monitoring | 13 | 6 | 2 Writing Labs (alert rules) |
+| Monitoring | 17 | 8 | 5 Writing Labs (alert rules, SLO burn alerts, a dashboard, manual spans) |
 | MLOps | 14 | 7 | |
 | AWS | 13 | 7 | 1 Writing Lab (IAM policy), Sandbox (VPC), 4 Mysteries |
 | Azure | 10 | 6 | Sandbox, 3 Mysteries |
@@ -1755,7 +1772,7 @@ If content is added in the order that helps most people soonest:
 | Scripting | 8 | 4 | 2 Writing Labs (Python) |
 | Messaging | 7 | 4 | |
 | Serverless | 7 | 4 | |
-| **Total** | **273** | **140** | 41 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
+| **Total** | **277** | **142** | 44 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -1767,14 +1784,14 @@ command beats the alternatives — not just what it does.
 will know the commands, the failure modes, and — most importantly — the
 debugging method** (check the layer before guessing the fix; refused vs
 timeout; verify after every change; revoke before cleaning up; revert
-don't force-push). The 140 incidents are modeled on the kinds of problems
+don't force-push). The 142 incidents are modeled on the kinds of problems
 that genuinely trip up working engineers, and working through them
 builds judgment that command references alone never will.
 
 **It will not, on its own, make you fully proficient**, for four reasons
 that no amount of additional scenario content can fully close:
 
-1. **Authoring vs. operating.** Largely addressed: 41 Writing Labs now
+1. **Authoring vs. operating.** Largely addressed: 44 Writing Labs now
    have you write real Kubernetes manifests, GitHub Actions workflows,
    Prometheus alert rules, Compose files, Dockerfiles, Terraform (AWS
    VPCs and security groups, GCP firewalls), IAM policies, Ansible
