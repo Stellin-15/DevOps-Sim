@@ -11,6 +11,7 @@ lightweight — structural, not full language implementations — so labs
 behave identically on every machine.
 """
 
+import ast
 import re
 
 import yaml
@@ -487,7 +488,51 @@ def parse_nginx(content: str):
     return parsed, []
 
 
+# ---------------------------------------------------------------- python
+
+def parse_python(content: str):
+    """Python source -> {'functions', 'imports', 'calls', 'has_main_guard',
+    'shebang', 'lines', 'text'}, using the standard library's ast module.
+    'calls' holds dotted call names as written ('subprocess.run',
+    'parser.add_argument', 'sys.exit'). The file is parsed, never run, so
+    this proves it's valid Python with the right structure, not that it
+    works."""
+    if not content.strip():
+        return None, ["File is empty."]
+    try:
+        tree = ast.parse(content)
+    except SyntaxError as e:
+        return None, [f"Python syntax error on line {e.lineno}: {e.msg}"]
+
+    functions, imports, calls = [], [], []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            functions.append(node.name)
+        elif isinstance(node, ast.Import):
+            imports.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imports.append(node.module)
+        elif isinstance(node, ast.Call):
+            calls.append(ast.unparse(node.func))
+
+    has_main_guard = any(
+        isinstance(node, ast.If) and "__name__" in ast.unparse(node.test) and "__main__" in ast.unparse(node.test)
+        for node in tree.body
+    )
+    lines = content.splitlines()
+    return {
+        "functions": functions,
+        "imports": imports,
+        "calls": calls,
+        "has_main_guard": has_main_guard,
+        "shebang": lines[0] if lines and lines[0].startswith("#!") else "",
+        "lines": [l.strip() for l in lines if l.strip() and not l.strip().startswith("#")],
+        "text": content,
+    }, []
+
+
 PARSERS = {
+    "python": parse_python,
     "nginx": parse_nginx,
     "yaml": parse_yaml,
     "dockerfile": parse_dockerfile,

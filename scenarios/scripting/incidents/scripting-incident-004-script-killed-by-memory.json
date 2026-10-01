@@ -1,0 +1,49 @@
+{
+  "id": "scripting-incident-004",
+  "type": "incident",
+  "category": "scripting",
+  "title": "The log-analysis script prints 'Killed' and nothing else",
+  "difficulty": "intermediate",
+  "tags": ["python", "memory", "oom", "performance"],
+  "intro": "A Python script, top_errors.py, reads the day's access log and prints the ten most common error paths. It has run daily for a year. Since the sale started, it ends with the single word 'Killed' after a couple of minutes, and no traceback. The log file is /var/log/nginx/access.log on a server with 8 GB of RAM.",
+  "steps": [
+    {
+      "prompt": "Run it and check its exit status straight afterwards.",
+      "expected_commands": ["python top_errors.py /var/log/nginx/access.log; echo $?", "python3 top_errors.py /var/log/nginx/access.log; echo $?", "python top_errors.py /var/log/nginx/access.log ; echo $?"],
+      "fake_output": "Killed\n137",
+      "hint": "python top_errors.py /var/log/nginx/access.log; echo $?"
+    },
+    {
+      "prompt": "137 is 128 + 9: the process received signal 9, SIGKILL. Python didn't crash; something killed it. Ask the kernel: search its log for out-of-memory messages.",
+      "expected_commands": ["sudo dmesg -T | grep -i \"out of memory\"", "dmesg -T | grep -i \"out of memory\"", "sudo dmesg | grep -i \"out of memory\"", "sudo dmesg -T | grep -i oom", "sudo journalctl -k | grep -i \"out of memory\"", "dmesg | grep -i oom"],
+      "fake_output": "[Mon Sep 28 12:31:07 2026] Out of memory: Killed process 71204 (python) total-vm:9120044kB, anon-rss:7412004kB",
+      "hint": "sudo dmesg -T | grep -i \"out of memory\""
+    },
+    {
+      "prompt": "The kernel's OOM killer ended it at 7.4 GB of memory. See how big today's log is.",
+      "expected_commands": ["ls -lh /var/log/nginx/access.log", "du -h /var/log/nginx/access.log", "ls -l --block-size=G /var/log/nginx/access.log"],
+      "fake_output": "-rw-r----- 1 www-data adm 6.2G Sep 28 12:30 /var/log/nginx/access.log",
+      "hint": "ls -lh /var/log/nginx/access.log"
+    },
+    {
+      "prompt": "6.2 GB, where a normal day is around 400 MB. Find how the script reads the file: search it for calls that read.",
+      "expected_commands": ["grep -n read top_errors.py", "grep -n \"read\" top_errors.py", "grep -n 'read' top_errors.py", "grep -n readlines top_errors.py"],
+      "fake_output": "14:    lines = open(path).readlines()\n15:    for line in lines:",
+      "hint": "grep -n read top_errors.py"
+    },
+    {
+      "prompt": "readlines() loads the whole file into a list in memory before the loop starts. What's the fix?\n  a) Add more RAM to the server\n  b) Iterate over the file object directly (for line in f), which reads one line at a time and uses the same small amount of memory for any file size\n  c) Use read() instead of readlines()\n  d) Run the script at night\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "with open(path) as f:\n    for line in f:          # one line in memory at a time\n        fields = line.split()\n        if fields[8].startswith(\"5\"):\n            counts[fields[6]] += 1",
+      "hint": "The script only needs each line once."
+    },
+    {
+      "prompt": "The script is fixed. Run it again under GNU time to measure its peak memory, showing the line with 'Maximum resident'.",
+      "expected_commands": ["/usr/bin/time -v python top_errors.py /var/log/nginx/access.log 2>&1 | grep \"Maximum resident\"", "/usr/bin/time -v python3 top_errors.py /var/log/nginx/access.log 2>&1 | grep \"Maximum resident\"", "/usr/bin/time -v python top_errors.py /var/log/nginx/access.log 2>&1 | grep 'Maximum resident'", "/usr/bin/time -v python top_errors.py /var/log/nginx/access.log 2>&1 | grep Maximum"],
+      "fake_output": "\tMaximum resident set size (kbytes): 18204",
+      "hint": "/usr/bin/time -v python top_errors.py /var/log/nginx/access.log 2>&1 | grep \"Maximum resident\""
+    }
+  ],
+  "resolution": "The script had a bug from the day it was written, and the data was too small to show it. 'open(path).readlines()' reads the entire file into memory as a list of strings, which in Python costs more than the file's size. On a 400 MB log that was a few hundred megabytes and nobody noticed. The sale produced a 6.2 GB log, the list outgrew the server's 8 GB, and the kernel's OOM killer chose the largest process and sent it SIGKILL. That's why there was no traceback: a killed process gets no chance to print anything, and the shell reports only 'Killed'. Exit status 137 is the fingerprint (128 plus signal 9), the same number a container shows when it exceeds its memory limit, and the kernel log names the victim. The fix changes nothing about what the script computes: iterating over the file object reads a line, handles it, and lets it go, so memory is constant, 18 MB here, whether the file is a megabyte or a terabyte. The principle is general for automation that touches data: stream it, don't load it. The same mistake appears as .read() on a file, json.load on a large document, a query without a LIMIT that fetches every row, and listing every object in a bucket into a list. It also took something else on the server down with it: the OOM killer could as easily have chosen nginx. A heavy job shouldn't share a production server's memory unprotected; run it elsewhere, or under a limit ('systemd-run -p MemoryMax=1G', or a container limit) so that it can only hurt itself. And measure before trusting: '/usr/bin/time -v' gives peak memory for any command.",
+  "real_commands_used": ["echo $? (137 = killed by signal 9)", "dmesg -T | grep -i 'out of memory'", "ls -lh <file>", "grep -n read <script>", "/usr/bin/time -v <command> (Maximum resident set size)"]
+}

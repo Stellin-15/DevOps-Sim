@@ -1,0 +1,46 @@
+{
+  "id": "scripting-tutorial-005",
+  "type": "tutorial",
+  "category": "scripting",
+  "title": "yq: Reading and Editing YAML Without sed",
+  "difficulty": "intermediate",
+  "tags": ["yq", "yaml", "kubernetes", "automation"],
+  "intro": "Pipelines constantly need to change one value in a YAML file: an image tag, a replica count. Doing it with sed works until the indentation or a comment changes, and then it silently edits the wrong line or nothing at all. yq understands the structure. (This is the Go yq by Mike Farah, the common one; its syntax is close to jq's.) You have values.yaml and deployment.yaml.",
+  "steps": [
+    {
+      "prompt": "Read the replica count from deployment.yaml.",
+      "expected_commands": ["yq '.spec.replicas' deployment.yaml", "yq .spec.replicas deployment.yaml", "yq e '.spec.replicas' deployment.yaml", "yq \".spec.replicas\" deployment.yaml"],
+      "fake_output": "3",
+      "explanation": "The value at that path.",
+      "why": "The path is the same dotted form as in jq and in kubectl's jsonpath. Reading a value this way is safe against reformatting, where 'grep replicas' would also match 'minReplicas' or a comment."
+    },
+    {
+      "prompt": "List the image of every container in deployment.yaml.",
+      "expected_commands": ["yq '.spec.template.spec.containers[].image' deployment.yaml", "yq e '.spec.template.spec.containers[].image' deployment.yaml", "yq \".spec.template.spec.containers[].image\" deployment.yaml"],
+      "fake_output": "registry.example.com/shop:1.8.2\nregistry.example.com/log-forwarder:2.1.0",
+      "explanation": "Two containers: the app and a sidecar.",
+      "why": "'[]' iterates a list, as in jq. This is the check to run before a scripted image update: there are two images here, and a naive 'replace the image line' would change the wrong one or both."
+    },
+    {
+      "prompt": "Set image.tag to 1.8.3 in values.yaml, editing the file in place.",
+      "expected_commands": ["yq -i '.image.tag = \"1.8.3\"' values.yaml", "yq e -i '.image.tag = \"1.8.3\"' values.yaml", "yq -i '.image.tag=\"1.8.3\"' values.yaml", "yq --inplace '.image.tag = \"1.8.3\"' values.yaml"],
+      "fake_output": "(no output: values.yaml updated)\n\nimage:\n  repository: registry.example.com/shop\n  tag: \"1.8.3\"   # bumped by CI",
+      "explanation": "Only that value changed; the comment and the rest of the file are intact.",
+      "why": "This is the line a pipeline runs to promote a build in a GitOps repository. yq keeps comments and key order, so the commit's diff is one line. Quote the value: an unquoted 1.8 would be written as a number, and Helm would then render the tag '1.8' or even '1.80' differently from what you meant."
+    },
+    {
+      "prompt": "The file all.yaml contains many Kubernetes documents separated by ---. Print the names of the ones whose kind is Deployment.",
+      "expected_commands": ["yq 'select(.kind == \"Deployment\") | .metadata.name' all.yaml", "yq eval-all 'select(.kind == \"Deployment\") | .metadata.name' all.yaml", "yq e 'select(.kind == \"Deployment\") | .metadata.name' all.yaml", "yq 'select(.kind==\"Deployment\")|.metadata.name' all.yaml"],
+      "fake_output": "shop\n---\napi\n---\nworker",
+      "explanation": "Three Deployments among the documents.",
+      "why": "yq applies the expression to each document in a multi-document file. That makes it the tool for inspecting 'helm template' or 'kubectl kustomize' output: pick out one kind, check a field across all of them, or count them, before anything is applied."
+    },
+    {
+      "prompt": "Convert values.yaml to JSON, so jq or another tool can take it from there.",
+      "expected_commands": ["yq -o=json '.' values.yaml", "yq -o json '.' values.yaml", "yq -o=json values.yaml", "yq -o json values.yaml", "yq e -o=json '.' values.yaml"],
+      "fake_output": "{\n  \"image\": {\n    \"repository\": \"registry.example.com/shop\",\n    \"tag\": \"1.8.3\"\n  },\n  \"replicaCount\": 6\n}",
+      "explanation": "The same data as JSON.",
+      "why": "YAML is a superset of JSON, so conversion loses only comments. It's also a quick way to see what a YAML file really means: surprises such as 'no' parsed as false, or a version parsed as a number, are obvious in the JSON. '-P' goes the other way, pretty-printing JSON as YAML."
+    }
+  ]
+}

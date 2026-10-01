@@ -1,0 +1,49 @@
+{
+  "id": "scripting-incident-003",
+  "type": "incident",
+  "category": "scripting",
+  "title": "The deploy 'succeeded' and production is running an image called shop:null",
+  "difficulty": "intermediate",
+  "tags": ["jq", "bash", "pipelines", "error-handling"],
+  "intro": "A deploy pipeline went green ten minutes ago and the shop pods are now in ImagePullBackOff, trying to pull registry.example.com/shop:null. The deploy script, deploy.sh, asks the release service for the current release and sets the image from its tag. The release service was upgraded yesterday. The script's key lines are:\n    TAG=$(curl -s https://releases.internal/api/shop/current | jq -r '.tag')\n    kubectl set image deployment/shop shop=registry.example.com/shop:$TAG -n shop",
+  "steps": [
+    {
+      "prompt": "Stop the damage first. Roll the deployment shop in namespace shop back to its previous revision.",
+      "expected_commands": ["kubectl rollout undo deployment/shop -n shop", "kubectl rollout undo deployment shop -n shop", "kubectl rollout undo deploy/shop -n shop"],
+      "fake_output": "deployment.apps/shop rolled back",
+      "hint": "kubectl rollout undo deployment/shop -n shop"
+    },
+    {
+      "prompt": "Now find the cause. Run the script's own lookup by hand: fetch the current release and extract .tag as raw text.",
+      "expected_commands": ["curl -s https://releases.internal/api/shop/current | jq -r '.tag'", "curl -s https://releases.internal/api/shop/current | jq -r .tag", "curl -s https://releases.internal/api/shop/current | jq -r \".tag\""],
+      "fake_output": "null",
+      "hint": "curl -s https://releases.internal/api/shop/current | jq -r '.tag'"
+    },
+    {
+      "prompt": "jq printed the word null: there's no .tag in the response. Look at what the API returns now: show the whole response.",
+      "expected_commands": ["curl -s https://releases.internal/api/shop/current | jq", "curl -s https://releases.internal/api/shop/current | jq .", "curl -s https://releases.internal/api/shop/current | jq '.'", "curl -s https://releases.internal/api/shop/current"],
+      "fake_output": "{\n  \"data\": {\n    \"service\": \"shop\",\n    \"tag\": \"1.8.3\",\n    \"released_at\": \"2026-09-28T11:02:00Z\"\n  },\n  \"meta\": {\"api_version\": 2}\n}",
+      "hint": "curl -s https://releases.internal/api/shop/current | jq"
+    },
+    {
+      "prompt": "Yesterday's upgrade wrapped the response in a 'data' object, so the tag is at .data.tag. Confirm the corrected lookup, and this time make jq fail if the value is missing.",
+      "expected_commands": ["curl -s https://releases.internal/api/shop/current | jq -er '.data.tag'", "curl -s https://releases.internal/api/shop/current | jq -re '.data.tag'", "curl -s https://releases.internal/api/shop/current | jq -e -r '.data.tag'", "curl -s https://releases.internal/api/shop/current | jq -er .data.tag"],
+      "fake_output": "1.8.3",
+      "hint": "curl -s https://releases.internal/api/shop/current | jq -er '.data.tag'"
+    },
+    {
+      "prompt": "The path is fixed in deploy.sh. But why did the pipeline go green with a null tag? Check how the script handles errors: show its first 3 lines.",
+      "expected_commands": ["head -3 deploy.sh", "head -n 3 deploy.sh", "sed -n 1,3p deploy.sh"],
+      "fake_output": "#!/bin/bash\n# Deploy the current release of shop\nTAG=$(curl -s https://releases.internal/api/shop/current | jq -r '.tag')",
+      "hint": "head -3 deploy.sh"
+    },
+    {
+      "prompt": "No 'set -euo pipefail': the script keeps going after any failure. What should the script do to make this class of bug impossible?\n  a) Retry the deploy three times\n  b) Start with set -euo pipefail, use curl -f and jq -e so a bad response fails the pipeline, and check the tag looks like a version before using it\n  c) Print the tag at the end\n  d) Run the script as root\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "#!/bin/bash\nset -euo pipefail\nTAG=$(curl -fsS https://releases.internal/api/shop/current | jq -er '.data.tag')\n[[ \"$TAG\" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+$ ]] || { echo \"unexpected tag: $TAG\" >&2; exit 1; }\nkubectl set image deployment/shop shop=registry.example.com/shop:$TAG -n shop\nkubectl rollout status deployment/shop -n shop --timeout=5m",
+      "hint": "Every step that can produce a bad value should be able to fail the script."
+    }
+  ],
+  "resolution": "A field moved, and four separate things that should have stopped the deploy each let it through. jq treats a missing key as null and exits 0, and -r prints null as the four letters n-u-l-l, which is a perfectly good string to a shell. The script had no 'set -e', so it would have continued even after a real failure. Nothing checked that the value looked like a version. And the script ended with 'kubectl set image', which succeeds as soon as the API server accepts the change, long before any pod tries to pull the image; so the pipeline reported success while production was rolling out an image that doesn't exist. Kubernetes limited the damage: the rolling update couldn't bring up new pods, so the old ones kept serving. A deployment strategy that had replaced them first would have been an outage. Rolling back took one command and came first, before any diagnosis. The repaired script closes each gap. 'set -euo pipefail' makes any failed command, any unset variable, and any failed stage of a pipe stop the script. 'curl -f' turns an HTTP error into a failure instead of an error page fed to jq. 'jq -e' exits non-zero when the result is null. A pattern check refuses anything that isn't a version. And 'kubectl rollout status' with a timeout makes the pipeline wait for the rollout to actually finish, so green means deployed. The upstream cause deserves a word too: the release service changed its response shape with no version in the URL and no notice. An API that other teams' automation depends on needs a contract (cicd-tutorial-020), and its consumers need tests that run against it.",
+  "real_commands_used": ["kubectl rollout undo", "curl -s <api> | jq -r '.tag'", "curl -s <api> | jq", "jq -er '.data.tag'", "head -3 deploy.sh"]
+}

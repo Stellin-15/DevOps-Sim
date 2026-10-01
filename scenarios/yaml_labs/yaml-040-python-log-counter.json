@@ -1,0 +1,34 @@
+{
+  "id": "yaml-040",
+  "type": "yaml_lab",
+  "category": "scripting",
+  "title": "Write a Python CLI: Count Errors in a Log and Exit with a Useful Code",
+  "difficulty": "intermediate",
+  "tags": ["python", "argparse", "exit-codes", "streaming"],
+  "intro": "The bash labs wrote scripts for the shell. This is the Python equivalent: a small command-line tool with real arguments, that reads a file of any size without loading it into memory, and reports its result through its exit code so a pipeline or a monitoring check can act on it.",
+  "steps": [
+    {
+      "file": "count_5xx.py",
+      "format": "python",
+      "starter_content": "#!/usr/bin/env python3\n\"\"\"Count 5xx responses in an nginx access log.\"\"\"\n",
+      "prompt": "Write count_5xx.py:\n\n(1) import argparse and sys.\n(2) def count_errors(path): open the file using 'with open(path) as f:' and loop with 'for line in f:'. Split each line; the status code is field index 8. Count the lines whose status starts with \"5\" and return the count. Skip lines with fewer than 9 fields.\n(3) def main(): build an argparse.ArgumentParser with a positional argument 'logfile' and an option '--threshold' (type=int, default=10). Call count_errors, print the count, and call sys.exit(1) if the count is greater than the threshold, otherwise sys.exit(0).\n(4) End with the standard guard:  if __name__ == \"__main__\": main()\n\nDon't use .read() or .readlines().",
+      "apply_commands": ["python count_5xx.py access.log", "python3 count_5xx.py access.log", "python -m py_compile count_5xx.py", "check"],
+      "validate": {
+        "fields": {
+          "shebang": {"contains": "python"},
+          "imports[*]": ["argparse", "sys"],
+          "functions[*]": ["count_errors", "main"],
+          "has_main_guard": true,
+          "calls[*]": ["sys.exit", "open", {"contains": "add_argument"}, {"contains": "parse_args"}],
+          "text": {"contains": ["with open(", "for line in", "--threshold", "type=int", "logfile"]}
+        },
+        "absent": [".readlines()", ".read()"]
+      },
+      "hint": "def count_errors(path):\n    count = 0\n    with open(path) as f:\n        for line in f:\n            fields = line.split()\n            if len(fields) > 8 and fields[8].startswith(\"5\"):\n                count += 1\n    return count\n\nIn main(): parser = argparse.ArgumentParser(); parser.add_argument(\"logfile\"); parser.add_argument(\"--threshold\", type=int, default=10); args = parser.parse_args()",
+      "solution": "#!/usr/bin/env python3\n\"\"\"Count 5xx responses in an nginx access log.\"\"\"\nimport argparse\nimport sys\n\n\ndef count_errors(path):\n    count = 0\n    with open(path) as f:\n        for line in f:\n            fields = line.split()\n            if len(fields) > 8 and fields[8].startswith(\"5\"):\n                count += 1\n    return count\n\n\ndef main():\n    parser = argparse.ArgumentParser(description=\"Count 5xx responses in an access log.\")\n    parser.add_argument(\"logfile\")\n    parser.add_argument(\"--threshold\", type=int, default=10)\n    args = parser.parse_args()\n\n    count = count_errors(args.logfile)\n    print(f\"{count} server errors\")\n    sys.exit(1 if count > args.threshold else 0)\n\n\nif __name__ == \"__main__\":\n    main()\n",
+      "fake_output": "$ python count_5xx.py access.log --threshold 100\n2907 server errors\n$ echo $?\n1",
+      "explanation": "A tool that takes its input as arguments, uses constant memory, and tells its caller 'too many errors' through its exit status.",
+      "why": "Each requirement is a habit worth keeping. argparse gives --help, type checking ('--threshold abc' is rejected with a clear message), and defaults, for three lines of code. 'with open' closes the file even if an exception is raised. 'for line in f' holds one line in memory at a time, so a 6 GB log costs the same as a 6 KB one; readlines() loads the whole file, which is scripting-incident-004. The length check stops a truncated or blank line crashing the script with IndexError. Putting the work in functions, with main() behind the __name__ guard, means the file can be imported by a test without running, so count_errors can be unit-tested with a small sample file. And the exit code is the interface: cron, CI, and monitoring checks can all act on 0 versus 1 without parsing the text."
+    }
+  ]
+}

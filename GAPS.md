@@ -1404,7 +1404,72 @@ a specialism beyond this.
 
 ---
 
-# Part 20 — The backlog: everything that isn't in the game yet
+# Part 20 — Scripting
+
+**Content:** 8 tutorials, 4 incidents, 2 Writing Labs (Python).
+
+Bash is in Linux (Part 3) and its labs. This part is the next layer:
+Python as the automation language, the data tools pipelines lean on,
+Makefiles, and enough Go to build and test the tools you run.
+
+## Covered
+
+Every section of `commands/scripting.md`:
+- **Python environments:** venv, `python -m pip`, pinned requirements,
+  freezing, and outdated packages.
+- **Running and debugging:** `--help`, reading a traceback, exit codes,
+  `pdb` post-mortem, and log levels from the environment.
+- **Tests and linters:** pytest selection and coverage, ruff, and mypy.
+- **jq:** length, select, group_by, tab-separated output, `-e`, and
+  `--arg`.
+- **yq:** reading paths, in-place edits that keep comments,
+  multi-document files, and conversion to JSON.
+- **Regular expressions:** alternation, extraction with `grep -o`,
+  capture groups in sed, negated classes, and greedy matching.
+- **Makefiles:** dry runs, the tab rule, `.PHONY`, variable overrides,
+  and one definition shared with CI.
+- **Go:** `go test`, `go vet`, `go mod tidy`, building, and
+  cross-compiling.
+
+Incidents:
+- a nightly job broken by an unpinned indirect dependency;
+- a script that works by hand and has never worked from cron (PATH);
+- a deploy of an image tagged `null` after an API changed shape;
+- a script killed by the kernel for reading a whole file into memory.
+
+Writing Labs yaml-040 (a CLI with argparse, streaming, and exit codes)
+and yaml-041 (fix command injection, a missing timeout, a bare except,
+and a false success) use a new `python` lab format, which parses the
+file with the standard library's `ast` module and never runs it.
+
+## Still missing
+
+- **Running the code.** The Python checker confirms structure (imports,
+  functions, calls, a main guard) and required or forbidden text. It
+  can't tell whether the logic is right. Run your scripts and write
+  tests for them.
+- Cloud SDKs in practice: boto3 pagination and waiters, the Azure and
+  Google client libraries, and stubbing them in tests.
+- HTTP APIs from code: sessions, retries with backoff, pagination, and
+  rate limits.
+- Concurrency (threads, asyncio) for fan-out tasks.
+- Packaging a tool: pyproject.toml, entry points, and publishing.
+- Writing Go, beyond building and testing it.
+- PowerShell (listed under the Backlog's tier C with Windows).
+- Makefile and Taskfile authoring as a lab.
+
+## Readiness verdict
+
+Enough to maintain the automation a team accumulates: run it in a
+reproducible environment, debug it from a traceback and an exit code,
+query and edit JSON and YAML safely, and recognise the failures that
+come from environments and unchecked values instead of from logic. To
+write good automation, write some: pick a manual task you do weekly and
+script it, with tests.
+
+---
+
+# Part 21 — The backlog: everything that isn't in the game yet
 
 The parts above each list what's missing *inside* a category. This part
 lists whole topics with no category at all, in three tiers. Nobody needs
@@ -1427,10 +1492,11 @@ employer uses it.
    operations, TLS with certbot, log analysis, gateway errors, limits,
    caching, capacity, and HAProxy. Depth topics (rewrites, the stream
    module, HAProxy ACLs, WAFs) are under Part 18's "Still missing".
-4. **A scripting language.** Python for automation (argparse,
-   subprocess, requests, boto3, virtual environments, pytest), Go basics
-   for reading and building tooling, `jq` and `yq` in depth, regular
-   expressions, and Makefiles.
+4. ~~**A scripting language**~~: **now a category** (Scripting): Python
+   environments, debugging, tests and linters, `jq`, `yq`, regular
+   expressions, Makefiles, and building Go tools, with two Python
+   Writing Labs. Cloud SDK use (boto3) and writing Go are under that
+   part's "Still missing".
 5. ~~**Identity and secrets**~~: **now a category** (Identity and
    Secrets): JWTs, OAuth 2.0 and OIDC, workload identity, Vault,
    External Secrets, SOPS and Sealed Secrets, mTLS, and cert-manager.
@@ -1524,14 +1590,14 @@ If content is added in the order that helps most people soonest:
 3. ~~identity and secrets~~ (done);
 4. ~~Kubernetes ecosystem~~ (done);
 5. ~~Jenkins and GitLab CI~~ (done);
-6. Python for automation, as Writing Labs;
+6. ~~Python for automation, as Writing Labs~~ (done);
 7. Kafka operations;
 8. serverless;
 9. then tier B by demand.
 
 ---
 
-# Part 21 — Overall: will this make you proficient in DevOps?
+# Part 22 — Overall: will this make you proficient in DevOps?
 
 ## By the numbers
 
@@ -1556,7 +1622,8 @@ If content is added in the order that helps most people soonest:
 | Databases | 12 | 6 | |
 | Web Servers & Proxies | 11 | 6 | 2 Writing Labs (nginx configuration) |
 | Identity & Secrets | 9 | 5 | 2 Writing Labs (Vault policy, cert-manager) |
-| **Total** | **251** | **128** | 39 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
+| Scripting | 8 | 4 | 2 Writing Labs (Python) |
+| **Total** | **259** | **132** | 41 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -1568,14 +1635,14 @@ command beats the alternatives — not just what it does.
 will know the commands, the failure modes, and — most importantly — the
 debugging method** (check the layer before guessing the fix; refused vs
 timeout; verify after every change; revoke before cleaning up; revert
-don't force-push). The 128 incidents are modeled on the kinds of problems
+don't force-push). The 132 incidents are modeled on the kinds of problems
 that genuinely trip up working engineers, and working through them
 builds judgment that command references alone never will.
 
 **It will not, on its own, make you fully proficient**, for four reasons
 that no amount of additional scenario content can fully close:
 
-1. **Authoring vs. operating.** Largely addressed: 39 Writing Labs now
+1. **Authoring vs. operating.** Largely addressed: 41 Writing Labs now
    have you write real Kubernetes manifests, GitHub Actions workflows,
    Prometheus alert rules, Compose files, Dockerfiles, Terraform (AWS
    VPCs and security groups, GCP firewalls), IAM policies, Ansible

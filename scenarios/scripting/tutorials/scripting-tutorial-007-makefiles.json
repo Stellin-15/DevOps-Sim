@@ -1,0 +1,48 @@
+{
+  "id": "scripting-tutorial-007",
+  "type": "tutorial",
+  "category": "scripting",
+  "title": "Makefiles as a Project's Command Menu",
+  "difficulty": "beginner",
+  "tags": ["make", "makefile", "automation", "tasks"],
+  "intro": "Most repositories you'll work in have a Makefile, used less to compile things than as a menu of commands: make test, make build, make deploy. It gives every project the same entry points and lets CI run exactly what developers run. You're in the shop-api repository.",
+  "steps": [
+    {
+      "prompt": "See what 'make deploy' would run, without running any of it.",
+      "expected_commands": ["make -n deploy", "make --dry-run deploy", "make deploy -n", "make --just-print deploy"],
+      "fake_output": "pytest -q\ndocker build -t registry.example.com/shop-api:dev .\ndocker push registry.example.com/shop-api:dev\nkubectl apply -k overlays/dev",
+      "explanation": "Four commands: test, build, push, apply, against the dev environment.",
+      "why": "-n prints the recipe instead of executing it. Do this before running any target you didn't write, especially one called deploy or clean. It also shows the chain: deploy depends on push, which depends on build, which depends on test, and make runs them in dependency order."
+    },
+    {
+      "prompt": "Run the tests through make.",
+      "expected_commands": ["make test"],
+      "fake_output": "Makefile:9: *** missing separator.  Stop.",
+      "explanation": "make refuses to run: line 9 of the Makefile is malformed.",
+      "why": "'missing separator' almost always means a recipe line is indented with spaces. Make requires a literal tab at the start of every command line, a rule from the 1970s that editors configured to insert spaces break constantly. 'cat -A Makefile' shows tabs as ^I so you can see which lines are wrong."
+    },
+    {
+      "prompt": "The indentation is fixed. A directory named 'test' also exists in the repository, and now 'make test' prints \"make: 'test' is up to date\" and runs nothing. What fixes that?\n  a) Renaming the directory\n  b) Declaring the target with .PHONY: test, so make knows it's a command and not a file to build\n  c) Running make twice\n  d) Deleting the Makefile\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": ".PHONY: test build push deploy clean\n\ntest:\n\tpytest -q",
+      "hint": "make was designed to build files, and skips a target whose file already exists and is newer than its inputs.",
+      "explanation": ".PHONY tells make the target is always to be run.",
+      "why": "Make's core idea is 'rebuild a file only if its inputs changed'. A target with no file behind it works by accident until a file or directory of that name appears. Every command-style target belongs in .PHONY. For real build outputs, the timestamp logic is the feature: unchanged inputs mean no work."
+    },
+    {
+      "prompt": "The Makefile uses a variable ENV that defaults to dev. Run the deploy target for production, overriding it on the command line. Use a dry run so nothing happens.",
+      "expected_commands": ["make -n deploy ENV=prod", "make deploy ENV=prod -n", "make -n ENV=prod deploy", "make --dry-run deploy ENV=prod"],
+      "fake_output": "pytest -q\ndocker build -t registry.example.com/shop-api:prod .\ndocker push registry.example.com/shop-api:prod\nkubectl apply -k overlays/prod",
+      "explanation": "The same recipe with ENV=prod substituted throughout.",
+      "why": "Variables given on the command line override those in the Makefile, so one target serves every environment. 'ENV ?= dev' in the file sets the default. Make it hard to hit production by accident: a default of dev, and a confirmation or a required extra variable for prod."
+    },
+    {
+      "prompt": "CI should run the same thing developers do. Which is the better CI configuration?\n  a) Copy the test and build commands into the CI YAML\n  b) Have CI call 'make test' and 'make build', so there's one definition of each step\n  c) Let CI use different commands, since it's a different environment\n  d) Skip tests in CI\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "jobs:\n  test:\n    steps:\n      - uses: actions/checkout@v4\n      - run: make test",
+      "hint": "Two copies of a command drift apart.",
+      "explanation": "One definition, called from both places.",
+      "why": "When the commands live in the Makefile (or a Taskfile, justfile, or script), 'it passes locally and fails in CI' loses its most common cause, and switching CI systems means changing a few lines. The CI file is left with what only CI knows: triggers, caches, secrets, and where things run."
+    }
+  ]
+}

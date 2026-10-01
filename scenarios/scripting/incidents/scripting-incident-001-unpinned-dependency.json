@@ -1,0 +1,49 @@
+{
+  "id": "scripting-incident-001",
+  "type": "incident",
+  "category": "scripting",
+  "title": "The nightly job broke overnight, and nobody changed the code",
+  "difficulty": "intermediate",
+  "tags": ["python", "dependencies", "pinning", "ci"],
+  "intro": "The nightly billing-export job has run for two years. Last night it failed with \"ImportError: cannot import name 'DEFAULT_CIPHERS' from 'urllib3.util.ssl_'\". The repository's last commit was three weeks ago. The job builds a fresh virtual environment from requirements.txt on every run. It still works on your laptop, where the environment is months old.",
+  "steps": [
+    {
+      "prompt": "Same code, different result, so the difference is the environment. Look at how dependencies are declared: print requirements.txt.",
+      "expected_commands": ["cat requirements.txt"],
+      "fake_output": "requests\nboto3\nbotocore==1.29.76",
+      "hint": "cat requirements.txt"
+    },
+    {
+      "prompt": "requests and boto3 have no version at all, and urllib3 (the package in the error) isn't listed: it's pulled in by the others. See which urllib3 your working laptop environment has.",
+      "expected_commands": ["python -m pip show urllib3", "pip show urllib3", "python -m pip freeze | grep urllib3", "pip freeze | grep urllib3", "python3 -m pip show urllib3"],
+      "fake_output": "Name: urllib3\nVersion: 1.26.18\nRequired-by: botocore, requests",
+      "hint": "python -m pip show urllib3"
+    },
+    {
+      "prompt": "1.26.18 here. Reproduce what CI gets: create a fresh environment in /tmp/fresh.",
+      "expected_commands": ["python3 -m venv /tmp/fresh", "python -m venv /tmp/fresh"],
+      "fake_output": "(no output)",
+      "hint": "python3 -m venv /tmp/fresh"
+    },
+    {
+      "prompt": "Install the requirements into that fresh environment, using its own Python.",
+      "expected_commands": ["/tmp/fresh/bin/python -m pip install -r requirements.txt", "/tmp/fresh/bin/pip install -r requirements.txt"],
+      "fake_output": "Collecting requests\n  Downloading requests-2.32.3\nCollecting urllib3<3,>=1.21.1\n  Downloading urllib3-2.2.3\nSuccessfully installed boto3-1.35.20 botocore-1.29.76 requests-2.32.3 urllib3-2.2.3 ...\nERROR: pip's dependency resolver does not currently take into account all the packages that are installed.\nbotocore 1.29.76 requires urllib3<1.27,>=1.25.4, but you have urllib3 2.2.3 which is incompatible.",
+      "hint": "/tmp/fresh/bin/python -m pip install -r requirements.txt"
+    },
+    {
+      "prompt": "There it is: a fresh install picks urllib3 2.2.3, and the pinned, old botocore needs a version below 1.27. Your laptop's environment is the known-good set. Capture it exactly: write the working environment's full package list to requirements.txt.",
+      "expected_commands": ["python -m pip freeze > requirements.txt", "pip freeze > requirements.txt", "python3 -m pip freeze > requirements.txt"],
+      "fake_output": "(no output: requirements.txt now lists 9 packages with exact versions, including urllib3==1.26.18)",
+      "hint": "python -m pip freeze > requirements.txt"
+    },
+    {
+      "prompt": "Prove the fix the way CI will see it: install the new requirements.txt into a clean environment at /tmp/fresh2 (already created) and check for conflicts.",
+      "expected_commands": ["/tmp/fresh2/bin/python -m pip install -r requirements.txt && /tmp/fresh2/bin/python -m pip check", "/tmp/fresh2/bin/pip install -r requirements.txt && /tmp/fresh2/bin/pip check", "/tmp/fresh2/bin/python -m pip install -r requirements.txt"],
+      "fake_output": "Successfully installed boto3-1.26.76 botocore-1.29.76 requests-2.31.0 urllib3-1.26.18 ...\nNo broken requirements found.",
+      "hint": "/tmp/fresh2/bin/python -m pip install -r requirements.txt && /tmp/fresh2/bin/python -m pip check"
+    }
+  ],
+  "resolution": "Nobody changed the code, but the job doesn't run 'the code'; it runs the code plus whatever its dependencies resolve to on the night. requirements.txt named requests and boto3 with no versions, and pinned only botocore, to an old release. Each night pip chose the newest packages that satisfied that file. For two years the answer was compatible. Then a new release shifted the resolution: requests now accepts urllib3 version 2, pip installed it, and the old pinned botocore, which needs urllib3 below 1.27, imported a name that version 2 had removed. pip even printed the conflict, as a warning that a nightly job's log buried. The laptop kept working only because its environment was built months ago and never rebuilt, which is its own trap: 'works on my machine' here meant 'my machine is out of date'. Building a fresh environment locally reproduced CI's failure in a minute, and that's the general move for any CI-only failure. Freezing the known-good environment restored the job. The lasting practice has three parts. Pin everything, including indirect dependencies, so an install is the same on every machine and every night: a lock file, from pip freeze, or better pip-compile, uv, or Poetry, which keep your loose intentions (requirements.in) separate from the exact resolution. Upgrade on purpose: let Renovate or Dependabot propose updates as pull requests that run the tests (cicd-tutorial-019), so a breaking release shows up as a red PR on a weekday instead of a failed job at night. And run 'pip check' in CI, which turns that buried warning into a failure. Pinning botocore alone and nothing else was the worst of both: old enough to conflict, and no protection from everything around it.",
+  "real_commands_used": ["cat requirements.txt", "pip show <package>", "python3 -m venv <fresh dir>", "<venv>/bin/python -m pip install -r requirements.txt", "pip freeze > requirements.txt", "pip check"]
+}

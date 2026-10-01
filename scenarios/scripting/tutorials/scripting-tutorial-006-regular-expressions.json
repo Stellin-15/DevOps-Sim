@@ -1,0 +1,49 @@
+{
+  "id": "scripting-tutorial-006",
+  "type": "tutorial",
+  "category": "scripting",
+  "title": "Regular Expressions for Operations",
+  "difficulty": "intermediate",
+  "tags": ["regex", "grep", "sed", "logs"],
+  "intro": "Log lines, alert rules, routing rules, and validation checks are all written in regular expressions, and a slightly wrong one fails quietly: it matches too much or nothing. This tutorial uses grep and sed on app.log, whose lines look like:\n2026-09-28T12:00:01Z level=ERROR user=dana ip=203.0.113.9 status=502 duration=1904ms msg=\"upstream timeout\"",
+  "steps": [
+    {
+      "prompt": "Show the lines whose level is ERROR or FATAL, using extended regular expressions.",
+      "expected_commands": ["grep -E 'level=(ERROR|FATAL)' app.log", "grep -E \"level=(ERROR|FATAL)\" app.log", "egrep 'level=(ERROR|FATAL)' app.log", "grep -E 'level=(FATAL|ERROR)' app.log"],
+      "fake_output": "2026-09-28T12:00:01Z level=ERROR user=dana ip=203.0.113.9 status=502 duration=1904ms msg=\"upstream timeout\"\n2026-09-28T12:00:07Z level=FATAL user=sam ip=198.51.100.14 status=500 duration=12ms msg=\"out of memory\"",
+      "explanation": "Lines containing level=ERROR or level=FATAL.",
+      "why": "-E turns on extended syntax, where | means 'or' and parentheses group without backslashes. Including 'level=' in the pattern matters: searching for just ERROR would also match a message that happens to contain the word. Make a pattern as specific as the thing you mean."
+    },
+    {
+      "prompt": "Extract just the IP addresses from the file, one per line, not the whole lines.",
+      "expected_commands": ["grep -oE '[0-9]{1,3}(\\.[0-9]{1,3}){3}' app.log", "grep -Eo '[0-9]{1,3}(\\.[0-9]{1,3}){3}' app.log", "grep -oE \"[0-9]{1,3}(\\.[0-9]{1,3}){3}\" app.log", "grep -oE '([0-9]{1,3}\\.){3}[0-9]{1,3}' app.log"],
+      "fake_output": "203.0.113.9\n198.51.100.14\n203.0.113.9\n192.0.2.61",
+      "hint": "grep -oE '[0-9]{1,3}(\\.[0-9]{1,3}){3}' app.log",
+      "explanation": "Only the matched text: one to three digits, then three more groups of a dot and digits.",
+      "why": "-o prints the match alone, which turns grep into an extraction tool; pipe it into 'sort | uniq -c' for counts. The dot is escaped because an unescaped '.' matches any character, so '1.2.3.4' as a pattern also matches '1x2y3z4'. Forgetting that is the most common regex bug in alert and routing rules."
+    },
+    {
+      "prompt": "Pull out the status codes with sed: print only the number after status= from each line.",
+      "expected_commands": ["sed -nE 's/.*status=([0-9]+).*/\\1/p' app.log", "sed -En 's/.*status=([0-9]+).*/\\1/p' app.log", "sed -n -E 's/.*status=([0-9]+).*/\\1/p' app.log", "sed -nE \"s/.*status=([0-9]+).*/\\1/p\" app.log"],
+      "fake_output": "502\n500\n200\n504",
+      "hint": "sed -nE 's/.*status=([0-9]+).*/\\1/p' app.log",
+      "explanation": "The captured digits, one per line.",
+      "why": "Parentheses capture, and \\1 is what the first pair captured. The pattern matches the whole line and replaces it with just the capture; -n with the trailing p prints only lines where the substitution happened. This capture-and-replace shape is the same in Prometheus relabelling rules, Loki queries, and log-shipper configs."
+    },
+    {
+      "prompt": "Before sharing the log, hide the user names: replace every user=<name> with user=REDACTED, printing the result.",
+      "expected_commands": ["sed -E 's/user=[^ ]+/user=REDACTED/g' app.log", "sed -E \"s/user=[^ ]+/user=REDACTED/g\" app.log", "sed 's/user=[^ ]*/user=REDACTED/g' app.log", "sed -E 's/user=[^ ]+/user=REDACTED/' app.log"],
+      "fake_output": "2026-09-28T12:00:01Z level=ERROR user=REDACTED ip=203.0.113.9 status=502 duration=1904ms msg=\"upstream timeout\"\n2026-09-28T12:00:07Z level=FATAL user=REDACTED ip=198.51.100.14 status=500 duration=12ms msg=\"out of memory\"",
+      "explanation": "Each user value replaced, everything else untouched.",
+      "why": "'[^ ]+' means 'one or more characters that aren't a space', which stops at the end of the value. That's the safe way to say 'up to the next delimiter'. The tempting alternative, 'user=.*', leads to the next step."
+    },
+    {
+      "prompt": "Someone wrote the redaction as  s/user=.* /user=REDACTED /  instead. What does it do to a line?\n  a) The same thing\n  b) It replaces everything from user= up to the LAST space on the line, deleting the ip, status, and duration fields too\n  c) Nothing\n  d) It only matches the first character\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "input : ... level=ERROR user=dana ip=203.0.113.9 status=502 duration=1904ms msg=\"upstream timeout\"\noutput: ... level=ERROR user=REDACTED timeout\"",
+      "hint": "'.*' takes as much as it can.",
+      "explanation": "Greedy matching: '.*' runs to the last possible space, swallowing most of the line.",
+      "why": "Quantifiers are greedy: they match as much as possible and give back only what they must. The fixes are a negated class ('[^ ]+'), or a lazy quantifier ('.*?') in engines that have one; grep -E and sed don't, grep -P and most programming languages do. Greedy '.*' in the middle of a pattern is the usual cause of both wrong matches and very slow ones. Test a regex against lines that should NOT match as well as ones that should."
+    }
+  ]
+}

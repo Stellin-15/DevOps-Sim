@@ -1,0 +1,46 @@
+{
+  "id": "scripting-tutorial-002",
+  "type": "tutorial",
+  "category": "scripting",
+  "title": "Running and Debugging a Script: Arguments, Exit Codes, Tracebacks",
+  "difficulty": "beginner",
+  "tags": ["python", "debugging", "exit-codes", "argparse"],
+  "intro": "An automation script has an interface, like any command: arguments in, output and an exit code out. Other tools (CI, cron, a deploy step) decide what to do next from that exit code alone. You've inherited cleanup_snapshots.py, which deletes old volume snapshots, and need to run it safely.",
+  "steps": [
+    {
+      "prompt": "Before running an unfamiliar script, ask it what it accepts.",
+      "expected_commands": ["python cleanup_snapshots.py --help", "python3 cleanup_snapshots.py --help", "python cleanup_snapshots.py -h", "./cleanup_snapshots.py --help"],
+      "fake_output": "usage: cleanup_snapshots.py [-h] --older-than DAYS [--region REGION] [--dry-run]\n\nDelete volume snapshots older than a number of days.\n\noptions:\n  -h, --help         show this help message and exit\n  --older-than DAYS  age threshold in days (required)\n  --region REGION    default: us-east-1\n  --dry-run          list what would be deleted, delete nothing",
+      "explanation": "One required option, an optional region, and a dry-run switch.",
+      "why": "argparse gives a script this help for free, along with validation of types and required options. A script that takes its settings from argparse (or environment variables) and not from values edited in the source can be reviewed once and reused. A --dry-run flag on anything destructive is the mark of a script written by someone who has been burned."
+    },
+    {
+      "prompt": "Run it in dry-run mode for snapshots older than 30 days.",
+      "expected_commands": ["python cleanup_snapshots.py --older-than 30 --dry-run", "python3 cleanup_snapshots.py --older-than 30 --dry-run", "python cleanup_snapshots.py --dry-run --older-than 30", "python cleanup_snapshots.py --older-than=30 --dry-run"],
+      "fake_output": "[dry-run] would delete snap-0a1b2c3d (41 days, 100 GB)\n[dry-run] would delete snap-0e4f5a6b (38 days, 500 GB)\nTraceback (most recent call last):\n  File \"cleanup_snapshots.py\", line 61, in <module>\n    main()\n  File \"cleanup_snapshots.py\", line 48, in main\n    age = (now - snap[\"StartTime\"]).days\nKeyError: 'StartTime'",
+      "explanation": "Two snapshots listed, then a crash: a snapshot record has no StartTime key.",
+      "why": "Read a traceback from the bottom: the last line is the error, and the line above it is where it happened. Here: line 48, a dictionary lookup on a key that isn't there. Some snapshots (still being created) don't have that field yet. Because it was a dry run, nothing was half-deleted."
+    },
+    {
+      "prompt": "Check the exit status of that run.",
+      "expected_commands": ["echo $?"],
+      "fake_output": "1",
+      "explanation": "1: the script reported failure.",
+      "why": "Zero means success and anything else means failure; an uncaught exception exits with 1. This number is the script's entire message to whatever called it. A script that catches every error, prints a message, and exits 0 tells its pipeline that everything is fine. Exit non-zero on failure, and use distinct codes when callers need to tell cases apart (2 for bad usage is a convention)."
+    },
+    {
+      "prompt": "Run the script under the debugger to look at the failing record.",
+      "expected_commands": ["python -m pdb cleanup_snapshots.py --older-than 30 --dry-run", "python3 -m pdb cleanup_snapshots.py --older-than 30 --dry-run", "python -m pdb cleanup_snapshots.py --dry-run --older-than 30"],
+      "fake_output": "> cleanup_snapshots.py(1)<module>()\n(Pdb) c\nTraceback (most recent call last):\n  ...\nKeyError: 'StartTime'\nUncaught exception. Entering post mortem debugging\n> cleanup_snapshots.py(48)main()\n-> age = (now - snap[\"StartTime\"]).days\n(Pdb) p snap\n{'SnapshotId': 'snap-0c7d8e9f', 'State': 'pending', 'VolumeSize': 200}",
+      "explanation": "The debugger stopped at the crash; the record is a snapshot in state 'pending' with no start time yet.",
+      "why": "Post-mortem debugging drops you at the failing line with every variable intact, which beats adding print statements and re-running. 'p' prints, 'w' shows the stack, 'u' and 'd' move through it. Putting 'breakpoint()' in the code stops there on a normal run. The fix here is to skip snapshots that aren't completed, not to wrap the line in a bare 'except'."
+    },
+    {
+      "prompt": "The fix is in. The script logs through Python's logging module and reads its level from the LOG_LEVEL environment variable. Run the dry run again with debug logging.",
+      "expected_commands": ["LOG_LEVEL=DEBUG python cleanup_snapshots.py --older-than 30 --dry-run", "LOG_LEVEL=DEBUG python3 cleanup_snapshots.py --older-than 30 --dry-run", "LOG_LEVEL=DEBUG python cleanup_snapshots.py --dry-run --older-than 30"],
+      "fake_output": "DEBUG listing snapshots in us-east-1 (owner=self)\nDEBUG 214 snapshots found\nDEBUG skipping snap-0c7d8e9f: state=pending\nINFO  [dry-run] would delete snap-0a1b2c3d (41 days, 100 GB)\nINFO  [dry-run] would delete snap-0e4f5a6b (38 days, 500 GB)\nINFO  2 snapshots, 600 GB would be deleted",
+      "explanation": "It skips the pending snapshot and finishes, with a summary.",
+      "why": "Setting a variable in front of a command applies it to that command only. Logging with levels, to stderr, beats print: normal runs stay quiet, debug detail is one variable away, and the script's real output on stdout stays clean for the next tool in a pipe."
+    }
+  ]
+}

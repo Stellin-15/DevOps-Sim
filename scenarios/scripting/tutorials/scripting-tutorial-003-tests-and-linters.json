@@ -1,0 +1,46 @@
+{
+  "id": "scripting-tutorial-003",
+  "type": "tutorial",
+  "category": "scripting",
+  "title": "Tests, Linters, and Types for Automation Code",
+  "difficulty": "intermediate",
+  "tags": ["python", "pytest", "ruff", "mypy"],
+  "intro": "Scripts that delete snapshots, rotate keys, or edit DNS are production code with production consequences, and are usually the least tested code in the company. Three tools take minutes to set up. You're in a small Python project, opstools, with a tests/ directory.",
+  "steps": [
+    {
+      "prompt": "Run the test suite quietly.",
+      "expected_commands": ["pytest -q", "python -m pytest -q", "pytest --quiet"],
+      "fake_output": "..........F...                                                    [100%]\n=================================== FAILURES ===================================\n___________________________ test_parse_age_handles_weeks ___________________________\n    def test_parse_age_handles_weeks():\n>       assert parse_age(\"2w\") == 14\nE       AssertionError: assert 2 == 14\ntests/test_ages.py:21: AssertionError\n1 failed, 13 passed in 0.41s",
+      "explanation": "13 pass; parse_age(\"2w\") returns 2 where 14 was expected.",
+      "why": "pytest shows the values on both sides of a failed assert, so the bug is often visible without a debugger: the function ignores the unit. A test like this is what stands between a typo and deleting everything older than 2 days instead of 2 weeks."
+    },
+    {
+      "prompt": "Work on just that area: run only the tests whose names contain parse_age.",
+      "expected_commands": ["pytest -k parse_age", "pytest -q -k parse_age", "python -m pytest -k parse_age", "pytest -k parse_age -q"],
+      "fake_output": "tests/test_ages.py ...F                                           [100%]\n1 failed, 3 passed, 10 deselected in 0.08s",
+      "explanation": "Four tests selected, ten skipped.",
+      "why": "-k selects by name expression, -x stops at the first failure, and --lf re-runs only what failed last time. A fast loop on a few tests is what makes people actually run them while changing code."
+    },
+    {
+      "prompt": "The bug is fixed and the tests pass. See which lines of the opstools package no test touches.",
+      "expected_commands": ["pytest --cov=opstools --cov-report=term-missing", "python -m pytest --cov=opstools --cov-report=term-missing", "pytest --cov opstools --cov-report term-missing", "pytest -q --cov=opstools --cov-report=term-missing"],
+      "fake_output": "Name                     Stmts   Miss  Cover   Missing\n------------------------------------------------------\nopstools/ages.py            18      0   100%\nopstools/snapshots.py       64     31    52%   40-58, 71-88\nopstools/dns.py             40     40     0%   1-77\n------------------------------------------------------\nTOTAL                      122     71    42%",
+      "explanation": "The date parsing is fully tested. The code that deletes snapshots is half covered, and the DNS code not at all.",
+      "why": "Coverage shows what's untested, which is its real use; a high number proves little. The untested lines here are the dangerous ones: the delete path. Code that calls a cloud API is tested by replacing the client with a fake (botocore's Stubber, or the moto library), so the logic around the call, what gets selected for deletion, is checked without touching a real account."
+    },
+    {
+      "prompt": "Run the linter over the project.",
+      "expected_commands": ["ruff check .", "ruff check"],
+      "fake_output": "opstools/snapshots.py:44:5: E722 Do not use bare `except`\nopstools/snapshots.py:52:9: F841 Local variable `resp` is assigned to but never used\nopstools/dns.py:12:1: F401 `os` imported but unused\nopstools/dns.py:30:22: S602 `subprocess` call with `shell=True` identified, security issue\nFound 4 errors.",
+      "explanation": "Four findings: a bare except, an unused variable, an unused import, and a shell=True call.",
+      "why": "Two of these are real bugs in waiting. A bare 'except:' swallows everything including Ctrl+C and typos in the code itself, turning failures into silent success. 'shell=True' with any variable in the command is command injection. Ruff replaces flake8, isort, and several other tools and runs in milliseconds, so it belongs in a pre-commit hook and in CI ('ruff format --check' for formatting)."
+    },
+    {
+      "prompt": "Run the type checker over the opstools package.",
+      "expected_commands": ["mypy opstools", "mypy opstools/", "python -m mypy opstools"],
+      "fake_output": "opstools/snapshots.py:36: error: Argument 1 to \"parse_age\" has incompatible type \"int\"; expected \"str\"  [arg-type]\nopstools/dns.py:41: error: Item \"None\" of \"Optional[str]\" has no attribute \"rstrip\"  [union-attr]\nFound 2 errors in 2 files (checked 4 source files)",
+      "explanation": "An int passed where a string is expected, and a value that may be None used as a string.",
+      "why": "Both would be crashes at run time, on the particular input that reaches those lines. Type hints plus mypy find them without running anything. The None case is the classic: a lookup that returns nothing in production and never did in testing. You don't have to annotate everything; checking the functions that handle external data pays for itself."
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "id": "yaml-041",
+  "type": "yaml_lab",
+  "category": "scripting",
+  "title": "Fix a Dangerous Python Script: Injection, Silent Failures, and No Timeout",
+  "difficulty": "advanced",
+  "tags": ["python", "subprocess", "security", "error-handling"],
+  "intro": "This script restarts a service over SSH and checks its health endpoint. It works, and a code review found four faults that each cause a real incident eventually: a shell command built by joining strings, a failed restart that goes unnoticed, an HTTP call that can hang for ever, and an exit code that always says success.",
+  "steps": [
+    {
+      "file": "restart_service.py",
+      "format": "python",
+      "starter_content": "#!/usr/bin/env python3\n\"\"\"Restart a service on a host and confirm it's healthy.\"\"\"\nimport os\nimport sys\n\nimport requests\n\n\ndef restart(host, service):\n    os.system(\"ssh \" + host + \" sudo systemctl restart \" + service)\n\n\ndef healthy(url):\n    try:\n        resp = requests.get(url)\n        return resp.status_code == 200\n    except:\n        return False\n\n\ndef main():\n    host, service, url = sys.argv[1], sys.argv[2], sys.argv[3]\n    restart(host, service)\n    if healthy(url):\n        print(\"ok\")\n    else:\n        print(\"unhealthy\")\n\n\nif __name__ == \"__main__\":\n    main()\n",
+      "prompt": "Fix restart_service.py:\n\n(1) In restart(): replace os.system with subprocess.run, passing the command as a list\n    [\"ssh\", host, \"sudo\", \"systemctl\", \"restart\", service]  and check=True.\n    Import subprocess; remove the os import. Don't use shell=True.\n(2) In healthy(): give requests.get a timeout (timeout=5).\n(3) In healthy(): replace the bare 'except:' with 'except requests.RequestException:'.\n(4) In main(): when the service is unhealthy, exit with status 1 using sys.exit(1).",
+      "apply_commands": ["python -m py_compile restart_service.py", "ruff check restart_service.py", "check"],
+      "validate": {
+        "fields": {
+          "imports[*]": ["subprocess", "sys", "requests"],
+          "functions[*]": ["restart", "healthy", "main"],
+          "calls[*]": ["subprocess.run", "sys.exit", "requests.get"],
+          "has_main_guard": true,
+          "text": {"contains": ["check=True", "timeout=", "except requests.RequestException", "[\"ssh\", host"]}
+        },
+        "absent": ["os.system", "shell=True", "except:", "import os"]
+      },
+      "hint": "def restart(host, service):\n    subprocess.run([\"ssh\", host, \"sudo\", \"systemctl\", \"restart\", service], check=True)\n\nresp = requests.get(url, timeout=5)\n\nexcept requests.RequestException:\n\nelse:\n    print(\"unhealthy\")\n    sys.exit(1)",
+      "solution": "#!/usr/bin/env python3\n\"\"\"Restart a service on a host and confirm it's healthy.\"\"\"\nimport subprocess\nimport sys\n\nimport requests\n\n\ndef restart(host, service):\n    subprocess.run([\"ssh\", host, \"sudo\", \"systemctl\", \"restart\", service], check=True)\n\n\ndef healthy(url):\n    try:\n        resp = requests.get(url, timeout=5)\n        return resp.status_code == 200\n    except requests.RequestException:\n        return False\n\n\ndef main():\n    host, service, url = sys.argv[1], sys.argv[2], sys.argv[3]\n    restart(host, service)\n    if healthy(url):\n        print(\"ok\")\n    else:\n        print(\"unhealthy\")\n        sys.exit(1)\n\n\nif __name__ == \"__main__\":\n    main()\n",
+      "fake_output": "$ python restart_service.py web-1 shop https://web-1.internal/health\nunhealthy\n$ echo $?\n1",
+      "explanation": "The same behaviour when everything works, and an honest failure when it doesn't.",
+      "why": "The four faults in turn. (1) os.system with joined strings hands a line to a shell. If 'service' ever comes from a ticket, a form, or a file, a value like 'nginx; rm -rf /' runs both commands. A list passed to subprocess.run goes to the program as separate arguments, with no shell to interpret anything. os.system also discards the result; check=True raises CalledProcessError if ssh or systemctl fails, so the script stops instead of going on to 'check health' of a service it never restarted. (2) requests has no timeout by default: one unresponsive host and this script, and the pipeline running it, hang indefinitely. Every network call needs one. (3) A bare 'except:' catches everything, including KeyboardInterrupt and the NameError from a typo in your own code, and turns them all into 'False'. Catch the specific exception you expect. (4) Printing 'unhealthy' and exiting 0 tells the calling pipeline the restart succeeded. Ruff flags three of these automatically (S605, S113, E722), which is the argument for running a linter on automation code (scripting-tutorial-003)."
+    }
+  ]
+}

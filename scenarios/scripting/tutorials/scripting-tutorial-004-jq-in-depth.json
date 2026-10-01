@@ -1,0 +1,57 @@
+{
+  "id": "scripting-tutorial-004",
+  "type": "tutorial",
+  "category": "scripting",
+  "title": "jq in Depth: Filter, Reshape, and Summarise JSON",
+  "difficulty": "intermediate",
+  "tags": ["jq", "json", "kubectl", "data"],
+  "intro": "Every cloud CLI and API speaks JSON, and jq is how the shell reads it. Beyond picking out one field, it filters, reshapes, and counts, which replaces a lot of throwaway scripts. The file pods.json holds the output of 'kubectl get pods -A -o json'.",
+  "steps": [
+    {
+      "prompt": "Count the pods: the length of the items array in pods.json.",
+      "expected_commands": ["jq '.items | length' pods.json", "jq \".items | length\" pods.json", "jq '.items|length' pods.json", "cat pods.json | jq '.items | length'"],
+      "fake_output": "214",
+      "explanation": "214 pods.",
+      "why": "A jq program is a pipeline: '.items' selects the array and '| length' counts it. The pipe inside the quotes is jq's own, passing each result to the next filter. Single quotes around the program stop the shell interpreting it."
+    },
+    {
+      "prompt": "Print the names of the pods whose phase is not Running, as plain text.",
+      "expected_commands": ["jq -r '.items[] | select(.status.phase != \"Running\") | .metadata.name' pods.json", "jq -r '.items[]|select(.status.phase != \"Running\")|.metadata.name' pods.json", "cat pods.json | jq -r '.items[] | select(.status.phase != \"Running\") | .metadata.name'"],
+      "fake_output": "report-job-28810440-x7k2m\napi-6c9d7f5b8-2xkq4\nworker-5d7c8b6a4-m8n2q",
+      "hint": "jq -r '.items[] | select(.status.phase != \"Running\") | .metadata.name' pods.json",
+      "explanation": "Three pods aren't Running.",
+      "why": "'.items[]' turns the array into a stream of objects, 'select' keeps those matching a condition, and the last filter picks a field. -r prints raw strings without JSON quotes, which is what you want when the output feeds another command. This one pattern, iterate, select, project, covers most everyday jq."
+    },
+    {
+      "prompt": "Summarise: count the pods in each phase. Group the items by .status.phase and output an object with the phase and the count for each group.",
+      "expected_commands": ["jq '.items | group_by(.status.phase) | map({phase: .[0].status.phase, count: length})' pods.json", "jq '.items|group_by(.status.phase)|map({phase: .[0].status.phase, count: length})' pods.json", "jq -c '.items | group_by(.status.phase) | map({phase: .[0].status.phase, count: length})' pods.json"],
+      "fake_output": "[\n  {\"phase\": \"Failed\", \"count\": 1},\n  {\"phase\": \"Pending\", \"count\": 2},\n  {\"phase\": \"Running\", \"count\": 205},\n  {\"phase\": \"Succeeded\", \"count\": 6}\n]",
+      "hint": "jq '.items | group_by(.status.phase) | map({phase: .[0].status.phase, count: length})' pods.json",
+      "explanation": "One object per phase with its count.",
+      "why": "group_by makes an array of arrays, one per distinct value; map then turns each group into a small object, taking the phase from the group's first member. It's the jq form of SQL's GROUP BY, and it replaces the 'sort | uniq -c' idiom when the data is JSON."
+    },
+    {
+      "prompt": "Make a tab-separated table of namespace, name, and node for every pod.",
+      "expected_commands": ["jq -r '.items[] | [.metadata.namespace, .metadata.name, .spec.nodeName] | @tsv' pods.json", "jq -r '.items[]|[.metadata.namespace, .metadata.name, .spec.nodeName]|@tsv' pods.json", "jq -r '.items[] | [.metadata.namespace, .metadata.name, .spec.nodeName] | @tsv' pods.json | column -t"],
+      "fake_output": "shop\tapi-6c9d7f5b8-7hm2n\tip-10-0-1-21.ec2.internal\nshop\tcart-5f8d9c7b6-k2m4x\tip-10-0-2-88.ec2.internal\nkube-system\tcoredns-7db6d8ff4d-9xq2l\tip-10-0-1-21.ec2.internal\n...",
+      "hint": "jq -r '.items[] | [.metadata.namespace, .metadata.name, .spec.nodeName] | @tsv' pods.json",
+      "explanation": "One line per pod, with fields separated by tabs.",
+      "why": "Build an array of the columns, then format it: @tsv for tabs, @csv for a spreadsheet. Tab-separated output goes straight into sort, cut, awk, and 'column -t', so jq handles the JSON and the classic tools handle the rest."
+    },
+    {
+      "prompt": "A deploy script reads an image tag with jq from release.json and uses it. Which flag makes jq exit non-zero when the result is null, so the script stops instead of deploying ':null'?\n  a) -r\n  b) -e\n  c) -c\n  d) -n\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "$ jq -r '.tag' release.json ; echo \"exit=$?\"\nnull\nexit=0\n$ jq -er '.tag' release.json ; echo \"exit=$?\"\nnull\nexit=1",
+      "hint": "By default a missing field isn't an error in jq.",
+      "explanation": "-e sets the exit status from the result: non-zero for null or false.",
+      "why": "A missing key gives null and exit 0, and -r prints it as the text 'null', which a script will happily use as a value. That's a real outage pattern (scripting-incident-003). Use 'jq -e' wherever a value is required, together with 'set -euo pipefail' in the calling script, or give an explicit fallback with the '//' operator."
+    },
+    {
+      "prompt": "Pass a shell value into jq safely. The file services.json is an array of objects with an env field. Select those whose env equals the value 'prod', passing it as a jq variable named env.",
+      "expected_commands": ["jq --arg env prod '.[] | select(.env == $env)' services.json", "jq --arg env prod '.[]|select(.env == $env)' services.json", "jq --arg env \"prod\" '.[] | select(.env == $env)' services.json"],
+      "fake_output": "{\"name\": \"api\", \"env\": \"prod\", \"replicas\": 6}\n{\"name\": \"worker\", \"env\": \"prod\", \"replicas\": 4}",
+      "explanation": "The two production services.",
+      "why": "--arg hands the value to jq as data. The alternative, breaking out of the quotes to splice a shell variable into the program text, fails on values containing quotes and lets the value be interpreted as jq code. The same rule applies everywhere: pass values as parameters, never by building program text from them."
+    }
+  ]
+}

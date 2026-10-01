@@ -1,0 +1,49 @@
+{
+  "id": "scripting-incident-002",
+  "type": "incident",
+  "category": "scripting",
+  "title": "The backup script works when you run it and has never worked from cron",
+  "difficulty": "intermediate",
+  "tags": ["cron", "environment", "path", "bash"],
+  "intro": "A script, /opt/scripts/backup-uploads.sh, copies the uploads directory to S3. It was installed in the ubuntu user's crontab a month ago to run nightly at 02:00. Today someone needed a backup and found the bucket empty. Running the script by hand works perfectly. You're logged in as ubuntu on the server.",
+  "steps": [
+    {
+      "prompt": "Confirm the job is scheduled as believed: list the crontab.",
+      "expected_commands": ["crontab -l"],
+      "fake_output": "0 2 * * * /opt/scripts/backup-uploads.sh",
+      "hint": "crontab -l"
+    },
+    {
+      "prompt": "It's there, with no output redirection, so whatever the script printed went nowhere useful. Check that cron did start it: search the system log for the script's name.",
+      "expected_commands": ["grep backup-uploads /var/log/syslog", "sudo grep backup-uploads /var/log/syslog", "grep CRON /var/log/syslog | grep backup-uploads", "sudo journalctl -u cron | grep backup-uploads", "journalctl -u cron | grep backup-uploads"],
+      "fake_output": "Sep 28 02:00:01 web-1 CRON[40112]: (ubuntu) CMD (/opt/scripts/backup-uploads.sh)\nSep 28 02:00:01 web-1 CRON[40111]: (CRON) info (No MTA installed, discarding output)",
+      "hint": "grep backup-uploads /var/log/syslog"
+    },
+    {
+      "prompt": "Cron ran it at 02:00, and then 'No MTA installed, discarding output': the script printed something, cron tried to email it, and there's no mail system, so it was thrown away. Cron runs jobs with a minimal environment. Reproduce that: run the script with an empty environment.",
+      "expected_commands": ["env -i /bin/sh -c /opt/scripts/backup-uploads.sh", "env -i /opt/scripts/backup-uploads.sh", "env -i /bin/bash -c /opt/scripts/backup-uploads.sh", "env -i sh -c /opt/scripts/backup-uploads.sh"],
+      "fake_output": "/opt/scripts/backup-uploads.sh: line 6: aws: command not found",
+      "hint": "env -i /bin/sh -c /opt/scripts/backup-uploads.sh"
+    },
+    {
+      "prompt": "'aws: command not found'. In your shell it's found. See where it lives.",
+      "expected_commands": ["which aws", "command -v aws", "type aws"],
+      "fake_output": "/usr/local/bin/aws",
+      "hint": "which aws"
+    },
+    {
+      "prompt": "/usr/local/bin is on your login shell's PATH and not on cron's, which is just /usr/bin:/bin. Fix the crontab: set PATH at the top, and send the job's output to a log file. Replace the crontab with these two lines:\n    PATH=/usr/local/bin:/usr/bin:/bin\n    0 2 * * * /opt/scripts/backup-uploads.sh >> /var/log/backup-uploads.log 2>&1\nThey've been written to the file /tmp/new-crontab. Install it.",
+      "expected_commands": ["crontab /tmp/new-crontab"],
+      "fake_output": "(no output)",
+      "hint": "crontab /tmp/new-crontab"
+    },
+    {
+      "prompt": "Don't wait for 02:00 to find out. Test under cron's conditions now: run the script with an empty environment and only that PATH set.",
+      "expected_commands": ["env -i PATH=/usr/local/bin:/usr/bin:/bin /bin/sh -c /opt/scripts/backup-uploads.sh", "env -i PATH=/usr/local/bin:/usr/bin:/bin /opt/scripts/backup-uploads.sh", "env -i PATH=/usr/local/bin:/usr/bin:/bin /bin/bash -c /opt/scripts/backup-uploads.sh"],
+      "fake_output": "upload: /var/www/uploads/2026/09/photo-0001.jpg to s3://shop-backups/uploads/2026/09/photo-0001.jpg\n...\nBackup complete: 18,204 files",
+      "hint": "env -i PATH=/usr/local/bin:/usr/bin:/bin /bin/sh -c /opt/scripts/backup-uploads.sh"
+    }
+  ],
+  "resolution": "The script was correct and its environment wasn't the one it had been tested in. An interactive login shell reads profile files that set a long PATH, load credentials, and define variables. Cron reads none of them: it runs each job with a tiny environment, PATH=/usr/bin:/bin and little else, using /bin/sh. The aws CLI lives in /usr/local/bin, so from cron the very first real command failed with 'command not found'. And the failure was invisible twice over. Cron's only way to report a job's output is email, this server has no mail system, so the message was discarded. And the script had no 'set -e', so after the failed command it carried on to the end and exited 0. For a month the job ran every night, failed every night, and told nobody. 'env -i' reproduces cron's conditions in a second, and is the test to run before trusting any scheduled job. The fix was a PATH line in the crontab and a log file for output. What should also change. Scripts meant for automation should start with 'set -euo pipefail' and should fail loudly. The job's success should be monitored from outside, because a job that doesn't run, or runs and fails, produces no signal by itself: have the script ping a heartbeat monitor at the end, or alert when the newest object in the bucket is more than a day old. The same environment gap exists in systemd units, CI runners, and containers, each with its own minimal environment. And the real lesson is in how this was found: by needing the backup. A backup that hasn't been restored recently, or at least checked for existence, is a hope.",
+  "real_commands_used": ["crontab -l", "grep <job> /var/log/syslog", "env -i /bin/sh -c <script>", "which aws", "crontab <file>", "env -i PATH=... <script>"]
+}

@@ -272,3 +272,59 @@ class TestNginx:
             "absent": ["proxy_pass http://10."],
         }
         assert yaml_lab.validate_manifest(parsed, spec) == []
+
+
+class TestPython:
+    SCRIPT = (
+        "#!/usr/bin/env python3\n"
+        "# count errors\n"
+        "import argparse\n"
+        "import sys\n"
+        "from pathlib import Path\n"
+        "\n"
+        "def main():\n"
+        "    parser = argparse.ArgumentParser()\n"
+        "    parser.add_argument('--file')\n"
+        "    args = parser.parse_args()\n"
+        "    with open(args.file) as f:\n"
+        "        count = sum(1 for line in f if ' 500 ' in line)\n"
+        "    sys.exit(1 if count else 0)\n"
+        "\n"
+        "if __name__ == '__main__':\n"
+        "    main()\n"
+    )
+
+    def test_structure_is_extracted(self):
+        parsed, problems = lab_formats.parse("python", self.SCRIPT)
+        assert problems == []
+        assert parsed["functions"] == ["main"]
+        assert parsed["imports"] == ["argparse", "sys", "pathlib"]
+        assert "parser.add_argument" in parsed["calls"] and "sys.exit" in parsed["calls"]
+        assert parsed["has_main_guard"] is True
+        assert parsed["shebang"] == "#!/usr/bin/env python3"
+        assert "# count errors" not in parsed["lines"]
+
+    def test_no_main_guard(self):
+        parsed, _ = lab_formats.parse("python", "import os\nprint(os.getcwd())\n")
+        assert parsed["has_main_guard"] is False and parsed["functions"] == []
+
+    def test_syntax_error_names_the_line(self):
+        parsed, problems = lab_formats.parse("python", "def main():\n    print('x'\n")
+        assert parsed is None and "Python syntax error on line" in problems[0]
+
+    def test_empty_file(self):
+        assert lab_formats.parse("python", "  \n") == (None, ["File is empty."])
+
+    def test_the_file_is_never_executed(self):
+        parsed, problems = lab_formats.parse("python", "raise SystemExit('should not run')\n")
+        assert problems == [] and parsed["calls"] == ["SystemExit"]
+
+    def test_validation_with_wildcards_and_absent(self):
+        parsed, _ = lab_formats.parse("python", self.SCRIPT)
+        spec = {
+            "fields": {"imports[*]": ["argparse", "sys"], "functions[*]": "main",
+                       "has_main_guard": True, "calls[*]": "sys.exit"},
+            "absent": [".readlines()", "shell=True"],
+        }
+        assert yaml_lab.validate_manifest(parsed, spec) == []
+        assert yaml_lab.validate_manifest(parsed, {"fields": {"imports[*]": "subprocess"}}) != []

@@ -7,7 +7,7 @@ what's built, why it's shaped this way, and what's next.
 
 `kube-sim` — a terminal game for learning real DevOps command-line skills
 by typing them, not memorizing them. Originally Kubernetes-only; now a
-multi-category simulator spanning 19 categories (**Kubernetes, Docker,
+multi-category simulator spanning 20 categories (**Kubernetes, Docker,
 Linux, Terraform, Networking, CI/CD, Monitoring, MLOps, AWS, Azure, GCP,
 Security, Servers, SRE, Git, System Design, Databases, and Web Servers
 & Proxies**), plus two modes that cut across
@@ -119,7 +119,7 @@ Don't duplicate content from these files elsewhere — link to them.
   `yaml_lab` — renamed only in the menu, to avoid churning ids and
   progress keys). A lab step's `format` field picks the parser: `yaml`
   (default; also used for JSON such as IAM policies), `dockerfile`,
-  `hcl`, `bash`, `ansible`, `markdown`, or `nginx`. Each returns a plain nested
+  `hcl`, `bash`, `ansible`, `markdown`, `nginx`, or `python`. Each returns a plain nested
   dict so the same dotted-path / `[*]` / `contains` checks work on every
   format: Dockerfile → `{"lines": [...], "FROM": [args...], "RUN": [...]}`,
   HCL → `{"resource": {"aws_s3_bucket": {"logs": {...}}}, "variable": ...}`,
@@ -433,7 +433,8 @@ Current per-category content depth (tutorials / incidents):
   `contains` check now names only the substrings the closest candidate
   lacks.
 - identity: 9 / 5 (+2 Writing Labs): JWTs, OAuth/OIDC, workload identity, Vault, External Secrets, SOPS, mTLS, cert-manager
-- **total: 251 tutorials, 128 incidents, 39 Writing Labs, 14 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
+- scripting: 8 / 4 (+2 Writing Labs in the `python` format, parsed with `ast`, never executed): Python tooling, jq, yq, regex, make, Go
+- **total: 259 tutorials, 132 incidents, 41 Writing Labs, 14 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with
@@ -601,7 +602,7 @@ python -m pytest
   a pre-filled (broken) `starter_content` must NOT already pass, or the
   "fix this file" lab teaches nothing
 - `test_lab_formats.py` — the Dockerfile, HCL, bash, markdown,
-  ansible, and nginx parsers (line
+  ansible, nginx, and python parsers (line
   continuations, labels, nested maps, repeated blocks, comments, syntax
   errors, unbalanced blocks/quotes) and the `order`/`absent` checks
 - `test_exam.py` — question drawing (context, truncation, seeding),

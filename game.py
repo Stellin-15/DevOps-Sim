@@ -48,6 +48,7 @@ CATEGORY_LABELS = {
     "databases": "Databases",
     "webservers": "Web Servers & Proxies",
     "identity": "Identity & Secrets",
+    "scripting": "Scripting",
 }
 
 

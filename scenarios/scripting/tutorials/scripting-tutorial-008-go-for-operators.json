@@ -1,0 +1,46 @@
+{
+  "id": "scripting-tutorial-008",
+  "type": "tutorial",
+  "category": "scripting",
+  "title": "Go for Operators: Build, Test, and Ship a Tool",
+  "difficulty": "intermediate",
+  "tags": ["go", "golang", "build", "tooling"],
+  "intro": "Kubernetes, Terraform, Prometheus, Docker, and most of the tools around them are written in Go. You don't need to be a Go developer, but you will need to build one from source, run its tests, read an error, or patch a small bug. You're in the repository of an internal tool, snapctl, whose main package is in ./cmd/snapctl.",
+  "steps": [
+    {
+      "prompt": "Run all the tests in the module.",
+      "expected_commands": ["go test ./...", "go test -v ./..."],
+      "fake_output": "ok      example.com/snapctl/internal/age      0.004s\n--- FAIL: TestSelectOldSnapshots (0.00s)\n    select_test.go:41: got 3 snapshots, want 2\nFAIL\nFAIL    example.com/snapctl/internal/snapshots  0.006s\n?       example.com/snapctl/cmd/snapctl        [no test files]",
+      "explanation": "One package passes, one test fails, and the main package has no tests.",
+      "why": "'./...' means this directory and everything below it, the pattern used with every go command. Tests live beside the code in files ending _test.go, with no framework to install. 'go test -run TestSelectOldSnapshots -v ./internal/snapshots' runs just one, and '-race' adds the data-race detector, worth having on in CI."
+    },
+    {
+      "prompt": "Run Go's built-in static checks across the module.",
+      "expected_commands": ["go vet ./..."],
+      "fake_output": "# example.com/snapctl/internal/snapshots\ninternal/snapshots/select.go:27:3: result of fmt.Errorf call not used",
+      "explanation": "An error is constructed and thrown away: the function carries on as if nothing went wrong.",
+      "why": "In Go, errors are ordinary return values, and nothing forces you to look at them. Ignoring one is the language's classic bug. Here the code builds an error and never returns it, so an unparseable date is treated as 'old' and the snapshot is selected for deletion, which is exactly what the failing test caught. vet finds this class of mistake for free; golangci-lint adds many more checks."
+    },
+    {
+      "prompt": "The bug is fixed. Make sure the module's dependency files match what the code imports.",
+      "expected_commands": ["go mod tidy"],
+      "fake_output": "go: finding module for package github.com/aws/aws-sdk-go-v2/service/ec2\ngo: found github.com/aws/aws-sdk-go-v2/service/ec2 in github.com/aws/aws-sdk-go-v2/service/ec2 v1.179.2",
+      "explanation": "go.mod and go.sum were updated: a missing dependency added, unused ones removed.",
+      "why": "go.mod lists the module's dependencies with exact versions, and go.sum holds a checksum for each, so builds are reproducible and a tampered download is detected. Both files are committed. CI should fail if 'go mod tidy' would change them, which catches dependencies added by hand and not recorded."
+    },
+    {
+      "prompt": "Build the tool into bin/snapctl.",
+      "expected_commands": ["go build -o bin/snapctl ./cmd/snapctl"],
+      "fake_output": "(no output: bin/snapctl written, 14 MB)",
+      "explanation": "One self-contained executable.",
+      "why": "A Go build produces a single static binary with no interpreter or libraries to install. That's why Go is the language of infrastructure tooling: deployment is copying one file, and a container image can be nearly empty (FROM scratch or distroless) with only the binary in it."
+    },
+    {
+      "prompt": "The servers are ARM64 Linux and you're on a different machine. Cross-compile for them, into bin/snapctl-linux-arm64.",
+      "expected_commands": ["GOOS=linux GOARCH=arm64 go build -o bin/snapctl-linux-arm64 ./cmd/snapctl"],
+      "fake_output": "(no output: bin/snapctl-linux-arm64 written)",
+      "explanation": "A Linux ARM64 binary, built on a different operating system and architecture.",
+      "why": "Two environment variables are the entire cross-compilation toolchain, provided the code doesn't use cgo. It's how one CI job produces release binaries for every platform (goreleaser automates that). The usual failure is running the wrong one: 'exec format error' means the binary was built for a different architecture than the machine, the same error a wrong-platform container image gives."
+    }
+  ]
+}
