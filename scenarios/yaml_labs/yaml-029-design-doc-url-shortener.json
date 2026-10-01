@@ -1,0 +1,31 @@
+{
+  "id": "yaml-029",
+  "type": "yaml_lab",
+  "category": "systemdesign",
+  "title": "Write a Design Document: URL Shortener",
+  "difficulty": "advanced",
+  "tags": ["system-design", "design-doc", "writing"],
+  "intro": "Senior engineers are judged as much on their design documents as on their code: a design nobody can read doesn't get built well. Write the one-page design for the URL shortener from the System Design tutorials (100 million new links a month, 100 reads per write, redirects under 50ms). The checker looks at structure and at whether the key facts are there.",
+  "steps": [
+    {
+      "file": "design-url-shortener.md",
+      "format": "markdown",
+      "starter_content": "# Design: URL Shortener\n\n",
+      "prompt": "Write design-url-shortener.md with a '# Design: ...' title and these level-2 sections, in this order, none empty:\n## Requirements        (functional and non-functional)\n## Estimates           (must state: 40 writes/s, 4,000 reads/s, and 3 TB of storage over 5 years)\n## API                 (must include: POST /links and GET /{code})\n## Data model\n## Architecture        (must mention the cache and at least one database replica)\n## Bottlenecks and scaling\n## Failure modes       (what happens when the cache or the database dies)\n## Trade-offs          (must discuss 301 versus 302 redirects)",
+      "apply_commands": ["git add design-url-shortener.md", "check"],
+      "validate": {
+        "fields": {
+          "title": {"contains": "Design"},
+          "empty_section_count": 0,
+          "text": {"contains": ["40 writes/s", "4,000 reads/s", "3 TB", "POST /links", "GET /{code}", "cache", "replica", "301", "302"]}
+        },
+        "order": ["## Requirements", "## Estimates", "## API", "## Data model", "## Architecture", "## Bottlenecks", "## Failure modes", "## Trade-offs"]
+      },
+      "hint": "Use exactly those '## ' headings in that order. Keep each section to a few lines or bullets. The estimates are in systemdesign-tutorial-001 and the decisions in systemdesign-tutorial-011. Write the numbers exactly as given: '40 writes/s', '4,000 reads/s', '3 TB'.",
+      "solution": "# Design: URL Shortener\n\n## Requirements\nFunctional:\n- Create a short link for a long URL, optionally with a custom alias.\n- Redirect a short link to its long URL.\n- Count clicks per link.\n\nNon-functional:\n- 100 million new links per month, about 100 reads per write.\n- Redirect latency under 50 ms at the 99th percentile.\n- Links are never lost; 99.99% availability for redirects.\n\n## Estimates\n- Writes: 100M / 2.6M seconds = about 40 writes/s.\n- Reads: 100x writes = about 4,000 reads/s on average, 12,000 at peak.\n- Storage: 6 billion links x 500 bytes = about 3 TB over 5 years.\n- Cache: the hottest 20% of a day's reads is about 35 GB of RAM.\n\n## API\n- POST /links  {\"url\": \"...\", \"alias\": \"optional\"} -> 201 {\"code\": \"x7Kp2Qa\"}\n- GET /{code} -> 302 redirect to the long URL, or 404\n- GET /links/{code}/stats -> click counts\n\n## Data model\nOne table (or key-value store) keyed by code:\n- code (primary key, 7 base-62 characters)\n- long_url, created_at, expires_at, owner_id\nCodes come from a counter encoded in base 62; app servers take ids in blocks of 1,000.\n\n## Architecture\nClient -> CDN -> load balancer -> stateless app servers.\nRead path: app server -> Redis cache (cache-aside) -> on a miss, a database read replica.\nWrite path: app server -> primary database.\nClicks are published to a queue and aggregated by workers, off the redirect path.\n\n## Bottlenecks and scaling\n- Reads dominate: the cache absorbs most of them; add replicas and cache nodes as traffic grows.\n- Writes are tiny (40/s); one primary is enough for years.\n- At 3 TB the data fits one server. Shard by code only if storage grows 10x.\n\n## Failure modes\n- Cache down: redirects fall back to the replicas; slower, but working. Limit database connections so the fallback can't overload it.\n- Primary database down: fail over to a replica; redirects keep working from replicas and cache, and link creation pauses briefly.\n- Queue or analytics down: redirects are unaffected; clicks are buffered or dropped.\n\n## Trade-offs\n- 301 vs 302: a 301 is cached by browsers and saves load, but repeat clicks never reach us. We use 302 because click analytics is a requirement.\n- Counter-based codes are guessable in sequence; acceptable for public links. Private links would need random codes.\n- Eventual consistency for click counts is fine; the code-to-URL mapping must be exact.\n",
+      "fake_output": "(design-url-shortener.md staged; ready for design review)",
+      "explanation": "A complete one-page design: what it must do, how big it is, the interface, the data, the architecture, where it breaks, and what was traded away.",
+      "why": "This order is deliberate, and it's the order a good design interview answer follows too. Requirements and estimates come first because they decide everything after them: 40 writes a second means no sharding; 100:1 reads means cache first. 'Failure modes' is the section most often missing from real documents and the one reviewers value most: for each component, say what happens when it dies. 'Trade-offs' shows you chose, rather than defaulted. A structural checker can't judge whether your design is good, so ask a colleague to review it, or compare it with the solution."
+    }
+  ]
+}

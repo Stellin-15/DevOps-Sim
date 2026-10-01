@@ -1,0 +1,48 @@
+{
+  "id": "systemdesign-tutorial-003",
+  "type": "tutorial",
+  "category": "systemdesign",
+  "title": "Caching: Patterns, Expiry, and Eviction",
+  "difficulty": "intermediate",
+  "tags": ["system-design", "caching", "redis"],
+  "intro": "A cache trades freshness for speed: answer from memory in under a millisecond instead of asking the database in tens. It's the highest-leverage tool for read-heavy systems, and the source of the hardest bugs, because now there are two copies of the truth.",
+  "steps": [
+    {
+      "prompt": "Cache a product for 5 minutes: store the key product:42 with the value '{\"name\":\"Mug\",\"price\":1200}' and a 300-second expiry.",
+      "expected_commands": ["redis-cli SET product:42 '{\"name\":\"Mug\",\"price\":1200}' EX 300"],
+      "fake_output": "OK",
+      "explanation": "The value is cached and will disappear by itself after 300 seconds.",
+      "why": "Always set an expiry. A cache entry without a TTL is a stale-data bug waiting to happen, and it fills memory for ever. The TTL is your safety net: even if every invalidation is missed, the data is wrong for at most 5 minutes."
+    },
+    {
+      "prompt": "Check how long product:42 has left to live.",
+      "expected_commands": ["redis-cli TTL product:42"],
+      "fake_output": "(integer) 287",
+      "explanation": "287 seconds remain. (-1 would mean no expiry; -2 means the key doesn't exist.)",
+      "why": "If thousands of keys are written at the same moment with the same TTL, they all expire at the same moment, and every request misses at once. Add random jitter to TTLs (300 seconds plus or minus 30) to spread expiry out. That's one of the defences against the stampede in sre-incident-004."
+    },
+    {
+      "prompt": "The app reads like this: look in the cache; on a miss, read the database, then write the result to the cache. Which pattern is that?\n  a) Write-through: every write goes to the cache and the database together\n  b) Cache-aside (lazy loading): the application fills the cache on a miss\n  c) Write-behind: writes go to the cache and reach the database later\n  d) Read-through with no expiry\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "cache-aside:   app checks cache -> miss -> reads DB -> writes cache   (most common)\nwrite-through: app writes cache + DB together                       (always fresh, slower writes)\nwrite-behind:  app writes cache, DB updated asynchronously          (fast writes, risk of loss)",
+      "hint": "Who fills the cache here, and when?",
+      "explanation": "Cache-aside: the cache is filled on demand, by the application.",
+      "why": "Cache-aside only caches what is actually read, and the app keeps working if the cache dies (just slower). Its weakness is staleness after a write, which the next step deals with. Write-behind is the risky one: if the cache node dies before flushing, the writes are lost."
+    },
+    {
+      "prompt": "A price changes in the database. With cache-aside, what should the code do to the cached entry?\n  a) Nothing; wait for the TTL\n  b) Update the cache with the new value, then write the database\n  c) Write the database, then delete the cache key so the next read reloads it\n  d) Clear the entire cache\nType the letter.",
+      "expected_commands": ["c"],
+      "fake_output": "write DB first, then DEL product:42\n  -> the next read misses, loads the new value, and caches it",
+      "hint": "Which order leaves the database as the source of truth, with the fewest ways to end up stale?",
+      "explanation": "Write the database, then delete the key.",
+      "why": "Deleting is safer than updating: two concurrent writers updating the cache can leave it holding the older value, while a delete just forces a reload from the source of truth. Writing the database first means a crash in between leaves stale data for one TTL at worst, never a cache entry for data that was never saved. Clearing the whole cache causes a stampede."
+    },
+    {
+      "prompt": "The cache is full. Check which keys Redis will throw away to make room.",
+      "expected_commands": ["redis-cli CONFIG GET maxmemory-policy", "redis-cli config get maxmemory-policy"],
+      "fake_output": "1) \"maxmemory-policy\"\n2) \"noeviction\"",
+      "explanation": "noeviction: when memory is full, Redis rejects writes with an error instead of evicting anything.",
+      "why": "noeviction is the default, and it's wrong for a cache: a full cache starts failing writes. For caching you want allkeys-lru (evict the least recently used) or allkeys-lfu (least frequently used). noeviction is right only when Redis holds data you can't afford to lose, such as queues or sessions, and then it needs monitoring."
+    }
+  ]
+}

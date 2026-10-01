@@ -1,0 +1,48 @@
+{
+  "id": "systemdesign-tutorial-004",
+  "type": "tutorial",
+  "category": "systemdesign",
+  "title": "Databases: Indexes, Query Plans, and Choosing a Store",
+  "difficulty": "intermediate",
+  "tags": ["system-design", "databases", "indexes", "postgres"],
+  "intro": "Most systems that 'need to scale' really have one slow query. Before adding replicas, shards, or a new database, read the query plan. The orders table here has 50 million rows.",
+  "steps": [
+    {
+      "prompt": "The 'my orders' page takes two seconds. Ask Postgres how it runs the query, with real timings: SELECT * FROM orders WHERE customer_id = 8812 ORDER BY created_at DESC LIMIT 20.",
+      "expected_commands": ["psql -c \"EXPLAIN ANALYZE SELECT * FROM orders WHERE customer_id = 8812 ORDER BY created_at DESC LIMIT 20\"", "psql -c \"EXPLAIN ANALYZE SELECT * FROM orders WHERE customer_id = 8812 ORDER BY created_at DESC LIMIT 20;\""],
+      "fake_output": "Limit  (actual time=1894.2..1894.3 rows=20)\n  ->  Sort  (Sort Method: top-N heapsort)\n        ->  Seq Scan on orders  (actual time=0.02..1893.1 rows=41 loops=1)\n              Filter: (customer_id = 8812)\n              Rows Removed by Filter: 49999959\nExecution Time: 1894.4 ms",
+      "explanation": "A sequential scan: Postgres read all 50 million rows to find 41.",
+      "why": "'Seq Scan' with 'Rows Removed by Filter' in the millions is the signature of a missing index. EXPLAIN ANALYZE actually runs the query and shows where the time went, so it's evidence, not a guess. (Plain EXPLAIN shows the plan without running it, which is safer for writes.)"
+    },
+    {
+      "prompt": "Add an index on customer_id and created_at (newest first) without locking the table against writes. Name it idx_orders_customer_created.",
+      "expected_commands": ["psql -c \"CREATE INDEX CONCURRENTLY idx_orders_customer_created ON orders (customer_id, created_at DESC)\"", "psql -c \"CREATE INDEX CONCURRENTLY idx_orders_customer_created ON orders (customer_id, created_at DESC);\""],
+      "fake_output": "CREATE INDEX",
+      "explanation": "The index is built while the table stays available.",
+      "why": "A plain CREATE INDEX blocks writes to the table for the whole build, which on 50 million rows is an outage. CONCURRENTLY takes longer but doesn't block. This is the kind of detail that separates a design that works on paper from one that survives production."
+    },
+    {
+      "prompt": "Run the same EXPLAIN ANALYZE again.",
+      "expected_commands": ["psql -c \"EXPLAIN ANALYZE SELECT * FROM orders WHERE customer_id = 8812 ORDER BY created_at DESC LIMIT 20\"", "psql -c \"EXPLAIN ANALYZE SELECT * FROM orders WHERE customer_id = 8812 ORDER BY created_at DESC LIMIT 20;\""],
+      "fake_output": "Limit  (actual time=0.04..0.09 rows=20)\n  ->  Index Scan using idx_orders_customer_created on orders  (actual time=0.04..0.08 rows=20 loops=1)\n        Index Cond: (customer_id = 8812)\nExecution Time: 0.12 ms",
+      "explanation": "An index scan: 0.12 ms instead of 1,894 ms, and no sort step.",
+      "why": "15,000 times faster with one line of SQL, and the sort disappeared because the index is already in the right order. Indexes aren't free: each one slows writes and uses disk, so index for the queries you actually run."
+    },
+    {
+      "prompt": "Why is the index (customer_id, created_at) and not (created_at, customer_id)?\n  a) Column order makes no difference\n  b) An index is sorted by its first column, then the second. Putting the equality filter first lets the database jump to one customer and read their orders already in date order\n  c) Dates must always come last in an index\n  d) Postgres ignores the second column\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "index (customer_id, created_at): all of customer 8812's orders sit together, newest first -> read 20 entries\nindex (created_at, customer_id): sorted by date across ALL customers -> must scan for customer 8812",
+      "hint": "Think of a phone book sorted by surname, then first name.",
+      "explanation": "Equality columns first, then the range or sort column.",
+      "why": "A composite index works like a phone book: useful for 'surname', or 'surname and first name', useless for 'first name' alone. The rule of thumb is equality filters first, then range or ordering columns. It's among the most asked database questions in design reviews."
+    },
+    {
+      "prompt": "For the orders themselves (money, inventory, strict correctness, queries across tables), which store fits best?\n  a) A relational database (Postgres, MySQL): transactions, joins, constraints\n  b) A key-value store (Redis, DynamoDB): one item per key, very fast, few query options\n  c) A document store (MongoDB): flexible nested documents\n  d) A wide-column store (Cassandra): enormous write volumes, limited queries\nType the letter.",
+      "expected_commands": ["a"],
+      "fake_output": "relational: transactions + joins + constraints      -> orders, payments, inventory\nkey-value:  single-key lookups at huge scale          -> sessions, carts, caches\ndocument:   self-contained records, flexible schema   -> catalogs, content\nwide-column: write-heavy, time-ordered, massive       -> events, metrics, messages",
+      "hint": "Which one guarantees that an order and its payment are saved together, or not at all?",
+      "explanation": "Money and inventory need transactions: a relational database.",
+      "why": "Default to a relational database and move away only for a reason you can name: a scale it can't reach, or an access pattern it's bad at. 'NoSQL scales better' is the classic unexamined answer. Most systems use several stores, each for what it's good at."
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "id": "systemdesign-incident-003",
+  "type": "incident",
+  "category": "systemdesign",
+  "title": "Customers were charged twice",
+  "difficulty": "advanced",
+  "tags": ["system-design", "idempotency", "queues", "payments"],
+  "intro": "Finance reports 214 customers charged twice last night between 02:10 and 02:25. During that window the payment workers were restarted by a deploy. The payments flow is: checkout publishes a 'charge' message to a queue, and a worker calls the payment provider and then acknowledges the message.",
+  "steps": [
+    {
+      "prompt": "Find a duplicated charge in the database: list order ids with more than one row in the charges table.",
+      "expected_commands": ["psql -c \"SELECT order_id, count(*) FROM charges GROUP BY order_id HAVING count(*) > 1 LIMIT 5;\"", "psql -c \"SELECT order_id, count(*) FROM charges GROUP BY order_id HAVING count(*) > 1 LIMIT 5\""],
+      "fake_output": " order_id | count\n----------+-------\n   881204 |     2\n   881231 |     2\n   881260 |     2\n(214 orders in total)",
+      "hint": "GROUP BY order_id HAVING count(*) > 1"
+    },
+    {
+      "prompt": "Look at both charges for order 881204.",
+      "expected_commands": ["psql -c \"SELECT id, order_id, amount, provider_ref, created_at FROM charges WHERE order_id = 881204;\"", "psql -c \"SELECT * FROM charges WHERE order_id = 881204;\"", "psql -c \"SELECT * FROM charges WHERE order_id = 881204\""],
+      "fake_output": "  id   | order_id | amount | provider_ref |      created_at\n-------+----------+--------+--------------+---------------------\n 55121 |   881204 |   4200 | ch_3Pq1a7    | 2026-09-28 02:11:04\n 55190 |   881204 |   4200 | ch_3Pq1c2    | 2026-09-28 02:11:39",
+      "hint": "SELECT ... WHERE order_id = 881204"
+    },
+    {
+      "prompt": "Two real charges, 35 seconds apart, with different provider references. See what the worker logged for that order around 02:11.",
+      "expected_commands": ["kubectl logs -l app=payment-worker -n shop --since=12h | grep 881204", "kubectl logs -l app=payment-worker -n shop --since=24h | grep 881204", "kubectl logs -l app=payment-worker -n shop | grep 881204"],
+      "fake_output": "02:11:03 worker-7c9d charging order 881204\n02:11:04 worker-7c9d provider charge ok ch_3Pq1a7 for order 881204\n02:11:04 worker-7c9d received SIGTERM, shutting down\n02:11:38 worker-5b8e charging order 881204 (redelivered)\n02:11:39 worker-5b8e provider charge ok ch_3Pq1c2 for order 881204",
+      "hint": "Grep the workers' logs for the order id."
+    },
+    {
+      "prompt": "The first worker charged the card, then was killed before acknowledging the message, so the queue delivered it again. Check whether the worker sends an idempotency key to the provider: search its source for 'Idempotency-Key'.",
+      "expected_commands": ["grep -rn 'Idempotency-Key' services/payment-worker/", "grep -rn \"Idempotency-Key\" services/payment-worker/", "grep -rni 'idempotency' services/payment-worker/"],
+      "fake_output": "(no matches)",
+      "hint": "grep -rn '<text>' <directory>"
+    },
+    {
+      "prompt": "No idempotency key anywhere. Add a database guard so a second charge for the same order can never be stored: create a unique index on charges(order_id), named uniq_charges_order.",
+      "expected_commands": ["psql -c \"CREATE UNIQUE INDEX CONCURRENTLY uniq_charges_order ON charges (order_id);\"", "psql -c \"CREATE UNIQUE INDEX CONCURRENTLY uniq_charges_order ON charges (order_id)\"", "psql -c \"CREATE UNIQUE INDEX uniq_charges_order ON charges (order_id);\""],
+      "fake_output": "ERROR:  could not create unique index \"uniq_charges_order\"\nDETAIL:  Key (order_id)=(881204) is duplicated.\n(the 214 duplicates must be refunded and removed first; then the index can be created)",
+      "hint": "CREATE UNIQUE INDEX ... ON charges (order_id)"
+    }
+  ],
+  "resolution": "The queue did what it promises: at-least-once delivery. The worker took the message, charged the card, and was terminated by the deploy before it could acknowledge. The queue, seeing no acknowledgement, redelivered, and a second worker charged again. No component was faulty; the design assumed each message would be processed exactly once, which no queue can guarantee across an external call. The fix is idempotency at every layer that has a side effect. Send the provider an idempotency key derived from the order (so a repeat request returns the original charge instead of creating a new one), and enforce uniqueness in your own database, so a duplicate can't be recorded even if a bug slips through. Note the last step failed on purpose: you can't add the constraint until the bad data is cleaned up, and those 214 customers need refunds first. Also give workers a graceful shutdown (finish the current message and acknowledge it before exiting) and a long enough termination grace period.",
+  "real_commands_used": ["psql GROUP BY ... HAVING count(*) > 1", "psql SELECT", "kubectl logs -l ... | grep", "grep -rn", "CREATE UNIQUE INDEX"]
+}

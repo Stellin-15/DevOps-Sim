@@ -1,0 +1,43 @@
+{
+  "id": "systemdesign-incident-006",
+  "type": "incident",
+  "category": "systemdesign",
+  "title": "The queue that grew until it took everything else with it",
+  "difficulty": "advanced",
+  "tags": ["system-design", "backpressure", "queues", "redis"],
+  "intro": "The Redis instance at cache.shop.internal ran out of memory at 14:05 and started rejecting writes, breaking logins and the cart, which also live there. Nothing about logins or carts changed. A background 'thumbnail' job queue is stored in the same Redis, as the list jobs:thumbnails.",
+  "steps": [
+    {
+      "prompt": "Check Redis's memory use against its limit.",
+      "expected_commands": ["redis-cli -h cache.shop.internal INFO memory | grep -E 'used_memory_human|maxmemory_human'", "redis-cli -h cache.shop.internal INFO memory", "redis-cli -h cache.shop.internal info memory"],
+      "fake_output": "used_memory_human:15.98G\nmaxmemory_human:16.00G",
+      "hint": "INFO memory shows used_memory_human and maxmemory_human."
+    },
+    {
+      "prompt": "Find what's using it: sample the keyspace for the biggest keys.",
+      "expected_commands": ["redis-cli -h cache.shop.internal --bigkeys", "redis-cli -h cache.shop.internal --memkeys"],
+      "fake_output": "-------- summary -------\nBiggest   list found 'jobs:thumbnails' has 41822017 items\nBiggest string found 'session:9f2c1e7' has 2048 bytes\nBiggest   hash found 'cart:881204' has 14 fields",
+      "hint": "redis-cli --bigkeys samples the keyspace and reports the largest key of each type."
+    },
+    {
+      "prompt": "A list with 41.8 million jobs. Check the length of jobs:thumbnails now, to see whether it's still growing.",
+      "expected_commands": ["redis-cli -h cache.shop.internal LLEN jobs:thumbnails", "redis-cli -h cache.shop.internal llen jobs:thumbnails"],
+      "fake_output": "(integer) 41830455",
+      "hint": "LLEN <key> returns a list's length."
+    },
+    {
+      "prompt": "It grew by 8,000 in a few seconds. Check whether anything is consuming it: look at the thumbnail workers in namespace shop.",
+      "expected_commands": ["kubectl get pods -n shop -l app=thumbnail-worker", "kubectl get po -n shop -l app=thumbnail-worker"],
+      "fake_output": "NAME                                READY   STATUS             RESTARTS       AGE\nthumbnail-worker-6c7d8e9f5-a1b2c    0/1     CrashLoopBackOff   211 (3m ago)   19h\nthumbnail-worker-6c7d8e9f5-d3e4f    0/1     CrashLoopBackOff   209 (2m ago)   19h",
+      "hint": "kubectl get pods -l app=thumbnail-worker"
+    },
+    {
+      "prompt": "The workers have been crash-looping for 19 hours while producers kept adding jobs. Free the memory for logins and carts now: the thumbnail jobs can be regenerated, so delete the list without blocking Redis.",
+      "expected_commands": ["redis-cli -h cache.shop.internal UNLINK jobs:thumbnails", "redis-cli -h cache.shop.internal unlink jobs:thumbnails"],
+      "fake_output": "(integer) 1",
+      "hint": "UNLINK frees a key in the background; DEL on a 40-million-item list would block Redis for seconds."
+    }
+  ],
+  "resolution": "Nothing limited the queue. When the consumers died 19 hours earlier, the producers kept adding thumbnail jobs at full speed, and the list grew until it had used all 16 GB. Because sessions and carts lived in the same Redis, a failing background job took down login. Three design lessons. First, backpressure: a queue needs a maximum size, and producers need a rule for what happens when it's reached (reject, drop the oldest, or slow down). An unbounded queue just turns a consumer failure into an out-of-memory failure later. Second, isolation: don't keep a best-effort job queue in the same instance as critical state; different data deserves different failure domains. Third, monitoring: queue depth and consumer health should alert within minutes, not be discovered 19 hours on through a different symptom. UNLINK rather than DEL mattered too: deleting a 40-million-item key synchronously would have frozen Redis for everyone at the worst moment.",
+  "real_commands_used": ["redis-cli INFO memory", "redis-cli --bigkeys", "redis-cli LLEN", "kubectl get pods -l", "redis-cli UNLINK"]
+}

@@ -1,0 +1,49 @@
+{
+  "id": "systemdesign-incident-005",
+  "type": "incident",
+  "category": "systemdesign",
+  "title": "The sale ended an hour ago, and the old prices are still showing",
+  "difficulty": "intermediate",
+  "tags": ["system-design", "caching", "invalidation", "ttl"],
+  "intro": "The flash sale ended at 12:00 and prices were restored in the database. At 13:10, customers still see and pay the sale prices on some products, and merchandising is losing money on every order. Product data is cached in Redis at cache.shop.internal.",
+  "steps": [
+    {
+      "prompt": "Check the price of product 42 in the database (it should be 2400 again).",
+      "expected_commands": ["psql -c \"SELECT id, price_cents, updated_at FROM products WHERE id = 42;\"", "psql -c \"SELECT id, price_cents, updated_at FROM products WHERE id = 42\"", "psql -c \"SELECT * FROM products WHERE id = 42;\""],
+      "fake_output": " id | price_cents |     updated_at\n----+-------------+---------------------\n 42 |        2400 | 2026-09-28 12:00:03",
+      "hint": "SELECT ... FROM products WHERE id = 42"
+    },
+    {
+      "prompt": "The database is right. Check what the cache holds for product:42.",
+      "expected_commands": ["redis-cli -h cache.shop.internal GET product:42", "redis-cli -h cache.shop.internal get product:42"],
+      "fake_output": "\"{\\\"id\\\":42,\\\"name\\\":\\\"Mug\\\",\\\"price_cents\\\":1200}\"",
+      "hint": "redis-cli -h <host> GET <key>"
+    },
+    {
+      "prompt": "The cache still has the sale price. Check when that key will expire.",
+      "expected_commands": ["redis-cli -h cache.shop.internal TTL product:42", "redis-cli -h cache.shop.internal ttl product:42"],
+      "fake_output": "(integer) -1",
+      "hint": "TTL <key>: -1 means no expiry is set."
+    },
+    {
+      "prompt": "No expiry: it will stay wrong for ever. Fix this product now by deleting the key, so the next read reloads it from the database.",
+      "expected_commands": ["redis-cli -h cache.shop.internal DEL product:42", "redis-cli -h cache.shop.internal del product:42"],
+      "fake_output": "(integer) 1",
+      "hint": "DEL <key>"
+    },
+    {
+      "prompt": "Thousands of product keys have the same problem. Find how many product:* keys there are without blocking Redis (use --scan, not KEYS).",
+      "expected_commands": ["redis-cli -h cache.shop.internal --scan --pattern 'product:*' | wc -l", "redis-cli -h cache.shop.internal --scan --pattern \"product:*\" | wc -l"],
+      "fake_output": "48211",
+      "hint": "redis-cli --scan --pattern '<pattern>' | wc -l"
+    },
+    {
+      "prompt": "Delete them in batches, so they reload gradually instead of all at once: pipe the scan into xargs running DEL 100 keys at a time.",
+      "expected_commands": ["redis-cli -h cache.shop.internal --scan --pattern 'product:*' | xargs -L 100 redis-cli -h cache.shop.internal DEL", "redis-cli -h cache.shop.internal --scan --pattern 'product:*' | xargs -n 100 redis-cli -h cache.shop.internal DEL"],
+      "fake_output": "(integer) 100\n(integer) 100\n...\n(integer) 11",
+      "hint": "... --scan --pattern 'product:*' | xargs -L 100 redis-cli -h <host> DEL"
+    }
+  ],
+  "resolution": "Two design gaps met. The price update at the end of the sale was done by a batch job that wrote to the database directly and never touched the cache, so no invalidation happened. And the cache entries had no TTL, so there was no safety net: with no expiry, a missed invalidation is wrong for ever, not for five minutes. Either one alone would have limited the damage. The rules that prevent this: every cache entry gets a TTL (it bounds how long any missed invalidation can hurt); every code path that writes the data invalidates the cache, including batch jobs and admin tools, which is easiest if writes go through one place; and for values where staleness costs money, such as prices and stock, the checkout re-reads the database at the moment of purchase rather than trusting a cached price. Notice also how the cleanup was done: SCAN instead of KEYS (KEYS blocks Redis while it walks the whole keyspace), and deletion in batches, because flushing everything at once would send all traffic to the database together (sre-incident-004).",
+  "real_commands_used": ["psql SELECT", "redis-cli GET", "redis-cli TTL", "redis-cli DEL", "redis-cli --scan --pattern", "xargs -L 100 redis-cli DEL"]
+}

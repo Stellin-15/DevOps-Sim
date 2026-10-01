@@ -1,0 +1,51 @@
+{
+  "id": "systemdesign-tutorial-001",
+  "type": "tutorial",
+  "category": "systemdesign",
+  "title": "Back-of-the-Envelope Estimation",
+  "difficulty": "beginner",
+  "tags": ["system-design", "estimation", "capacity"],
+  "intro": "Every system design starts with rough numbers, because the numbers decide the architecture: 10 requests a second fits on one server, 100,000 doesn't. You only need the right order of magnitude. The system here is a URL shortener: 100 million new short links a month, and each link is read about 100 times for every write. Answer each question with a letter.",
+  "steps": [
+    {
+      "prompt": "100 million new links per month. Roughly how many writes per second is that, on average?\n  a) about 4\n  b) about 40\n  c) about 400\n  d) about 4,000\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "100,000,000 / (30 days x 86,400 s) = 100,000,000 / 2,592,000 = ~38.6 writes/second",
+      "hint": "A month is about 2.5 million seconds. Divide 100 million by that.",
+      "explanation": "About 40 writes per second.",
+      "why": "Remember 'a month is about 2.5 million seconds' and 'a day is about 100,000 seconds'. With those two, any 'N per month' or 'N per day' becomes a per-second rate in your head. 40 writes a second is small: one database handles it easily, which already tells you writes won't drive this design."
+    },
+    {
+      "prompt": "Reads outnumber writes 100 to 1. What's the average read rate?\n  a) about 400 per second\n  b) about 4,000 per second\n  c) about 40,000 per second\n  d) about 400,000 per second\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "38.6 writes/s x 100 = ~3,860 reads/second (average)\nwith a 3x peak factor: ~11,600 reads/second at the busiest moment",
+      "hint": "Multiply the write rate by the read:write ratio.",
+      "explanation": "About 4,000 reads per second on average, perhaps 12,000 at peak.",
+      "why": "The read:write ratio is the most useful single number in a design. A 100:1 read-heavy system is designed around making reads cheap (caching, read replicas). A write-heavy one (logging, metrics) is designed around ingestion and partitioning. Always size for peak, not average: 2x to 10x depending on how spiky the traffic is."
+    },
+    {
+      "prompt": "Each link record is about 500 bytes, and you keep links for 5 years. Roughly how much storage?\n  a) about 3 GB\n  b) about 30 GB\n  c) about 3 TB\n  d) about 300 TB\nType the letter.",
+      "expected_commands": ["c"],
+      "fake_output": "100,000,000 x 12 months x 5 years = 6,000,000,000 records\n6,000,000,000 x 500 bytes = 3,000,000,000,000 bytes = 3 TB",
+      "hint": "Records = 100M x 12 x 5. Then multiply by 500 bytes; 10^12 bytes is 1 TB.",
+      "explanation": "About 3 TB over five years.",
+      "why": "3 TB fits on a single large database server, with replicas. So this system doesn't need sharding for storage on day one, which is a common over-engineering mistake. Had the answer been 300 TB, partitioning would be a core requirement. That's the kind of decision the numbers make for you."
+    },
+    {
+      "prompt": "You want to cache the hottest 20% of a day's read traffic in memory. With about 4,000 reads/s and 500 bytes per entry, roughly how much RAM?\n  a) about 350 MB\n  b) about 35 GB\n  c) about 3.5 TB\n  d) about 35 TB\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "3,860 reads/s x 86,400 s = ~333,000,000 reads/day\n20% of that = ~67,000,000 entries\n67,000,000 x 500 bytes = ~33 GB",
+      "hint": "Reads per day = 4,000 x 86,400. Take 20%, multiply by 500 bytes.",
+      "explanation": "About 35 GB: one or two cache servers.",
+      "why": "The 80/20 rule (a small share of items gets most of the traffic) is why caches work at all. This is an upper bound: many of those reads are repeats of the same links, so the real number is smaller. Either way it fits in a couple of Redis nodes, so caching is cheap here and clearly worth it."
+    },
+    {
+      "prompt": "One application server handles about 1,000 requests per second. At a peak of 12,000 reads/s, how many servers do you provision if you must survive losing one?\n  a) 4\n  b) 12\n  c) 13\n  d) 24\nType the letter.",
+      "expected_commands": ["c"],
+      "fake_output": "12,000 peak / 1,000 per server = 12 servers to carry the load\n+1 so the fleet still copes when one fails (N+1) = 13",
+      "hint": "Divide peak load by per-server capacity, then add one for redundancy.",
+      "explanation": "12 to carry the peak, plus one spare.",
+      "why": "N+1 means the system survives one failure at full load. If losing a whole availability zone must be survivable, you need enough capacity in the remaining zones, which with three zones means roughly 50% extra. sre-tutorial-004 does the same sums from real metrics; here you do them before the system exists."
+    }
+  ]
+}

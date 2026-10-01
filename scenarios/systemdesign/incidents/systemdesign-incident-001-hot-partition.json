@@ -1,0 +1,37 @@
+{
+  "id": "systemdesign-incident-001",
+  "type": "incident",
+  "category": "systemdesign",
+  "title": "Six partitions, and one of them is doing all the work",
+  "difficulty": "advanced",
+  "tags": ["system-design", "kafka", "hot-partition", "partition-key"],
+  "intro": "The notifications pipeline is hours behind. The team already doubled the consumers from 6 to 12 and it made no difference. The topic 'notifications' has 6 partitions and is keyed by tenant_id. One customer, tenant 7 (a large retailer), ran a big campaign today.",
+  "steps": [
+    {
+      "prompt": "Check the lag of the consumer group 'notifier' on kafka:9092, partition by partition.",
+      "expected_commands": ["kafka-consumer-groups.sh --bootstrap-server kafka:9092 --describe --group notifier", "kafka-consumer-groups --bootstrap-server kafka:9092 --describe --group notifier"],
+      "fake_output": "GROUP     TOPIC          PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG       CONSUMER-ID\nnotifier  notifications  0          4410022         4410030         8         notifier-a1\nnotifier  notifications  1          4398114         4398120         6         notifier-b2\nnotifier  notifications  2          4402761         4402770         9         notifier-c3\nnotifier  notifications  3          9120400         17882315        8761915   notifier-d4\nnotifier  notifications  4          4407019         4407021         2         notifier-e5\nnotifier  notifications  5          4399873         4399880         7         notifier-f6",
+      "hint": "kafka-consumer-groups.sh --describe --group <group> shows LAG per partition."
+    },
+    {
+      "prompt": "Partition 3 is 8.7 million messages behind; the rest are fine. Look at what's in it: read 5 messages from partition 3 of 'notifications', printing each message's key.",
+      "expected_commands": ["kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic notifications --partition 3 --offset latest --max-messages 5 --property print.key=true", "kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic notifications --partition 3 --max-messages 5 --property print.key=true", "kafka-console-consumer --bootstrap-server kafka:9092 --topic notifications --partition 3 --max-messages 5 --property print.key=true"],
+      "fake_output": "7\t{\"type\":\"campaign_email\",\"user\":881204}\n7\t{\"type\":\"campaign_email\",\"user\":881205}\n7\t{\"type\":\"campaign_email\",\"user\":881206}\n7\t{\"type\":\"campaign_email\",\"user\":881207}\n7\t{\"type\":\"campaign_email\",\"user\":881208}",
+      "hint": "--partition 3 --property print.key=true shows which keys land there."
+    },
+    {
+      "prompt": "Every message has key 7: one tenant's campaign is all on one partition. Check how many consumers the group has in total.",
+      "expected_commands": ["kafka-consumer-groups.sh --bootstrap-server kafka:9092 --describe --group notifier --members", "kafka-consumer-groups --bootstrap-server kafka:9092 --describe --group notifier --members"],
+      "fake_output": "GROUP     CONSUMER-ID   #PARTITIONS\nnotifier  notifier-a1   1\nnotifier  notifier-b2   1\nnotifier  notifier-c3   1\nnotifier  notifier-d4   1\nnotifier  notifier-e5   1\nnotifier  notifier-f6   1\nnotifier  notifier-g7   0\nnotifier  notifier-h8   0\n... (4 more with 0 partitions)",
+      "hint": "--members shows how many partitions each consumer was given."
+    },
+    {
+      "prompt": "Six of the twelve consumers have nothing to do: a partition is read by only one consumer in a group. As a stopgap, increase the topic to 24 partitions so new messages spread further.",
+      "expected_commands": ["kafka-topics.sh --bootstrap-server kafka:9092 --alter --topic notifications --partitions 24", "kafka-topics --bootstrap-server kafka:9092 --alter --topic notifications --partitions 24"],
+      "fake_output": "WARNING: If partitions are increased for a topic that has a key, the partition logic or ordering of the messages will be affected\nAdding partitions succeeded!",
+      "hint": "kafka-topics.sh --alter --topic <topic> --partitions <n>"
+    }
+  ],
+  "resolution": "Adding consumers couldn't help, for two reasons. A partition is consumed by exactly one consumer in a group, so 12 consumers on 6 partitions leaves 6 idle. And all of tenant 7's messages share one key, so they all hash to one partition, however many partitions exist. That's a hot partition, the queueing version of the hot key in systemdesign-tutorial-006. Adding partitions is only a stopgap (and Kafka's warning is real: existing keys now map to different partitions, so per-key ordering is broken across the change). The real fix is the key: for notifications, ordering per tenant isn't needed, only per user, so key by user id (or tenant plus user). That spreads a large tenant across every partition while keeping each user's messages in order. Longer term, give very large tenants their own topic or apply per-tenant rate limits, so one customer's campaign can't delay everyone else's password-reset emails.",
+  "real_commands_used": ["kafka-consumer-groups.sh --describe --group", "kafka-console-consumer.sh --partition --property print.key=true", "kafka-consumer-groups.sh --describe --members", "kafka-topics.sh --alter --partitions"]
+}

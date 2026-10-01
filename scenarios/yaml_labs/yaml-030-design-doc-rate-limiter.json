@@ -1,0 +1,32 @@
+{
+  "id": "yaml-030",
+  "type": "yaml_lab",
+  "category": "systemdesign",
+  "title": "Write a Design Document: A Shared Rate Limiter",
+  "difficulty": "advanced",
+  "tags": ["system-design", "design-doc", "rate-limiting"],
+  "intro": "The API gateway needs a rate limiter: 100 requests per minute per API key, enforced across 40 gateway instances, adding no more than 2 ms to each request. It's a smaller design than the URL shortener, but with a sharper question in it: what should happen to traffic when the limiter itself is broken?",
+  "steps": [
+    {
+      "file": "design-rate-limiter.md",
+      "format": "markdown",
+      "starter_content": "# Design: Rate Limiter\n\n",
+      "prompt": "Write design-rate-limiter.md with a '# Design: ...' title and these level-2 sections, in this order, none empty:\n## Requirements\n## Algorithm           (choose token bucket, and say why not a fixed window)\n## Storage             (where the counters live; must mention Redis and that updates are atomic)\n## Client contract     (must include the 429 status and the Retry-After header)\n## Failure modes       (must state whether the limiter fails open or fails closed when Redis is down, and why)\n## Trade-offs",
+      "apply_commands": ["git add design-rate-limiter.md", "check"],
+      "validate": {
+        "fields": {
+          "title": {"contains": "Design"},
+          "empty_section_count": 0,
+          "text": {"contains": ["token bucket", "fixed window", "Redis", "atomic", "429", "Retry-After"]},
+          "sections.failure modes": {"contains": "fail"}
+        },
+        "order": ["## Requirements", "## Algorithm", "## Storage", "## Client contract", "## Failure modes", "## Trade-offs"]
+      },
+      "hint": "Use exactly those headings. In 'Failure modes', write either 'fail open' (let traffic through when the limiter is down) or 'fail closed' (reject it), and give the reason. systemdesign-tutorial-009 covers the algorithms and the client contract.",
+      "solution": "# Design: Rate Limiter\n\n## Requirements\n- Limit each API key to 100 requests per minute, with short bursts allowed.\n- Enforced consistently across 40 gateway instances.\n- Adds at most 2 ms to a request at the 99th percentile.\n- Limits can be changed per customer without a deploy.\n\n## Algorithm\nToken bucket: each key has a bucket of 100 tokens, refilled at 100 per minute. A request takes one token; an empty bucket means reject.\nNot a fixed window, because a fixed window lets a client send 100 requests at the end of one minute and 100 at the start of the next: 200 in two seconds, double the intended rate. The token bucket caps bursts at the bucket size and gives a steady sustained rate.\n\n## Storage\nCounters live in Redis, shared by all gateways, so the limit is global rather than per instance.\nEach check is one atomic operation (a Lua script that refills, decrements, and sets the expiry together), so two gateways can't both spend the last token.\nKeys expire on their own after two minutes of inactivity, which bounds memory.\n\n## Client contract\n- A limited request gets HTTP 429 with a Retry-After header saying how many seconds to wait.\n- Every response carries X-RateLimit-Limit, X-RateLimit-Remaining, and X-RateLimit-Reset.\n- Limits are documented, so clients can back off instead of retrying immediately.\n\n## Failure modes\n- Redis unreachable: the limiter fails open. Requests are allowed, using a small in-memory limit per gateway as a fallback. Rejecting all traffic because the limiter is down would turn a protection feature into a full outage.\n- Redis slow: the check has a 2 ms timeout and then fails open, so the limiter never becomes the slowest part of a request.\n- One gateway restarts: no state is lost, because counters are in Redis.\n- Endpoints that protect against abuse of expensive or risky operations (login attempts, payment creation) fail closed instead.\n\n## Trade-offs\n- A central store gives accurate global limits at the cost of one network round trip per request. Local counters synchronised periodically would be faster but allow overshoot.\n- Failing open favours availability over strict enforcement; a determined client could exceed its limit during a Redis outage.\n- Per-key limits don't stop an attacker with many keys; that needs per-IP limits and a web application firewall.\n",
+      "fake_output": "(design-rate-limiter.md staged; ready for design review)",
+      "explanation": "A focused design: the algorithm and why, where state lives, what clients see, and what happens when the limiter itself fails.",
+      "why": "The 'Failure modes' section is the heart of this one. Every protective component (rate limiter, auth service, feature-flag service, circuit breaker) forces the same choice: when it's unavailable, do you let traffic through (fail open) or block it (fail closed)? There's no universal answer. Failing open protects availability; failing closed protects whatever the control was guarding. Good designs choose per endpoint and say so in writing, because the decision made at 3am during an outage is always worse than the one made in a design review."
+    }
+  ]
+}

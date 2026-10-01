@@ -1,0 +1,50 @@
+{
+  "id": "systemdesign-tutorial-008",
+  "type": "tutorial",
+  "category": "systemdesign",
+  "title": "Consistency, Availability, and Quorums",
+  "difficulty": "advanced",
+  "tags": ["system-design", "cap", "consistency", "quorum", "consensus"],
+  "intro": "When the network between your servers breaks (and it will), a distributed system has to choose: refuse some requests to stay correct, or keep answering and risk giving stale or conflicting answers. That's the CAP theorem, and most of system design is deciding which data gets which treatment.",
+  "steps": [
+    {
+      "prompt": "A network partition splits your database cluster in two. For an account-balance service, which behaviour do you want?\n  a) Both sides keep accepting writes, and you merge later\n  b) The side without a majority stops accepting writes; some users see errors, but balances are never wrong\n  c) Both sides stop completely\n  d) It doesn't matter\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "CP (consistent under partition): the minority side refuses writes -> errors, but never wrong data  (etcd, ZooKeeper, a SQL primary)\nAP (available under partition):  both sides answer -> always up, may be stale or conflicting       (Cassandra, DynamoDB, DNS)",
+      "hint": "Which is worse for money: an error message, or two different balances?",
+      "explanation": "Choose consistency: the minority side stops.",
+      "why": "CAP says that during a partition you can't have both consistency and availability, so pick per piece of data. Money, inventory, and locks need CP. A shopping cart, a 'likes' counter, or a feed can be AP: showing a slightly stale cart is better than showing an error."
+    },
+    {
+      "prompt": "See a CP system's view of itself: show the status of every etcd cluster member as a table.",
+      "expected_commands": ["etcdctl endpoint status --cluster -w table", "etcdctl endpoint status --cluster --write-out=table"],
+      "fake_output": "+-------------------+------------------+---------+-----------+-----------+------------+\n|     ENDPOINT      |        ID        | VERSION | IS LEADER | RAFT TERM | RAFT INDEX |\n+-------------------+------------------+---------+-----------+-----------+------------+\n| https://10.0.0.11 | 8e9e05c52164694d |  3.5.15 |     false |        14 |    9182734 |\n| https://10.0.0.12 | 91bc3c398fb3c146 |  3.5.15 |      true |        14 |    9182734 |\n| https://10.0.0.13 | fd422379fda50e48 |  3.5.15 |     false |        14 |    9182734 |\n+-------------------+------------------+---------+-----------+-----------+------------+",
+      "explanation": "Three members, one elected leader, all at the same log index.",
+      "why": "etcd (the store behind Kubernetes) uses the Raft consensus algorithm: a write counts only once a majority has it. That's what makes it safe under partitions. The 'term' increases each time a new leader is elected; a term that keeps climbing means leadership is unstable."
+    },
+    {
+      "prompt": "Why do consensus clusters have 3 or 5 members rather than 2 or 4?\n  a) Odd numbers are a convention with no technical reason\n  b) A majority is needed to make progress. 3 members tolerate 1 failure and 5 tolerate 2; a 4th adds no extra tolerance over 3\n  c) Even numbers are slower\n  d) Licensing\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "members  majority  failures tolerated\n   2        2            0      <- worse than 1: either failing stops the cluster\n   3        2            1\n   4        3            1      <- no better than 3\n   5        3            2",
+      "hint": "Work out the majority for 2, 3, 4, and 5 members, and how many can fail.",
+      "explanation": "Majorities: 3 tolerates one failure, 5 tolerates two.",
+      "why": "Requiring a majority is what prevents split brain: two halves of a partition can't both have one. An even number adds a member that can fail without adding tolerance. That's why Kubernetes control planes run 3 or 5 etcd members, spread across zones."
+    },
+    {
+      "prompt": "A store keeps N = 3 copies of each item. Which settings guarantee a read always sees the latest successful write?\n  a) W = 1, R = 1\n  b) W = 2, R = 2\n  c) W = 1, R = 2\n  d) W = 3, R = 0\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "rule: W + R > N  -> the set written and the set read must overlap in at least one copy\nW=2, R=2, N=3 -> 4 > 3: every read touches at least one copy that has the latest write\nW=1, R=1      -> 2 > 3 is false: a read can miss the only up-to-date copy",
+      "hint": "The copies you wrote to and the copies you read from must share at least one.",
+      "explanation": "W + R > N, so W = 2 and R = 2.",
+      "why": "This is 'tunable consistency' in Cassandra and DynamoDB. W=1, R=1 is fastest and most available, but may return stale data. W=3 makes writes fail if any copy is down. W=2, R=2 is the usual balance: consistent, and still working with one copy down."
+    },
+    {
+      "prompt": "A 'likes' counter uses an eventually consistent store. What does that promise?\n  a) Every read returns the latest value\n  b) If writes stop, all copies converge to the same value; until then, reads may differ\n  c) Writes may be lost\n  d) The data is consistent once a day\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "eventual consistency: copies may disagree briefly, and are guaranteed to converge\nfine for: likes, view counts, feeds, recommendations\nnot fine for: balances, stock levels, uniqueness checks",
+      "hint": "The word 'eventually' is doing the work.",
+      "explanation": "The copies converge; in the meantime you may read an older value.",
+      "why": "Eventual consistency isn't sloppy; it's a deliberate trade for availability and speed, and it's right for data where a brief disagreement costs nothing. The design skill is sorting each piece of data into 'must be exact' or 'can be slightly stale', and telling the product team which is which."
+    }
+  ]
+}

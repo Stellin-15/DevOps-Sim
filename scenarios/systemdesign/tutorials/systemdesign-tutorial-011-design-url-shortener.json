@@ -1,0 +1,51 @@
+{
+  "id": "systemdesign-tutorial-011",
+  "type": "tutorial",
+  "category": "systemdesign",
+  "title": "Putting It Together: Design a URL Shortener",
+  "difficulty": "advanced",
+  "tags": ["system-design", "walkthrough", "interview"],
+  "intro": "The classic first system design question, worked through in the order a good answer follows: requirements, numbers, API, data, the hot path, and failure. The numbers come from systemdesign-tutorial-001: about 40 writes/s, 4,000 reads/s (12,000 at peak), and 3 TB over five years. Answer each decision with a letter.",
+  "steps": [
+    {
+      "prompt": "You're asked to 'design a URL shortener'. What do you do first?\n  a) Draw the architecture diagram\n  b) Ask what it must do and how big it must be: who uses it, read/write volume, latency, how long links live, custom aliases or not\n  c) Choose the database\n  d) Start with the hardest part, the hashing algorithm\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "functional:      shorten a URL; redirect a short link; optional custom alias; optional expiry\nnon-functional:  100M new links/month, 100:1 reads, redirects under 50ms, links must never be lost, 99.99% available",
+      "hint": "You can't judge any design choice without knowing what it's for.",
+      "explanation": "Requirements first, both functional and non-functional.",
+      "why": "The same question has completely different right answers at 10 users and at 10 million. Getting scale, latency, and durability on the table first is what the rest of the design is measured against, and in an interview it's the first thing assessed."
+    },
+    {
+      "prompt": "How do you generate the short code (for example 'x7Kp2Qa')?\n  a) Hash the long URL and keep the first 7 characters\n  b) Take a unique number from a counter and encode it in base 62 (a-z, A-Z, 0-9)\n  c) Use the database's row id as-is: /1, /2, /3\n  d) Generate random characters and hope they're unique\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "62^7 = ~3.5 trillion possible codes; 6 billion needed over 5 years -> 7 characters is plenty\ncounter + base62: unique by construction, no collision checks, short\nhash prefix:      collisions must be detected and retried\nplain row id:     guessable, so anyone can walk through every link",
+      "hint": "Which option guarantees uniqueness without having to check for collisions?",
+      "explanation": "A unique counter, base-62 encoded.",
+      "why": "A counter can't collide, so no lookup is needed before each write. At scale, each app server takes a block of ids (say 1,000 at a time) from a central allocator, so the counter isn't a bottleneck or a single point of failure. Sequential codes are guessable, though; if that matters, scramble the number or use random codes with a uniqueness check."
+    },
+    {
+      "prompt": "Which data store for the code-to-URL mapping? The access pattern is: look up one record by its code, 4,000 times a second; write 40 a second; 6 billion records.\n  a) A relational database with joins across many tables\n  b) A key-value store, or one simple table keyed by code, with replicas\n  c) A graph database\n  d) Files on a shared disk\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "access pattern: get(code) -> url. One key, one value, no joins, no transactions across records.\nfits: DynamoDB / Cassandra / Redis-backed store, or a single indexed Postgres table (3 TB fits one server + replicas)",
+      "hint": "What does every read look like?",
+      "explanation": "A key-value lookup: the simplest store that fits.",
+      "why": "Let the access pattern choose the store. Every read is a lookup by primary key, so anything good at that works, including a plain SQL table. Saying 'a single Postgres table would do at this size, and here's when I'd move' is a stronger answer than reaching for an exotic database."
+    },
+    {
+      "prompt": "Redirects must be fast, and 4,000 a second mostly hit a small set of popular links. What goes in front of the database?\n  a) Nothing; the database is fast enough\n  b) A cache (Redis) holding code-to-URL for hot links, filled on a miss, plus a CDN for the redirect responses\n  c) A message queue\n  d) A second database\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "read path:  CDN -> app server -> Redis (hit: ~1ms) -> on a miss: database, then fill the cache\nwrite path: app server -> database (-> the cache fills lazily on first read)",
+      "hint": "The workload is 100:1 reads, and a link never changes once created.",
+      "explanation": "Cache-aside in Redis, with a CDN in front.",
+      "why": "A mapping that never changes is the ideal thing to cache: no invalidation problem at all. About 35 GB of RAM covers the hot set (systemdesign-tutorial-001). The database then mostly sees writes and cache misses."
+    },
+    {
+      "prompt": "Should the redirect be HTTP 301 (permanent) or 302 (temporary)?\n  a) 301: browsers cache it, so repeat visits skip your servers entirely\n  b) 302: every click reaches your servers, so you can count clicks and change or disable a link\n  c) It depends on what the product needs: 301 for the least load, 302 if you need analytics or control\n  d) 200 with a JavaScript redirect\nType the letter.",
+      "expected_commands": ["c"],
+      "fake_output": "301 Moved Permanently: cached by browsers -> less load, but you never see repeat clicks and can't retract the link\n302 Found:             not cached -> every click is counted and the link can be changed, at the cost of more traffic",
+      "hint": "Neither is simply 'correct'. What does each one cost you?",
+      "explanation": "It's a trade-off, decided by the requirements.",
+      "why": "This is what a design answer should sound like: naming the trade-off and tying the choice to a requirement. Most commercial shorteners use 302 because click analytics is the product. Then ask of each component what happens when it dies: lose the cache and you serve from the database, more slowly; lose the database and you fail over to a replica; and clicks are counted through a queue, so analytics being down never slows a redirect."
+    }
+  ]
+}

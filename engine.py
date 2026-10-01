@@ -79,7 +79,8 @@ def run_step(step: dict, step_num: int, total_steps: int) -> None:
         if attempts == 2 and step.get("hint"):
             print(f"\nHint: {step['hint']}")
         elif attempts >= 4:
-            print(f"\nThe command was: {step['expected_commands'][0]}")
+            # "answer", not "command": some steps are multiple-choice decisions.
+            print(f"\nThe answer was: {step['expected_commands'][0]}")
         elif is_close(player_input, step["expected_commands"]):
             print("\nClose — check your flags.")
         else:

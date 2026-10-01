@@ -1,0 +1,49 @@
+{
+  "id": "systemdesign-tutorial-007",
+  "type": "tutorial",
+  "category": "systemdesign",
+  "title": "Queues and Asynchronous Processing",
+  "difficulty": "intermediate",
+  "tags": ["system-design", "kafka", "queues", "async"],
+  "intro": "Not everything has to happen while the user waits. Sending the confirmation email, updating search, and charging the card can be handed to a queue and done by workers. Queues absorb spikes and decouple services. They also mean messages can arrive late, twice, or out of order, and the design has to cope.",
+  "steps": [
+    {
+      "prompt": "Look at how the 'orders' topic is laid out on the Kafka cluster at kafka:9092.",
+      "expected_commands": ["kafka-topics.sh --bootstrap-server kafka:9092 --describe --topic orders", "kafka-topics --bootstrap-server kafka:9092 --describe --topic orders"],
+      "fake_output": "Topic: orders   PartitionCount: 6   ReplicationFactor: 3\n  Partition: 0  Leader: 1  Replicas: 1,2,3  Isr: 1,2,3\n  Partition: 1  Leader: 2  Replicas: 2,3,1  Isr: 2,3,1\n  Partition: 2  Leader: 3  Replicas: 3,1,2  Isr: 3,1\n  ...",
+      "explanation": "6 partitions, each stored on 3 brokers. Partition 2 has only 2 replicas in sync.",
+      "why": "Partitions are how a topic scales: each can be consumed in parallel. The replication factor is how it survives broker failures. 'Isr' (in-sync replicas) smaller than 'Replicas' means a broker is behind or down, which is worth an alert before a second failure costs data."
+    },
+    {
+      "prompt": "All events for one order must be processed in order (created, paid, shipped). How do you get that with 6 partitions?\n  a) Use a single partition for the whole topic\n  b) Use the order id as the message key, so all of an order's events go to the same partition\n  c) Add a timestamp and sort in the consumer\n  d) It's automatic; Kafka orders everything\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "Kafka guarantees order WITHIN a partition, not across partitions.\nkey = order_id -> hash(key) picks the partition -> every event for that order lands on the same one, in order",
+      "hint": "Ordering is guaranteed inside one partition only.",
+      "explanation": "Key by order id.",
+      "why": "A single partition would give total order but only one consumer's worth of throughput. Keying gives order where it matters (per order) and parallelism across orders. Choosing the key is the same decision as choosing a shard key (systemdesign-tutorial-006)."
+    },
+    {
+      "prompt": "Check whether the 'billing' consumer group is keeping up.",
+      "expected_commands": ["kafka-consumer-groups.sh --bootstrap-server kafka:9092 --describe --group billing", "kafka-consumer-groups --bootstrap-server kafka:9092 --describe --group billing"],
+      "fake_output": "GROUP    TOPIC   PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG\nbilling  orders  0          1048210         1048214         4\nbilling  orders  1          1047992         1048001         9\nbilling  orders  2          881204          1048350         167146",
+      "explanation": "Partitions 0 and 1 are current. Partition 2 is 167,146 messages behind.",
+      "why": "Lag is the health metric of any queue-based system: the distance between what's been produced and what's been processed. Lag growing on one partition usually means a stuck consumer or one 'poison' message it can't process. Lag growing on all of them means consumers are too slow, so add more (up to the partition count)."
+    },
+    {
+      "prompt": "A worker charges a card, then crashes before recording that it finished. The queue redelivers the message. How do you stop the customer being charged twice?\n  a) Use a queue that guarantees exactly-once delivery\n  b) Make the operation idempotent: give each charge a unique id, and have the payment step ignore an id it has already processed\n  c) Never retry failed messages\n  d) Process messages faster\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "at-most-once:  may lose messages, never duplicates\nat-least-once: never loses messages, MAY DUPLICATE   <- what most systems use\nexactly-once:  only within specific systems; not across a queue and an external payment API",
+      "hint": "Assume the message WILL be delivered twice. What makes the second delivery harmless?",
+      "explanation": "Idempotency: processing the same message twice has the same effect as once.",
+      "why": "Across a network you can't tell 'the work failed' from 'the work succeeded but the acknowledgement was lost', so reliable systems retry, and retries mean duplicates. Design every consumer to be idempotent: a unique key per operation, checked before acting. systemdesign-incident-003 is what happens without it."
+    },
+    {
+      "prompt": "One malformed message makes the consumer crash every time, and it retries the same message for ever, blocking the partition. What's the standard pattern?\n  a) Delete the topic\n  b) After a few failed attempts, move the message to a dead-letter queue and carry on\n  c) Stop all consumers until someone fixes it\n  d) Increase the partition count\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "retry N times with backoff -> still failing -> publish to 'orders.dlq' -> commit the offset and continue\nalert on DLQ size; inspect and replay later",
+      "hint": "The good messages behind it shouldn't wait on the bad one.",
+      "explanation": "A dead-letter queue.",
+      "why": "A 'poison message' blocks everything behind it in the partition, which is what the lag on partition 2 looked like. A dead-letter queue keeps the pipeline moving and keeps the bad message for investigation instead of dropping it. Alert on the dead-letter queue, or it becomes a silent data-loss bin."
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "id": "systemdesign-incident-002",
+  "type": "incident",
+  "category": "systemdesign",
+  "title": "\"I saved my address and it changed back\"",
+  "difficulty": "intermediate",
+  "tags": ["system-design", "replication", "read-replicas", "consistency"],
+  "intro": "Support has dozens of tickets since Monday: customers update their shipping address, the page reloads, and the old address is back. Refreshing a minute later shows the new one. On Monday the team moved all read queries to the read replicas 'to take load off the primary'.",
+  "steps": [
+    {
+      "prompt": "On the primary, check how far behind each replica is.",
+      "expected_commands": ["psql -c \"SELECT client_addr, state, replay_lag FROM pg_stat_replication;\"", "psql -c \"SELECT client_addr, state, replay_lag FROM pg_stat_replication\""],
+      "fake_output": " client_addr |   state   |   replay_lag\n-------------+-----------+-----------------\n 10.0.2.21   | streaming | 00:00:02.114\n 10.0.2.22   | streaming | 00:00:38.902",
+      "hint": "pg_stat_replication on the primary shows replay_lag per replica."
+    },
+    {
+      "prompt": "One replica is 38 seconds behind. Find out why: look at what's running on 10.0.2.22.",
+      "expected_commands": ["psql -h 10.0.2.22 -c \"SELECT pid, now() - query_start AS runtime, left(query, 60) FROM pg_stat_activity WHERE state = 'active' ORDER BY runtime DESC LIMIT 3;\"", "psql -h 10.0.2.22 -c \"SELECT pid, now() - query_start AS runtime, query FROM pg_stat_activity WHERE state = 'active' ORDER BY runtime DESC LIMIT 3;\""],
+      "fake_output": "  pid  |    runtime     |                             left\n-------+----------------+---------------------------------------------------------------\n 22814 | 00:14:52.4410  | SELECT customer_id, sum(total) FROM orders GROUP BY customer_\n 23001 | 00:00:00.0041  | SELECT * FROM addresses WHERE customer_id = 8812",
+      "hint": "pg_stat_activity on the replica, ordered by how long each query has run."
+    },
+    {
+      "prompt": "A 15-minute reporting query is running on the same replica that serves the website, holding back replay. Confirm that the address page reads from a replica: check the app's database settings in the ConfigMap shop-config (namespace shop).",
+      "expected_commands": ["kubectl get configmap shop-config -n shop -o yaml | grep -i db", "kubectl get cm shop-config -n shop -o yaml | grep -i db", "kubectl get configmap shop-config -n shop -o yaml"],
+      "fake_output": "  DB_WRITE_HOST: pg-primary.shop.svc\n  DB_READ_HOST: pg-replicas.shop.svc\n  DB_READ_AFTER_WRITE: \"replica\"",
+      "hint": "Look for the read and write hosts."
+    },
+    {
+      "prompt": "Reads straight after a write go to a replica. Make a user's reads go to the primary right after they write: set DB_READ_AFTER_WRITE=primary on deployment shop in namespace shop.",
+      "expected_commands": ["kubectl set env deployment/shop DB_READ_AFTER_WRITE=primary -n shop", "kubectl set env deploy/shop DB_READ_AFTER_WRITE=primary -n shop"],
+      "fake_output": "deployment.apps/shop env updated",
+      "hint": "kubectl set env deployment/<name> KEY=value -n <ns>"
+    },
+    {
+      "prompt": "Stop the reporting query on 10.0.2.22 from delaying the website's replica: cancel backend 22814.",
+      "expected_commands": ["psql -h 10.0.2.22 -c \"SELECT pg_cancel_backend(22814);\"", "psql -h 10.0.2.22 -c \"SELECT pg_cancel_backend(22814)\""],
+      "fake_output": " pg_cancel_backend\n-------------------\n t",
+      "hint": "pg_cancel_backend(<pid>) cancels one query without killing the connection."
+    }
+  ],
+  "resolution": "Asynchronous replicas are always slightly in the past. Moving every read to them means a user who has just saved something can be shown the version from before the save. With lag of a few milliseconds it almost never shows; with a replica 38 seconds behind it looks exactly like 'my change didn't save'. Two separate causes combined. The design gap was reading your own writes from a replica: the fix is to send a user's reads to the primary for a short window after they write (or to always read just-edited records from the primary). The operational trigger was a long analytics query on a replica that also served the site: on a Postgres standby, a long query can hold back replay of incoming changes, so the lag grows. Give reporting its own replica. And monitor replication lag with an alert, because every read-replica design quietly depends on it staying small.",
+  "real_commands_used": ["psql pg_stat_replication", "psql pg_stat_activity on the replica", "kubectl get configmap -o yaml", "kubectl set env", "psql pg_cancel_backend"]
+}

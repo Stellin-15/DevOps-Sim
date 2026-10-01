@@ -1,0 +1,49 @@
+{
+  "id": "systemdesign-tutorial-005",
+  "type": "tutorial",
+  "category": "systemdesign",
+  "title": "Replication: Read Replicas, Lag, and Failover",
+  "difficulty": "intermediate",
+  "tags": ["system-design", "replication", "databases", "availability"],
+  "intro": "Replication keeps copies of the database on several machines, for two reasons: surviving the loss of one (availability) and spreading reads (scale). It also introduces the question that runs through all of distributed systems: when is a copy up to date?",
+  "steps": [
+    {
+      "prompt": "On the primary database, see which replicas are connected and how far behind each is.",
+      "expected_commands": ["psql -c \"SELECT client_addr, state, replay_lag FROM pg_stat_replication;\"", "psql -c \"SELECT client_addr, state, replay_lag FROM pg_stat_replication\""],
+      "fake_output": " client_addr |   state   |   replay_lag\n-------------+-----------+-----------------\n 10.0.2.21   | streaming | 00:00:00.041\n 10.0.2.22   | streaming | 00:00:03.812",
+      "explanation": "Two replicas: one is 41 ms behind, the other nearly 4 seconds.",
+      "why": "Replicas are never exactly current under asynchronous replication; lag is normal, and it grows under heavy writes or on a slow replica. Lag is the number to monitor and alert on, because every read from a replica is a read of the past."
+    },
+    {
+      "prompt": "A user updates their profile and the page reloads from a replica that's 4 seconds behind. What do they see, and what's the usual fix?\n  a) An error; replicas must reject reads while lagging\n  b) Their old profile. Fix: read your own writes from the primary for a short time after writing\n  c) The new profile; replicas are always consistent\n  d) Nothing; the page hangs until the replica catches up\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "write -> primary (t=0)\nread  -> replica at t=0.1s, which is 4s behind -> returns the OLD profile\nfix: 'read-your-writes': route a user's reads to the primary for a few seconds after they write",
+      "hint": "The replica hasn't received the write yet.",
+      "explanation": "They see stale data: the read-your-writes problem.",
+      "why": "This is the classic read-replica bug, and it looks like 'my change didn't save'. Common fixes: send a user's reads to the primary for a few seconds after a write, read specific critical pages from the primary always, or wait for the replica to reach the write's position. systemdesign-incident-002 is this bug in production."
+    },
+    {
+      "prompt": "Check, on the replica 10.0.2.21, whether it's a read-only standby.",
+      "expected_commands": ["psql -h 10.0.2.21 -c \"SELECT pg_is_in_recovery();\"", "psql -h 10.0.2.21 -c \"SELECT pg_is_in_recovery()\""],
+      "fake_output": " pg_is_in_recovery\n-------------------\n t",
+      "explanation": "true: it's a standby, replaying changes from the primary, and it refuses writes.",
+      "why": "Exactly one node accepts writes. If two ever do (a 'split brain', typically after a network partition where both think they're primary), their data diverges and can't be merged automatically. Failover tooling (Patroni, or a managed service) exists mostly to prevent that."
+    },
+    {
+      "prompt": "For a payments ledger, losing a committed transaction is unacceptable. Which replication mode do you choose?\n  a) Asynchronous: the primary confirms the write at once and replicas catch up later\n  b) Synchronous: the primary confirms only after at least one replica has the write too\n  c) No replication; take nightly backups\n  d) It makes no difference\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "asynchronous: fast writes; a primary crash can lose the last few seconds of commits\nsynchronous:  no lost commits; every write waits for a replica, and writes stall if no replica answers",
+      "hint": "Which mode guarantees a second copy exists before the user is told 'saved'?",
+      "explanation": "Synchronous replication, for data you can't lose.",
+      "why": "It's a real trade: synchronous replication costs latency on every write and can stop writes if the replica is unreachable, so in practice it's configured as 'any one of two replicas'. Most systems use asynchronous replication and accept a few seconds of possible loss. The right answer depends on what the data is worth, which is why requirements come first."
+    },
+    {
+      "prompt": "The primary dies. In what order should failover happen?\n  a) Promote a replica, then make sure the old primary can't accept writes, then repoint the application\n  b) Make sure the old primary is really dead or fenced off, promote the most up-to-date replica, then repoint the application\n  c) Repoint the application first and sort the databases out later\n  d) Restart the application servers\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "1. fence the old primary (so it can't come back and accept writes)\n2. promote the replica with the least lag\n3. repoint clients (DNS, a virtual IP, or the connection pooler)\n4. rebuild the old primary as a new replica",
+      "hint": "What goes wrong if the old primary is only slow, not dead?",
+      "explanation": "Fence first, then promote, then repoint.",
+      "why": "A primary that's merely unreachable may still be taking writes from some clients. Promoting a replica without fencing it creates two primaries. Promoting the least-lagged replica minimises lost data. This sequence is why failover should be automated and rehearsed, not improvised at 3am."
+    }
+  ]
+}

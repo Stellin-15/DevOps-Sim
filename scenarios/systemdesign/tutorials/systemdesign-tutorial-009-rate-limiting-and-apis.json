@@ -1,0 +1,47 @@
+{
+  "id": "systemdesign-tutorial-009",
+  "type": "tutorial",
+  "category": "systemdesign",
+  "title": "Rate Limiting and Robust API Design",
+  "difficulty": "intermediate",
+  "tags": ["system-design", "rate-limiting", "api", "idempotency"],
+  "intro": "A public API is used by clients you don't control: buggy scripts, retry loops, and the occasional attacker. Rate limiting protects the system from them, and a few API design habits (idempotency, pagination, clear status codes) make it safe to use.",
+  "steps": [
+    {
+      "prompt": "The simplest rate limiter is a counter per client per time window. Count a request for client 42 in the current minute, with the key rate:42:1021.",
+      "expected_commands": ["redis-cli INCR rate:42:1021", "redis-cli incr rate:42:1021"],
+      "fake_output": "(integer) 1",
+      "explanation": "The counter for this client and this minute is now 1.",
+      "why": "INCR is atomic, so a thousand app servers can share one counter safely, which a counter in each server's memory can't do. That's why rate limiting state lives in a shared store such as Redis."
+    },
+    {
+      "prompt": "Make that counter expire on its own after 60 seconds.",
+      "expected_commands": ["redis-cli EXPIRE rate:42:1021 60", "redis-cli expire rate:42:1021 60"],
+      "fake_output": "(integer) 1",
+      "explanation": "The key will be deleted after 60 seconds.",
+      "why": "Without the expiry, a key is created for every client and every minute, for ever. In real code the INCR and EXPIRE are done together atomically (a Lua script, or 'SET ... NX EX'), so a crash between them can't leave a counter that never resets."
+    },
+    {
+      "prompt": "With a fixed window of 100 requests per minute, a client sends 100 requests at 12:00:59 and 100 more at 12:01:00. What happened, and what fixes it?\n  a) Nothing wrong; the limit worked\n  b) 200 requests passed in two seconds, double the intended rate. A sliding window or token bucket smooths the boundary\n  c) The second 100 were rejected\n  d) Redis lost the counter\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "fixed window:   simple, but allows 2x bursts at window edges\nsliding window: counts the last 60 seconds exactly; more memory\ntoken bucket:   tokens refill at a steady rate, bucket size = allowed burst   <- most common",
+      "hint": "Each request fell in a different one-minute window.",
+      "explanation": "A burst at the window boundary. Use a sliding window or token bucket.",
+      "why": "A token bucket has two settings that map to real needs: the refill rate (sustained requests per second) and the bucket size (how big a burst is tolerated). It's what API gateways, nginx's limit_req, and cloud providers use."
+    },
+    {
+      "prompt": "See how a well-behaved API tells a client it's been limited: request https://api.example.com/v1/orders and include the response headers.",
+      "expected_commands": ["curl -i https://api.example.com/v1/orders", "curl -si https://api.example.com/v1/orders", "curl -i -s https://api.example.com/v1/orders"],
+      "fake_output": "HTTP/2 429\nretry-after: 12\nx-ratelimit-limit: 100\nx-ratelimit-remaining: 0\nx-ratelimit-reset: 1790000412\ncontent-type: application/json\n\n{\"error\":\"rate_limited\",\"message\":\"Too many requests. Retry in 12 seconds.\"}",
+      "explanation": "Status 429, with headers saying when to retry and what the limit is.",
+      "why": "429 with Retry-After lets clients back off correctly instead of hammering. A limiter that answers 500, or silently drops requests, causes clients to retry immediately and makes the overload worse (the retry storm in sre-incident-001). Good limits protect both sides."
+    },
+    {
+      "prompt": "A client's 'create payment' request times out, and it doesn't know whether the payment went through. Retry it safely: POST to https://api.example.com/v1/payments with the header Idempotency-Key: 7f3c2a1b and the body in payment.json.",
+      "expected_commands": ["curl -i -X POST https://api.example.com/v1/payments -H 'Idempotency-Key: 7f3c2a1b' -d @payment.json", "curl -i -X POST https://api.example.com/v1/payments -H \"Idempotency-Key: 7f3c2a1b\" -d @payment.json"],
+      "fake_output": "HTTP/2 200\nidempotent-replayed: true\ncontent-type: application/json\n\n{\"id\":\"pay_91bc3c39\",\"status\":\"succeeded\",\"amount\":4200}",
+      "explanation": "The server recognised the key and returned the original result instead of charging again.",
+      "why": "GET, PUT, and DELETE are naturally safe to repeat; POST isn't. An idempotency key (chosen by the client, stored by the server with the result) makes 'retry on timeout' safe for operations that must happen exactly once. Stripe's API popularised it, and it's the API-level version of the idempotent consumer in systemdesign-tutorial-007."
+    }
+  ]
+}

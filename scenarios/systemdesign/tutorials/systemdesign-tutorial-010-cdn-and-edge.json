@@ -1,0 +1,48 @@
+{
+  "id": "systemdesign-tutorial-010",
+  "type": "tutorial",
+  "category": "systemdesign",
+  "title": "The Edge: CDNs, HTTP Caching, and DNS",
+  "difficulty": "intermediate",
+  "tags": ["system-design", "cdn", "http-caching", "dns"],
+  "intro": "The fastest request is one that never reaches your servers. A content delivery network (CDN) keeps copies of your responses in hundreds of locations near users. Whether it can depends almost entirely on a few HTTP headers you control.",
+  "steps": [
+    {
+      "prompt": "Check how a static asset is being cached: fetch only the headers of https://shop.example.com/static/app.8c7e5a.js and show the caching ones.",
+      "expected_commands": ["curl -sI https://shop.example.com/static/app.8c7e5a.js | grep -Ei 'cache-control|age|x-cache|etag'", "curl -sI https://shop.example.com/static/app.8c7e5a.js"],
+      "fake_output": "cache-control: public, max-age=31536000, immutable\netag: \"8c7e5a667f1b\"\nage: 86212\nx-cache: Hit from cloudfront",
+      "explanation": "Served from the CDN (a hit), cached for a year, and the copy is about a day old.",
+      "why": "'x-cache: Hit' means your servers never saw this request. 'Age' is how long the edge has held it. A year-long max-age is safe here only because of the next step."
+    },
+    {
+      "prompt": "The file is cached for a year. How do you ship a new version of app.js to users?\n  a) Wait a year\n  b) Put a hash of the content in the filename (app.8c7e5a.js), so a new version is a new URL\n  c) Purge the whole CDN on every deploy\n  d) Set max-age to 0 on everything\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "app.8c7e5a.js -> cached for ever (the content at this URL never changes)\nnew build     -> app.f41d09.js, referenced from the HTML\nindex.html    -> short cache (or no-cache), so users pick up the new file names quickly",
+      "hint": "If the URL changes whenever the content changes, the old cached copy is never wrong.",
+      "explanation": "Content-hashed file names ('cache busting').",
+      "why": "This turns cache invalidation, a hard problem, into a non-problem: cached files are immutable, and only the small HTML page that names them needs to stay fresh. Purging the CDN works but is slow, rate-limited, and easy to forget."
+    },
+    {
+      "prompt": "Now check the product API response: fetch only the headers of https://shop.example.com/api/products/42 and show the caching ones.",
+      "expected_commands": ["curl -sI https://shop.example.com/api/products/42 | grep -Ei 'cache-control|age|x-cache|etag'", "curl -sI https://shop.example.com/api/products/42"],
+      "fake_output": "cache-control: private, no-store\nx-cache: Miss from cloudfront",
+      "explanation": "private, no-store: neither the CDN nor the browser may cache it, so every request reaches your servers.",
+      "why": "'private, no-store' is right for personal data (a user's cart, their account). For public data like a product page, it throws away the cheapest scaling you have. 'public, max-age=60' would let the CDN absorb almost all of that traffic, at the cost of prices being up to a minute stale."
+    },
+    {
+      "prompt": "Product details change rarely, but the same URL is requested 5,000 times a second. Which header value fits?\n  a) cache-control: private, no-store\n  b) cache-control: public, s-maxage=60, stale-while-revalidate=300\n  c) cache-control: public, max-age=31536000, immutable\n  d) No cache-control header at all\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "s-maxage=60                  the CDN keeps it 60 seconds -> your servers see ~1 request/minute per edge instead of 5,000/second\nstale-while-revalidate=300   after 60s the CDN serves the old copy at once and refreshes it in the background",
+      "hint": "You want the CDN to cache it briefly, and never make users wait while it refreshes.",
+      "explanation": "A short shared cache with stale-while-revalidate.",
+      "why": "s-maxage applies to shared caches (the CDN) only, so browsers still check back. stale-while-revalidate means nobody waits for the refresh, and it prevents a stampede when the entry expires. A year-long cache would be wrong: unlike the hashed JS file, this URL's content changes."
+    },
+    {
+      "prompt": "How do users reach the nearest edge in the first place? Resolve shop.example.com.",
+      "expected_commands": ["dig +short shop.example.com", "dig shop.example.com +short"],
+      "fake_output": "d1a2b3c4.cloudfront.net.\n13.224.10.41\n13.224.10.88",
+      "explanation": "The name is an alias for the CDN, which answers with addresses near whoever asked.",
+      "why": "CDNs steer users with DNS and anycast: the same name resolves to a nearby location for each user. DNS answers are cached too (the TTL), which is why DNS-based failover is never instant: a 300-second TTL means some users keep the old address for 5 minutes."
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "id": "systemdesign-incident-004",
+  "type": "incident",
+  "category": "systemdesign",
+  "title": "Scaling the app up took the database down",
+  "difficulty": "intermediate",
+  "tags": ["system-design", "connection-pooling", "databases", "scaling"],
+  "intro": "Traffic doubled for a sale, so the team scaled the API from 20 pods to 60. Within a minute, errors went from zero to everywhere: 'FATAL: sorry, too many clients already'. The database's CPU is at 15%. It isn't slow; it's refusing connections.",
+  "steps": [
+    {
+      "prompt": "Check the database's connection limit.",
+      "expected_commands": ["psql -c \"SHOW max_connections;\"", "psql -c \"SHOW max_connections\""],
+      "fake_output": " max_connections\n-----------------\n 500",
+      "hint": "SHOW max_connections;"
+    },
+    {
+      "prompt": "See how the current connections are being used: count them by state.",
+      "expected_commands": ["psql -c \"SELECT state, count(*) FROM pg_stat_activity GROUP BY state;\"", "psql -c \"SELECT count(*), state FROM pg_stat_activity GROUP BY state;\"", "psql -c \"SELECT state, count(*) FROM pg_stat_activity GROUP BY state\""],
+      "fake_output": " state  | count\n--------+-------\n idle   |   471\n active |    26",
+      "hint": "pg_stat_activity grouped by state."
+    },
+    {
+      "prompt": "497 connections, and 471 of them idle. Check each API pod's pool size in the ConfigMap api-config (namespace shop).",
+      "expected_commands": ["kubectl get configmap api-config -n shop -o yaml | grep -i pool", "kubectl get cm api-config -n shop -o yaml | grep -i pool", "kubectl get configmap api-config -n shop -o yaml"],
+      "fake_output": "  DB_POOL_SIZE: \"20\"",
+      "hint": "Look for the pool size setting."
+    },
+    {
+      "prompt": "60 pods x 20 connections = 1,200 wanted, against a limit of 500. Stop the bleeding: scale deployment api in shop back to 20 replicas.",
+      "expected_commands": ["kubectl scale deployment api --replicas=20 -n shop", "kubectl scale deploy api --replicas=20 -n shop", "kubectl scale deployment/api --replicas=20 -n shop"],
+      "fake_output": "deployment.apps/api scaled",
+      "hint": "kubectl scale deployment <name> --replicas=<n> -n <ns>"
+    },
+    {
+      "prompt": "The lasting fix is a connection pooler between the app and the database. A PgBouncer deployment is prepared in pgbouncer.yaml (transaction pooling, 100 server connections). Apply it in shop.",
+      "expected_commands": ["kubectl apply -f pgbouncer.yaml -n shop"],
+      "fake_output": "deployment.apps/pgbouncer created\nservice/pgbouncer created\n(point DB_HOST at pgbouncer.shop.svc: thousands of client connections now share 100 real ones)",
+      "hint": "kubectl apply -f <file> -n <ns>"
+    }
+  ],
+  "resolution": "Each API pod keeps its own pool of 20 database connections, so the total is pods times pool size. At 20 pods that was 400, just under the limit of 500. At 60 it was 1,200, and the database refused the rest. Scaling the stateless tier moved the bottleneck to the stateful one, which is a pattern worth expecting in every design: ask of each scaling step what it puts pressure on downstream. The database was barely working (15% CPU, 26 active queries); it had simply run out of connection slots, almost all of them idle. In Postgres each connection is a whole process, so raising max_connections to thousands costs memory and performance. The standard answer is a pooler such as PgBouncer (or RDS Proxy): many client connections share a small number of real ones, because a connection is only needed for the duration of a transaction. Also set each pod's pool from the arithmetic (limit divided by maximum pod count), and include the database's connection limit in capacity planning for autoscaling.",
+  "real_commands_used": ["psql SHOW max_connections", "psql pg_stat_activity GROUP BY state", "kubectl get configmap -o yaml", "kubectl scale", "kubectl apply -f pgbouncer.yaml"]
+}

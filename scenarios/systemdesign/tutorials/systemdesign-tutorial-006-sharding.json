@@ -1,0 +1,49 @@
+{
+  "id": "systemdesign-tutorial-006",
+  "type": "tutorial",
+  "category": "systemdesign",
+  "title": "Partitioning and Sharding: When One Database Isn't Enough",
+  "difficulty": "advanced",
+  "tags": ["system-design", "sharding", "partitioning", "consistent-hashing"],
+  "intro": "Replicas scale reads. When writes or data size outgrow one machine, you split the data across several: sharding. It's powerful and expensive: cross-shard queries and transactions get hard, so it's the last step, after indexes, caching, and replicas. The key decision is how to split.",
+  "steps": [
+    {
+      "prompt": "A chat app shards its messages table. Which shard key keeps one conversation's messages together and spreads load evenly?\n  a) message timestamp\n  b) conversation_id\n  c) the sender's country\n  d) an auto-incrementing message id\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "conversation_id: one conversation = one shard (a single-shard read), millions of conversations spread evenly\ntimestamp:       all current writes hit the newest shard (a hot shard)\ncountry:         a few shards get most of the load\nauto-increment:  same problem as timestamp",
+      "hint": "The main query is 'load the latest messages in this conversation'. Which key makes that a single-shard query?",
+      "explanation": "Shard by conversation_id.",
+      "why": "A good shard key has two properties: the common queries include it (so they hit one shard), and its values spread load evenly. Keys that grow over time, like timestamps or sequential ids, send all new writes to one shard. Changing a shard key later means moving all the data, so this is a decision to get right early."
+    },
+    {
+      "prompt": "With hash sharding as 'shard = hash(key) mod N', what happens when you go from 4 shards to 5?\n  a) Only the new shard's share of keys moves\n  b) Nearly every key maps to a different shard, so almost all data must move\n  c) Nothing moves\n  d) Exactly half the keys move\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "hash(key) mod 4  vs  hash(key) mod 5: the result changes for about 80% of keys\nconsistent hashing: adding a 5th node moves only about 1/5 of the keys",
+      "hint": "Try a few numbers: 10 mod 4 and 10 mod 5, 11 mod 4 and 11 mod 5...",
+      "explanation": "Almost everything moves: 'mod N' breaks when N changes.",
+      "why": "This is the problem consistent hashing solves. Keys and nodes are placed on a ring, and each key belongs to the next node clockwise, so adding a node takes keys only from its neighbour: about 1/N of the data. Cassandra, DynamoDB, and most distributed caches work this way."
+    },
+    {
+      "prompt": "See it in a real system: ask Redis Cluster which hash slot the key user:1001 belongs to.",
+      "expected_commands": ["redis-cli CLUSTER KEYSLOT user:1001", "redis-cli cluster keyslot user:1001"],
+      "fake_output": "(integer) 9451",
+      "explanation": "user:1001 maps to slot 9451 of 16,384.",
+      "why": "Redis Cluster uses a fixed 16,384 slots as a layer between keys and nodes: keys map to slots for ever, and slots are assigned to nodes. Rebalancing moves whole slots, not individual keys. It's the same idea as consistent hashing, with an explicit table."
+    },
+    {
+      "prompt": "See which node owns which slots in the cluster.",
+      "expected_commands": ["redis-cli CLUSTER NODES", "redis-cli cluster nodes", "redis-cli CLUSTER SHARDS"],
+      "fake_output": "a1b2c3 10.0.3.11:6379 master - 0 0 1 connected 0-5460\nd4e5f6 10.0.3.12:6379 master - 0 0 2 connected 5461-10922\ng7h8i9 10.0.3.13:6379 master - 0 0 3 connected 10923-16383",
+      "explanation": "Three primaries, each owning about a third of the slots. Slot 9451 lives on 10.0.3.12.",
+      "why": "A client asks any node, and is redirected to the owner if needed. The slot map is the cluster's routing table. Each primary should also have a replica, or losing one node loses a third of the data."
+    },
+    {
+      "prompt": "One celebrity account gets a million times the traffic of a normal one, and its shard is overloaded. What's this called, and what helps?\n  a) Replication lag; add replicas of every shard\n  b) A hot key (hot partition); cache it aggressively, or split that one key across several sub-keys\n  c) Split brain; fence the shard\n  d) Normal behaviour; add shards evenly\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "even hashing spreads KEYS evenly, not TRAFFIC: one very popular key still lands on one shard\nmitigations: cache in front of it, replicate that shard's reads, or split the key (celebrity:42:bucket0..9)",
+      "hint": "Adding shards doesn't help if all the traffic is for one key.",
+      "explanation": "A hot key. Cache it, or split it.",
+      "why": "Sharding assumes load follows the key distribution, and real traffic is skewed. Adding shards can't help, because one key can't be split by hashing. Find hot keys before they find you ('redis-cli --hotkeys', per-partition metrics). systemdesign-incident-001 is this failure."
+    }
+  ]
+}

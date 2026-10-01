@@ -1,0 +1,48 @@
+{
+  "id": "systemdesign-tutorial-002",
+  "type": "tutorial",
+  "category": "systemdesign",
+  "title": "Scaling Out: Load Balancers and Stateless Servers",
+  "difficulty": "beginner",
+  "tags": ["system-design", "load-balancing", "scaling"],
+  "intro": "One server has a ceiling. To go past it you either buy a bigger server (scale up, which has a limit and a single point of failure) or add more servers behind a load balancer (scale out). Scaling out only works if any server can handle any request.",
+  "steps": [
+    {
+      "prompt": "Look at how the load balancer is configured: print nginx's full config and show the upstream block.",
+      "expected_commands": ["nginx -T | grep -A8 upstream", "sudo nginx -T | grep -A8 upstream", "nginx -T | grep -A 8 upstream"],
+      "fake_output": "upstream shop_backend {\n    least_conn;\n    server 10.0.1.11:8080 max_fails=3 fail_timeout=10s;\n    server 10.0.1.12:8080 max_fails=3 fail_timeout=10s;\n    server 10.0.1.13:8080 max_fails=3 fail_timeout=10s;\n    keepalive 64;\n}",
+      "explanation": "Three backends, 'least connections' balancing, and a passive health check: 3 failures take a server out for 10 seconds.",
+      "why": "Round robin (the default) suits identical, short requests. least_conn is better when request times vary, since it stops slow requests piling up on one server. The health check is what turns three servers into redundancy: without it, a dead server still receives a third of the traffic."
+    },
+    {
+      "prompt": "See the balancing in action: request http://shop.internal/whoami four times in a row.",
+      "expected_commands": ["for i in 1 2 3 4; do curl -s http://shop.internal/whoami; done", "for i in 1 2 3 4; do curl -s http://shop.internal/whoami; echo; done"],
+      "fake_output": "served by app-11\nserved by app-12\nserved by app-13\nserved by app-11",
+      "explanation": "Consecutive requests land on different servers.",
+      "why": "This is the property everything else depends on: a user's next request will probably hit a different server. Anything a server keeps only in its own memory or on its own disk is invisible to the others."
+    },
+    {
+      "prompt": "The app stores login sessions in each server's memory, so users are logged out at random. What's the right fix?\n  a) Turn on sticky sessions so each user always hits the same server\n  b) Move session state to a shared store (Redis or the database) so every server can serve every user\n  c) Run only one server\n  d) Increase the session timeout\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "Stateless servers + a shared session store:\n  any server can serve any request, servers can be added or removed freely,\n  and a server dying loses no sessions.",
+      "hint": "Which option still works when a server dies or a new one is added?",
+      "explanation": "Keep servers stateless; put state in a shared store.",
+      "why": "Sticky sessions look like a quick fix, but they make servers special: when one dies its users are logged out, load becomes uneven, and autoscaling and deploys get harder. Stateless servers are what make horizontal scaling, rolling deploys, and self-healing possible. That's why Kubernetes Deployments assume them."
+    },
+    {
+      "prompt": "The load balancer must route /api/* to the API servers and /images/* to the image service, and terminate TLS. Which kind of load balancer does that?\n  a) Layer 4 (TCP): it forwards connections without reading them\n  b) Layer 7 (HTTP): it reads each request and can route on path, host, and headers\n  c) DNS round robin\n  d) Either; there's no difference\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "Layer 4: fast, protocol-agnostic, routes by IP and port only (AWS NLB, HAProxy tcp mode)\nLayer 7: understands HTTP, routes by path/host/header, terminates TLS, retries (AWS ALB, nginx, Envoy)",
+      "hint": "Which layer can see the URL path?",
+      "explanation": "Path-based routing needs a Layer 7 load balancer.",
+      "why": "A Layer 4 balancer only sees addresses and ports, so it can't tell /api from /images. It's the choice for raw throughput and non-HTTP protocols (databases, game servers). Layer 7 costs more CPU per request but understands it. Large systems often use both: L4 at the edge, L7 behind it."
+    },
+    {
+      "prompt": "Is the load balancer itself now a single point of failure? Check how many addresses the public name resolves to.",
+      "expected_commands": ["dig +short shop.example.com", "dig shop.example.com +short"],
+      "fake_output": "198.51.100.10\n198.51.100.11",
+      "explanation": "Two load balancer addresses, in different zones.",
+      "why": "A design review always asks 'what happens when this box dies?' of every component, including the one you added for redundancy. Load balancers are run in pairs or as a managed service across zones. Follow the request path end to end and make sure nothing on it exists only once."
+    }
+  ]
+}
