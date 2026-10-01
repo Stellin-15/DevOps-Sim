@@ -61,6 +61,11 @@ string.
     and opening SSH to 0.0.0.0/0 on AWS gets flagged.
   - **Debrief.** Afterwards you get a debrief, plus one efficient path
     through the problem. Type `giveup` at any time to see the answer.
+- **Stats**: one screen showing where you stand. For every category it
+  lists tutorials, incidents, labs, and mysteries done, and your best
+  exam score against the 66% pass mark. It also shows career paths, your
+  mystery average, and the scenarios that took you the most attempts,
+  and suggests up to three concrete next steps.
 - **Sandbox** — no scoring, no steps: a randomly generated broken
   environment to explore with real commands. Four to pick from:
   - **Kubernetes** — a cluster of Deployments, Services, and pods (some
@@ -202,6 +207,8 @@ scenario_loader.py  category-aware loading: list_categories(),
                      load_yaml_labs(), load_career_paths(),
                      load_all_scenarios_by_id()
 exam.py             Exam Mode: random timed questions, scoring, history
+stats.py            Stats screen: progress per category, exam bests,
+                     suggested next steps
 mystery.py          Mystery Incidents: symptom-only, free-form diagnosis
                      on a seeded sandbox; goals + evidence + root cause
 career_path.py       chains existing scenarios across categories into
@@ -399,12 +406,11 @@ Terraform modules, and RBAC/PDB/storage incidents) → AWS category, VPC
 sandbox, and AWS mysteries → Azure and Google Cloud categories → Security
 category and hacked-server mysteries → Server Fleet Ops category → SRE
 category → cloud, Ansible, and postmortem Writing Labs, plus four more
-career paths.
+career paths → Stats screen.
 
 Next, in priority order (details in CLAUDE.md and GAPS.md):
-- **A stats screen and a spaced-repetition review mode** (next up)
-- Azure and Google Cloud sandboxes, like the AWS one, and more AWS
-  mysteries
+- **Azure and Google Cloud sandboxes**, like the AWS one, with mysteries
+  (next up)
 - Exam-specific gap passes for other certifications (CKAD, Terraform
   Associate, AWS/Azure/GCP associate exams)
 - More mysteries, including Kubernetes ones (these need a reactive

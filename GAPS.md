@@ -1024,7 +1024,9 @@ that no amount of additional scenario content can fully close:
    when you solved it.
 3. Take an Exam for each category until you pass (66%) consistently —
    then retake it a week later. Spaced recall is what makes commands
-   stick; a single pass right after the tutorials proves little.
+   stick; a single pass right after the tutorials proves little. The
+   Stats screen shows which categories you've passed, your best score
+   in each, and what to do next.
 4. Complete the Writing Labs for each category.
 5. Play all eleven Career Paths to practice switching layers mid-problem —
    especially "The Worst On-Call Night".

@@ -49,3 +49,10 @@ def test_exam_menu_runs_an_exam_and_records_it(monkeypatch, capsys, isolated_pro
     assert "EXAM RESULTS" in out and "Score: 0/2" in out
     saved = progress_module.load_progress()
     assert len(saved["exam_history"]) == 1
+
+
+def test_stats_screen_opens_from_the_menu(monkeypatch, capsys, isolated_progress):
+    drive(monkeypatch, ["7", "", "q"])
+    game.main_menu_loop()
+    out = capsys.readouterr().out
+    assert "Your Progress" in out and "Suggested next:" in out and "Start here" in out

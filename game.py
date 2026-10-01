@@ -12,6 +12,7 @@ import aws_sandbox
 import docker_sandbox
 import linux_sandbox
 import sandbox
+import stats
 import yaml_lab
 from engine import read_input, run_scenario
 from scenario_loader import (
@@ -195,6 +196,13 @@ def sandbox_menu() -> None:
         print("Invalid choice.")
 
 
+def show_stats(progress: dict) -> None:
+    data = stats.build_stats(progress, load_tutorials(), load_incidents(), load_yaml_labs(),
+                             load_career_paths(), load_mysteries())
+    print("\n" + stats.render_stats(data, CATEGORY_LABELS))
+    read_input("\nPress Enter to go back: ")
+
+
 def main_menu_loop() -> None:
     progress = progress_module.load_progress()
 
@@ -206,6 +214,7 @@ def main_menu_loop() -> None:
         print("  4. Exam Mode (timed, no hints, scored)")
         print("  5. Mystery Incidents (just a symptom — find and fix it your way)")
         print("  6. Sandbox (Kubernetes, Docker, Linux, or AWS — explore freely)")
+        print("  7. Stats (your progress, exam scores, and what to do next)")
         print("  q. Quit")
 
         choice = read_input("\nChoose: ").lower()
@@ -227,6 +236,8 @@ def main_menu_loop() -> None:
             mystery_menu(progress)
         elif choice == "6":
             sandbox_menu()
+        elif choice == "7":
+            show_stats(progress)
         else:
             print("Invalid choice.")
 

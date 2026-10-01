@@ -257,8 +257,8 @@ Don't duplicate content from these files elsewhere — link to them.
   it finds the evidence.
 - **game.py** — entry point / main menu: Practice (category picker →
   Learn/Incidents within it), Career Paths, Writing Labs, Exam Mode,
-  Mystery Incidents, Sandbox, Quit. Mystery best scores are kept in
-  `progress["mystery_scores"]`.
+  Mystery Incidents, Sandbox, Stats, Quit. Mystery best scores are kept
+  in `progress["mystery_scores"]`.
   `choose_category()` lists categories from `list_categories()` plus an
   "All categories" option (passes `category=None` through to the
   loaders). `exit`/`quit` work at every prompt — see `engine.read_input` /
@@ -267,6 +267,17 @@ Don't duplicate content from these files elsewhere — link to them.
   wrapper works for `run_scenario`, `yaml_lab.run_yaml_lab`, and (via a
   lambda closing over `scenarios_by_id`/`progress`)
   `career_path.run_career_path`.
+- **stats.py** — the Stats screen (menu 7). Read-only.
+  `build_stats(progress, tutorials, incidents, labs, paths, mysteries)`
+  returns plain data:
+  - per-category done/total for Learn, Incidents, Labs, and Mysteries;
+  - the best exam score per category, against `exam.PASS_MARK`;
+  - career paths, the mystery average, and the most-attempted scenarios.
+
+  `suggest_next()` gives up to three next steps: finish the category
+  you're furthest into, take the exam for a category whose tutorials are
+  done, then incidents and mysteries. `render_stats()` turns the data
+  into text. Completed ids that no longer exist in content are ignored.
 - **progress.py** — reads/writes `progress.json` (completed scenarios per
   type — tutorial/incident/yaml_lab/career_path — attempt counts per
   scenario id). Deliberately **flat, not nested per category** — every
@@ -347,7 +358,7 @@ Current per-category content depth (tutorials / incidents):
 - security: 10 / 6 (+ 2 hacked-server mysteries on the Linux sandbox)
 - servers: 11 / 6 (fleet ops: Ansible, patching, time, LVM, backups)
 - sre: 10 / 6 (big-tech practices, via public tools)
-- **total: 175 tutorials, 93 incidents, 22 Writing Labs, 12 Mystery Incidents (4 linux, 2 docker, 4 aws, 2 security)**
+- **total: 175 tutorials, 93 incidents, 28 Writing Labs, 11 career paths, 12 Mystery Incidents (4 linux, 2 docker, 4 aws, 2 security)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with
@@ -369,7 +380,7 @@ existing tutorial/incident ids by id — no new scenario authoring, purely
 composition of what already exists. `test_career_path_content.py` enforces
 every step id resolves to a real scenario (self-consistency, same pattern
 as the other content tests) and that a path spans at least 2 categories
-(the whole point is combining categories, not padding one). Currently 7 paths: `path-001`
+(the whole point is combining categories, not padding one). Currently 11 paths: `path-001`
 build→ship (terraform → docker → kubernetes → cicd → monitoring),
 `path-002` incident chain (linux → networking → kubernetes → monitoring),
 `path-003` ML model laptop→production (mlops + docker), `path-004`
@@ -378,7 +389,11 @@ kubernetes → cicd), `path-005` platform from zero (networking →
 terraform → linux → kubernetes), and `path-006` "The Worst On-Call
 Night" (seven incidents only, across seven categories), and `path-007`
 "Ship an LLM Service Safely" (buildx → supply chain → GitOps → vLLM →
-LLM incident → SLOs, built from the step-5 new-topic content). More paths need
+LLM incident → SLOs, built from the step-5 new-topic content). Then
+`path-008` multi-cloud (aws → gcp → azure), `path-009` security incident
+response (security → aws → sre), `path-010` Patch Tuesday (security →
+servers → sre), and `path-011` SRE at scale (sre → monitoring →
+kubernetes). More paths need
 no new scenario content — just new orderings of existing ids.
 
 ## Build status vs. SPEC.md's v1–v6 order
@@ -466,7 +481,7 @@ final `resolution` debrief instead).
 python -m pytest
 ```
 
-(`pytest.ini` points it at `tests/`.) Seventeen files:
+(`pytest.ini` points it at `tests/`.) Eighteen files:
 - `test_engine.py` — matching/normalization logic, proven kubectl-agnostic
 - `test_scenario_loader.py` — category-aware JSON loading (`list_categories`,
   category-filtered vs. aggregated `load_tutorials`/`load_incidents`,
@@ -497,6 +512,9 @@ python -m pytest
   scoring, the pass mark, time-limit edge cases with a fake clock, early
   exit, no-feedback-until-the-end, history — plus the content-wide
   answerability guard described under exam.py
+- `test_stats.py` — counts, exam pass marks, suggestions, and rendering
+  on synthetic content, plus fresh and fully-complete progress over the
+  real content
 - `test_game.py` — smoke tests that import game.py and drive the real
   main menu with scripted input. Added after a syntax error in game.py
   slipped past a fully green suite because nothing imported it.
@@ -556,12 +574,12 @@ See GAPS.md's final 'Overall' part for the reasoning. In priority order:
    Natural follow-ups: Azure and GCP sandboxes (the aws_sandbox pattern
    of layered reachability plus hooks), more mysteries on the AWS
    sandbox, and per-cloud exam gap passes.
-1. **Stats screen and spaced-repetition review** (next, per the agreed
-   roadmap order: writing labs ✓ → exam mode ✓ → sandboxes ✓ →
-   mystery incidents ✓ → new-topic content ✓ → stats/spaced-repetition
-   review → more cert passes). progress.json already records attempts
-   and exam history, so a review mode can resurface steps the player
-   missed or hasn't seen in a while.
+1. ✓ **Stats screen** (stats.py, menu 7). The spaced-repetition review
+   mode that was planned with it is **not wanted**: the user asked to
+   continue with everything except spaced repetition. Don't build it
+   unless they ask.
+1b. **Azure and GCP sandboxes** (next), following the aws_sandbox
+   pattern, each with mysteries.
 2. Per-category exam gap passes (like Part 1 did for the CKA): e.g.
    Terraform Associate, CKAD, AWS certs.
 3. More mysteries. A Kubernetes one needs the Kubernetes sandbox to
