@@ -1,0 +1,49 @@
+{
+  "id": "databases-incident-005",
+  "type": "incident",
+  "category": "databases",
+  "title": "Vacuum runs every few minutes and removes nothing",
+  "difficulty": "advanced",
+  "tags": ["postgresql", "vacuum", "bloat", "prepared-transactions"],
+  "intro": "The jobs table holds about 50,000 live rows and is 60 GB on disk, growing 2 GB a day. Queries on it get slower every week. Autovacuum is running on it constantly, so it isn't being skipped. A colleague already tried VACUUM FULL at the weekend; the table was back to its old size within days.",
+  "steps": [
+    {
+      "prompt": "Vacuum the jobs table by hand with a report, and read what it says about dead rows.",
+      "expected_commands": ["psql -c \"VACUUM (VERBOSE) jobs;\"", "psql -c \"VACUUM VERBOSE jobs;\"", "psql -c \"VACUUM (VERBOSE) jobs\"", "psql -c \"VACUUM VERBOSE jobs\"", "psql -c \"VACUUM (VERBOSE, ANALYZE) jobs;\""],
+      "fake_output": "INFO:  vacuuming \"shop.public.jobs\"\nINFO:  finished vacuuming \"shop.public.jobs\": index scans: 0\ntuples: 0 removed, 412004118 remain, 411954007 are dead but not yet removable\nremovable cutoff: 771204410, which was 98120044 XIDs old when operation ended\nVACUUM",
+      "hint": "VACUUM (VERBOSE) <table>;"
+    },
+    {
+      "prompt": "412 million dead rows, and none of them removable. Vacuum may only remove a row version once no transaction anywhere could still need to see it, and the 'removable cutoff' is 98 million transactions old. Something is holding an old snapshot. The usual suspect is a long-running transaction: show the oldest transactions, selecting pid, state, and xact_start from pg_stat_activity where xact_start is not null, ordered by xact_start, top 3.",
+      "expected_commands": ["psql -c \"SELECT pid, state, xact_start FROM pg_stat_activity WHERE xact_start IS NOT NULL ORDER BY xact_start LIMIT 3;\"", "psql -c \"SELECT pid, state, xact_start FROM pg_stat_activity WHERE xact_start IS NOT NULL ORDER BY xact_start LIMIT 3\"", "psql -c \"SELECT pid, state, xact_start FROM pg_stat_activity WHERE xact_start IS NOT NULL ORDER BY xact_start ASC LIMIT 3;\""],
+      "fake_output": "  pid  | state  |          xact_start\n-------+--------+-------------------------------\n 71204 | active | 2026-09-28 11:41:07.120441+00\n 71210 | active | 2026-09-28 11:41:07.884102+00\n 71188 | active | 2026-09-28 11:41:08.004410+00",
+      "hint": "SELECT pid, state, xact_start FROM pg_stat_activity WHERE xact_start IS NOT NULL ORDER BY xact_start LIMIT 3;"
+    },
+    {
+      "prompt": "Nothing there: the oldest transaction started a second ago. The second suspect is a replication slot holding back the cleanup horizon. Check: select slot_name, active, and xmin from pg_replication_slots.",
+      "expected_commands": ["psql -c \"SELECT slot_name, active, xmin FROM pg_replication_slots;\"", "psql -c \"SELECT slot_name, active, xmin FROM pg_replication_slots\"", "psql -c \"SELECT slot_name, active, xmin, catalog_xmin FROM pg_replication_slots;\"", "psql -c \"SELECT * FROM pg_replication_slots;\""],
+      "fake_output": " slot_name | active | xmin\n-----------+--------+------\n pg_2      | t      |\n pg_3      | t      |",
+      "hint": "The view is pg_replication_slots; the column is xmin."
+    },
+    {
+      "prompt": "Both slots are active with no xmin held. The third suspect is the one people forget: a prepared transaction, the first half of a two-phase commit that was never finished. They survive disconnects and restarts and don't appear in pg_stat_activity. List them.",
+      "expected_commands": ["psql -c \"SELECT * FROM pg_prepared_xacts;\"", "psql -c \"SELECT * FROM pg_prepared_xacts\"", "psql -c \"TABLE pg_prepared_xacts;\"", "psql -c \"SELECT gid, prepared, owner FROM pg_prepared_xacts;\""],
+      "fake_output": " transaction |           gid           |           prepared            | owner | database\n-------------+-------------------------+-------------------------------+-------+----------\n   771204410 | payment_sync_batch_0611 | 2026-06-11 02:14:40.118204+00 | app   | shop",
+      "hint": "SELECT * FROM pg_prepared_xacts;"
+    },
+    {
+      "prompt": "A prepared transaction from 11 June, three and a half months ago, with exactly the transaction id of vacuum's cutoff. The payments team confirms that batch job crashed that night and its work was redone by hand. Discard the prepared transaction payment_sync_batch_0611.",
+      "expected_commands": ["psql -c \"ROLLBACK PREPARED 'payment_sync_batch_0611';\"", "psql -c \"ROLLBACK PREPARED 'payment_sync_batch_0611'\""],
+      "fake_output": "ROLLBACK PREPARED",
+      "hint": "ROLLBACK PREPARED '<gid>';"
+    },
+    {
+      "prompt": "Vacuum the jobs table again with a report.",
+      "expected_commands": ["psql -c \"VACUUM (VERBOSE) jobs;\"", "psql -c \"VACUUM VERBOSE jobs;\"", "psql -c \"VACUUM (VERBOSE) jobs\"", "psql -c \"VACUUM VERBOSE jobs\"", "psql -c \"VACUUM (VERBOSE, ANALYZE) jobs;\""],
+      "fake_output": "INFO:  vacuuming \"shop.public.jobs\"\nINFO:  finished vacuuming \"shop.public.jobs\": index scans: 1\ntuples: 411954007 removed, 50111 remain, 0 are dead but not yet removable\nVACUUM",
+      "hint": "The same command as the first step."
+    }
+  ],
+  "resolution": "Vacuum was never the problem; it was being told it wasn't allowed to clean. PostgreSQL keeps old row versions for as long as any transaction might still need to see them, and the oldest such transaction sets a horizon for the whole database. A two-phase-commit batch job crashed on 11 June between PREPARE TRANSACTION and COMMIT PREPARED. A prepared transaction is designed to survive crashes and restarts, so it sat there for months, invisible in pg_stat_activity, holding the horizon at that night. Every row version created and discarded since then, in every table, had to be kept. The jobs table, updated constantly, showed it first: 50,000 live rows under 412 million dead ones. That's also why VACUUM FULL only helped for days: it rewrote the table, and the dead rows piled straight back up. When vacuum reports rows that are 'dead but not yet removable', check the three things that hold the horizon, in this order: old transactions in pg_stat_activity (including idle in transaction), replication slots with an old xmin (and replicas using hot_standby_feedback), and pg_prepared_xacts. The transaction id in vacuum's 'removable cutoff' matches the culprit, as it did here. Rolling the prepared transaction back released the horizon and one ordinary vacuum removed everything; the file stays 60 GB but the space is reused, and pg_repack can shrink it online. This was also quietly heading for something worse: a horizon stuck that long blocks freezing, which is the road to transaction id wraparound. Prevention: set max_prepared_transactions to 0 unless you really use two-phase commit; if you do, alert on any prepared transaction older than a few minutes; and alert on the age of the oldest transaction horizon, which catches all three causes at once.",
+  "real_commands_used": ["psql VACUUM (VERBOSE) — read 'dead but not yet removable'", "psql pg_stat_activity ordered by xact_start", "psql pg_replication_slots (xmin)", "psql pg_prepared_xacts", "psql ROLLBACK PREPARED", "psql VACUUM (VERBOSE) again"]
+}

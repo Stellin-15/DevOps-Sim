@@ -1,0 +1,54 @@
+{
+  "id": "databases-tutorial-003",
+  "type": "tutorial",
+  "category": "databases",
+  "title": "Transactions, Isolation, and Locks",
+  "difficulty": "intermediate",
+  "tags": ["postgresql", "transactions", "isolation", "locks"],
+  "intro": "A transaction makes several statements succeed or fail as one. It's also your safety net when you have to change production data by hand. You're inside psql on the shop database, as a user allowed to write. The accounts table has columns id and balance_cents.",
+  "steps": [
+    {
+      "prompt": "You need to fix one account by hand. Start a transaction first.",
+      "expected_commands": ["BEGIN;", "BEGIN", "START TRANSACTION;", "START TRANSACTION"],
+      "fake_output": "BEGIN",
+      "explanation": "Nothing you do now is visible to anyone else, or permanent, until you commit.",
+      "why": "Outside a transaction, psql commits every statement the moment it runs. Starting with BEGIN means a mistyped UPDATE can still be undone. This is the single most valuable habit for manual changes in production."
+    },
+    {
+      "prompt": "Run the fix: set balance_cents to 0 in accounts where id = 4417.",
+      "expected_commands": ["UPDATE accounts SET balance_cents = 0 WHERE id = 4417;", "UPDATE accounts SET balance_cents = 0 WHERE id = 4417"],
+      "fake_output": "UPDATE 1",
+      "explanation": "'UPDATE 1': exactly one row changed.",
+      "why": "Read the row count before going further. 'UPDATE 1' is what you expected. 'UPDATE 48213' means the WHERE clause was wrong or missing, and because you're in a transaction the answer is ROLLBACK, not a restore from backup."
+    },
+    {
+      "prompt": "The count is right. Make the change permanent.",
+      "expected_commands": ["COMMIT;", "COMMIT", "END;", "END"],
+      "fake_output": "COMMIT",
+      "explanation": "The change is now durable and visible to everyone.",
+      "why": "Don't leave a transaction open while you go and check something else: an open transaction holds its row locks and stops vacuum cleaning up (databases-tutorial-007), and other sessions queue behind it. Begin, change, verify, commit or roll back, in under a minute."
+    },
+    {
+      "prompt": "Check which isolation level sessions use by default.",
+      "expected_commands": ["SHOW transaction_isolation;", "SHOW transaction_isolation", "SHOW default_transaction_isolation;", "SHOW default_transaction_isolation"],
+      "fake_output": " transaction_isolation\n-----------------------\n read committed",
+      "explanation": "READ COMMITTED, PostgreSQL's default.",
+      "why": "Under READ COMMITTED each statement sees whatever was committed when that statement started, so two statements in one transaction can see different data. REPEATABLE READ gives the whole transaction one snapshot. SERIALIZABLE also detects conflicts and makes one side retry. Stricter levels are safer but produce errors the application must retry."
+    },
+    {
+      "prompt": "Two requests both read a balance of 100, both subtract 30, and both write 70. One withdrawal has vanished. Which approach prevents this 'lost update' under the default isolation level?\n  a) Run the two statements faster\n  b) Lock the row when reading it with SELECT ... FOR UPDATE, or do the arithmetic in one statement (SET balance_cents = balance_cents - 30)\n  c) Add an index on balance_cents\n  d) Use a bigger connection pool\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "Request A: SELECT balance_cents FROM accounts WHERE id = 4417 FOR UPDATE;  -- gets the row lock\nRequest B: SELECT ... FOR UPDATE;                                        -- waits\nRequest A: UPDATE ... ; COMMIT;                                          -- B now reads 70, writes 40",
+      "hint": "The problem is that both readers saw the same value before either wrote.",
+      "explanation": "Lock the row at read time, or let the database do the arithmetic atomically.",
+      "why": "Read-then-write in application code is a race unless the read takes a lock. FOR UPDATE makes the second reader wait for the first to finish. A single 'UPDATE ... SET x = x - 30' is simpler and just as safe when the logic fits in one statement. The other standard answer is optimistic locking: a version column, and 'UPDATE ... WHERE version = 7' that changes nothing if someone got there first."
+    },
+    {
+      "prompt": "A manual change mustn't hang for ever behind someone else's lock, with other queries queueing behind you. Make statements in this session give up waiting for a lock after 3 seconds.",
+      "expected_commands": ["SET lock_timeout = '3s';", "SET lock_timeout = '3s'", "SET lock_timeout TO '3s';", "SET lock_timeout TO '3s'"],
+      "fake_output": "SET",
+      "explanation": "A statement that can't get its lock within 3 seconds now fails instead of waiting.",
+      "why": "Locks queue in order. A statement waiting for a strong lock makes everything that arrives after it wait too, even plain SELECTs, so one stuck ALTER TABLE can freeze a whole table (databases-incident-002). lock_timeout turns that into a quick, retryable error. statement_timeout is the companion: a cap on how long any statement may run."
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "id": "databases-tutorial-011",
+  "type": "tutorial",
+  "category": "databases",
+  "title": "MySQL for PostgreSQL People",
+  "difficulty": "intermediate",
+  "tags": ["mysql", "innodb", "replication", "troubleshooting"],
+  "intro": "Half the industry runs MySQL or MariaDB. The ideas are the ones you already know (process list, locks, plans, replication, backups); the commands differ. You're on a host with the mysql client, already authenticated through ~/.my.cnf. The database is shop.",
+  "steps": [
+    {
+      "prompt": "Show what every connection is doing, with full query text.",
+      "expected_commands": ["mysql -e \"SHOW FULL PROCESSLIST;\"", "mysql -e \"SHOW FULL PROCESSLIST\"", "mysql -e 'SHOW FULL PROCESSLIST;'", "mysql -e 'SHOW FULL PROCESSLIST'"],
+      "fake_output": "+------+------+-----------------+------+---------+------+---------------------------------+--------------------------------------------+\n| Id   | User | Host            | db   | Command | Time | State                           | Info                                       |\n+------+------+-----------------+------+---------+------+---------------------------------+--------------------------------------------+\n| 8812 | app  | 10.0.1.21:50122 | shop | Query   |  312 | Waiting for table metadata lock | ALTER TABLE products ADD COLUMN sku TEXT   |\n| 8790 | app  | 10.0.1.17:41880 | shop | Sleep   | 2104 |                                 | NULL                                       |\n| 8815 | app  | 10.0.1.22:50310 | shop | Query   |  309 | Waiting for table metadata lock | SELECT * FROM products WHERE id = 41       |\n+------+------+-----------------+------+---------+------+---------------------------------+--------------------------------------------+",
+      "explanation": "An ALTER TABLE and a SELECT are both waiting for a metadata lock, and one connection has been asleep for 35 minutes.",
+      "why": "This is MySQL's pg_stat_activity. 'Waiting for table metadata lock' is the same lock queue as in PostgreSQL: an ALTER waits for an open transaction on the table, and every later query waits behind the ALTER. The sleeping connection 8790, with an uncommitted transaction, is the likely holder."
+    },
+    {
+      "prompt": "End connection 8790.",
+      "expected_commands": ["mysql -e \"KILL 8790;\"", "mysql -e \"KILL 8790\"", "mysql -e 'KILL 8790;'", "mysql -e 'KILL 8790'"],
+      "fake_output": "(no output: connection 8790 closed, its transaction rolled back)",
+      "explanation": "The idle transaction is gone, and the queue drains.",
+      "why": "KILL <id> is pg_terminate_backend; 'KILL QUERY <id>' is pg_cancel_backend, stopping the statement and keeping the connection. For schema changes on large MySQL tables, teams use online tools (gh-ost, pt-online-schema-change) that copy the table in the background and never hold the metadata lock for long."
+    },
+    {
+      "prompt": "The application logged 'Deadlock found when trying to get lock'. Show the InnoDB engine status, which records the most recent deadlock.",
+      "expected_commands": ["mysql -e \"SHOW ENGINE INNODB STATUS\\G\"", "mysql -e 'SHOW ENGINE INNODB STATUS\\G'", "mysql -e \"SHOW ENGINE INNODB STATUS;\"", "mysql -e \"SHOW ENGINE INNODB STATUS\""],
+      "fake_output": "------------------------\nLATEST DETECTED DEADLOCK\n------------------------\n*** (1) TRANSACTION: UPDATE accounts SET balance = balance - 30 WHERE id = 7\n*** (1) WAITING FOR THIS LOCK: RECORD LOCKS index PRIMARY of table shop.accounts, id 9\n*** (2) TRANSACTION: UPDATE accounts SET balance = balance + 30 WHERE id = 9\n*** (2) WAITING FOR THIS LOCK: RECORD LOCKS index PRIMARY of table shop.accounts, id 7\n*** WE ROLL BACK TRANSACTION (2)",
+      "explanation": "Two transfers locked accounts 7 and 9 in opposite orders. InnoDB rolled one back.",
+      "why": "A deadlock isn't a server fault: the database detects the cycle and kills one side, and the application is expected to retry. The lasting fix is in the code: always lock rows in a consistent order (lowest id first, say) and keep transactions short. \\G prints columns vertically, like psql's \\x."
+    },
+    {
+      "prompt": "Check a query's plan: run EXPLAIN on SELECT * FROM orders WHERE customer_id = 8812 in the shop database.",
+      "expected_commands": ["mysql shop -e \"EXPLAIN SELECT * FROM orders WHERE customer_id = 8812;\"", "mysql shop -e \"EXPLAIN SELECT * FROM orders WHERE customer_id = 8812\"", "mysql -D shop -e \"EXPLAIN SELECT * FROM orders WHERE customer_id = 8812;\"", "mysql shop -e 'EXPLAIN SELECT * FROM orders WHERE customer_id = 8812;'"],
+      "fake_output": "+----+-------------+--------+------+---------------+------+---------+------+---------+-------------+\n| id | select_type | table  | type | possible_keys | key  | key_len | ref  | rows    | Extra       |\n+----+-------------+--------+------+---------------+------+---------+------+---------+-------------+\n|  1 | SIMPLE      | orders | ALL  | NULL          | NULL | NULL    | NULL | 4790112 | Using where |\n+----+-------------+--------+------+---------------+------+---------+------+---------+-------------+",
+      "explanation": "type ALL with key NULL: a full table scan over about 4.8 million rows.",
+      "why": "'type: ALL' is MySQL's Seq Scan, and 'key: NULL' means no index was used. After adding an index on customer_id you'd see type 'ref' and a small rows estimate. 'EXPLAIN ANALYZE' exists from MySQL 8.0.18 and, as in PostgreSQL, really runs the query."
+    },
+    {
+      "prompt": "On a replica, check replication health.",
+      "expected_commands": ["mysql -e \"SHOW REPLICA STATUS\\G\"", "mysql -e 'SHOW REPLICA STATUS\\G'", "mysql -e \"SHOW SLAVE STATUS\\G\"", "mysql -e \"SHOW REPLICA STATUS;\""],
+      "fake_output": "           Replica_IO_Running: Yes\n          Replica_SQL_Running: No\n        Seconds_Behind_Source: NULL\n                   Last_Errno: 1062\n                   Last_Error: Error 'Duplicate entry '41' for key 'products.PRIMARY'' on query. Default database: 'shop'. Query: 'INSERT INTO products ...'",
+      "explanation": "The replica is receiving changes (IO: Yes) but has stopped applying them (SQL: No) on a duplicate-key error.",
+      "why": "Read the two threads separately: IO fetches the source's log, SQL applies it. 'Seconds_Behind_Source: NULL' doesn't mean zero lag; it means replication is broken. A duplicate key on a replica means someone wrote to the replica directly, so it no longer matches the source. Set replicas read_only (and super_read_only) to make that impossible, and rebuild this one rather than skipping the error, because skipped errors leave silent differences."
+    },
+    {
+      "prompt": "Take a consistent logical backup of the shop database to shop.sql without locking the tables.",
+      "expected_commands": ["mysqldump --single-transaction shop > shop.sql", "mysqldump --single-transaction --routines shop > shop.sql", "mysqldump --single-transaction --databases shop > shop.sql"],
+      "fake_output": "(no output: shop.sql written)",
+      "explanation": "A consistent dump taken from one snapshot, while the application kept writing.",
+      "why": "Without --single-transaction, mysqldump locks tables or produces a dump where tables are from different moments. The flag gives pg_dump's behaviour, but only for InnoDB tables. For large databases, physical tools (Percona XtraBackup, or snapshots on a managed service) are far faster to restore, and binary logs play the role of WAL for point-in-time recovery."
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "id": "databases-incident-002",
+  "type": "incident",
+  "category": "databases",
+  "title": "A one-second migration froze the whole site",
+  "difficulty": "intermediate",
+  "tags": ["postgresql", "locks", "migrations", "idle-in-transaction"],
+  "intro": "At 14:02 a deploy ran a migration adding a nullable column to the customers table, a change that normally takes milliseconds. Since then every page that touches customers has hung, the API's connection pool is exhausted, and the deploy job is still 'running'. Database CPU is near zero.",
+  "steps": [
+    {
+      "prompt": "CPU near zero with everything hanging means waiting, not working. List the non-idle sessions with what they're waiting for: select pid, state, wait_event_type, now() - query_start AS runtime, and query from pg_stat_activity where state <> 'idle', ordered by runtime descending.",
+      "expected_commands": ["psql -c \"SELECT pid, state, wait_event_type, now() - query_start AS runtime, query FROM pg_stat_activity WHERE state <> 'idle' ORDER BY runtime DESC;\"", "psql -c \"SELECT pid, state, wait_event_type, now() - query_start AS runtime, query FROM pg_stat_activity WHERE state <> 'idle' ORDER BY runtime DESC\"", "psql -c \"SELECT pid, state, wait_event_type, now() - query_start AS runtime, query FROM pg_stat_activity WHERE state != 'idle' ORDER BY runtime DESC;\""],
+      "fake_output": "  pid  |        state        | wait_event_type |     runtime     |                    query\n-------+---------------------+-----------------+-----------------+----------------------------------------------\n 18840 | idle in transaction | Client          | 03:12:44.120918 | SELECT * FROM customers WHERE country = 'DE'\n 41207 | active              | Lock            | 00:06:10.004120 | ALTER TABLE customers ADD COLUMN tier text\n 41233 | active              | Lock            | 00:06:08.771204 | SELECT * FROM customers WHERE id = $1\n 41240 | active              | Lock            | 00:06:08.310077 | SELECT * FROM customers WHERE id = $1\n (118 more rows waiting on Lock)",
+      "hint": "SELECT pid, state, wait_event_type, now() - query_start AS runtime, query FROM pg_stat_activity WHERE state <> 'idle' ORDER BY runtime DESC;"
+    },
+    {
+      "prompt": "The ALTER TABLE (pid 41207) is waiting on a lock, and so is everything after it. Find out what the ALTER itself is waiting for.",
+      "expected_commands": ["psql -c \"SELECT pg_blocking_pids(41207);\"", "psql -c \"SELECT pg_blocking_pids(41207)\""],
+      "fake_output": " pg_blocking_pids\n------------------\n {18840}",
+      "hint": "SELECT pg_blocking_pids(<pid>);"
+    },
+    {
+      "prompt": "pid 18840 has been idle inside a transaction for over three hours after a plain SELECT. See who it is: select usename, application_name, and client_addr from pg_stat_activity where pid = 18840.",
+      "expected_commands": ["psql -c \"SELECT usename, application_name, client_addr FROM pg_stat_activity WHERE pid = 18840;\"", "psql -c \"SELECT usename, application_name, client_addr FROM pg_stat_activity WHERE pid = 18840\"", "psql -c \"SELECT * FROM pg_stat_activity WHERE pid = 18840;\"", "psql -x -c \"SELECT * FROM pg_stat_activity WHERE pid = 18840;\""],
+      "fake_output": " usename | application_name | client_addr\n---------+------------------+-------------\n dana    | DBeaver 24.1     | 10.0.9.31",
+      "hint": "Filter pg_stat_activity on pid = 18840."
+    },
+    {
+      "prompt": "An analyst's desktop client, with auto-commit off, left open over lunch. You have two options: end the migration (the queue drains, and the deploy fails and can be retried) or end the analyst's session (the migration completes). The site has been down six minutes. End the analyst's session.",
+      "expected_commands": ["psql -c \"SELECT pg_terminate_backend(18840);\"", "psql -c \"SELECT pg_terminate_backend(18840)\""],
+      "fake_output": " pg_terminate_backend\n----------------------\n t",
+      "hint": "pg_cancel_backend won't help: there's no running statement to cancel. Use pg_terminate_backend."
+    },
+    {
+      "prompt": "Confirm the queue has drained: count sessions still waiting on a lock.",
+      "expected_commands": ["psql -c \"SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock';\"", "psql -c \"SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'\""],
+      "fake_output": " count\n-------\n     0",
+      "hint": "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock';"
+    },
+    {
+      "prompt": "Prevent the analyst's side of this: give the role dana a limit so a session idle inside a transaction for more than 5 minutes is closed.",
+      "expected_commands": ["psql -c \"ALTER ROLE dana SET idle_in_transaction_session_timeout = '5min';\"", "psql -c \"ALTER ROLE dana SET idle_in_transaction_session_timeout = '5min'\"", "psql -c \"ALTER ROLE dana SET idle_in_transaction_session_timeout TO '5min';\""],
+      "fake_output": "ALTER ROLE",
+      "hint": "ALTER ROLE <name> SET idle_in_transaction_session_timeout = '5min';"
+    }
+  ],
+  "resolution": "Nothing here was slow; everything was queued. Adding a nullable column needs an ACCESS EXCLUSIVE lock on the table, held only for milliseconds, but it must wait for every other lock on that table to be released first. An analyst's desktop client had run a SELECT inside a transaction it never ended, which holds the weakest lock there is. That was enough: the ALTER TABLE waited for it. The damage came from the next rule: PostgreSQL's lock queue is first come, first served, so once the ALTER was waiting, every later query on customers, including simple reads that don't conflict with the analyst at all, queued behind the ALTER. One forgotten window plus one routine migration stopped the site, with the database idle throughout. Ending the idle session let the ALTER take its lock, finish in milliseconds, and release the queue. Three defences, and you want all of them. First, migrations should set lock_timeout (cicd-tutorial-014 does), so an ALTER that can't get its lock within a few seconds fails and is retried instead of holding up the table. Second, idle_in_transaction_session_timeout closes sessions that sit in an open transaction. Third, people and reporting tools should connect to a replica, where they can't block production writes or schema changes. When you meet this live, read pg_blocking_pids from the top of the chain: the session to deal with is the one that isn't waiting for anybody.",
+  "real_commands_used": ["psql pg_stat_activity (state, wait_event_type, runtime)", "psql pg_blocking_pids", "psql pg_terminate_backend", "ALTER ROLE ... SET idle_in_transaction_session_timeout"]
+}

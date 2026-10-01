@@ -1,0 +1,55 @@
+{
+  "id": "databases-tutorial-002",
+  "type": "tutorial",
+  "category": "databases",
+  "title": "The SQL You Need on Call",
+  "difficulty": "beginner",
+  "tags": ["sql", "postgresql", "queries"],
+  "intro": "You don't need to be a database developer, but during an incident you do need to ask the data questions: how many, since when, which customers. You're inside psql on the shop database. The tables are orders (id, customer_id, status, total_cents, created_at) and customers (id, email, country). Type each statement as SQL; keywords can be in either case.",
+  "steps": [
+    {
+      "prompt": "Show the 5 most recent orders: all columns, newest first.",
+      "expected_commands": ["SELECT * FROM orders ORDER BY created_at DESC LIMIT 5;", "SELECT * FROM orders ORDER BY created_at DESC LIMIT 5"],
+      "fake_output": "   id    | customer_id |  status   | total_cents |       created_at\n---------+-------------+-----------+-------------+------------------------\n 4812907 |       88120 | pending   |        4599 | 2026-09-28 10:41:07+00\n 4812906 |        1204 | failed    |       12900 | 2026-09-28 10:41:06+00\n 4812905 |       55310 | failed    |        2350 | 2026-09-28 10:41:06+00\n 4812904 |        9917 | failed    |        8800 | 2026-09-28 10:41:05+00\n 4812903 |       41002 | paid      |        1999 | 2026-09-28 10:41:03+00",
+      "explanation": "The newest rows, and three of the five are failed.",
+      "why": "Always put a LIMIT on an exploratory query against a production table: 'SELECT * FROM orders' on five million rows floods your terminal and loads the server. ORDER BY ... DESC LIMIT n is cheap when there's an index on the sort column."
+    },
+    {
+      "prompt": "Count orders by status.",
+      "expected_commands": ["SELECT status, count(*) FROM orders GROUP BY status;", "SELECT status, count(*) FROM orders GROUP BY status", "SELECT count(*), status FROM orders GROUP BY status;", "SELECT count(*), status FROM orders GROUP BY status"],
+      "fake_output": "  status   |  count\n-----------+---------\n paid      | 4689120\n pending   |    3411\n failed    |  118204\n refunded  |    2172",
+      "explanation": "One row per status, with its count.",
+      "why": "GROUP BY collapses rows into groups, and every column in the SELECT must be either grouped or inside an aggregate (count, sum, avg, max). This all-time breakdown doesn't show whether failures are new, though, which is the next question."
+    },
+    {
+      "prompt": "Count failed orders per hour, to see when failures started. Select date_trunc('hour', created_at) and count(*), filter on status = 'failed', and group and order by the first column.",
+      "expected_commands": ["SELECT date_trunc('hour', created_at), count(*) FROM orders WHERE status = 'failed' GROUP BY 1 ORDER BY 1;", "SELECT date_trunc('hour', created_at), count(*) FROM orders WHERE status = 'failed' GROUP BY 1 ORDER BY 1"],
+      "fake_output": "       date_trunc       | count\n------------------------+-------\n 2026-09-28 07:00:00+00 |    41\n 2026-09-28 08:00:00+00 |    38\n 2026-09-28 09:00:00+00 |    44\n 2026-09-28 10:00:00+00 |  2907",
+      "hint": "SELECT date_trunc('hour', created_at), count(*) FROM orders WHERE status = 'failed' GROUP BY 1 ORDER BY 1;",
+      "explanation": "About 40 an hour, then 2,907 in the hour starting at 10:00.",
+      "why": "date_trunc buckets timestamps, which turns a table into a time series: the most useful incident query there is, because it gives you the start time to match against deploys. 'GROUP BY 1' means 'the first selected column', which saves repeating the expression. On a big table, add a time bound (created_at > now() - interval '1 day') so it reads recent rows only."
+    },
+    {
+      "prompt": "Which countries are the failures from? Join orders (alias o) to customers (alias c) on c.id = o.customer_id, and count failed orders by c.country.",
+      "expected_commands": ["SELECT c.country, count(*) FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.status = 'failed' GROUP BY c.country;", "SELECT c.country, count(*) FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.status = 'failed' GROUP BY c.country", "SELECT c.country, count(*) FROM orders o JOIN customers c ON o.customer_id = c.id WHERE o.status = 'failed' GROUP BY c.country;", "SELECT c.country, count(*) FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.status = 'failed' GROUP BY 1;"],
+      "fake_output": " country | count\n---------+--------\n DE      | 114901\n FR      |   1102\n US      |   1340\n GB      |    861",
+      "hint": "SELECT c.country, count(*) FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.status = 'failed' GROUP BY c.country;",
+      "explanation": "Almost every failure is from Germany.",
+      "why": "A JOIN combines rows from two tables where the ON condition matches. An inner JOIN (the default) drops rows with no match; a LEFT JOIN keeps every row from the left table, with NULLs where the right has nothing, which is how you find orphans: 'LEFT JOIN ... WHERE c.id IS NULL'. Here the join turned 'orders are failing' into 'one country's payments are failing'."
+    },
+    {
+      "prompt": "Find customers with more than 20 failed orders. Select customer_id and count(*), filter on status = 'failed', group by customer_id, and keep groups having count(*) > 20.",
+      "expected_commands": ["SELECT customer_id, count(*) FROM orders WHERE status = 'failed' GROUP BY customer_id HAVING count(*) > 20;", "SELECT customer_id, count(*) FROM orders WHERE status = 'failed' GROUP BY customer_id HAVING count(*) > 20"],
+      "fake_output": " customer_id | count\n-------------+-------\n       77410 |  1904\n        1204 |    31",
+      "explanation": "One customer has 1,904 failed orders: a retry loop or a bot.",
+      "why": "WHERE filters rows before grouping; HAVING filters groups after it. Getting them the wrong way round is the classic mistake: you can't write WHERE count(*) > 20, because the count doesn't exist yet when WHERE runs."
+    },
+    {
+      "prompt": "For each customer, number their orders from newest to oldest. Select customer_id, id, and row_number() OVER (PARTITION BY customer_id ORDER BY created_at DESC) from orders, limited to 6 rows.",
+      "expected_commands": ["SELECT customer_id, id, row_number() OVER (PARTITION BY customer_id ORDER BY created_at DESC) FROM orders LIMIT 6;", "SELECT customer_id, id, row_number() OVER (PARTITION BY customer_id ORDER BY created_at DESC) FROM orders LIMIT 6"],
+      "fake_output": " customer_id |   id    | row_number\n-------------+---------+------------\n           1 | 4410022 |          1\n           1 | 3907114 |          2\n           1 | 2200871 |          3\n           2 | 4790018 |          1\n           2 | 4100562 |          2\n           3 | 4801177 |          1",
+      "explanation": "Each customer's orders are numbered separately, newest first.",
+      "why": "A window function computes across related rows without collapsing them, unlike GROUP BY. Wrapping this in a subquery and keeping row_number = 1 gives 'the latest order per customer', a question that's awkward any other way. Windows also do running totals and comparisons with the previous row (lag)."
+    }
+  ]
+}

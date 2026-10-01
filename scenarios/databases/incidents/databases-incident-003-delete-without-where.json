@@ -1,0 +1,55 @@
+{
+  "id": "databases-incident-003",
+  "type": "incident",
+  "category": "databases",
+  "title": "DELETE without a WHERE: 910,000 saved addresses gone",
+  "difficulty": "advanced",
+  "tags": ["postgresql", "pitr", "recovery", "data-loss"],
+  "intro": "An engineer cleaning up test data pasted a DELETE into a production psql session and the WHERE clause was on the next line, which didn't paste. The addresses table is empty. Replicas applied the delete instantly, so failing over won't help. The site is up, but checkout fails for everyone with a saved address. Backups are taken with pgBackRest (stanza main), with continuous WAL archiving. A spare host, db-recovery, is available with PostgreSQL stopped and an empty data directory.",
+  "steps": [
+    {
+      "prompt": "First find exactly when it happened: recovery needs a target just before it. The server logs statements that modify data. Search today's log, /var/log/postgresql/postgresql-16-main.log, for the DELETE on addresses.",
+      "expected_commands": ["sudo grep -i \"delete from addresses\" /var/log/postgresql/postgresql-16-main.log", "grep -i \"delete from addresses\" /var/log/postgresql/postgresql-16-main.log", "sudo grep -i 'delete from addresses' /var/log/postgresql/postgresql-16-main.log", "grep -i 'delete from addresses' /var/log/postgresql/postgresql-16-main.log"],
+      "fake_output": "2026-09-28 13:47:21.804 UTC [52110] sam@shop LOG:  statement: DELETE FROM addresses\n2026-09-28 13:47:23.118 UTC [52110] sam@shop LOG:  duration: 1314.201 ms",
+      "hint": "grep -i \"delete from addresses\" <logfile>"
+    },
+    {
+      "prompt": "The delete started at 13:47:21 UTC. Confirm the backups can reach a point just before that: show the backup information for the stanza.",
+      "expected_commands": ["pgbackrest --stanza=main info", "pgbackrest info --stanza=main"],
+      "fake_output": "stanza: main\n    status: ok\n        wal archive min/max (16): 00000001000002980000001A/00000001000002A60000004B\n\n        full backup: 20260927-010002F\n            timestamp start/stop: 2026-09-27 01:00:02+00 / 2026-09-27 01:42:10+00\n        incr backup: 20260927-010002F_20260928-010003I\n            timestamp start/stop: 2026-09-28 01:00:03+00 / 2026-09-28 01:06:44+00",
+      "hint": "pgbackrest --stanza=main info"
+    },
+    {
+      "prompt": "This morning's backup plus an unbroken WAL archive covers it. On db-recovery, restore the database as it was at 13:47:00 UTC, one moment before the delete, and have it open once it gets there.",
+      "expected_commands": ["pgbackrest --stanza=main --type=time --target=\"2026-09-28 13:47:00+00\" --target-action=promote restore", "pgbackrest --stanza=main --type=time \"--target=2026-09-28 13:47:00+00\" --target-action=promote restore", "pgbackrest --stanza=main restore --type=time --target=\"2026-09-28 13:47:00+00\" --target-action=promote"],
+      "fake_output": "P00   INFO: restore command begin\nP00   INFO: restore backup set 20260927-010002F_20260928-010003I\nP00   INFO: write updated postgresql.auto.conf (recovery_target_time = '2026-09-28 13:47:00+00')\nP00   INFO: restore command end: completed successfully (36m 50s)",
+      "hint": "pgbackrest --stanza=main --type=time --target=\"2026-09-28 13:47:00+00\" --target-action=promote restore"
+    },
+    {
+      "prompt": "PostgreSQL has been started on db-recovery and has replayed WAL up to the target. Check the addresses table is there: count its rows on db-recovery, in the shop database.",
+      "expected_commands": ["psql -h db-recovery -d shop -c \"SELECT count(*) FROM addresses;\"", "psql -h db-recovery -d shop -c \"SELECT count(*) FROM addresses\"", "psql -h db-recovery shop -c \"SELECT count(*) FROM addresses;\"", "psql -h db-recovery -d shop -At -c \"SELECT count(*) FROM addresses\""],
+      "fake_output": " count\n--------\n 910442",
+      "hint": "psql -h db-recovery -d shop -c \"SELECT count(*) FROM addresses;\""
+    },
+    {
+      "prompt": "All 910,442 addresses are in the recovered copy. Production has kept running, so you can't replace it wholesale: orders placed since 13:47 would be lost. Take only the addresses table's data out of db-recovery, in custom format, to addresses.dump.",
+      "expected_commands": ["pg_dump -h db-recovery -d shop -t addresses --data-only -Fc -f addresses.dump", "pg_dump -h db-recovery -d shop -t addresses -a -Fc -f addresses.dump", "pg_dump -h db-recovery -Fc --data-only -t addresses -d shop -f addresses.dump", "pg_dump -h db-recovery -d shop --table=addresses --data-only --format=custom -f addresses.dump"],
+      "fake_output": "(no output: addresses.dump written, 148 MB)",
+      "hint": "pg_dump -h db-recovery -d shop -t addresses --data-only -Fc -f addresses.dump"
+    },
+    {
+      "prompt": "Load that data back into the production database shop, on host db.internal.",
+      "expected_commands": ["pg_restore -h db.internal -d shop --data-only addresses.dump", "pg_restore -h db.internal -d shop -a addresses.dump", "pg_restore -h db.internal -d shop --data-only -t addresses addresses.dump", "pg_restore -h db.internal -d shop addresses.dump"],
+      "fake_output": "(no output: 910442 rows restored into addresses)",
+      "hint": "pg_restore -h db.internal -d shop --data-only addresses.dump"
+    },
+    {
+      "prompt": "Verify on production: count the rows in addresses on db.internal.",
+      "expected_commands": ["psql -h db.internal -d shop -c \"SELECT count(*) FROM addresses;\"", "psql -h db.internal -d shop -c \"SELECT count(*) FROM addresses\"", "psql -h db.internal shop -c \"SELECT count(*) FROM addresses;\"", "psql -h db.internal -d shop -At -c \"SELECT count(*) FROM addresses\""],
+      "fake_output": " count\n--------\n 910447",
+      "hint": "psql -h db.internal -d shop -c \"SELECT count(*) FROM addresses;\""
+    }
+  ],
+  "resolution": "A DELETE with no WHERE clause removed every saved address, and replication made sure every replica lost them within a second. That's the lesson about replicas: they protect you from a server dying, and they faithfully copy a mistake. Only a backup with history can undo one. The recovery had four parts. Find the time: the server log gave 13:47:21, so the target was 13:47:00. Restore elsewhere: point-in-time recovery onto a spare host rebuilt the database as it was at that moment, without touching production, which was still taking orders. Extract only what was lost: one table's data, dumped from the recovered copy. Put it back: loaded into production, where the application found it again. The final count is 910,447, five more than the recovered copy, because five customers saved a new address between the delete and the restore; they were kept, which is exactly why you don't roll the whole database back. This took about an hour, most of it the 37-minute restore, and it worked only because WAL archiving was on and the restore had been practised. It was easy here because addresses is rarely written; a table with constant updates needs a careful merge. Nothing else references addresses, either: a foreign key from another table would have refused the delete outright, or, with ON DELETE CASCADE, taken those rows too. Prevention is cheap by comparison: begin a transaction before any manual change and read the row count before committing; give people a role that can't write to production by default; and require risky statements to go through a reviewed script. Some teams also install a safeguard that rejects UPDATE and DELETE without a WHERE.",
+  "real_commands_used": ["grep the PostgreSQL log for the statement", "pgbackrest info", "pgbackrest --type=time --target restore", "psql count(*) on the recovered copy", "pg_dump -t <table> --data-only -Fc", "pg_restore --data-only", "psql count(*) on production"]
+}

@@ -1,0 +1,48 @@
+{
+  "id": "databases-tutorial-007",
+  "type": "tutorial",
+  "category": "databases",
+  "title": "Vacuum, Bloat, and Transaction ID Wraparound",
+  "difficulty": "advanced",
+  "tags": ["postgresql", "vacuum", "bloat", "maintenance"],
+  "intro": "PostgreSQL never overwrites a row. An UPDATE writes a new version and leaves the old one behind; a DELETE only marks the row dead. Vacuum is what reclaims that space. When it falls behind, tables swell and queries slow down, and in the worst case the database stops accepting writes. Commands run from the shell with psql -c against shop.",
+  "steps": [
+    {
+      "prompt": "See which tables have the most dead rows and when autovacuum last cleaned them. Select relname, n_live_tup, n_dead_tup, and last_autovacuum from pg_stat_user_tables, ordered by n_dead_tup descending, top 5.",
+      "expected_commands": ["psql -c \"SELECT relname, n_live_tup, n_dead_tup, last_autovacuum FROM pg_stat_user_tables ORDER BY n_dead_tup DESC LIMIT 5;\"", "psql -c \"SELECT relname, n_live_tup, n_dead_tup, last_autovacuum FROM pg_stat_user_tables ORDER BY n_dead_tup DESC LIMIT 5\""],
+      "fake_output": "   relname   | n_live_tup | n_dead_tup |      last_autovacuum\n-------------+------------+------------+------------------------\n sessions    |    2104410 |   48120977 | 2026-09-19 03:12:44+00\n orders      |    4812907 |     310442 | 2026-09-28 09:51:10+00\n products    |     120000 |      18004 | 2026-09-28 10:02:31+00\n customers   |     910442 |       2210 | 2026-09-28 08:40:02+00\n order_items |   14410021 |        940 | 2026-09-28 07:15:59+00",
+      "hint": "SELECT relname, n_live_tup, n_dead_tup, last_autovacuum FROM pg_stat_user_tables ORDER BY n_dead_tup DESC LIMIT 5;",
+      "explanation": "sessions has 2 million live rows and 48 million dead ones, and hasn't been vacuumed for nine days.",
+      "why": "Dead rows outnumbering live ones 20 to 1 is bloat: every scan reads through the dead versions too. A table that's updated constantly, such as sessions with a 'last seen' timestamp, generates dead rows faster than the default autovacuum settings keep up with."
+    },
+    {
+      "prompt": "Vacuum the sessions table by hand, with a report of what it did, and refresh its planner statistics at the same time.",
+      "expected_commands": ["psql -c \"VACUUM (VERBOSE, ANALYZE) sessions;\"", "psql -c \"VACUUM (VERBOSE, ANALYZE) sessions\"", "psql -c \"VACUUM (ANALYZE, VERBOSE) sessions;\"", "psql -c \"VACUUM VERBOSE ANALYZE sessions;\""],
+      "fake_output": "INFO:  vacuuming \"shop.public.sessions\"\nINFO:  finished vacuuming \"shop.public.sessions\": index scans: 1\npages: 0 removed, 1168000 remain\ntuples: 48120977 removed, 2104410 remain, 0 are dead but not yet removable\nINFO:  analyzing \"public.sessions\"\nVACUUM",
+      "explanation": "48 million dead rows removed. Note 'pages: 0 removed': the file is exactly as big as before.",
+      "why": "Plain VACUUM marks the space reusable inside the table; it doesn't hand it back to the operating system. That's fine: new rows fill the holes and the table stops growing. It takes only a light lock, so it runs alongside normal traffic. Watch the 'dead but not yet removable' number: if it's large, something is holding an old snapshot (databases-incident-005)."
+    },
+    {
+      "prompt": "The table is still 9 GB on disk for 400 MB of live data, and you want the space back. Which is the right way on a busy production table?\n  a) VACUUM FULL sessions, in the middle of the day\n  b) pg_repack (or VACUUM FULL in a maintenance window): VACUUM FULL takes an exclusive lock for the whole rewrite, and pg_repack rewrites online\n  c) DELETE the dead rows by hand\n  d) Restart PostgreSQL\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "VACUUM FULL sessions;        -- rewrites the table; blocks ALL reads and writes until done\npg_repack -t sessions -d shop -- builds a new copy alongside, swaps it in with a brief lock",
+      "hint": "One of these locks the table against everything, including SELECT, for as long as the rewrite takes.",
+      "explanation": "Rewrite online with pg_repack, or schedule VACUUM FULL for a window.",
+      "why": "VACUUM FULL is the command people reach for from the name, and it takes the table offline for minutes or hours. pg_repack does the same job with only a momentary lock at the end, but needs free disk space equal to the table. Often the right answer is neither: after a plain vacuum the space is reused, and the table simply stops growing."
+    },
+    {
+      "prompt": "Stop it recurring. Make autovacuum start on sessions when 1% of its rows are dead, instead of the default 20%.",
+      "expected_commands": ["psql -c \"ALTER TABLE sessions SET (autovacuum_vacuum_scale_factor = 0.01);\"", "psql -c \"ALTER TABLE sessions SET (autovacuum_vacuum_scale_factor = 0.01)\""],
+      "fake_output": "ALTER TABLE",
+      "explanation": "Autovacuum now triggers on this table after about 21,000 dead rows, not 420,000.",
+      "why": "The default threshold is a fraction of the table, so the bigger a table gets, the longer autovacuum waits and the bigger each job becomes. Per-table settings fix the hot tables without changing the rest. Turning autovacuum off to 'save load' is the classic mistake: the work doesn't go away, it accumulates."
+    },
+    {
+      "prompt": "Vacuum has a second job. Transaction ids are 32-bit and wrap around, so old rows must be 'frozen' before about 2 billion transactions pass. Check how old each database's oldest unfrozen transaction id is: select datname and age(datfrozenxid) from pg_database, ordered by the second column descending.",
+      "expected_commands": ["psql -c \"SELECT datname, age(datfrozenxid) FROM pg_database ORDER BY 2 DESC;\"", "psql -c \"SELECT datname, age(datfrozenxid) FROM pg_database ORDER BY 2 DESC\"", "psql -c \"SELECT datname, age(datfrozenxid) FROM pg_database ORDER BY age(datfrozenxid) DESC;\""],
+      "fake_output": "  datname  |    age\n-----------+------------\n shop      | 1412004110\n postgres  |  180422018\n template1 |  180422018",
+      "explanation": "shop is at 1.4 billion, out of a hard limit near 2.1 billion.",
+      "why": "At 200 million (the default) autovacuum starts a forced anti-wraparound vacuum. If the age still climbs, something is blocking it. Near 2 billion PostgreSQL refuses new writes to protect the data, and the only way out is a long vacuum with the application down. Alert on this number at around 1 billion; it gives weeks of warning, and well-known outages have come from nobody watching it."
+    }
+  ]
+}

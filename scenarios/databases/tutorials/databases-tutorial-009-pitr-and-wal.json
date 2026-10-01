@@ -1,0 +1,55 @@
+{
+  "id": "databases-tutorial-009",
+  "type": "tutorial",
+  "category": "databases",
+  "title": "Physical Backups and Point-in-Time Recovery",
+  "difficulty": "advanced",
+  "tags": ["postgresql", "backup", "pitr", "wal", "pgbackrest"],
+  "intro": "A nightly dump can lose a day of data. Point-in-time recovery (PITR) can't: it combines a physical copy of the data files with the write-ahead log (WAL), the record of every change since, so you can rebuild the database as it was at any second. This server uses pgBackRest, with a stanza (backup configuration) named main.",
+  "steps": [
+    {
+      "prompt": "PITR depends on every WAL file being copied somewhere safe as it's completed. Check that archiving is working: look at the archiver's statistics.",
+      "expected_commands": ["psql -c \"SELECT * FROM pg_stat_archiver;\"", "psql -c \"SELECT * FROM pg_stat_archiver\"", "psql -x -c \"SELECT * FROM pg_stat_archiver;\"", "psql -c \"TABLE pg_stat_archiver;\""],
+      "fake_output": " archived_count | last_archived_wal        | last_archived_time     | failed_count | last_failed_wal | last_failed_time\n----------------+--------------------------+------------------------+--------------+-----------------+------------------\n         184220 | 00000001000002A4000000C7 | 2026-09-28 10:40:52+00 |            0 |                 |",
+      "explanation": "The last WAL file was archived seconds ago, and nothing has failed.",
+      "why": "This is the health check that matters most. If archiving fails, two things go wrong at once: recovery can only reach the last archived file, and the unarchived WAL piles up on the primary's disk until it fills (databases-incident-001 shows a close relative). Alert on failed_count rising and on last_archived_time going stale."
+    },
+    {
+      "prompt": "See what backups exist: show the information for the stanza main.",
+      "expected_commands": ["pgbackrest --stanza=main info", "pgbackrest info --stanza=main"],
+      "fake_output": "stanza: main\n    status: ok\n    cipher: aes-256-cbc\n\n    db (current)\n        wal archive min/max (16): 00000001000002980000001A/00000001000002A4000000C7\n\n        full backup: 20260927-010002F\n            timestamp start/stop: 2026-09-27 01:00:02+00 / 2026-09-27 01:42:10+00\n            database size: 310.4GB, backup size: 310.4GB\n\n        incr backup: 20260927-010002F_20260928-010003I\n            timestamp start/stop: 2026-09-28 01:00:03+00 / 2026-09-28 01:06:44+00\n            database size: 311.0GB, backup size: 4.2GB",
+      "explanation": "A full backup from Sunday, an incremental from this morning, and an unbroken WAL archive up to now.",
+      "why": "You can recover to any moment between the end of the oldest backup and the newest archived WAL, as long as the WAL range has no gap. Incrementals keep the nightly cost small (4.2 GB instead of 310 GB) but lengthen the restore, since the full backup and each incremental must be applied."
+    },
+    {
+      "prompt": "Check end to end that a new WAL file can be pushed to the repository and read back.",
+      "expected_commands": ["pgbackrest --stanza=main check", "pgbackrest check --stanza=main"],
+      "fake_output": "P00   INFO: check command begin\nP00   INFO: WAL segment 00000001000002A4000000C8 successfully archived to the repository\nP00   INFO: check command end: completed successfully",
+      "explanation": "The archive path works from this host to the repository.",
+      "why": "'check' forces a WAL switch and waits for the file to arrive, so it tests credentials, network, and configuration together. Run it after any change to the backup configuration and from monitoring. It doesn't prove the backup restores; only a restore does."
+    },
+    {
+      "prompt": "At 10:05 UTC a bad deploy corrupted customer records. On a separate recovery host, with PostgreSQL stopped and an empty data directory, restore the database as it was at 10:04, and have it open for use once it reaches that point.",
+      "expected_commands": ["pgbackrest --stanza=main --type=time --target=\"2026-09-28 10:04:00+00\" --target-action=promote restore", "pgbackrest --stanza=main --type=time \"--target=2026-09-28 10:04:00+00\" --target-action=promote restore", "pgbackrest --stanza=main restore --type=time --target=\"2026-09-28 10:04:00+00\" --target-action=promote"],
+      "fake_output": "P00   INFO: restore command begin\nP00   INFO: restore backup set 20260927-010002F_20260928-010003I\nP00   INFO: write updated postgresql.auto.conf (recovery_target_time = '2026-09-28 10:04:00+00')\nP00   INFO: restore command end: completed successfully (38m 12s)",
+      "hint": "pgbackrest --stanza=main --type=time --target=\"2026-09-28 10:04:00+00\" --target-action=promote restore",
+      "explanation": "The data files are restored and recovery is configured to stop at 10:04. Starting PostgreSQL replays the WAL up to that moment.",
+      "why": "Restore to a separate host, never over the damaged primary: you keep the evidence, you can compare, and a wrong target time costs nothing. Without --target-action=promote the server pauses at the target so you can inspect before deciding. Note the 38 minutes, plus WAL replay: that is your real recovery time, and you only know it because you ran it."
+    },
+    {
+      "prompt": "PostgreSQL has been started on the recovery host, db-recovery. Confirm it has finished recovery and is open for writes.",
+      "expected_commands": ["psql -h db-recovery -c \"SELECT pg_is_in_recovery();\"", "psql -h db-recovery -c \"SELECT pg_is_in_recovery()\"", "psql -h db-recovery -At -c \"SELECT pg_is_in_recovery();\""],
+      "fake_output": " pg_is_in_recovery\n-------------------\n f",
+      "explanation": "False: recovery is complete and this is now a normal, writable server on a new timeline.",
+      "why": "From here you either copy the good rows back to production (pg_dump the affected table and compare) or repoint the application at this server. Promotion starts a new timeline, which is how PostgreSQL keeps this history separate from the original's. Decide the recovery point carefully: everything written after 10:04, good and bad, is absent from this copy."
+    },
+    {
+      "prompt": "Two numbers define a backup strategy. RPO is how much data you can afford to lose; RTO is how long recovery may take. This server has nightly backups with continuous WAL archiving, and the restore above took about 45 minutes in total. What are its approximate RPO and RTO?\n  a) RPO 24 hours, RTO 45 minutes\n  b) RPO about a minute (the last archived WAL), RTO about 45 minutes\n  c) RPO zero, RTO zero\n  d) RPO 45 minutes, RTO 24 hours\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "RPO: seconds to a minute  (WAL is archived as each 16 MB file fills, or on archive_timeout)\nRTO: ~45 minutes          (restore 310 GB, then replay WAL)",
+      "hint": "The nightly backup isn't the limit on data loss: the WAL archive fills the gap since.",
+      "explanation": "You lose at most the WAL not yet archived, and you're down for as long as the restore takes.",
+      "why": "WAL archiving is what moves RPO from 'since last night' to 'since the last archived segment'. Set archive_timeout so a quiet database still ships WAL every minute or so. RTO is dominated by restore size: to shrink it, keep a streaming replica to fail over to (next tutorial) and reserve PITR for the failures a replica can't help with, such as bad writes."
+    }
+  ]
+}

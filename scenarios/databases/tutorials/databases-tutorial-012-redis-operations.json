@@ -1,0 +1,53 @@
+{
+  "id": "databases-tutorial-012",
+  "type": "tutorial",
+  "category": "databases",
+  "title": "Operating Redis: Memory, Persistence, and Not Blocking It",
+  "difficulty": "intermediate",
+  "tags": ["redis", "memory", "persistence", "troubleshooting"],
+  "intro": "System Design covered what to cache and when to expire it. This is about keeping the Redis server itself healthy. Redis runs commands on a single thread and keeps everything in memory, and both facts shape how it fails. The instance is on host cache.internal.",
+  "steps": [
+    {
+      "prompt": "Check memory use and the configured limit on cache.internal.",
+      "expected_commands": ["redis-cli -h cache.internal info memory"],
+      "fake_output": "used_memory_human:7.41G\nused_memory_rss_human:9.20G\nmaxmemory_human:8.00G\nmaxmemory_policy:noeviction\nmem_fragmentation_ratio:1.24",
+      "explanation": "7.41 GB used of an 8 GB limit, and the policy at the limit is noeviction.",
+      "why": "Two findings. The instance is 93% full. And 'noeviction' means that at the limit Redis refuses writes with an error instead of dropping old keys. That's right for a datastore you can't afford to lose from, and wrong for a cache. 'rss' is what the operating system sees; a fragmentation ratio well above 1.5 means memory is being wasted."
+    },
+    {
+      "prompt": "Find out what's using the memory: scan for the largest key of each type.",
+      "expected_commands": ["redis-cli -h cache.internal --bigkeys"],
+      "fake_output": "[00.00%] Biggest string found so far 'page:home' with 48211 bytes\n[41.20%] Biggest hash   found so far 'cart:88120' with 31 fields\n[77.03%] Biggest list   found so far 'jobs:dead' with 9120044 items\n\n-------- summary -------\nBiggest   list found 'jobs:dead' has 9120044 items\nBiggest string found 'page:home' has 48211 bytes",
+      "explanation": "A list called jobs:dead holds over 9 million items.",
+      "why": "--bigkeys walks the keyspace with SCAN, in small steps, so it's safe on a live server. One enormous key is a common cause of full memory: a dead-letter list nobody trims. 'redis-cli memory usage <key>' gives the byte size of one key, and --memkeys ranks by bytes instead of element count."
+    },
+    {
+      "prompt": "Count the session keys safely: list keys matching session:* with the client's incremental scan, piped to wc -l.",
+      "expected_commands": ["redis-cli -h cache.internal --scan --pattern 'session:*' | wc -l", "redis-cli -h cache.internal --scan --pattern \"session:*\" | wc -l", "redis-cli -h cache.internal --scan --pattern session:* | wc -l"],
+      "fake_output": "2104410",
+      "explanation": "2.1 million session keys, counted without blocking the server.",
+      "why": "Never run KEYS in production. Redis executes one command at a time, so KEYS session:* on millions of keys freezes every other client for seconds, and the application times out everywhere at once. SCAN returns a few keys per call and lets other commands run in between. The same rule applies to any command that touches a huge key in one go, such as DEL on that 9-million-item list; use UNLINK, which frees it in the background."
+    },
+    {
+      "prompt": "Check whether slow commands have been blocking the server: show the 5 most recent entries in the slow log.",
+      "expected_commands": ["redis-cli -h cache.internal slowlog get 5"],
+      "fake_output": "1) 1) (integer) 4410\n   2) (integer) 1790592001\n   3) (integer) 2841077\n   4) 1) \"KEYS\"\n      2) \"session:*\"\n   5) \"10.0.1.44:50112\"\n2) 1) (integer) 4409\n   2) (integer) 1790591701\n   3) (integer) 2790410\n   4) 1) \"KEYS\"\n      2) \"session:*\"\n   5) \"10.0.1.44:50112\"",
+      "explanation": "Someone at 10.0.1.44 runs KEYS session:* every five minutes, and each run takes 2.8 seconds.",
+      "why": "The third number is the duration in microseconds: 2,841,077 is 2.8 seconds during which Redis served nobody. Regular latency spikes on a fixed interval are nearly always a scheduled job like this one. The slow log names the command and the client address, which is all you need to find the culprit."
+    },
+    {
+      "prompt": "Check persistence: would the data survive a restart?",
+      "expected_commands": ["redis-cli -h cache.internal info persistence"],
+      "fake_output": "rdb_last_save_time:1790592300\nrdb_last_bgsave_status:ok\nrdb_changes_since_last_save:184220\naof_enabled:0",
+      "explanation": "Snapshots (RDB) are working; the append-only file (AOF) is off. 184,220 changes since the last snapshot would be lost in a crash.",
+      "why": "RDB is a periodic snapshot: compact, fast to load, and you lose everything since the last one. AOF logs every write, with fsync once a second by default, so you lose at most a second. A pure cache may need neither. If Redis holds anything you can't rebuild, such as queues or sessions, turn AOF on. A snapshot forks the process, so allow memory headroom for it."
+    },
+    {
+      "prompt": "This instance is a cache, so it should drop old entries when full, not refuse writes. Change the eviction policy to allkeys-lru on the running server.",
+      "expected_commands": ["redis-cli -h cache.internal config set maxmemory-policy allkeys-lru"],
+      "fake_output": "OK",
+      "explanation": "At the memory limit, Redis now evicts the least recently used keys.",
+      "why": "CONFIG SET changes the running server only; the next restart reverts to the config file. Run 'config rewrite' to save it, or better, change it in the configuration management that owns the file. allkeys-lru suits a cache; volatile-lru only evicts keys that have a TTL, which fails in the same way as noeviction if nothing has one. Don't mix cache data and must-keep data in one instance: they need opposite policies."
+    }
+  ]
+}

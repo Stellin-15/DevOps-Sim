@@ -1,0 +1,55 @@
+{
+  "id": "databases-incident-001",
+  "type": "incident",
+  "category": "databases",
+  "title": "The database disk is filling up, and the tables aren't growing",
+  "difficulty": "advanced",
+  "tags": ["postgresql", "wal", "replication-slots", "disk"],
+  "intro": "The disk alert on the primary database host fired at 85% and it's now at 94%, climbing about 1% every ten minutes. Table sizes haven't changed. At 100% PostgreSQL will stop with a PANIC and take the shop down. The data directory is /var/lib/postgresql/16/main.",
+  "steps": [
+    {
+      "prompt": "Find what's using the space inside the data directory: show the size of each of its subdirectories, largest last.",
+      "expected_commands": ["sudo du -sh /var/lib/postgresql/16/main/* | sort -h", "du -sh /var/lib/postgresql/16/main/* | sort -h", "sudo du -sh /var/lib/postgresql/16/main/* | sort -rh"],
+      "fake_output": "4.0K\t/var/lib/postgresql/16/main/PG_VERSION\n12M\t/var/lib/postgresql/16/main/pg_xact\n98G\t/var/lib/postgresql/16/main/base\n371G\t/var/lib/postgresql/16/main/pg_wal",
+      "hint": "du -sh <dir>/* | sort -h"
+    },
+    {
+      "prompt": "pg_wal holds 371 GB; it's normally a few GB. Something is stopping PostgreSQL from recycling old WAL. First rule out the archiver: check whether WAL archiving is failing.",
+      "expected_commands": ["psql -c \"SELECT * FROM pg_stat_archiver;\"", "psql -c \"SELECT * FROM pg_stat_archiver\"", "psql -x -c \"SELECT * FROM pg_stat_archiver;\"", "psql -c \"SELECT failed_count, last_failed_time FROM pg_stat_archiver;\""],
+      "fake_output": " archived_count | last_archived_wal        | last_archived_time     | failed_count | last_failed_time\n----------------+--------------------------+------------------------+--------------+------------------\n         184302 | 00000001000002A500000019 | 2026-09-28 11:20:41+00 |            0 |",
+      "hint": "The view is pg_stat_archiver."
+    },
+    {
+      "prompt": "Archiving is healthy. The other thing that pins WAL is a replication slot. List the slots with whether each is active and how much WAL it's holding back: select slot_name, active, and pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)) from pg_replication_slots.",
+      "expected_commands": ["psql -c \"SELECT slot_name, active, pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)) FROM pg_replication_slots;\"", "psql -c \"SELECT slot_name, active, pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)) FROM pg_replication_slots\"", "psql -c \"SELECT * FROM pg_replication_slots;\""],
+      "fake_output": "     slot_name      | active | pg_size_pretty\n--------------------+--------+----------------\n pg_2               | t      | 16 MB\n pg_3               | t      | 48 MB\n analytics_cdc_test | f      | 369 GB",
+      "hint": "SELECT slot_name, active, pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)) FROM pg_replication_slots;"
+    },
+    {
+      "prompt": "A slot named analytics_cdc_test is inactive and holding 369 GB. The analytics team confirms it was a change-data-capture trial that ended two weeks ago. Drop the slot.",
+      "expected_commands": ["psql -c \"SELECT pg_drop_replication_slot('analytics_cdc_test');\"", "psql -c \"SELECT pg_drop_replication_slot('analytics_cdc_test')\""],
+      "fake_output": " pg_drop_replication_slot\n--------------------------\n",
+      "hint": "SELECT pg_drop_replication_slot('<name>');"
+    },
+    {
+      "prompt": "Old WAL is removed at the next checkpoint. Don't wait for it: force one now.",
+      "expected_commands": ["psql -c \"CHECKPOINT;\"", "psql -c \"CHECKPOINT\""],
+      "fake_output": "CHECKPOINT",
+      "hint": "The SQL command is CHECKPOINT."
+    },
+    {
+      "prompt": "Confirm the space came back: check the filesystem holding /var/lib/postgresql.",
+      "expected_commands": ["df -h /var/lib/postgresql", "df -h /var/lib/postgresql/16/main", "df -h"],
+      "fake_output": "Filesystem      Size  Used Avail Use% Mounted on\n/dev/nvme1n1    500G  103G  397G  21% /var/lib/postgresql",
+      "hint": "df -h <path>"
+    },
+    {
+      "prompt": "Make it impossible for a forgotten slot to fill the disk again: set max_slot_wal_keep_size to 50GB server-wide.",
+      "expected_commands": ["psql -c \"ALTER SYSTEM SET max_slot_wal_keep_size = '50GB';\"", "psql -c \"ALTER SYSTEM SET max_slot_wal_keep_size = '50GB'\"", "psql -c \"ALTER SYSTEM SET max_slot_wal_keep_size TO '50GB';\""],
+      "fake_output": "ALTER SYSTEM\n(apply with: SELECT pg_reload_conf();)",
+      "hint": "ALTER SYSTEM SET max_slot_wal_keep_size = '50GB';"
+    }
+  ],
+  "resolution": "A replication slot is a promise: the primary keeps every WAL file the slot's consumer hasn't read yet, so the consumer can disconnect and catch up later. When the consumer never comes back, the promise never expires. Two weeks ago a change-data-capture trial created the slot analytics_cdc_test; the trial ended, the consumer was switched off, and the slot stayed. PostgreSQL then kept two weeks of WAL, 369 GB, until the disk was nearly full. The tables hadn't grown at all, which is the clue: when a database disk fills without the data growing, look at pg_wal, and then at the two things that pin WAL, a failing archive_command and an inactive slot. Dropping the slot and forcing a checkpoint freed the space within seconds. Had the disk reached 100%, PostgreSQL would have shut down, and the fix would have started with finding space just to start it again (never delete files from pg_wal by hand: that corrupts the database). Prevention: max_slot_wal_keep_size puts a ceiling on what any slot may retain, after which the slot is invalidated instead of the disk filling; alert on retained WAL per slot and on any slot with active = false; and treat a slot like any other resource that must be deleted when its consumer is.",
+  "real_commands_used": ["du -sh <datadir>/* | sort -h", "psql pg_stat_archiver", "psql pg_replication_slots with pg_wal_lsn_diff", "psql pg_drop_replication_slot", "psql CHECKPOINT", "df -h", "ALTER SYSTEM SET max_slot_wal_keep_size"]
+}

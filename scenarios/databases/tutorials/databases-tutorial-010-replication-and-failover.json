@@ -1,0 +1,55 @@
+{
+  "id": "databases-tutorial-010",
+  "type": "tutorial",
+  "category": "databases",
+  "title": "Operating Replication and Failover with Patroni",
+  "difficulty": "advanced",
+  "tags": ["postgresql", "replication", "failover", "patroni", "high-availability"],
+  "intro": "System Design introduced read replicas and lag as ideas. This is the operator's side: a three-node PostgreSQL cluster named shop-db (members pg-1, pg-2, pg-3) managed by Patroni, which handles leader election and failover using a consensus store. You need to patch the leader's host without an outage.",
+  "steps": [
+    {
+      "prompt": "Show the cluster's members, their roles, and their lag. Patroni's config is at /etc/patroni.yml.",
+      "expected_commands": ["patronictl -c /etc/patroni.yml list", "patronictl -c /etc/patroni.yml list shop-db"],
+      "fake_output": "+ Cluster: shop-db ----+---------+-----------+----+-----------+\n| Member | Host        | Role    | State     | TL | Lag in MB |\n+--------+-------------+---------+-----------+----+-----------+\n| pg-1   | 10.0.2.11   | Leader  | running   |  7 |           |\n| pg-2   | 10.0.2.12   | Replica | streaming |  7 |         0 |\n| pg-3   | 10.0.2.13   | Replica | streaming |  7 |       412 |\n+--------+-------------+---------+-----------+----+-----------+",
+      "explanation": "pg-1 leads. pg-2 is fully caught up; pg-3 is 412 MB behind.",
+      "why": "This is the first command in any database HA situation. TL is the timeline, which increases at every failover. The lag column decides who's a safe candidate: promoting pg-3 now would discard 412 MB of changes it hasn't received."
+    },
+    {
+      "prompt": "On the leader, look at replication from PostgreSQL's side: select client_addr, state, sync_state, and replay_lag from pg_stat_replication.",
+      "expected_commands": ["psql -c \"SELECT client_addr, state, sync_state, replay_lag FROM pg_stat_replication;\"", "psql -c \"SELECT client_addr, state, sync_state, replay_lag FROM pg_stat_replication\""],
+      "fake_output": " client_addr |   state   | sync_state |   replay_lag\n-------------+-----------+------------+-----------------\n 10.0.2.12   | streaming | sync       | 00:00:00.001204\n 10.0.2.13   | streaming | async      | 00:01:31.220118",
+      "explanation": "pg-2 is a synchronous replica; pg-3 is asynchronous and 91 seconds behind.",
+      "why": "With a synchronous replica, a commit isn't acknowledged until that replica has it, so failing over to pg-2 loses nothing. The cost is that every write waits for it, and if the only sync replica dies, writes stall until Patroni demotes the requirement. Async replicas are faster and can lose their lag on failover."
+    },
+    {
+      "prompt": "Replicas hold their place in the WAL using replication slots. Check the slots and how much WAL each is making the leader keep: select slot_name, active, and pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)) from pg_replication_slots.",
+      "expected_commands": ["psql -c \"SELECT slot_name, active, pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)) FROM pg_replication_slots;\"", "psql -c \"SELECT slot_name, active, pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)) FROM pg_replication_slots\""],
+      "fake_output": " slot_name | active | pg_size_pretty\n-----------+--------+----------------\n pg_2      | t      | 16 MB\n pg_3      | t      | 412 MB",
+      "hint": "SELECT slot_name, active, pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)) FROM pg_replication_slots;",
+      "explanation": "Both slots are active and retaining a modest amount of WAL.",
+      "why": "A slot guarantees the leader keeps WAL until the consumer has read it, so a replica can disconnect and catch up later. The danger is an inactive slot: the leader keeps WAL for it for ever, and the disk fills. Monitor retained size per slot and set max_slot_wal_keep_size as a ceiling. databases-incident-001 is that failure."
+    },
+    {
+      "prompt": "Time to patch pg-1. Move leadership to pg-2 in a controlled way.",
+      "expected_commands": ["patronictl -c /etc/patroni.yml switchover --leader pg-1 --candidate pg-2", "patronictl -c /etc/patroni.yml switchover --candidate pg-2 --leader pg-1", "patronictl -c /etc/patroni.yml switchover shop-db --leader pg-1 --candidate pg-2", "patronictl -c /etc/patroni.yml switchover --leader pg-1 --candidate pg-2 --force"],
+      "fake_output": "Current cluster topology\n...\nAre you sure you want to switchover cluster shop-db, demoting current leader pg-1? [y/N]: y\n2026-09-28 10:52:07 Successfully switched over to \"pg-2\"\n| pg-1   | 10.0.2.11   | Replica | stopped   |    |   unknown |\n| pg-2   | 10.0.2.12   | Leader  | running   |  8 |           |",
+      "explanation": "pg-2 is the leader on timeline 8, and pg-1 is restarting as a replica.",
+      "why": "A switchover is planned: the old leader shuts down cleanly, the candidate catches up fully, then takes over, so no data is lost and writes pause for a few seconds. 'failover' is the unplanned form, for when the leader is already gone, and may lose whatever an async candidate hadn't received. Applications must reconnect, which is why they should connect through a proxy or a name that follows the leader, not to pg-1 directly."
+    },
+    {
+      "prompt": "After patching and rebooting pg-1, confirm it rejoined and is replicating.",
+      "expected_commands": ["patronictl -c /etc/patroni.yml list", "patronictl -c /etc/patroni.yml list shop-db"],
+      "fake_output": "+ Cluster: shop-db ----+---------+-----------+----+-----------+\n| Member | Host        | Role    | State     | TL | Lag in MB |\n+--------+-------------+---------+-----------+----+-----------+\n| pg-1   | 10.0.2.11   | Replica | streaming |  8 |         0 |\n| pg-2   | 10.0.2.12   | Leader  | running   |  8 |           |\n| pg-3   | 10.0.2.13   | Replica | streaming |  8 |         0 |\n+--------+-------------+---------+-----------+----+-----------+",
+      "explanation": "All three members are on timeline 8, and both replicas are caught up.",
+      "why": "Always finish a failover by checking the old leader came back as a replica. If it had been ahead of the new leader when it stopped (possible after an unplanned failover), its history has diverged and it can't simply follow; Patroni repairs that with pg_rewind, or you rebuild it with 'patronictl reinit'. A cluster quietly running on two members has no spare."
+    },
+    {
+      "prompt": "The worst failure in an HA database is 'split brain': two nodes both believing they're the leader and both accepting writes. What prevents it in a Patroni cluster?\n  a) Replicas check the leader with ping\n  b) A leader lock in a consensus store (etcd or Consul): a node may only be leader while it holds and keeps renewing the lock, and demotes itself if it can't\n  c) The application picks whichever node answers first\n  d) Synchronous replication\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "leader holds key /service/shop-db/leader in etcd, TTL 30s, renewed every 10s\nleader loses contact with etcd  ->  cannot renew  ->  demotes itself to read-only\nonly then can another member acquire the lock and promote",
+      "hint": "A partitioned leader has to stop being a leader by itself, without being told.",
+      "explanation": "A lock with an expiry, in a store that itself needs a majority to write.",
+      "why": "A network partition can leave the old leader alive and reachable by some clients. Ping can't tell a dead node from an unreachable one. The lock can: the isolated leader fails to renew and steps down before anyone else may promote. This is why the consensus store needs three or five members across failure zones, and why writing your own failover script is a well-known way to lose data."
+    }
+  ]
+}

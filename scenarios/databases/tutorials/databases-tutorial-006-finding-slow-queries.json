@@ -1,0 +1,55 @@
+{
+  "id": "databases-tutorial-006",
+  "type": "tutorial",
+  "category": "databases",
+  "title": "Finding Slow Queries: pg_stat_statements, EXPLAIN, and Sizes",
+  "difficulty": "intermediate",
+  "tags": ["postgresql", "performance", "pg_stat_statements", "explain"],
+  "intro": "Database CPU has crept up to 85% over a month. Nothing is broken, so pg_stat_activity shows nothing dramatic. You need history: which queries cost the most in total? Commands run from the shell with psql -c against the shop database.",
+  "steps": [
+    {
+      "prompt": "The pg_stat_statements extension records every kind of query the server runs. Show the 5 with the highest total execution time: select calls, mean_exec_time, total_exec_time, and query, ordered by total_exec_time descending.",
+      "expected_commands": ["psql -c \"SELECT calls, mean_exec_time, total_exec_time, query FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 5;\"", "psql -c \"SELECT calls, mean_exec_time, total_exec_time, query FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 5\""],
+      "fake_output": "  calls   | mean_exec_time | total_exec_time |                        query\n----------+----------------+-----------------+-----------------------------------------------------\n 41200310 |           2.10 |     86520651.00 | SELECT * FROM products WHERE lower(sku) = $1\n     1104 |       21044.80 |     23233459.20 | SELECT ... FROM orders JOIN order_items ... (report)\n  9120044 |           0.31 |      2827213.64 | SELECT * FROM customers WHERE id = $1\n   880312 |           1.90 |      1672592.80 | INSERT INTO orders ...\n    42001 |          22.75 |       955522.75 | UPDATE products SET stock = stock - $1 WHERE id = $2",
+      "hint": "SELECT calls, mean_exec_time, total_exec_time, query FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 5;",
+      "explanation": "The top query takes only 2 ms, but it ran 41 million times. The 21-second report is second.",
+      "why": "Order by total time, not mean time. The slow-query log would only ever show you the 21-second report; the real cost is a 2 ms query called constantly. A fast query run millions of times is the usual cause of creeping CPU, and the usual fix is an index or a cache, not hardware."
+    },
+    {
+      "prompt": "Look at how the top query is executed, with real timings and buffer counts: run EXPLAIN (ANALYZE, BUFFERS) on SELECT * FROM products WHERE lower(sku) = 'ab-1001'.",
+      "expected_commands": ["psql -c \"EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM products WHERE lower(sku) = 'ab-1001';\"", "psql -c \"EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM products WHERE lower(sku) = 'ab-1001'\""],
+      "fake_output": " Seq Scan on products  (cost=0.00..4310.00 rows=1 width=212) (actual time=1.204..2.091 rows=1 loops=1)\n   Filter: (lower(sku) = 'ab-1001'::text)\n   Rows Removed by Filter: 119999\n   Buffers: shared hit=2810\n Planning Time: 0.080 ms\n Execution Time: 2.110 ms",
+      "explanation": "A sequential scan: it read all 120,000 rows and threw away all but one.",
+      "why": "There's an index on sku, but the query filters on lower(sku), and an index on a column can't serve a function of that column. 'Rows Removed by Filter' is the tell: work done and discarded. BUFFERS shows the I/O: 2,810 pages read for one row. Remember that EXPLAIN ANALYZE really runs the statement, so wrap a write in BEGIN ... ROLLBACK."
+    },
+    {
+      "prompt": "Create an index that matches the expression, without blocking writes to the table: name it idx_products_sku_lower, on products (lower(sku)).",
+      "expected_commands": ["psql -c \"CREATE INDEX CONCURRENTLY idx_products_sku_lower ON products (lower(sku));\"", "psql -c \"CREATE INDEX CONCURRENTLY idx_products_sku_lower ON products (lower(sku))\""],
+      "fake_output": "CREATE INDEX",
+      "explanation": "An expression index on lower(sku). The same query now uses an index scan and takes about 0.03 ms.",
+      "why": "Plain CREATE INDEX blocks every write to the table until it finishes. CONCURRENTLY builds it while writes continue, at the price of taking longer, and it can't run inside a transaction. If it fails, it leaves an INVALID index behind that you must drop. Check with '\\d products'."
+    },
+    {
+      "prompt": "Indexes aren't free: each one slows every write and takes disk. Find indexes that have never been used: select indexrelname and idx_scan from pg_stat_user_indexes where idx_scan = 0.",
+      "expected_commands": ["psql -c \"SELECT indexrelname, idx_scan FROM pg_stat_user_indexes WHERE idx_scan = 0;\"", "psql -c \"SELECT indexrelname, idx_scan FROM pg_stat_user_indexes WHERE idx_scan = 0\""],
+      "fake_output": "       indexrelname        | idx_scan\n---------------------------+----------\n idx_orders_status_old     |        0\n idx_products_legacy_code  |        0",
+      "explanation": "Two indexes have had no scans since statistics were last reset.",
+      "why": "An unused index is pure cost. Before dropping one, check three things: how long ago the statistics were reset (a monthly report may not have run yet), that it isn't enforcing a unique constraint, and the replicas, which keep their own counters and may be where the reads go."
+    },
+    {
+      "prompt": "See where the disk space goes. List the 5 largest tables including their indexes: select relname and pg_size_pretty(pg_total_relation_size(relid)) from pg_stat_user_tables, ordered by pg_total_relation_size(relid) descending.",
+      "expected_commands": ["psql -c \"SELECT relname, pg_size_pretty(pg_total_relation_size(relid)) FROM pg_stat_user_tables ORDER BY pg_total_relation_size(relid) DESC LIMIT 5;\"", "psql -c \"SELECT relname, pg_size_pretty(pg_total_relation_size(relid)) FROM pg_stat_user_tables ORDER BY pg_total_relation_size(relid) DESC LIMIT 5\""],
+      "fake_output": "   relname   | pg_size_pretty\n-------------+----------------\n audit_log   | 212 GB\n orders      | 41 GB\n order_items | 38 GB\n sessions    | 9120 MB\n products    | 310 MB",
+      "hint": "SELECT relname, pg_size_pretty(pg_total_relation_size(relid)) FROM pg_stat_user_tables ORDER BY pg_total_relation_size(relid) DESC LIMIT 5;",
+      "explanation": "An audit log nobody queries is five times the size of the orders table.",
+      "why": "pg_total_relation_size includes indexes and large-value storage; pg_relation_size is the table alone. Append-only tables such as audit logs and sessions grow for ever unless something removes old rows. The clean answer is partitioning by time, so an old month is dropped as a whole partition instead of deleted row by row."
+    },
+    {
+      "prompt": "Log every statement slower than 500 ms from now on, so the next slow query leaves a trace. Set log_min_duration_statement server-wide.",
+      "expected_commands": ["psql -c \"ALTER SYSTEM SET log_min_duration_statement = '500ms';\"", "psql -c \"ALTER SYSTEM SET log_min_duration_statement = '500ms'\"", "psql -c \"ALTER SYSTEM SET log_min_duration_statement TO '500ms';\"", "psql -c \"ALTER SYSTEM SET log_min_duration_statement = 500;\""],
+      "fake_output": "ALTER SYSTEM\n(apply with: SELECT pg_reload_conf();)",
+      "explanation": "After a reload, statements over 500 ms are written to the server log with their duration.",
+      "why": "The slow log and pg_stat_statements answer different questions: the log gives individual slow executions with their parameters and timestamps; the extension gives totals without parameters. The auto_explain module goes further and logs the plan of each slow statement, which is the only way to catch a query that's slow only sometimes."
+    }
+  ]
+}

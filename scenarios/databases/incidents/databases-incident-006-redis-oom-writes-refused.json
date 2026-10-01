@@ -1,0 +1,49 @@
+{
+  "id": "databases-incident-006",
+  "type": "incident",
+  "category": "databases",
+  "title": "Redis is up, reads work, and every write fails",
+  "difficulty": "intermediate",
+  "tags": ["redis", "memory", "eviction", "ttl"],
+  "intro": "Logins started failing at 09:12. The API logs show 'OOM command not allowed when used memory > maxmemory' from Redis on host cache.internal. Redis answers PING, cached pages still load, and the host has plenty of free RAM. This instance holds both the page cache and user sessions.",
+  "steps": [
+    {
+      "prompt": "Check Redis's memory use against its limit, and what it's set to do when it reaches it.",
+      "expected_commands": ["redis-cli -h cache.internal info memory"],
+      "fake_output": "used_memory_human:8.00G\nmaxmemory_human:8.00G\nmaxmemory_policy:volatile-lru\nmem_fragmentation_ratio:1.08",
+      "hint": "redis-cli -h <host> info memory"
+    },
+    {
+      "prompt": "It's exactly at the 8 GB limit, with policy volatile-lru: evict the least recently used keys, but only among keys that have an expiry. If it's refusing writes, it has run out of keys it's allowed to evict. Check the keyspace: how many keys exist, and how many have an expiry.",
+      "expected_commands": ["redis-cli -h cache.internal info keyspace"],
+      "fake_output": "# Keyspace\ndb0:keys=31204410,expires=18804,avg_ttl=41200",
+      "hint": "redis-cli -h <host> info keyspace"
+    },
+    {
+      "prompt": "31 million keys, and only 18,804 can expire. Find out what the others are: sample a few key names with the incremental scan, showing the first 5.",
+      "expected_commands": ["redis-cli -h cache.internal --scan | head -5", "redis-cli -h cache.internal --scan | head -n 5", "redis-cli -h cache.internal --scan --count 100 | head -5"],
+      "fake_output": "session:9f1c2e7a\nsession:41bb07d2\nsession:c08e11f4\npage:home\nsession:7a2d90be",
+      "hint": "redis-cli -h <host> --scan | head -5   (never KEYS *)"
+    },
+    {
+      "prompt": "Mostly session keys. Check whether a session key expires: get the time to live of session:9f1c2e7a.",
+      "expected_commands": ["redis-cli -h cache.internal ttl session:9f1c2e7a"],
+      "fake_output": "(integer) -1",
+      "hint": "redis-cli -h <host> ttl <key>"
+    },
+    {
+      "prompt": "-1 means the key exists and has no expiry: sessions are stored for ever. A release three weeks ago changed the session code and dropped the expiry. You need writes working now. Switch the eviction policy on the running server so Redis may evict any key, least recently used first.",
+      "expected_commands": ["redis-cli -h cache.internal config set maxmemory-policy allkeys-lru"],
+      "fake_output": "OK",
+      "hint": "redis-cli -h <host> config set maxmemory-policy allkeys-lru"
+    },
+    {
+      "prompt": "Confirm writes are accepted again and that eviction is happening: check the stats section for evicted keys.",
+      "expected_commands": ["redis-cli -h cache.internal info stats | grep evicted_keys", "redis-cli -h cache.internal info stats | grep evicted", "redis-cli -h cache.internal info stats"],
+      "fake_output": "evicted_keys:184220",
+      "hint": "redis-cli -h <host> info stats | grep evicted_keys"
+    }
+  ],
+  "resolution": "Redis wasn't out of memory in the operating-system sense; it had reached its own configured limit and had nothing it was permitted to throw away. The policy was volatile-lru, which evicts only keys that carry an expiry. That worked for years because sessions were written with a 24-hour TTL. Three weeks ago a refactor replaced the write with a plain SET, the expiry was lost, and from then on every login left a key that could never be evicted or expire. Memory climbed steadily to 8 GB, the 18,804 expirable page-cache keys were squeezed out first, and then Redis did the only thing left: refuse writes. Reads still worked, which is why the site looked half alive. Switching to allkeys-lru restored service in seconds by letting Redis evict the least recently used sessions, which logs out people who hadn't been active, an acceptable cost. It's a mitigation, not the fix. The fix is in the application: restore the expiry (SET with EX, or EXPIRE after the write), then give the existing keys one, with a script that walks them using SCAN and sets a TTL on each. Also persist the policy change, since CONFIG SET is lost on restart. The wider lessons: a slow, straight-line rise in Redis memory is the picture of keys without a TTL, and three weeks of that graph went unwatched; alert on memory at 80% of maxmemory and on the ratio of expires to keys. And sessions and cache shouldn't share an instance, because they need opposite policies: a cache should evict freely, while sessions should never be evicted, only expire.",
+  "real_commands_used": ["redis-cli info memory", "redis-cli info keyspace", "redis-cli --scan | head", "redis-cli ttl <key>", "redis-cli config set maxmemory-policy allkeys-lru", "redis-cli info stats | grep evicted_keys"]
+}

@@ -1,0 +1,43 @@
+{
+  "id": "databases-incident-004",
+  "type": "incident",
+  "category": "databases",
+  "title": "The same query, 4,000 times slower since last night",
+  "difficulty": "intermediate",
+  "tags": ["postgresql", "statistics", "analyze", "query-plans"],
+  "intro": "The order-history page took 5 ms yesterday and takes 20 seconds today. No deploy, no schema change, no traffic spike. The only event overnight was a data import: 30 million historical rows were bulk-loaded into order_items from an acquired company. The query joins orders to order_items for one customer.",
+  "steps": [
+    {
+      "prompt": "Look at the plan with real numbers. Run EXPLAIN ANALYZE on: SELECT * FROM orders o JOIN order_items i ON i.order_id = o.id WHERE o.customer_id = 8812",
+      "expected_commands": ["psql -c \"EXPLAIN ANALYZE SELECT * FROM orders o JOIN order_items i ON i.order_id = o.id WHERE o.customer_id = 8812;\"", "psql -c \"EXPLAIN ANALYZE SELECT * FROM orders o JOIN order_items i ON i.order_id = o.id WHERE o.customer_id = 8812\"", "psql -c \"EXPLAIN (ANALYZE) SELECT * FROM orders o JOIN order_items i ON i.order_id = o.id WHERE o.customer_id = 8812;\"", "psql -c \"EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM orders o JOIN order_items i ON i.order_id = o.id WHERE o.customer_id = 8812;\""],
+      "fake_output": " Hash Join  (cost=412.10..310442.00 rows=44 width=180) (actual time=19804.11..20110.42 rows=212 loops=1)\n   Hash Cond: (i.order_id = o.id)\n   ->  Seq Scan on order_items i  (cost=0.00..271000.00 rows=14410021 width=96) (actual time=0.02..15220.30 rows=44410021 loops=1)\n   ->  Hash  (cost=411.00..411.00 rows=88 width=84) (actual time=0.41..0.41 rows=88 loops=1)\n         ->  Index Scan using idx_orders_customer_created on orders o  (rows=88) (actual rows=88)\n Execution Time: 20110.90 ms",
+      "hint": "psql -c \"EXPLAIN ANALYZE <the query>;\""
+    },
+    {
+      "prompt": "It reads all of order_items sequentially, and the planner thinks the table has 14.4 million rows (rows=14410021) when it really has 44.4 million. The planner's idea of a table comes from statistics. Check when order_items was last analyzed: select relname, n_live_tup, n_mod_since_analyze, last_analyze, and last_autoanalyze from pg_stat_user_tables where relname = 'order_items'.",
+      "expected_commands": ["psql -c \"SELECT relname, n_live_tup, n_mod_since_analyze, last_analyze, last_autoanalyze FROM pg_stat_user_tables WHERE relname = 'order_items';\"", "psql -c \"SELECT relname, n_live_tup, n_mod_since_analyze, last_analyze, last_autoanalyze FROM pg_stat_user_tables WHERE relname = 'order_items'\"", "psql -x -c \"SELECT * FROM pg_stat_user_tables WHERE relname = 'order_items';\"", "psql -c \"SELECT * FROM pg_stat_user_tables WHERE relname = 'order_items';\""],
+      "fake_output": "   relname   | n_live_tup | n_mod_since_analyze | last_analyze |    last_autoanalyze\n-------------+------------+---------------------+--------------+------------------------\n order_items |   14410021 |            30000000 |              | 2026-09-26 04:12:09+00",
+      "hint": "SELECT relname, n_live_tup, n_mod_since_analyze, last_analyze, last_autoanalyze FROM pg_stat_user_tables WHERE relname = 'order_items';"
+    },
+    {
+      "prompt": "30 million rows changed since statistics were last gathered two days ago, and autoanalyze hasn't caught up. Is it running now? Look for autovacuum workers in pg_stat_activity: select pid, query from pg_stat_activity where backend_type = 'autovacuum worker'.",
+      "expected_commands": ["psql -c \"SELECT pid, query FROM pg_stat_activity WHERE backend_type = 'autovacuum worker';\"", "psql -c \"SELECT pid, query FROM pg_stat_activity WHERE backend_type = 'autovacuum worker'\"", "psql -c \"SELECT pid, query FROM pg_stat_activity WHERE query LIKE 'autovacuum:%';\""],
+      "fake_output": "  pid  |                          query\n-------+----------------------------------------------------------\n 60112 | autovacuum: VACUUM public.audit_log (to prevent wraparound)\n 60140 | autovacuum: VACUUM public.sessions\n 60171 | autovacuum: VACUUM public.audit_log_archive",
+      "hint": "Filter pg_stat_activity on backend_type = 'autovacuum worker'."
+    },
+    {
+      "prompt": "All three autovacuum workers are busy on other large tables, so order_items is waiting its turn. Don't wait: gather statistics for order_items now.",
+      "expected_commands": ["psql -c \"ANALYZE order_items;\"", "psql -c \"ANALYZE order_items\"", "psql -c \"ANALYZE VERBOSE order_items;\"", "psql -c \"ANALYZE (VERBOSE) order_items;\""],
+      "fake_output": "ANALYZE",
+      "hint": "ANALYZE <table>;"
+    },
+    {
+      "prompt": "Run the same EXPLAIN ANALYZE again to confirm the plan changed.",
+      "expected_commands": ["psql -c \"EXPLAIN ANALYZE SELECT * FROM orders o JOIN order_items i ON i.order_id = o.id WHERE o.customer_id = 8812;\"", "psql -c \"EXPLAIN ANALYZE SELECT * FROM orders o JOIN order_items i ON i.order_id = o.id WHERE o.customer_id = 8812\"", "psql -c \"EXPLAIN (ANALYZE) SELECT * FROM orders o JOIN order_items i ON i.order_id = o.id WHERE o.customer_id = 8812;\"", "psql -c \"EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM orders o JOIN order_items i ON i.order_id = o.id WHERE o.customer_id = 8812;\""],
+      "fake_output": " Nested Loop  (cost=0.99..1204.40 rows=210 width=180) (actual time=0.05..4.10 rows=212 loops=1)\n   ->  Index Scan using idx_orders_customer_created on orders o  (rows=88) (actual rows=88)\n   ->  Index Scan using idx_order_items_order_id on order_items i  (rows=2) (actual rows=2 loops=88)\n Execution Time: 4.31 ms",
+      "hint": "The same command as the first step."
+    }
+  ],
+  "resolution": "The query didn't change and neither did the indexes. What changed was the planner's picture of the data. PostgreSQL chooses a plan by estimating how many rows each step will produce, using statistics that ANALYZE collects by sampling each table. The overnight import tripled order_items, but the statistics still described the old table, so the planner costed its options against a table that no longer existed and picked a hash join over a full scan of 44 million rows. With fresh statistics it chose 88 index lookups instead, and the query went from 20 seconds to 4 ms. Autoanalyze would have fixed this by itself eventually; it was queued behind three large vacuum jobs, because the default of three workers is shared by every table in the cluster. The signature to remember is in the plan: an estimated row count (rows=) far from the actual one. Whenever those differ by a large factor, suspect statistics before you suspect the query. Prevention: make ANALYZE the last step of every bulk load, restore, or major-version upgrade (pg_upgrade carries no statistics over in older versions, which produces this exact incident across a whole database); raise autovacuum_max_workers on clusters with many large tables; and for columns whose values are skewed or correlated, raise the statistics target or create extended statistics so the estimates are better to begin with.",
+  "real_commands_used": ["psql EXPLAIN ANALYZE (compare estimated and actual rows)", "psql pg_stat_user_tables (n_mod_since_analyze, last_autoanalyze)", "psql pg_stat_activity WHERE backend_type = 'autovacuum worker'", "psql ANALYZE <table>", "psql EXPLAIN ANALYZE again"]
+}

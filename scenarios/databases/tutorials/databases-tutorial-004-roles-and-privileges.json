@@ -1,0 +1,61 @@
+{
+  "id": "databases-tutorial-004",
+  "type": "tutorial",
+  "category": "databases",
+  "title": "Roles and Privileges: Least Privilege in PostgreSQL",
+  "difficulty": "intermediate",
+  "tags": ["postgresql", "roles", "security", "access-control"],
+  "intro": "The analytics team wants to query the shop database. Giving them the application's login is the easy answer and the wrong one. Build a read-only role instead. You're inside psql on shop as a superuser.",
+  "steps": [
+    {
+      "prompt": "List the existing roles and their attributes.",
+      "expected_commands": ["\\du", "\\du+"],
+      "fake_output": "                             List of roles\n Role name  |                   Attributes\n------------+------------------------------------------------\n app        |\n deploy     | Create DB\n postgres   | Superuser, Create role, Create DB, Replication\n replicator | Replication",
+      "explanation": "Four roles: the application, a deploy role, the superuser, and a replication role.",
+      "why": "In PostgreSQL users and groups are both 'roles'; a role that can log in is a user. The check here is that the application's role is not a superuser. An app running as postgres turns any SQL injection into full control of the server."
+    },
+    {
+      "prompt": "Create a group role named readonly that cannot log in.",
+      "expected_commands": ["CREATE ROLE readonly NOLOGIN;", "CREATE ROLE readonly NOLOGIN", "CREATE ROLE readonly;", "CREATE ROLE readonly"],
+      "fake_output": "CREATE ROLE",
+      "explanation": "A role that holds privileges, which people are then added to.",
+      "why": "Grant privileges to group roles and membership to people. When someone leaves, you drop one login and the group is untouched. Granting table privileges person by person leaves nobody able to say who can read what."
+    },
+    {
+      "prompt": "A role needs three things to read a table: to connect to the database, to use the schema, and to select from the tables. The first two are done. Grant readonly SELECT on all existing tables in schema public.",
+      "expected_commands": ["GRANT SELECT ON ALL TABLES IN SCHEMA public TO readonly;", "GRANT SELECT ON ALL TABLES IN SCHEMA public TO readonly"],
+      "fake_output": "GRANT",
+      "explanation": "readonly can now read every table that exists today.",
+      "why": "The words 'that exists today' are the trap. This grant is a one-off over current tables. A table created by next week's migration is not covered, and the analysts' dashboards break with 'permission denied'. The next step fixes that."
+    },
+    {
+      "prompt": "Make tables created in future by the role deploy readable by readonly automatically.",
+      "expected_commands": ["ALTER DEFAULT PRIVILEGES FOR ROLE deploy IN SCHEMA public GRANT SELECT ON TABLES TO readonly;", "ALTER DEFAULT PRIVILEGES FOR ROLE deploy IN SCHEMA public GRANT SELECT ON TABLES TO readonly"],
+      "fake_output": "ALTER DEFAULT PRIVILEGES",
+      "hint": "ALTER DEFAULT PRIVILEGES FOR ROLE deploy IN SCHEMA public GRANT SELECT ON TABLES TO readonly;",
+      "explanation": "Any table deploy creates in public from now on is granted to readonly at creation.",
+      "why": "Default privileges belong to the role that creates the objects. Without 'FOR ROLE deploy' the rule applies only to tables you, the current user, create, which is the usual reason this 'didn't work'. Run it for whichever role runs your migrations."
+    },
+    {
+      "prompt": "Create a login for an analyst, dana, as a member of readonly. The password is set separately, so create the role with LOGIN and IN ROLE readonly.",
+      "expected_commands": ["CREATE ROLE dana LOGIN IN ROLE readonly;", "CREATE ROLE dana LOGIN IN ROLE readonly", "CREATE ROLE dana IN ROLE readonly LOGIN;", "CREATE USER dana IN ROLE readonly;", "CREATE USER dana IN ROLE readonly"],
+      "fake_output": "CREATE ROLE",
+      "explanation": "dana can log in and inherits readonly's privileges.",
+      "why": "Set the password with '\\password dana' in psql, which hashes it client-side so the plain text never reaches the server log. Better still, use short-lived credentials (IAM authentication on a cloud database, or Vault's database secrets engine) so there's no long-lived password to leak."
+    },
+    {
+      "prompt": "An analyst's unbounded query shouldn't be able to hurt production. Give the login role dana a statement timeout of 30 seconds.",
+      "expected_commands": ["ALTER ROLE dana SET statement_timeout = '30s';", "ALTER ROLE dana SET statement_timeout = '30s'", "ALTER ROLE dana SET statement_timeout TO '30s';", "ALTER ROLE dana SET statement_timeout TO '30s'"],
+      "fake_output": "ALTER ROLE",
+      "explanation": "dana's sessions now start with a 30-second cap on each statement.",
+      "why": "Read-only doesn't mean harmless: one cross join can use all the I/O and memory. Per-role settings apply at login, so they need no application change. It's set on dana, not on readonly, because settings on a group role aren't inherited by its members: only privileges are. Better still, point analysts at a replica, where a heavy query can't slow the primary."
+    },
+    {
+      "prompt": "Privileges control what a role may do once connected. Which roles may connect at all, from where, and how they authenticate is a separate file. Show the rules the server loaded from it.",
+      "expected_commands": ["SELECT * FROM pg_hba_file_rules;", "SELECT * FROM pg_hba_file_rules", "TABLE pg_hba_file_rules;"],
+      "fake_output": " line_number |  type   | database | user_name  |   address   |  auth_method\n-------------+---------+----------+------------+-------------+---------------\n          90 | local   | {all}    | {postgres} |             | peer\n          94 | hostssl | {shop}   | {app}      | 10.0.1.0/24 | scram-sha-256\n          95 | hostssl | {shop}   | {+readonly}| 10.0.9.0/24 | scram-sha-256\n          99 | host    | {all}    | {all}      | 0.0.0.0/0   | md5",
+      "explanation": "Lines 94 and 95 are tight. Line 99 lets any user connect to any database from anywhere, without TLS.",
+      "why": "pg_hba.conf is read top to bottom and the first matching line wins. Line 99 is the finding: 'host' permits unencrypted connections, 0.0.0.0/0 is the whole internet if the port is reachable, and md5 is the old password hash. Remove it, then apply with 'SELECT pg_reload_conf();', which needs no restart."
+    }
+  ]
+}

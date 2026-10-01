@@ -10,9 +10,10 @@ scenario" for "ready."
 **Structure:** the first half of this file is the original, deepest
 assessment — **Kubernetes / CKA**. Each other category (Docker, Linux,
 Terraform, Networking, CI/CD, Monitoring, MLOps, the three clouds,
-Security, Server Fleet Ops, SRE, Git, and System Design) gets its own section
+Security, Server Fleet Ops, SRE, Git, System Design, and Databases) gets its
+own section
 further down, written the same way: what's covered, what a real job
-expects, what's still missing. Part 17 is the backlog: every topic that
+expects, what's still missing. Part 18 is the backlog: every topic that
 isn't in the game yet, in tiers. The final section is a cross-category
 summary: what "proficient in DevOps" actually requires beyond any single
 tool, and how far this game gets you toward it.
@@ -1125,9 +1126,103 @@ above are where senior design discussions spend their time.
 
 ---
 
-# Part 17 — The backlog: everything that isn't in the game yet
+# Part 17 — Databases
 
-Parts 1 to 16 each list what's missing *inside* a category. This part
+**Content:** 12 tutorials, 6 incidents.
+
+This is the operator's side of databases: what a DevOps or SRE engineer
+needs when there is no database administrator, which is most teams.
+PostgreSQL is the main example, with one tutorial each for MySQL and
+Redis. Design-level topics (indexes as a choice, read replicas,
+sharding, pooling) are in System Design (Part 16), and schema migrations
+in a pipeline are in CI/CD (Part 6); this part doesn't repeat them.
+
+## Covered
+
+Every section of `commands/databases.md`:
+- **psql:** connecting, the backslash commands, expanded output, and
+  running statements from scripts.
+- **SQL for incidents:** filtering and sorting, GROUP BY and HAVING,
+  bucketing by time with `date_trunc`, joins, and a window function.
+- **Transactions:** BEGIN and checking the row count before COMMIT,
+  isolation levels, lost updates and `FOR UPDATE`, and `lock_timeout`.
+- **Roles and privileges:** group roles, the three grants a reader
+  needs, default privileges for future tables, per-role settings, and
+  reading `pg_hba.conf` rules.
+- **Live activity:** `pg_stat_activity`, idle-in-transaction sessions,
+  lock chains with `pg_blocking_pids`, cancel vs terminate, and
+  reloading configuration.
+- **Slow queries:** `pg_stat_statements` by total time,
+  `EXPLAIN (ANALYZE, BUFFERS)`, expression indexes built concurrently,
+  unused indexes, table sizes, and the slow-query log.
+- **Vacuum:** dead rows and bloat, VACUUM vs VACUUM FULL vs pg_repack,
+  per-table autovacuum settings, and transaction id wraparound.
+- **Logical backups:** `pg_dump` formats, globals, parallel restore, a
+  restore test with a data check, and restoring one table.
+- **Point-in-time recovery:** WAL archiving health, pgBackRest backups,
+  a restore to a target time, and RPO vs RTO.
+- **Replication and failover:** Patroni, sync vs async replicas,
+  replication slots, a planned switchover, and split brain.
+- **MySQL:** the process list, metadata locks, deadlocks in the InnoDB
+  status, EXPLAIN, replica status, and a consistent `mysqldump`.
+- **Redis:** memory and eviction policy, big keys, SCAN instead of
+  KEYS, the slow log, and persistence.
+
+Incidents:
+- a disk filling with WAL because of a forgotten replication slot;
+- a millisecond migration that froze the site behind one idle
+  transaction (the lock queue);
+- a DELETE without a WHERE, recovered by point-in-time restore to a
+  side host and copying one table back;
+- a query 4,000 times slower after a bulk load (stale statistics);
+- vacuum that runs constantly and removes nothing (an orphaned prepared
+  transaction);
+- Redis refusing every write at its memory limit (keys without a TTL
+  under `volatile-lru`).
+
+Career path 13 chains these with the System Design, CI/CD, and AWS
+database content.
+
+## Still missing
+
+- **A real database.** Outputs are pre-written. Typing a query against
+  canned output isn't the same as exploring real data, and SQL steps
+  must match the expected statement closely. A database sandbox (the
+  game could drive an in-memory SQLite database, which needs no
+  install) is the most valuable follow-up.
+- **SQL depth:** subqueries and CTEs, set operations, NULL semantics,
+  upserts, schema design and normalization, constraints, JSON columns.
+- **PostgreSQL depth:** partitioning, logical replication, major-version
+  upgrades (`pg_upgrade`), configuration tuning (`shared_buffers`,
+  `work_mem`, checkpoints), PgBouncer administration, extensions, and
+  streaming replication set up by hand.
+- **MySQL depth:** binary logs and point-in-time recovery, GTID
+  replication, online schema-change tools, InnoDB tuning.
+- **Redis depth:** Sentinel and Cluster operations, replication
+  failover, and memory analysis beyond big keys.
+- **Other stores:** MongoDB, Elasticsearch/OpenSearch cluster
+  operations, Cassandra, DynamoDB, ClickHouse, and time-series
+  databases.
+- **Managed services beyond RDS basics:** Aurora, Cloud SQL, Azure
+  Database, parameter groups, and blue/green upgrades.
+- Kubernetes database operators (CloudNativePG, Zalando, Percona).
+
+## Readiness verdict
+
+Enough to be the person on the team who isn't afraid of the database.
+You can read what it's doing, tell waiting from working, find the
+expensive queries, keep vacuum healthy, and run a point-in-time
+recovery, which is the skill that matters most on the worst day. It
+doesn't make you a database administrator or a SQL developer. Install
+PostgreSQL locally, load a sample dataset, and repeat the backup and
+restore tutorials for real: a restore you've only read about doesn't
+count.
+
+---
+
+# Part 18 — The backlog: everything that isn't in the game yet
+
+Parts 1 to 17 each list what's missing *inside* a category. This part
 lists whole topics with no category at all, in three tiers. Nobody needs
 all of it. Tier A is worth learning for almost any DevOps, platform, or
 SRE role; tier B depends on the job; tier C is for when a specific
@@ -1135,18 +1230,12 @@ employer uses it.
 
 ## Tier A: commonly used, expected in most roles
 
-1. **Databases as an operator.** The biggest hole.
-   - PostgreSQL and MySQL administration: roles and grants,
-     `pg_stat_activity`, locks, vacuum and bloat, slow-query analysis.
-   - Backup and recovery: `pg_dump`, base backups, WAL archiving,
-     point-in-time recovery. (Only the RDS version is covered, in
-     aws-tutorial-012.)
-   - Replication set-up and failover (Patroni), and connection pooling
-     (PgBouncer).
-   - SQL itself: joins, aggregates, window functions, transactions, and
-     isolation levels.
-   - Redis operations (persistence, Sentinel, Cluster), MongoDB basics,
-     and Elasticsearch/OpenSearch cluster operations.
+1. ~~**Databases as an operator**~~: **now a category** (Part 17):
+   PostgreSQL operations, on-call SQL, roles, vacuum, backup and
+   point-in-time recovery, Patroni failover, MySQL, and Redis. What
+   remains is listed under Part 17's "Still missing": a real database
+   to query, SQL and tuning depth, MongoDB, and
+   Elasticsearch/OpenSearch.
 2. **Messaging systems.** Kafka operations beyond consumer lag (brokers,
    in-sync replicas, retention, rebalancing), RabbitMQ, and the cloud
    queues (SQS/SNS, Pub/Sub, Service Bus).
@@ -1243,8 +1332,7 @@ employer uses it.
 ## Suggested build order
 
 If content is added in the order that helps most people soonest:
-1. a Databases category (PostgreSQL operations, SQL, backup and
-   recovery, Redis);
+1. ~~a Databases category~~ (done, Part 17);
 2. web servers and proxies (nginx, HAProxy);
 3. identity and secrets (Vault, OIDC, mTLS, cert-manager);
 4. Kubernetes ecosystem (Kustomize, Helm authoring, Gateway API,
@@ -1257,7 +1345,7 @@ If content is added in the order that helps most people soonest:
 
 ---
 
-# Part 18 — Overall: will this make you proficient in DevOps?
+# Part 19 — Overall: will this make you proficient in DevOps?
 
 ## By the numbers
 
@@ -1279,7 +1367,8 @@ If content is added in the order that helps most people soonest:
 | SRE | 10 | 6 | 1 Writing Lab (postmortem) |
 | Git | 11 | 6 | |
 | System Design | 11 | 6 | 2 Writing Labs (design documents) |
-| **Total** | **208** | **107** | 32 Writing Labs, 12 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
+| Databases | 12 | 6 | |
+| **Total** | **220** | **113** | 32 Writing Labs, 13 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -1291,7 +1380,7 @@ command beats the alternatives — not just what it does.
 will know the commands, the failure modes, and — most importantly — the
 debugging method** (check the layer before guessing the fix; refused vs
 timeout; verify after every change; revoke before cleaning up; revert
-don't force-push). The 107 incidents are modeled on the kinds of problems
+don't force-push). The 113 incidents are modeled on the kinds of problems
 that genuinely trip up working engineers, and working through them
 builds judgment that command references alone never will.
 
@@ -1345,7 +1434,7 @@ that no amount of additional scenario content can fully close:
    Stats screen shows which categories you've passed, your best score
    in each, and what to do next.
 4. Complete the Writing Labs for each category.
-5. Play all twelve Career Paths to practice switching layers mid-problem —
+5. Play all thirteen Career Paths to practice switching layers mid-problem —
    especially "The Worst On-Call Night".
 6. Play every Mystery Incident, then replay it to aim for 100. Scoring
    near the expert's command count means you went straight to the right
@@ -1359,6 +1448,7 @@ that no amount of additional scenario content can fully close:
 9. For certification goals, see Part 1 (CKA); similar exam-specific gap
    passes haven't been done for other certs (e.g. Terraform Associate,
    AWS) yet.
-10. Then widen. Part 17 lists everything this game doesn't teach yet,
-    in three tiers. Start with tier A (databases, proxies, identity and
-    secrets, a scripting language): those come up in almost every role.
+10. Then widen. Part 18 lists everything this game doesn't teach yet,
+    in three tiers. Start with tier A (proxies, identity and secrets,
+    a scripting language, messaging): those come up in almost every
+    role.

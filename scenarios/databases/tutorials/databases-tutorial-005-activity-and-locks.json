@@ -1,0 +1,55 @@
+{
+  "id": "databases-tutorial-005",
+  "type": "tutorial",
+  "category": "databases",
+  "title": "What Is the Database Doing Right Now? Activity and Blocking",
+  "difficulty": "intermediate",
+  "tags": ["postgresql", "pg_stat_activity", "locks", "troubleshooting"],
+  "intro": "'The database is slow' is the report. pg_stat_activity is PostgreSQL's process list: one row per connection, with what it's doing and what it's waiting for. Most live database problems are diagnosed from this one view. Commands run from the shell with psql -c.",
+  "steps": [
+    {
+      "prompt": "Count the connections by state.",
+      "expected_commands": ["psql -c \"SELECT state, count(*) FROM pg_stat_activity GROUP BY state;\"", "psql -c \"SELECT state, count(*) FROM pg_stat_activity GROUP BY state\"", "psql -c \"SELECT count(*), state FROM pg_stat_activity GROUP BY state;\""],
+      "fake_output": "        state        | count\n---------------------+-------\n active              |    38\n idle                |   112\n idle in transaction |     4\n                     |     6",
+      "explanation": "38 running a statement, 112 idle, and 4 idle inside an open transaction.",
+      "why": "'idle' is harmless: a pooled connection waiting for work. 'idle in transaction' is the one to watch: the client ran BEGIN and some statements, then stopped, still holding its locks and its snapshot. The blank state is the server's own background processes."
+    },
+    {
+      "prompt": "List the sessions that aren't idle, longest-running first. Select pid, state, now() - query_start AS runtime, and query from pg_stat_activity where state <> 'idle', ordered by runtime descending.",
+      "expected_commands": ["psql -c \"SELECT pid, state, now() - query_start AS runtime, query FROM pg_stat_activity WHERE state <> 'idle' ORDER BY runtime DESC;\"", "psql -c \"SELECT pid, state, now() - query_start AS runtime, query FROM pg_stat_activity WHERE state <> 'idle' ORDER BY runtime DESC\"", "psql -c \"SELECT pid, state, now() - query_start AS runtime, query FROM pg_stat_activity WHERE state != 'idle' ORDER BY runtime DESC;\""],
+      "fake_output": "  pid  |        state        |     runtime     |                     query\n-------+---------------------+-----------------+------------------------------------------------\n 21877 | idle in transaction | 00:47:12.480112 | UPDATE products SET price_cents = 1999 WHERE...\n 30112 | active              | 00:09:31.120045 | ALTER TABLE products ADD COLUMN sku text\n 30155 | active              | 00:09:28.771900 | SELECT * FROM products WHERE id = $1\n 30161 | active              | 00:09:27.003318 | SELECT * FROM products WHERE id = $1",
+      "hint": "SELECT pid, state, now() - query_start AS runtime, query FROM pg_stat_activity WHERE state <> 'idle' ORDER BY runtime DESC;",
+      "explanation": "One session has sat in a transaction for 47 minutes. An ALTER TABLE and simple SELECTs have been 'active' for over 9 minutes.",
+      "why": "A primary-key SELECT doesn't take 9 minutes to run. 'active' only means a statement is in progress, which includes waiting for a lock. The wait_event_type column says which: 'Lock' means blocked. The next step asks who's blocking whom."
+    },
+    {
+      "prompt": "Show which sessions are blocked and by whom. Select pid and pg_blocking_pids(pid) AS blocked_by from pg_stat_activity where cardinality(pg_blocking_pids(pid)) > 0.",
+      "expected_commands": ["psql -c \"SELECT pid, pg_blocking_pids(pid) AS blocked_by FROM pg_stat_activity WHERE cardinality(pg_blocking_pids(pid)) > 0;\"", "psql -c \"SELECT pid, pg_blocking_pids(pid) AS blocked_by FROM pg_stat_activity WHERE cardinality(pg_blocking_pids(pid)) > 0\""],
+      "fake_output": "  pid  | blocked_by\n-------+------------\n 30112 | {21877}\n 30155 | {30112}\n 30161 | {30112}",
+      "hint": "SELECT pid, pg_blocking_pids(pid) AS blocked_by FROM pg_stat_activity WHERE cardinality(pg_blocking_pids(pid)) > 0;",
+      "explanation": "A chain: the ALTER TABLE (30112) waits for the idle transaction (21877), and the SELECTs wait for the ALTER TABLE.",
+      "why": "This is the lock queue. ALTER TABLE needs an exclusive lock, which it can't get while 21877 holds a row lock in its open transaction. Every query arriving afterwards queues behind the ALTER, even reads. So the root of the tree is the session to deal with, not the ALTER and not the SELECTs."
+    },
+    {
+      "prompt": "Session 21877 is at the root and has been idle for 47 minutes: someone's forgotten psql window, or an app that crashed mid-transaction. End that session.",
+      "expected_commands": ["psql -c \"SELECT pg_terminate_backend(21877);\"", "psql -c \"SELECT pg_terminate_backend(21877)\""],
+      "fake_output": " pg_terminate_backend\n----------------------\n t",
+      "explanation": "The session is closed and its transaction rolled back. The ALTER gets its lock, finishes, and the SELECTs run.",
+      "why": "pg_cancel_backend stops the current statement but leaves the session open; it does nothing to a session that's idle in a transaction, because no statement is running. pg_terminate_backend closes the connection, which rolls the transaction back. Both are safe, unlike 'kill -9' on a backend process, which makes the whole server restart and recover."
+    },
+    {
+      "prompt": "Stop this recurring. Set a server-wide limit so a session idle inside a transaction for more than 5 minutes is disconnected.",
+      "expected_commands": ["psql -c \"ALTER SYSTEM SET idle_in_transaction_session_timeout = '5min';\"", "psql -c \"ALTER SYSTEM SET idle_in_transaction_session_timeout = '5min'\"", "psql -c \"ALTER SYSTEM SET idle_in_transaction_session_timeout TO '5min';\""],
+      "fake_output": "ALTER SYSTEM",
+      "explanation": "The setting is written to postgresql.auto.conf. It isn't active yet.",
+      "why": "ALTER SYSTEM only writes the file. Some settings take effect on a reload and others need a restart; this one needs only a reload, which is the next step. The timeout is a guard rail: the real fix is an application that always commits or rolls back, including on its error paths."
+    },
+    {
+      "prompt": "Apply the new setting without restarting the server.",
+      "expected_commands": ["psql -c \"SELECT pg_reload_conf();\"", "psql -c \"SELECT pg_reload_conf()\""],
+      "fake_output": " pg_reload_conf\n----------------\n t",
+      "explanation": "The configuration was re-read. New sessions get the timeout.",
+      "why": "A reload re-reads the config without dropping connections, so it's safe at any time. To check whether a setting needs a restart instead, look at pg_settings: the 'context' column says 'postmaster' for restart-only settings, and 'pending_restart' is true when a change is waiting for one."
+    }
+  ]
+}

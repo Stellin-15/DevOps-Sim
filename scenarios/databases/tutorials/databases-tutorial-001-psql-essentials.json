@@ -1,0 +1,54 @@
+{
+  "id": "databases-tutorial-001",
+  "type": "tutorial",
+  "category": "databases",
+  "title": "psql Essentials: Finding Your Way Around a Database",
+  "difficulty": "beginner",
+  "tags": ["postgresql", "psql", "basics"],
+  "intro": "Sooner or later an incident ends at a database prompt. psql is PostgreSQL's command-line client, and its backslash commands are how you find out what's in a database you've never seen. The database is shop, on host db.internal, and your user is app.",
+  "steps": [
+    {
+      "prompt": "Connect to the database shop on host db.internal as user app.",
+      "expected_commands": ["psql -h db.internal -U app -d shop", "psql -h db.internal -U app shop", "psql --host=db.internal --username=app --dbname=shop"],
+      "fake_output": "Password for user app:\npsql (16.4)\nSSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384)\nType \"help\" for help.\n\nshop=>",
+      "explanation": "You're connected, over TLS. The prompt shows the database name.",
+      "why": "The prompt's last character matters: '=>' is an ordinary user and '=#' is a superuser. Check it before running anything destructive. For scripts, put the password in ~/.pgpass or the PGPASSWORD variable, never on the command line where it shows up in the process list and shell history."
+    },
+    {
+      "prompt": "You're inside psql. Confirm exactly which server, port, database, and user this session is connected to.",
+      "expected_commands": ["\\conninfo"],
+      "fake_output": "You are connected to database \"shop\" as user \"app\" on host \"db.internal\" (address \"10.0.2.15\") at port \"5432\".\nSSL connection (protocol: TLSv1.3)",
+      "explanation": "Database shop, user app, host 10.0.2.15.",
+      "why": "The most expensive database mistakes are the right command on the wrong server. With several terminals open during an incident, \\conninfo before a write costs two seconds. Many teams also colour the production prompt red in .psqlrc for the same reason."
+    },
+    {
+      "prompt": "List the tables in this database.",
+      "expected_commands": ["\\dt"],
+      "fake_output": "          List of relations\n Schema |    Name     | Type  | Owner\n--------+-------------+-------+-------\n public | customers   | table | shop\n public | order_items | table | shop\n public | orders      | table | shop\n public | products    | table | shop",
+      "explanation": "Four tables, all in the public schema.",
+      "why": "Backslash commands are psql's own, not SQL: \\dt tables, \\l databases, \\dn schemas, \\du roles, \\di indexes. Add + for sizes (\\dt+). They're shortcuts for queries on the system catalogs; 'psql -E' shows the SQL behind each one."
+    },
+    {
+      "prompt": "Show the structure of the orders table: columns, indexes, and constraints.",
+      "expected_commands": ["\\d orders"],
+      "fake_output": "                         Table \"public.orders\"\n   Column    |           Type           | Nullable |      Default\n-------------+--------------------------+----------+-------------------\n id          | bigint                   | not null | generated always\n customer_id | bigint                   | not null |\n status      | text                     | not null | 'pending'::text\n total_cents | integer                  | not null |\n created_at  | timestamp with time zone | not null | now()\nIndexes:\n    \"orders_pkey\" PRIMARY KEY, btree (id)\n    \"idx_orders_customer_created\" btree (customer_id, created_at DESC)\nForeign-key constraints:\n    \"orders_customer_id_fkey\" FOREIGN KEY (customer_id) REFERENCES customers(id)\nReferenced by:\n    TABLE \"order_items\" CONSTRAINT \"order_items_order_id_fkey\" FOREIGN KEY (order_id) REFERENCES orders(id)",
+      "explanation": "Five columns, two indexes, and foreign keys in both directions.",
+      "why": "\\d is the first thing to run on any table in a slow-query investigation: it shows which indexes exist, so you can tell whether a query could use one. The 'Referenced by' section tells you what a DELETE here would be checked against."
+    },
+    {
+      "prompt": "Wide rows are unreadable in a table. Switch to expanded output, which prints one column per line.",
+      "expected_commands": ["\\x", "\\x on"],
+      "fake_output": "Expanded display is on.",
+      "explanation": "Each row now prints vertically.",
+      "why": "Views like pg_stat_activity have 20 or more columns and wrap badly. '\\x auto' switches only when a row is too wide for the terminal, and is worth putting in ~/.psqlrc. '\\timing' is the other toggle to know: it prints how long each statement took."
+    },
+    {
+      "prompt": "Leave psql. From the shell, run one statement non-interactively: count the rows in orders. Print only the bare value, with no headers or alignment.",
+      "expected_commands": ["psql -h db.internal -U app -d shop -At -c \"SELECT count(*) FROM orders\"", "psql -h db.internal -U app -d shop -At -c \"SELECT count(*) FROM orders;\"", "psql -h db.internal -U app -d shop -A -t -c \"SELECT count(*) FROM orders\"", "psql -h db.internal -U app -d shop -A -t -c \"SELECT count(*) FROM orders;\""],
+      "fake_output": "4812907",
+      "hint": "-c runs one statement; -A turns off alignment and -t prints tuples only.",
+      "explanation": "Just the number, ready for a script to use.",
+      "why": "-c runs one statement and exits, and -At strips the decoration, which is what monitoring checks and shell scripts need. To run a file safely use 'psql -f file.sql -v ON_ERROR_STOP=1 -1': stop at the first error, and wrap the whole file in one transaction, so a failure half-way leaves nothing behind."
+    }
+  ]
+}

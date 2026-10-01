@@ -1,0 +1,53 @@
+{
+  "id": "databases-tutorial-008",
+  "type": "tutorial",
+  "category": "databases",
+  "title": "Logical Backups: pg_dump, pg_restore, and Proving a Restore Works",
+  "difficulty": "intermediate",
+  "tags": ["postgresql", "backup", "pg_dump", "pg_restore"],
+  "intro": "A logical backup is the database written out as SQL objects and data. It's portable between versions and machines, and it lets you restore one table. It's also the tool for copying production data into a test database. The database is shop.",
+  "steps": [
+    {
+      "prompt": "Dump the shop database in custom format to the file shop.dump.",
+      "expected_commands": ["pg_dump -Fc -d shop -f shop.dump", "pg_dump -Fc shop -f shop.dump", "pg_dump --format=custom -d shop -f shop.dump", "pg_dump -Fc -f shop.dump shop", "pg_dump -Fc -f shop.dump -d shop"],
+      "fake_output": "(no output: shop.dump written, 6.1 GB)",
+      "explanation": "A compressed archive of the whole database, taken from one consistent snapshot.",
+      "why": "The default plain format is a single SQL script: readable, but you can only replay all of it, in order. Custom format (-Fc) is compressed and lets pg_restore pick individual tables and restore in parallel. pg_dump doesn't block writers: it reads from a snapshot, so the dump is consistent as of the moment it started."
+    },
+    {
+      "prompt": "pg_dump saves one database. Roles and their passwords live at the server level and aren't in it. Dump those global objects to globals.sql.",
+      "expected_commands": ["pg_dumpall --globals-only > globals.sql", "pg_dumpall -g > globals.sql", "pg_dumpall --globals-only -f globals.sql", "pg_dumpall -g -f globals.sql"],
+      "fake_output": "(no output: globals.sql written)",
+      "explanation": "Roles, role memberships, and tablespaces are in globals.sql.",
+      "why": "This is the piece people forget. Restoring shop.dump onto a fresh server fails with 'role \"app\" does not exist' on every GRANT and every owner. A complete logical backup is the globals plus one dump per database. The file contains password hashes, so protect it like a credential."
+    },
+    {
+      "prompt": "Check what an archive contains without restoring it: list the contents of shop.dump.",
+      "expected_commands": ["pg_restore -l shop.dump", "pg_restore --list shop.dump"],
+      "fake_output": ";     Dumped from database version: 16.4\n;     TOC Entries: 61\n215; 1259 16401 TABLE public customers shop\n216; 1259 16412 TABLE public orders shop\n3401; 0 16401 TABLE DATA public customers shop\n3402; 0 16412 TABLE DATA public orders shop\n3250; 2606 16420 CONSTRAINT public orders orders_pkey shop",
+      "explanation": "The archive's table of contents: definitions, data, and constraints as separate entries.",
+      "why": "Listing is a quick integrity check: a truncated or corrupt archive fails here. The list can also be edited and passed back with -L to restore a chosen subset in a chosen order."
+    },
+    {
+      "prompt": "Test the backup. A scratch database, shop_restore_test, already exists and is empty. Restore shop.dump into it using 4 parallel jobs.",
+      "expected_commands": ["pg_restore -d shop_restore_test -j 4 shop.dump", "pg_restore -j 4 -d shop_restore_test shop.dump", "pg_restore --dbname=shop_restore_test --jobs=4 shop.dump"],
+      "fake_output": "(no output: restore completed in 11m 40s)",
+      "explanation": "The whole database was rebuilt in a scratch database in under 12 minutes.",
+      "why": "Two things were just proven: the backup is restorable, and it takes about 12 minutes, which is your real recovery time for this method. A backup that's never been restored is an untested assumption. -j runs the data loads and index builds in parallel, which is usually the difference between minutes and hours."
+    },
+    {
+      "prompt": "Verify the restored data, not just that the command exited cleanly: count the rows in orders in shop_restore_test.",
+      "expected_commands": ["psql -d shop_restore_test -c \"SELECT count(*) FROM orders;\"", "psql -d shop_restore_test -c \"SELECT count(*) FROM orders\"", "psql shop_restore_test -c \"SELECT count(*) FROM orders;\"", "psql -d shop_restore_test -At -c \"SELECT count(*) FROM orders\""],
+      "fake_output": "  count\n---------\n 4812907",
+      "explanation": "The row count matches production at the time of the dump.",
+      "why": "A restore test should end with a check on the data: a row count, the newest timestamp, a known record. Automate the whole sequence (restore the latest backup to a scratch database, run the checks, alert on failure) and run it on a schedule. That turns 'we have backups' into something you know."
+    },
+    {
+      "prompt": "Someone damaged only the products table in production. Restore just that table's data from shop.dump into shop.",
+      "expected_commands": ["pg_restore -d shop -t products --data-only shop.dump", "pg_restore -d shop --data-only -t products shop.dump", "pg_restore -d shop -a -t products shop.dump", "pg_restore --dbname=shop --table=products --data-only shop.dump"],
+      "fake_output": "(no output: 120000 rows restored into products)",
+      "explanation": "Only the products rows were loaded, into the existing table.",
+      "why": "Selective restore is what custom format buys you. In practice you'd restore the table into a scratch database first and compare, because loading over live data can collide with existing rows. Remember the limit of this method: a nightly dump can lose up to a day of changes. Closing that gap takes continuous WAL archiving, in the next tutorial."
+    }
+  ]
+}

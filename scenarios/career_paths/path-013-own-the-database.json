@@ -1,0 +1,21 @@
+{
+  "id": "path-013",
+  "type": "career_path",
+  "title": "Own the Database: From 'It's Slow' to 'We Lost Data'",
+  "difficulty": "advanced",
+  "tags": ["databases", "systemdesign", "cicd", "aws"],
+  "intro": "Your team has no database administrator, so the database is yours. Work through what that means in the order it tends to arrive: reading what the server is doing, finding the queries that cost the most, changing a schema without freezing the site (and then watching it freeze anyway), proving your backups restore, and finally the two calls nobody wants: a disk filling with no obvious cause, and a table emptied by mistake.",
+  "steps": [
+    "databases-tutorial-005",
+    "systemdesign-tutorial-004",
+    "databases-tutorial-006",
+    "cicd-tutorial-014",
+    "databases-incident-002",
+    "systemdesign-incident-004",
+    "databases-tutorial-009",
+    "aws-tutorial-012",
+    "databases-incident-001",
+    "databases-incident-003"
+  ],
+  "resolution": "Most database trouble is one of three things. Waiting: locks and queues, read from pg_stat_activity, where the session to deal with is the one at the root of the chain. Planning: a query that needs an index or fresh statistics, read from EXPLAIN by comparing estimated rows with actual ones. And capacity that runs out slowly: connections, disk, memory, each with a graph that warned weeks ahead. The last two incidents are different in kind, because only preparation helps: a replica copies a mistake faithfully, and the only thing that undoes one is a backup with history that you have actually restored before. Next, read GAPS.md's Databases part for what this category doesn't cover, and practise a real restore on a local PostgreSQL."
+}
