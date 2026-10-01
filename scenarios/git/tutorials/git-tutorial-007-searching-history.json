@@ -1,0 +1,53 @@
+{
+  "id": "git-tutorial-007",
+  "type": "tutorial",
+  "category": "git",
+  "title": "Searching History: Who Changed This, When, and Why",
+  "difficulty": "intermediate",
+  "tags": ["git", "log", "blame", "archaeology"],
+  "intro": "Most debugging starts with a question about the past: when did this line change, who knows why, and where did this function go? Git's history is a database, and these are its queries.",
+  "steps": [
+    {
+      "prompt": "See the shape of the whole repository: all branches as a graph, one line per commit.",
+      "expected_commands": ["git log --oneline --graph --all", "git log --graph --oneline --all", "git log --all --graph --oneline"],
+      "fake_output": "* 9f2c1e7 (HEAD -> feature/audit-log) Add audit log table\n| * b7c8d9e (origin/main, main) Merge pull request #213\n| |\\\n| | * 4a5b6c7 Raise login timeout\n| |/\n|/|\n* | 3e1f0a9 Merge pull request #212\n|/\n* 7c2e0d4 (tag: v2.3.0) Release 2.3.0",
+      "explanation": "Where every branch and tag sits, and how they diverge and merge.",
+      "why": "Most 'what state is this repo in?' confusion is answered by this one view. It's worth an alias: git config --global alias.lg 'log --oneline --graph --all'."
+    },
+    {
+      "prompt": "Find every commit that added or removed the string MAX_RETRIES anywhere in the code.",
+      "expected_commands": ["git log -S MAX_RETRIES", "git log -S 'MAX_RETRIES'", "git log -S \"MAX_RETRIES\""],
+      "fake_output": "commit 5d6e7f8  Dana  2026-08-02  Make retries configurable (removes MAX_RETRIES constant)\ncommit 1a2b3c4  Sam   2025-11-14  Add MAX_RETRIES = 3 to the HTTP client",
+      "explanation": "Introduced in November 2025, removed in August 2026.",
+      "why": "-S (the 'pickaxe') finds commits where the number of occurrences of a string changed, so it catches the commit that introduced or deleted something even if the file was later renamed or removed. Use -G with a regex when you need any line matching a pattern that changed."
+    },
+    {
+      "prompt": "See who last changed lines 40 to 55 of src/billing.py.",
+      "expected_commands": ["git blame -L 40,55 src/billing.py"],
+      "fake_output": "a1b2c3d4 (Dana 2026-03-09 40) def charge(order):\n5d6e7f80 (Sam  2026-08-02 41)     total = order.amount_cents\n9e8d7c6b (Lee  2026-09-12 42)     total = apply_discounts(total, order)",
+      "explanation": "Each line with the commit, author, and date that last touched it.",
+      "why": "Use blame to find the commit, then read that commit's message and PR for the reason. It's for context, not for blaming people. -L limits it to the lines you care about, which is much faster on big files."
+    },
+    {
+      "prompt": "A formatting commit touched every line, so blame points at it. Blame src/billing.py ignoring whitespace changes and following code moved from other files.",
+      "expected_commands": ["git blame -w -C src/billing.py", "git blame -C -w src/billing.py"],
+      "fake_output": "a1b2c3d4 src/payments/old_billing.py (Dana 2026-03-09 40) def charge(order):\n5d6e7f80 src/billing.py              (Sam  2026-08-02 41)     total = order.amount_cents",
+      "explanation": "Blame now shows where each line really came from, including a line moved in from another file.",
+      "why": "-w ignores whitespace-only changes and -C detects lines moved or copied between files. For big reformatting commits, list them in a .git-blame-ignore-revs file so blame skips them for everyone (GitHub honours that file too)."
+    },
+    {
+      "prompt": "src/billing.py was renamed last year. Show its full history across the rename.",
+      "expected_commands": ["git log --follow -- src/billing.py", "git log --follow src/billing.py", "git log --oneline --follow -- src/billing.py"],
+      "fake_output": "5d6e7f8 Charge in cents, not dollars\n2b3c4d5 Rename payments/old_billing.py to billing.py\na1b2c3d Add charge() to old_billing.py",
+      "explanation": "History continues past the rename to the file's original name.",
+      "why": "Git doesn't record renames; it detects them by content similarity. Without --follow, a file's log stops at the rename commit and looks as if the file appeared from nowhere."
+    },
+    {
+      "prompt": "Look at what src/billing.py looked like at the tag v2.3.0, without checking anything out.",
+      "expected_commands": ["git show v2.3.0:src/billing.py"],
+      "fake_output": "def charge(order):\n    total = order.amount\n    return gateway.charge(total)",
+      "explanation": "The file's contents as of v2.3.0.",
+      "why": "'<revision>:<path>' addresses any file at any point in history. It's the quick way to compare with an old version or recover a deleted file ('git show v2.3.0:old/file.py > file.py') without disturbing your working tree."
+    }
+  ]
+}

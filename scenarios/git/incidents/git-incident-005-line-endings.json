@@ -1,0 +1,49 @@
+{
+  "id": "git-incident-005",
+  "type": "incident",
+  "category": "git",
+  "title": "Every file shows as modified, and a shell script won't run in the container",
+  "difficulty": "intermediate",
+  "tags": ["git", "line-endings", "gitattributes", "windows"],
+  "intro": "A new teammate on Windows opened their first pull request: a two-line fix that shows 4,000 changed lines across 60 files. Separately, the Docker build from their checkout fails with '/bin/sh^M: bad interpreter' when running deploy.sh. Both started when they joined.",
+  "steps": [
+    {
+      "prompt": "Look at the PR's diff ignoring whitespace-at-end-of-line differences, to see the real change.",
+      "expected_commands": ["git diff --ignore-cr-at-eol main", "git diff -w main", "git diff --ignore-space-at-eol main"],
+      "fake_output": "@@ -41,2 +41,2 @@ def charge(order):\n-    total = order.amount\n+    total = order.amount_cents",
+      "hint": "git diff has options that ignore carriage returns or whitespace."
+    },
+    {
+      "prompt": "The real change is two lines; the rest is line endings. Check how deploy.sh is stored in the index and in the working tree.",
+      "expected_commands": ["git ls-files --eol deploy.sh", "git ls-files --eol"],
+      "fake_output": "i/crlf  w/crlf  attr/                 \tdeploy.sh",
+      "hint": "git ls-files --eol shows the line endings in the index (i/) and working tree (w/)."
+    },
+    {
+      "prompt": "CRLF has been committed into the repository itself (i/crlf). Check the teammate's line-ending setting.",
+      "expected_commands": ["git config core.autocrlf", "git config --get core.autocrlf"],
+      "fake_output": "false",
+      "hint": "git config core.autocrlf"
+    },
+    {
+      "prompt": "Their editor saved CRLF and nothing converted it. Fix it for everyone with a committed rule: add '* text=auto' to .gitattributes.",
+      "expected_commands": ["echo '* text=auto' >> .gitattributes", "echo \"* text=auto\" >> .gitattributes", "echo '* text=auto' > .gitattributes"],
+      "fake_output": "(no output: .gitattributes written)",
+      "hint": "echo '* text=auto' >> .gitattributes"
+    },
+    {
+      "prompt": "Shell scripts must always be LF, even on Windows. Add the rule '*.sh text eol=lf' to .gitattributes.",
+      "expected_commands": ["echo '*.sh text eol=lf' >> .gitattributes", "echo \"*.sh text eol=lf\" >> .gitattributes"],
+      "fake_output": "(no output: rule appended)",
+      "hint": "echo '*.sh text eol=lf' >> .gitattributes"
+    },
+    {
+      "prompt": "Re-normalise every tracked file to the new rules, so the fix is one commit.",
+      "expected_commands": ["git add --renormalize .", "git add --renormalize . && git commit -m \"Normalize line endings\""],
+      "fake_output": "(no output: 60 files staged with LF line endings)",
+      "hint": "git add --renormalize ."
+    }
+  ],
+  "resolution": "Windows editors write CRLF line endings; Linux and macOS use LF. With core.autocrlf set to false and no .gitattributes, the teammate's CRLF went into the repository unchanged. Git then saw every line of every touched file as different, which buried a two-line fix under 4,000 lines of noise, and a shell script with CRLF fails in a Linux container because the kernel looks for an interpreter literally named '/bin/sh\\r'. Relying on each person's core.autocrlf setting doesn't work, because it's per machine and everyone has it set differently. A committed .gitattributes applies to everybody: '* text=auto' stores LF in the repository and lets each system check out its native ending, and explicit rules pin the files that must not vary (*.sh eol=lf, *.bat eol=crlf, and 'binary' for images). An .editorconfig file tells editors the same thing.",
+  "real_commands_used": ["git diff --ignore-cr-at-eol", "git ls-files --eol", "git config core.autocrlf", ".gitattributes", "git add --renormalize ."]
+}

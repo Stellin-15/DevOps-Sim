@@ -1,0 +1,53 @@
+{
+  "id": "git-tutorial-008",
+  "type": "tutorial",
+  "category": "git",
+  "title": "Remotes, Forks, and Keeping in Sync",
+  "difficulty": "intermediate",
+  "tags": ["git", "remotes", "forks", "collaboration"],
+  "intro": "A remote is just a named URL plus your local record of its branches. Open-source and many company workflows use two remotes: your fork (origin) and the main project (upstream).",
+  "steps": [
+    {
+      "prompt": "Show the remotes this repository knows about, with their URLs.",
+      "expected_commands": ["git remote -v"],
+      "fake_output": "origin\tgit@github.com:alice/shop.git (fetch)\norigin\tgit@github.com:alice/shop.git (push)",
+      "explanation": "Only origin, which is your fork.",
+      "why": "'origin' is only a convention for 'the remote I cloned from'. Fetch and push URLs can even differ, which some teams use to fetch over HTTPS and push over SSH."
+    },
+    {
+      "prompt": "Add the main project as a second remote named upstream: git@github.com:acme/shop.git.",
+      "expected_commands": ["git remote add upstream git@github.com:acme/shop.git"],
+      "fake_output": "(no output: remote 'upstream' added)",
+      "explanation": "The repository now has two remotes.",
+      "why": "With a fork, you push to origin (yours) and pull new work from upstream (the project's). Naming them consistently means the same commands work in every repository you contribute to."
+    },
+    {
+      "prompt": "Download upstream's latest commits without changing any of your branches.",
+      "expected_commands": ["git fetch upstream"],
+      "fake_output": "From github.com:acme/shop\n * [new branch]      main       -> upstream/main\n * [new tag]         v2.4.0     -> v2.4.0",
+      "explanation": "upstream/main now exists locally as a remote-tracking branch.",
+      "why": "Fetch is always safe: it only updates remote-tracking branches such as upstream/main. Fetch first, look ('git log main..upstream/main'), then decide how to integrate. 'git pull' is fetch plus an immediate merge or rebase, with no chance to look first."
+    },
+    {
+      "prompt": "Update your local main to match upstream, but only if it can fast-forward (refuse if your main has diverged).",
+      "expected_commands": ["git pull --ff-only upstream main", "git merge --ff-only upstream/main"],
+      "fake_output": "Updating 3e1f0a9..b7c8d9e\nFast-forward\n src/billing.py | 14 +++++++-------\n 1 file changed, 7 insertions(+), 7 deletions(-)",
+      "explanation": "main moved forward to upstream's commit, with no merge commit.",
+      "why": "--ff-only refuses to create a merge commit by surprise. If it fails, your main has commits upstream doesn't, which usually means you committed to main by mistake (git-incident-001). Setting 'pull.ff only' globally makes that the default."
+    },
+    {
+      "prompt": "List the commits on your current branch that upstream's main doesn't have yet.",
+      "expected_commands": ["git cherry -v upstream/main", "git log upstream/main..HEAD --oneline", "git log --oneline upstream/main..HEAD"],
+      "fake_output": "+ 9f2c1e7 Add audit log table\n+ 2c3d4e5 Add monthly report endpoint",
+      "explanation": "Two commits are yours alone.",
+      "why": "'A..B' means 'commits reachable from B but not from A'. It answers 'what will my PR contain?' before you open it. 'git cherry' also recognises commits that were already applied upstream under a different id (for example after a rebase or cherry-pick), marking them with '-'."
+    },
+    {
+      "prompt": "Your PR was merged. Delete the branch feature/audit-log from your fork.",
+      "expected_commands": ["git push origin --delete feature/audit-log", "git push origin :feature/audit-log"],
+      "fake_output": "To github.com:alice/shop.git\n - [deleted]         feature/audit-log",
+      "explanation": "The remote branch is gone.",
+      "why": "Deleting the remote branch doesn't delete your local one, or anyone else's remote-tracking copy; they clear theirs with 'git fetch --prune' (git-tutorial-003). Most teams let the hosting platform delete branches automatically on merge."
+    }
+  ]
+}

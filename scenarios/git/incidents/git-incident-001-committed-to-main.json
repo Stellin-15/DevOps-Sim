@@ -1,0 +1,43 @@
+{
+  "id": "git-incident-001",
+  "type": "incident",
+  "category": "git",
+  "title": "Three commits on main that should have been on a branch",
+  "difficulty": "beginner",
+  "tags": ["git", "branches", "reset"],
+  "intro": "You've been coding for an hour and just noticed you never created a branch: your three commits are sitting on your local main. Nothing is pushed. main is a protected branch, so the push would be rejected anyway, and you need the work on a feature branch for a pull request.",
+  "steps": [
+    {
+      "prompt": "Confirm the situation: show how your main compares with origin/main.",
+      "expected_commands": ["git status", "git status -sb", "git branch -vv"],
+      "fake_output": "On branch main\nYour branch is ahead of 'origin/main' by 3 commits.\n  (use \"git push\" to publish your local commits)\n\nnothing to commit, working tree clean",
+      "hint": "git status tells you how far ahead of the remote you are."
+    },
+    {
+      "prompt": "Save the work first: create a branch called feature/export-csv pointing at your current commit (don't switch to it yet).",
+      "expected_commands": ["git branch feature/export-csv"],
+      "fake_output": "(no output: feature/export-csv now points at your 3 commits)",
+      "hint": "git branch <name> creates a branch at the current commit without switching."
+    },
+    {
+      "prompt": "Now move main back to where the remote is, discarding nothing that matters (the commits are safe on the new branch).",
+      "expected_commands": ["git reset --hard origin/main"],
+      "fake_output": "HEAD is now at b7c8d9e Merge pull request #213",
+      "hint": "git reset --hard origin/main makes local main match the remote."
+    },
+    {
+      "prompt": "Switch to feature/export-csv and carry on.",
+      "expected_commands": ["git switch feature/export-csv", "git checkout feature/export-csv"],
+      "fake_output": "Switched to branch 'feature/export-csv'",
+      "hint": "git switch <branch>"
+    },
+    {
+      "prompt": "Check the three commits are on the branch and not on main: list commits on your branch that main doesn't have.",
+      "expected_commands": ["git log --oneline main..HEAD", "git log main..HEAD --oneline", "git log --oneline main..feature/export-csv"],
+      "fake_output": "9f2c1e7 Add CSV export endpoint\n5d6e7f8 Add CSV serializer\na1b2c3d Add export permission check",
+      "hint": "A..B lists commits in B that aren't in A."
+    }
+  ],
+  "resolution": "A branch is only a name pointing at a commit, so 'moving commits to another branch' needs no copying: create a new name at the current commit, then move the old name back. The order matters. Branch first, reset second: if you had reset main first, the commits would have had no branch pointing at them (still recoverable from the reflog, but needlessly scary). 'git reset --hard' was safe here only because the working tree was clean and the commits had another name. Prevention: protect main on the server so a push can't succeed, and set 'pull.ff only' so a diverged main is noticed quickly. Some people also show the current branch in their shell prompt, which removes most of these moments.",
+  "real_commands_used": ["git status", "git branch <name>", "git reset --hard origin/main", "git switch", "git log main..HEAD"]
+}

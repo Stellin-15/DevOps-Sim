@@ -1,0 +1,43 @@
+{
+  "id": "git-incident-003",
+  "type": "incident",
+  "category": "git",
+  "title": "Push rejected: a 300MB file buried five commits back",
+  "difficulty": "advanced",
+  "tags": ["git", "large-files", "history", "lfs"],
+  "intro": "Your push is rejected: 'remote: error: File data/export.sql is 312.00 MB; this exceeds GitHub's file size limit of 100.00 MB'. You already deleted the file and committed that, but the push still fails. Five commits on your branch are unpushed.",
+  "steps": [
+    {
+      "prompt": "Find the biggest objects in your repository's history: list all objects with their sizes, sort by size, and show the top 3.",
+      "expected_commands": ["git rev-list --objects --all | git cat-file --batch-check='%(objecttype) %(objectname) %(objectsize) %(rest)' | sort -k3 -n -r | head -3", "git rev-list --objects --all | git cat-file --batch-check='%(objecttype) %(objectname) %(objectsize) %(rest)' | sort -k3nr | head -3"],
+      "fake_output": "blob 8c7e5a667f1b771847fe88c01c3de34413a1b220 327155712 data/export.sql\nblob 1f7a7a472abf3dd9643fd615f6da379c4acb3e3a 4194304 assets/hero.png\nblob 2d1c0b9a8f7e6d5c4b3a29181716151413121110 912384 package-lock.json",
+      "hint": "git rev-list --objects --all piped into git cat-file --batch-check lists every object with its size."
+    },
+    {
+      "prompt": "The 312MB blob is still in history. Find which commit added data/export.sql.",
+      "expected_commands": ["git log --oneline --diff-filter=A -- data/export.sql", "git log --diff-filter=A --oneline -- data/export.sql", "git log --oneline -- data/export.sql"],
+      "fake_output": "e3d2c1b Add staging data for local testing",
+      "hint": "--diff-filter=A shows only commits that Added the file."
+    },
+    {
+      "prompt": "Deleting the file in a later commit doesn't remove it from history. Rewrite your unpushed commits to strip every blob bigger than 50MB.",
+      "expected_commands": ["git filter-repo --strip-blobs-bigger-than 50M", "git filter-repo --strip-blobs-bigger-than 50M --force"],
+      "fake_output": "Parsed 1248 commits\nNew history written in 2.31 seconds; now repacking/cleaning...\nCompletely finished after 3.44 seconds.",
+      "hint": "git filter-repo --strip-blobs-bigger-than <size>"
+    },
+    {
+      "prompt": "Verify the big blob is gone: rerun the largest-objects listing, top 3.",
+      "expected_commands": ["git rev-list --objects --all | git cat-file --batch-check='%(objecttype) %(objectname) %(objectsize) %(rest)' | sort -k3 -n -r | head -3", "git rev-list --objects --all | git cat-file --batch-check='%(objecttype) %(objectname) %(objectsize) %(rest)' | sort -k3nr | head -3"],
+      "fake_output": "blob 1f7a7a472abf3dd9643fd615f6da379c4acb3e3a 4194304 assets/hero.png\nblob 2d1c0b9a8f7e6d5c4b3a29181716151413121110 912384 package-lock.json\nblob 9a8b7c6d5e4f30211a2b3c4d5e6f708192a3b4c5 311296 docs/architecture.pdf",
+      "hint": "Same command as the first step."
+    },
+    {
+      "prompt": "Stop it happening again: ignore the data directory's SQL dumps by appending 'data/*.sql' to .gitignore.",
+      "expected_commands": ["echo 'data/*.sql' >> .gitignore", "echo \"data/*.sql\" >> .gitignore"],
+      "fake_output": "(no output: the rule was appended to .gitignore)",
+      "hint": "echo '<pattern>' >> .gitignore"
+    }
+  ],
+  "resolution": "Git stores every version of every file, so a file that was added and then deleted is still in history, and a push sends the whole history. That's why deleting it in a new commit didn't help: the commit that added it still had to be uploaded. Because the commits were unpushed, rewriting them was safe and affected nobody. (filter-repo removes the 'origin' remote as a safety measure on existing clones; add it back before pushing.) Had the file already been pushed and pulled by others, the rewrite would need a coordinated force-push and everyone re-cloning. For files that really do belong with the code, such as design assets or test fixtures, use Git LFS, which keeps a small pointer in Git and the content elsewhere. Database dumps don't belong in Git at all: store them in object storage and fetch them with a script.",
+  "real_commands_used": ["git rev-list --objects --all | git cat-file --batch-check", "git log --diff-filter=A -- <file>", "git filter-repo --strip-blobs-bigger-than", ".gitignore"]
+}

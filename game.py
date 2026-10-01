@@ -43,6 +43,9 @@ CATEGORY_LABELS = {
     "security": "Security",
     "servers": "Server Fleet Ops",
     "sre": "SRE (big-tech practices)",
+    "git": "Git",
+    "systemdesign": "System Design",
+    "databases": "Databases",
 }
 
 

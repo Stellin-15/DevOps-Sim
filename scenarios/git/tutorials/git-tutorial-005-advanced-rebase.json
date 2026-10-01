@@ -1,0 +1,46 @@
+{
+  "id": "git-tutorial-005",
+  "type": "tutorial",
+  "category": "git",
+  "title": "Rebase Beyond the Basics: autosquash, --onto, and Staying Current",
+  "difficulty": "advanced",
+  "tags": ["git", "rebase", "history"],
+  "intro": "Rebase replays your commits on top of another base, producing new commits. Used on your own unpushed work it gives reviewers a clean story. Used on shared history it rewrites what other people have built on. The CI/CD category introduced rebase; this covers the forms that solve real problems.",
+  "steps": [
+    {
+      "prompt": "Your branch has fixup! commits from earlier (git-tutorial-002). Squash each into its target commit automatically while rebasing onto main.",
+      "expected_commands": ["git rebase -i --autosquash main", "git rebase --autosquash -i main", "git rebase --interactive --autosquash main"],
+      "fake_output": "pick a1b2c3d Validate currency before charging\nfixup 9e8d7c6 fixup! Validate currency before charging\npick 5d6e7f8 Charge in cents, not dollars\n\nSuccessfully rebased and updated refs/heads/fix/charge-cents.",
+      "explanation": "The fixup commit was moved under its target and squashed in; the branch now has two clean commits.",
+      "why": "--autosquash reads the 'fixup!' prefixes and arranges the todo list for you. Set 'rebase.autoSquash true' and it happens on every interactive rebase."
+    },
+    {
+      "prompt": "You branched feature/reports off feature/auth by mistake, and auth isn't ready. Move just your reports commits so they sit on main instead.",
+      "expected_commands": ["git rebase --onto main feature/auth feature/reports"],
+      "fake_output": "Successfully rebased and updated refs/heads/feature/reports.",
+      "explanation": "The commits that are on feature/reports but not on feature/auth were replayed onto main.",
+      "why": "Read '--onto A B C' as: take the commits in C that aren't in B, and put them on A. It's the tool for 'I branched from the wrong place' and for removing a range of commits from the middle of a branch. A plain 'git rebase main' would have dragged the unfinished auth commits along."
+    },
+    {
+      "prompt": "A rebase stops on a conflict. After resolving and staging the file, carry on.",
+      "expected_commands": ["git rebase --continue"],
+      "fake_output": "[detached HEAD 2c3d4e5] Add monthly report endpoint\nSuccessfully rebased and updated refs/heads/feature/reports.",
+      "explanation": "The remaining commits were replayed.",
+      "why": "A rebase applies commits one at a time, so you may resolve conflicts several times, once per commit. If it goes wrong, 'git rebase --abort' restores the branch exactly as it was, and even after finishing, 'git reset --hard ORIG_HEAD' undoes the whole rebase."
+    },
+    {
+      "prompt": "Update your branch with new commits from the remote by rebasing your local commits on top, instead of creating a merge commit.",
+      "expected_commands": ["git pull --rebase"],
+      "fake_output": "Successfully rebased and updated refs/heads/feature/reports.",
+      "explanation": "Your local commits now sit on top of the latest remote ones: a straight line of history.",
+      "why": "Plain 'git pull' merges, which scatters 'Merge branch main of ...' commits through a branch. 'pull --rebase' keeps it linear. Many teams set 'pull.rebase true' globally."
+    },
+    {
+      "prompt": "You rebased a branch you had already pushed. Push it without overwriting anything a teammate may have pushed since you last fetched.",
+      "expected_commands": ["git push --force-with-lease"],
+      "fake_output": "To github.com:acme/shop.git\n + 4a5b6c7...2c3d4e5 feature/reports -> feature/reports (forced update)",
+      "explanation": "The remote branch now matches your rebased one.",
+      "why": "A rebased branch needs a force push, because its commits have new ids. --force-with-lease refuses if the remote moved since your last fetch, so you can't silently destroy someone else's commits; plain --force would. Never rebase main or any branch other people build on."
+    }
+  ]
+}

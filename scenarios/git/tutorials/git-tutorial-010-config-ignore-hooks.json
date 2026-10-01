@@ -1,0 +1,53 @@
+{
+  "id": "git-tutorial-010",
+  "type": "tutorial",
+  "category": "git",
+  "title": "Config, .gitignore, .gitattributes, and Hooks",
+  "difficulty": "intermediate",
+  "tags": ["git", "config", "gitignore", "hooks"],
+  "intro": "The settings around a repository decide whether secrets get committed, whether Windows and Linux users fight over line endings, and whether checks run before a commit. Most of it is set once and forgotten, so it pays to set it deliberately.",
+  "steps": [
+    {
+      "prompt": "Show every Git setting in effect, and which file each one comes from.",
+      "expected_commands": ["git config --list --show-origin"],
+      "fake_output": "file:/etc/gitconfig                 core.autocrlf=input\nfile:/home/alice/.gitconfig         user.name=Alice\nfile:/home/alice/.gitconfig         pull.rebase=true\nfile:.git/config                    user.email=alice@acme.example\nfile:.git/config                    remote.origin.url=git@github.com:acme/shop.git",
+      "explanation": "Three levels: system, global (your user), and this repository, which overrides the others.",
+      "why": "When Git behaves differently on two machines, this shows why. The per-repo level is how you use a work email in work repos and a personal one elsewhere ('includeIf' in ~/.gitconfig automates that by directory)."
+    },
+    {
+      "prompt": "A file build/output.log isn't showing up as untracked. Find out which ignore rule is hiding it.",
+      "expected_commands": ["git check-ignore -v build/output.log"],
+      "fake_output": ".gitignore:14:build/\tbuild/output.log",
+      "explanation": "Line 14 of .gitignore ignores the whole build/ directory.",
+      "why": "check-ignore -v names the exact file, line, and pattern responsible, which beats reading several ignore files (.gitignore in any directory, .git/info/exclude, and your global excludes file) and guessing."
+    },
+    {
+      "prompt": "config/secrets.yml was committed long ago and is now in .gitignore, but Git still tracks it. Stop tracking it while keeping the file on disk.",
+      "expected_commands": ["git rm --cached config/secrets.yml"],
+      "fake_output": "rm 'config/secrets.yml'",
+      "explanation": "The file is removed from the index (staged as a deletion) but still exists locally.",
+      "why": ".gitignore only affects untracked files; anything already committed stays tracked. Remember that this doesn't remove the secret from history: every old commit still has it, so rotate it (security-tutorial-009)."
+    },
+    {
+      "prompt": "The team added a .gitattributes with '* text=auto' to settle line endings. Re-apply it to every tracked file so the fix is one clean commit.",
+      "expected_commands": ["git add --renormalize ."],
+      "fake_output": "(no output: files whose line endings changed are staged)",
+      "explanation": "Files are re-normalised to LF in the repository and staged.",
+      "why": ".gitattributes is committed, so it applies to everyone, unlike core.autocrlf, which is a per-machine setting that people have set differently. '* text=auto' stores LF in the repo and lets each OS check out its own ending. git-incident-005 is what happens without it."
+    },
+    {
+      "prompt": "Share hooks with the team: tell Git to run hooks from the committed directory .githooks instead of .git/hooks.",
+      "expected_commands": ["git config core.hooksPath .githooks"],
+      "fake_output": "(no output: hooks are now read from .githooks)",
+      "explanation": "A pre-commit script in .githooks/ now runs for you before each commit.",
+      "why": ".git/hooks isn't versioned, so hooks there never reach teammates. core.hooksPath (or a tool like pre-commit or husky) makes them part of the repo. Hooks are a convenience, not a control: anyone can skip them with --no-verify, so the same checks must also run in CI."
+    },
+    {
+      "prompt": "Create a global alias 'lg' for 'log --oneline --graph --all'.",
+      "expected_commands": ["git config --global alias.lg 'log --oneline --graph --all'", "git config --global alias.lg \"log --oneline --graph --all\""],
+      "fake_output": "(no output: 'git lg' now works in every repository)",
+      "explanation": "'git lg' runs the long log command.",
+      "why": "Aliases live in your global config, so they follow you everywhere. Keep them for commands you run all day; an alias you have to look up saves nothing."
+    }
+  ]
+}

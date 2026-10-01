@@ -1,0 +1,53 @@
+{
+  "id": "git-tutorial-011",
+  "type": "tutorial",
+  "category": "git",
+  "title": "The Less Common Tools: Shallow and Partial Clones, Sparse Checkout, Submodules, LFS, Signing",
+  "difficulty": "advanced",
+  "tags": ["git", "monorepo", "submodules", "lfs", "signing"],
+  "intro": "You won't use these every day, but you'll meet all of them: in CI configuration, in monorepos, in repositories with big binary assets, and in companies that require signed commits. Knowing what each is for is most of the battle.",
+  "steps": [
+    {
+      "prompt": "A CI job only needs the latest commit. Clone git@github.com:acme/monorepo.git with a history depth of 1.",
+      "expected_commands": ["git clone --depth 1 git@github.com:acme/monorepo.git"],
+      "fake_output": "Cloning into 'monorepo'...\nReceiving objects: 100% (18240/18240), 212.40 MiB | 31.2 MiB/s, done.",
+      "explanation": "Only the newest snapshot was downloaded: 212 MiB instead of several GB.",
+      "why": "Shallow clones make CI fast. The catch: anything that needs history fails or lies, such as 'git describe', 'git log', version numbers computed from tags, and git blame. That's why actions/checkout has a fetch-depth option, and why 'fetch-depth: 0' appears in release workflows."
+    },
+    {
+      "prompt": "For local work on the same huge repo, clone it with full history but without downloading file contents until they're needed.",
+      "expected_commands": ["git clone --filter=blob:none git@github.com:acme/monorepo.git"],
+      "fake_output": "Cloning into 'monorepo'...\nReceiving objects: 100% (412900/412900), 96.10 MiB | 28.4 MiB/s, done.\nUpdating files: 100% (18240/18240), done.",
+      "explanation": "All commits and trees, with file contents fetched on demand.",
+      "why": "A partial ('blobless') clone keeps the full history, so log and blame work, while skipping old file contents. It's usually the better choice than a shallow clone for developers on big repos."
+    },
+    {
+      "prompt": "In that monorepo you only work on two directories. Check out just services/checkout and libs/common.",
+      "expected_commands": ["git sparse-checkout set services/checkout libs/common"],
+      "fake_output": "(no output: the working tree now contains only those directories and top-level files)",
+      "explanation": "The other 300 directories vanish from your working tree, though they're still in the repository.",
+      "why": "Sparse checkout limits what's on disk, not what's in history. Combined with a partial clone it makes a monorepo feel small. This is the open-source version of how very large companies work in one giant repository."
+    },
+    {
+      "prompt": "This repository uses submodules, and after cloning their directories are empty. Fetch and check out all of them, including nested ones.",
+      "expected_commands": ["git submodule update --init --recursive"],
+      "fake_output": "Submodule 'vendor/payments-sdk' (git@github.com:acme/payments-sdk.git) registered for path 'vendor/payments-sdk'\nCloning into '/home/alice/shop/vendor/payments-sdk'...\nSubmodule path 'vendor/payments-sdk': checked out '7c2e0d4f1a3b5c6d7e8f9a0b1c2d3e4f5a6b7c8d'",
+      "explanation": "The submodule is cloned and checked out at the exact commit the parent repo records.",
+      "why": "A submodule is a pointer to one specific commit of another repository. That's precise, and also the source of every submodule complaint: it doesn't follow a branch, it has to be updated explicitly, and forgetting --recursive in CI gives 'file not found' errors. Many teams prefer a package manager for dependencies."
+    },
+    {
+      "prompt": "The design team commits large .psd files. Tell Git LFS to manage them.",
+      "expected_commands": ["git lfs track \"*.psd\"", "git lfs track '*.psd'"],
+      "fake_output": "Tracking \"*.psd\"",
+      "explanation": "A rule was added to .gitattributes; new .psd files will be stored in LFS.",
+      "why": "Git keeps every version of every file forever, so large binaries bloat a repository permanently. LFS stores a small pointer in Git and the real file on a separate server. It only applies to files added after tracking starts; existing history needs 'git lfs migrate' (git-incident-003)."
+    },
+    {
+      "prompt": "Company policy requires signed commits. Check whether the latest commit has a valid signature.",
+      "expected_commands": ["git log --show-signature -1"],
+      "fake_output": "commit 9f2c1e7ab04d5e6f7a8b9c0d1e2f3a4b5c6d7e8f\nGood \"git\" signature for alice@acme.example with ED25519 key SHA256:k3JqZ0mV3cK7yP2fQ9sL4wN1bX6dJ5eR8tU0iO3aZ7w\nAuthor: Alice <alice@acme.example>\n\n    Add audit log table",
+      "explanation": "The commit is signed with Alice's SSH key and verifies.",
+      "why": "The author name and email on a commit are whatever the committer typed, so anyone can impersonate anyone. A signature proves who made it. Git can sign with an SSH key you already have (gpg.format ssh), and platforms can require verified signatures on protected branches."
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "id": "git-tutorial-004",
+  "type": "tutorial",
+  "category": "git",
+  "title": "Merge Conflicts Without Panic",
+  "difficulty": "intermediate",
+  "tags": ["git", "merge", "conflicts"],
+  "intro": "A conflict isn't an error. It's Git saying two branches changed the same lines and it won't guess which is right. You're merging main into your feature branch and two files conflict. The skill is knowing what state you're in, and that you can always back out.",
+  "steps": [
+    {
+      "prompt": "Start the merge: bring main into your current branch.",
+      "expected_commands": ["git merge main"],
+      "fake_output": "Auto-merging src/billing.py\nCONFLICT (content): Merge conflict in src/billing.py\nAuto-merging package-lock.json\nCONFLICT (content): Merge conflict in package-lock.json\nAutomatic merge failed; fix conflicts and then commit the result.",
+      "explanation": "Two files conflict; everything else merged cleanly.",
+      "why": "The merge is paused, not broken. Git has already merged everything it could and left markers only where both sides touched the same lines. At any point before committing, 'git merge --abort' returns you to exactly where you started."
+    },
+    {
+      "prompt": "List only the files that are still in conflict.",
+      "expected_commands": ["git diff --name-only --diff-filter=U", "git status"],
+      "fake_output": "package-lock.json\nsrc/billing.py",
+      "explanation": "The two unmerged files.",
+      "why": "During a big merge, 'git status' is long. The U (unmerged) filter gives you just the to-do list, and it shrinks as you 'git add' each resolved file."
+    },
+    {
+      "prompt": "package-lock.json is generated, so don't merge it by hand. Take main's version (the branch being merged in) for that file.",
+      "expected_commands": ["git checkout --theirs package-lock.json", "git restore --theirs package-lock.json"],
+      "fake_output": "Updated 1 path from the index",
+      "explanation": "The file now matches main's version, with no conflict markers.",
+      "why": "In a merge, 'ours' is the branch you're on and 'theirs' is the one you're merging in. (In a rebase they're swapped, which catches everyone out: 'ours' is the branch you're rebasing onto.) For lock files, take one side and then regenerate with 'npm install', rather than editing by hand."
+    },
+    {
+      "prompt": "You edited src/billing.py to keep both changes and removed the markers. Mark both files as resolved.",
+      "expected_commands": ["git add src/billing.py package-lock.json", "git add package-lock.json src/billing.py", "git add ."],
+      "fake_output": "(no output: both files are staged as resolved)",
+      "explanation": "No unmerged paths remain.",
+      "why": "'git add' is how you tell Git a conflict is resolved. Before adding, search the file for leftover markers (<<<<<<<, =======, >>>>>>>): committing those is the most common conflict mistake, and it usually isn't caught until the build fails."
+    },
+    {
+      "prompt": "Finish the merge.",
+      "expected_commands": ["git merge --continue", "git commit", "git commit --no-edit"],
+      "fake_output": "[feature/invoices 7a8b9c0] Merge branch 'main' into feature/invoices",
+      "explanation": "A merge commit with two parents records the result.",
+      "why": "Run the tests before pushing: a merge can be free of conflicts and still broken, for example when main renamed a function that your branch calls. Git only detects overlapping lines, not meaning."
+    },
+    {
+      "prompt": "The same conflicts keep coming back every time you rebase this long-lived branch. Tell Git to remember how you resolved each one.",
+      "expected_commands": ["git config rerere.enabled true", "git config --global rerere.enabled true"],
+      "fake_output": "(no output: rerere is enabled)",
+      "explanation": "Git will now record each resolution and replay it when the identical conflict appears again.",
+      "why": "rerere means 'reuse recorded resolution'. It's little known and saves hours on long-running branches that are rebased repeatedly, since you resolve each conflict once instead of every time."
+    }
+  ]
+}

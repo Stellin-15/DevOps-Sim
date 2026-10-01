@@ -1,0 +1,46 @@
+{
+  "id": "git-tutorial-001",
+  "type": "tutorial",
+  "category": "git",
+  "title": "How Git Actually Stores Things: Objects, Refs, and HEAD",
+  "difficulty": "intermediate",
+  "tags": ["git", "internals", "objects", "refs"],
+  "intro": "Most Git confusion disappears once you know the model: a commit is a snapshot (not a diff), a branch is just a file holding one commit id, and nothing you commit is truly lost for weeks. Five commands show you the whole thing. The CI/CD category covers the everyday flow; this one goes underneath it.",
+  "steps": [
+    {
+      "prompt": "Find the full commit id that HEAD currently points to.",
+      "expected_commands": ["git rev-parse HEAD"],
+      "fake_output": "9f2c1e7ab04d5e6f7a8b9c0d1e2f3a4b5c6d7e8f",
+      "explanation": "HEAD resolves to commit 9f2c1e7.",
+      "why": "rev-parse turns any name (HEAD, main, v1.2.0, HEAD~3) into the object id it stands for. Scripts should use it instead of parsing 'git log' output, which is meant for people."
+    },
+    {
+      "prompt": "Look inside that commit object, 9f2c1e7.",
+      "expected_commands": ["git cat-file -p 9f2c1e7", "git cat-file -p HEAD"],
+      "fake_output": "tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904\nparent 3e1f0a9c5d7b2e4f6a8c0e1d3f5b7a9c1e2d4f60\nauthor Alice <alice@example.com> 1790000000 +0000\ncommitter Alice <alice@example.com> 1790000000 +0000\n\nAdd rate limiting to the API",
+      "explanation": "A commit is four things: a tree (the full snapshot), its parent commit(s), who and when, and a message.",
+      "why": "A commit points at a complete snapshot of the project (the tree), not at a set of changes. Diffs are computed on demand by comparing two snapshots. That's why switching branches is fast, and why history is a chain: each commit names its parent."
+    },
+    {
+      "prompt": "List what's in the snapshot: the tree of HEAD.",
+      "expected_commands": ["git ls-tree HEAD"],
+      "fake_output": "100644 blob 8c7e5a667f1b771847fe88c01c3de34413a1b220\tREADME.md\n100755 blob 1f7a7a472abf3dd9643fd615f6da379c4acb3e3a\tdeploy.sh\n040000 tree 2d1c0b9a8f7e6d5c4b3a29181716151413121110\tsrc",
+      "explanation": "Blobs are file contents, trees are directories, and the mode records whether a file is executable.",
+      "why": "A blob's id is the hash of its content, so two identical files, in any commit or branch, are stored once. That's why Git repositories stay small despite storing a full snapshot per commit."
+    },
+    {
+      "prompt": "See what a branch really is: list every ref and the commit it points to.",
+      "expected_commands": ["git show-ref"],
+      "fake_output": "9f2c1e7ab04d5e6f7a8b9c0d1e2f3a4b5c6d7e8f refs/heads/feature/rate-limit\n3e1f0a9c5d7b2e4f6a8c0e1d3f5b7a9c1e2d4f60 refs/heads/main\n3e1f0a9c5d7b2e4f6a8c0e1d3f5b7a9c1e2d4f60 refs/remotes/origin/main\n7c2e0d4f1a3b5c6d7e8f9a0b1c2d3e4f5a6b7c8d refs/tags/v2.3.0",
+      "explanation": "Each branch and tag is one line: a name and a commit id.",
+      "why": "A branch is a 41-byte file, which is why creating one is instant and free. 'Deleting a branch' deletes the name, not the commits. And 'origin/main' is just your local record of where main was the last time you fetched."
+    },
+    {
+      "prompt": "Check how much space the object database uses, in human-readable units.",
+      "expected_commands": ["git count-objects -vH"],
+      "fake_output": "count: 312\nsize: 1.42 MiB\nin-pack: 48211\npacks: 3\nsize-pack: 86.31 MiB\nprune-packable: 0\ngarbage: 0",
+      "explanation": "312 loose objects, and 48,211 compressed into packfiles totalling 86 MiB.",
+      "why": "New objects start 'loose' (one file each) and are later packed and delta-compressed by 'git gc'. A repository that's unexpectedly huge usually has large binaries in its history, which packing can't shrink. git-incident-003 deals with exactly that."
+    }
+  ]
+}

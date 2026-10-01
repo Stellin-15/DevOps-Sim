@@ -1,0 +1,43 @@
+{
+  "id": "git-incident-004",
+  "type": "incident",
+  "category": "git",
+  "title": "git reset --hard wiped a day of uncommitted work",
+  "difficulty": "advanced",
+  "tags": ["git", "recovery", "fsck", "objects"],
+  "intro": "A teammate ran 'git reset --hard' to 'clean things up' and lost a day's work that was never committed. The reflog shows nothing useful, because there was no commit. But they remember running 'git add src/pricing.py' a few hours ago, before making more edits.",
+  "steps": [
+    {
+      "prompt": "Check the reflog anyway, to confirm there's no commit holding the work.",
+      "expected_commands": ["git reflog", "git reflog -5"],
+      "fake_output": "b7c8d9e HEAD@{0}: reset: moving to HEAD\nb7c8d9e HEAD@{1}: pull: Fast-forward\n3e1f0a9 HEAD@{2}: checkout: moving from feature/tax to main",
+      "hint": "git reflog shows HEAD's movements; uncommitted work never appears in it."
+    },
+    {
+      "prompt": "'git add' wrote the file's contents into the object database even though it was never committed. Search for objects nothing points to.",
+      "expected_commands": ["git fsck --lost-found", "git fsck --unreachable", "git fsck --dangling"],
+      "fake_output": "Checking object directories: 100% (256/256), done.\ndangling blob 6e2f9a1c4b8d7e3f0a5c2b9d8e7f6a5b4c3d2e1f\ndangling blob a4c1e8f27b3d9065c2e4f6a8b0d1c3e5f7a9b2d4\ndangling commit 1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e",
+      "hint": "git fsck --lost-found lists 'dangling' objects: stored, but unreachable from any branch."
+    },
+    {
+      "prompt": "Two dangling blobs. Look at the first one, 6e2f9a1c, to see whether it's the pricing file.",
+      "expected_commands": ["git cat-file -p 6e2f9a1c", "git show 6e2f9a1c"],
+      "fake_output": "\"\"\"Pricing rules for the checkout flow.\"\"\"\n\ndef price_with_tax(order, region):\n    base = order.subtotal_cents\n    rate = TAX_RATES[region]\n    ...",
+      "hint": "git cat-file -p <sha> prints an object's contents."
+    },
+    {
+      "prompt": "That's it. Write the blob 6e2f9a1c back to src/pricing.py.",
+      "expected_commands": ["git cat-file -p 6e2f9a1c > src/pricing.py", "git show 6e2f9a1c > src/pricing.py"],
+      "fake_output": "(no output: src/pricing.py restored as it was when it was staged)",
+      "hint": "Redirect the object's contents into the file."
+    },
+    {
+      "prompt": "Commit it straight away so it's safe, as a work-in-progress commit.",
+      "expected_commands": ["git add src/pricing.py && git commit -m \"wip: pricing rules\"", "git add src/pricing.py && git commit -m 'wip: pricing rules'", "git commit -am \"wip: pricing rules\""],
+      "fake_output": "[main 2c3d4e5] wip: pricing rules\n 1 file changed, 64 insertions(+), 12 deletions(-)",
+      "hint": "git add the file and commit."
+    }
+  ],
+  "resolution": "'git reset --hard' discards uncommitted changes, and the reflog can't help because the reflog tracks commits. The save came from a detail of how Git works: 'git add' writes a blob into the object database immediately. Staging a file is enough to store its contents, and unreferenced objects live for about two weeks before garbage collection removes them. So the version that was staged was recoverable; the edits made after that last 'git add' were never given to Git and are gone for good (an editor's local history is the only other hope). The lasting lessons: commit early and often, since a WIP commit costs nothing and can be squashed later; prefer 'git stash' to 'reset --hard' when you want a clean tree; and remember this trick, because 'I ran reset --hard' is one of the most common Git emergencies and it's often partly recoverable.",
+  "real_commands_used": ["git reflog", "git fsck --lost-found", "git cat-file -p <sha>", "git cat-file -p <sha> > file", "git commit"]
+}

@@ -1,0 +1,53 @@
+{
+  "id": "git-tutorial-009",
+  "type": "tutorial",
+  "category": "git",
+  "title": "Interruptions: Stash and Worktrees",
+  "difficulty": "intermediate",
+  "tags": ["git", "stash", "worktree"],
+  "intro": "You're halfway through a feature when production breaks. You need a clean checkout of main right now, without losing or committing half-finished work. Stash is the quick answer; worktrees are the better one for anything longer than a few minutes.",
+  "steps": [
+    {
+      "prompt": "Shelve your uncommitted work, including new untracked files, with the message 'wip: audit log'.",
+      "expected_commands": ["git stash push -u -m \"wip: audit log\"", "git stash push -u -m 'wip: audit log'", "git stash push -m \"wip: audit log\" -u"],
+      "fake_output": "Saved working directory and index state On feature/audit-log: wip: audit log",
+      "explanation": "The working tree is clean, and your changes are saved on the stash.",
+      "why": "Without -u, new files that were never added are left behind in the working tree, and can end up in the hotfix by accident. A message matters: 'stash@{3}: WIP on main' tells you nothing a week later."
+    },
+    {
+      "prompt": "List what's on the stash.",
+      "expected_commands": ["git stash list"],
+      "fake_output": "stash@{0}: On feature/audit-log: wip: audit log\nstash@{1}: WIP on main: 3e1f0a9 Merge pull request #212",
+      "explanation": "Two entries; the newest is stash@{0}.",
+      "why": "The stash is a stack, and old entries pile up and get forgotten. If a stash has been there more than a day, it should have been a commit on a branch."
+    },
+    {
+      "prompt": "After the hotfix, bring your work back. Restore the latest stash but keep it on the stack until you've checked nothing conflicted.",
+      "expected_commands": ["git stash apply", "git stash apply stash@{0}"],
+      "fake_output": "On branch feature/audit-log\nChanges not staged for commit:\n\tmodified:   src/audit.py\nUntracked files:\n\tmigrations/0042_audit_log.sql",
+      "explanation": "Your changes are back, and the stash entry still exists.",
+      "why": "'pop' applies and deletes in one step; if the apply hits a conflict you're left sorting it out mid-way. 'apply' keeps the entry as a backup, and you 'git stash drop' it once you're happy."
+    },
+    {
+      "prompt": "A better tool for interruptions: check out main in a second directory, ../shop-hotfix, alongside your current work.",
+      "expected_commands": ["git worktree add ../shop-hotfix main"],
+      "fake_output": "Preparing worktree (checking out 'main')\nHEAD is now at b7c8d9e Merge pull request #213",
+      "explanation": "A second working directory on main, sharing the same repository.",
+      "why": "A worktree gives you two branches checked out at once with one .git directory: no stashing, no half-built state, and your editor and dev server for the feature keep running. It's much faster than a second clone and shares all objects."
+    },
+    {
+      "prompt": "List the worktrees attached to this repository.",
+      "expected_commands": ["git worktree list"],
+      "fake_output": "/home/alice/shop          9f2c1e7 [feature/audit-log]\n/home/alice/shop-hotfix   b7c8d9e [main]",
+      "explanation": "Two directories, each on its own branch.",
+      "why": "A branch can only be checked out in one worktree at a time, which prevents two directories fighting over the same branch."
+    },
+    {
+      "prompt": "The hotfix is merged. Remove the ../shop-hotfix worktree.",
+      "expected_commands": ["git worktree remove ../shop-hotfix"],
+      "fake_output": "(no output: the worktree directory is removed)",
+      "explanation": "The extra directory and its bookkeeping are gone; the commits remain in the repository.",
+      "why": "Use 'worktree remove' rather than deleting the folder: it cleans up Git's record of it. If a folder was deleted by hand, 'git worktree prune' tidies up."
+    }
+  ]
+}

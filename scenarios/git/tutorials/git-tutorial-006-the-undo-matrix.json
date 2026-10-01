@@ -1,0 +1,53 @@
+{
+  "id": "git-tutorial-006",
+  "type": "tutorial",
+  "category": "git",
+  "title": "The Undo Matrix: Which Command Undoes What",
+  "difficulty": "intermediate",
+  "tags": ["git", "undo", "reset", "revert"],
+  "intro": "Git has several 'undo' commands, and choosing the wrong one loses work. The right one depends on two questions: has the change been committed, and has it been pushed? This walks through each case.",
+  "steps": [
+    {
+      "prompt": "You edited src/cache.py and want to throw those uncommitted edits away entirely.",
+      "expected_commands": ["git restore src/cache.py", "git checkout -- src/cache.py"],
+      "fake_output": "(no output: src/cache.py is back to its last committed state)",
+      "explanation": "The working-tree changes are gone.",
+      "why": "This is the one undo with no safety net: uncommitted changes were never stored in Git, so no reflog can bring them back. If you might want them, 'git stash' instead."
+    },
+    {
+      "prompt": "You committed too early. Undo the last commit but keep its changes staged, ready to recommit.",
+      "expected_commands": ["git reset --soft HEAD~1", "git reset --soft HEAD^"],
+      "fake_output": "(no output: HEAD moved back one commit; the changes are staged)",
+      "explanation": "The commit is gone from the branch; its changes are in the index.",
+      "why": "The three reset modes differ only in how much they keep. --soft moves the branch and keeps everything staged; --mixed (the default) keeps the changes but unstages them; --hard discards them. All three move the branch pointer, so only use them on commits you haven't pushed."
+    },
+    {
+      "prompt": "The last two commits were a dead end. Remove them and their changes completely.",
+      "expected_commands": ["git reset --hard HEAD~2"],
+      "fake_output": "HEAD is now at 3e1f0a9 Merge pull request #212",
+      "explanation": "The branch is two commits back and the working tree matches.",
+      "why": "The commits still exist in the object database, unreferenced, for about 30 days. 'git reflog' lists where HEAD has been, so 'git reset --hard HEAD@{1}' undoes this reset. That only works for committed work."
+    },
+    {
+      "prompt": "A bad commit, b7c8d9e, is already on main and deployed. Undo its effect without rewriting shared history.",
+      "expected_commands": ["git revert b7c8d9e", "git revert --no-edit b7c8d9e"],
+      "fake_output": "[main 6f7a8b9] Revert \"Switch to new pricing rules\"\n 3 files changed, 12 insertions(+), 48 deletions(-)",
+      "explanation": "A new commit that applies the exact opposite of b7c8d9e.",
+      "why": "Revert adds history instead of removing it, so nobody's clone breaks and there's a record of what happened. That's the rule: reset for private commits, revert for anything already shared."
+    },
+    {
+      "prompt": "The bad change came in through a merge commit, 4d5e6f7. Revert the whole merge, keeping main's side (parent 1) as the mainline.",
+      "expected_commands": ["git revert -m 1 4d5e6f7"],
+      "fake_output": "[main 8a9b0c1] Revert \"Merge pull request #230 from acme/feature/pricing\"\n 9 files changed, 31 insertions(+), 210 deletions(-)",
+      "explanation": "Everything the merge brought in has been undone on main.",
+      "why": "A merge commit has two parents, so Git needs to know which side to keep: -m 1 means 'the branch that was merged into'. One trap: Git still considers that branch merged, so merging it again later brings nothing back. You must revert the revert first (git-incident-006)."
+    },
+    {
+      "prompt": "You just ran a rebase and it made a mess. Put the branch back exactly where it was before the rebase.",
+      "expected_commands": ["git reset --hard ORIG_HEAD"],
+      "fake_output": "HEAD is now at 9f2c1e7 Add audit log table",
+      "explanation": "The branch points at its pre-rebase commit again.",
+      "why": "Git saves the previous position in ORIG_HEAD before dangerous operations (rebase, merge, reset). It's the quickest undo for 'that last big command was a mistake'; the reflog is the fuller history when ORIG_HEAD has already been overwritten."
+    }
+  ]
+}

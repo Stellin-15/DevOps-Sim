@@ -1,0 +1,53 @@
+{
+  "id": "git-tutorial-003",
+  "type": "tutorial",
+  "category": "git",
+  "title": "Branches, Tracking, and Cleaning Up",
+  "difficulty": "beginner",
+  "tags": ["git", "branches", "remotes"],
+  "intro": "After a few months, a repository collects dozens of stale branches, and nobody is sure which are merged or which still track something. These commands keep that under control.",
+  "steps": [
+    {
+      "prompt": "Create a new branch called feature/audit-log and switch to it, in one command.",
+      "expected_commands": ["git switch -c feature/audit-log", "git checkout -b feature/audit-log"],
+      "fake_output": "Switched to a new branch 'feature/audit-log'",
+      "explanation": "A new branch pointing at the current commit, and HEAD now on it.",
+      "why": "'git switch' (for branches) and 'git restore' (for files) split the two jobs that 'git checkout' used to do, which was a classic source of accidents: 'checkout <name>' could switch a branch or overwrite a file depending on what the name matched."
+    },
+    {
+      "prompt": "Push it and set its upstream, so plain 'git push' and 'git pull' work from now on.",
+      "expected_commands": ["git push -u origin feature/audit-log", "git push --set-upstream origin feature/audit-log"],
+      "fake_output": "To github.com:acme/shop.git\n * [new branch]      feature/audit-log -> feature/audit-log\nbranch 'feature/audit-log' set up to track 'origin/feature/audit-log'.",
+      "explanation": "The branch exists on the remote, and your local branch tracks it.",
+      "why": "Tracking is what makes 'git status' say 'ahead 2, behind 1' and lets push and pull work without arguments. Set 'push.autoSetupRemote true' globally and Git does this on the first push automatically."
+    },
+    {
+      "prompt": "List local branches with their upstream and how far ahead or behind each is.",
+      "expected_commands": ["git branch -vv"],
+      "fake_output": "* feature/audit-log  9f2c1e7 [origin/feature/audit-log] Add audit log table\n  fix/login-timeout  4a5b6c7 [origin/fix/login-timeout: gone] Raise login timeout\n  main               3e1f0a9 [origin/main: behind 12] Merge pull request #212\n  spike/graphql      1d2e3f4 Try GraphQL gateway",
+      "explanation": "main is 12 commits behind; fix/login-timeout's remote branch is gone (merged and deleted); spike/graphql was never pushed.",
+      "why": "'gone' means the remote branch was deleted, usually after its PR merged, so the local one is safe to remove. A branch with no upstream at all exists only on this machine: one disk failure from being lost."
+    },
+    {
+      "prompt": "Update your view of the remote and drop remote-tracking branches that no longer exist there.",
+      "expected_commands": ["git fetch --prune", "git fetch -p"],
+      "fake_output": "From github.com:acme/shop\n - [deleted]         (none)     -> origin/fix/login-timeout\n   3e1f0a9..b7c8d9e  main       -> origin/main",
+      "explanation": "The stale origin/fix/login-timeout reference is removed, and origin/main is updated.",
+      "why": "Fetch never touches your own branches or working tree, so it's always safe. Without --prune, deleted remote branches linger in 'git branch -r' forever. Set 'fetch.prune true' to make it the default."
+    },
+    {
+      "prompt": "List the local branches that are already fully merged into main.",
+      "expected_commands": ["git branch --merged main"],
+      "fake_output": "  fix/login-timeout\n  main",
+      "explanation": "fix/login-timeout is merged and can go.",
+      "why": "'--merged' only lists branches whose commits are all reachable from main, so deleting them loses nothing. Note it can't detect squash-merged branches (their commits were rewritten into one new commit), which is why the 'gone' marker from the previous steps is the more reliable signal on squash-merge repos."
+    },
+    {
+      "prompt": "Delete the merged local branch fix/login-timeout.",
+      "expected_commands": ["git branch -d fix/login-timeout"],
+      "fake_output": "Deleted branch fix/login-timeout (was 4a5b6c7).",
+      "explanation": "The branch name is gone; Git prints the commit it pointed to.",
+      "why": "Lowercase -d refuses to delete a branch with unmerged work; -D forces it. Git prints the last commit id on purpose: if you deleted the wrong one, 'git branch fix/login-timeout 4a5b6c7' brings it straight back."
+    }
+  ]
+}

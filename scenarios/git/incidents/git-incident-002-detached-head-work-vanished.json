@@ -1,0 +1,43 @@
+{
+  "id": "git-incident-002",
+  "type": "incident",
+  "category": "git",
+  "title": "Two commits made on a detached HEAD have vanished",
+  "difficulty": "intermediate",
+  "tags": ["git", "detached-head", "reflog"],
+  "intro": "A colleague checked out the tag v2.3.0 to reproduce a customer bug, fixed it in two commits, then ran 'git switch main' to pull the latest. Now the fix is nowhere: not in 'git log', not on any branch. They're sure they committed it.",
+  "steps": [
+    {
+      "prompt": "List all branches to confirm the commits aren't on any of them.",
+      "expected_commands": ["git branch -a", "git branch --all", "git branch -vv"],
+      "fake_output": "* main\n  remotes/origin/main\n  remotes/origin/release/2.3",
+      "hint": "git branch -a lists local and remote branches."
+    },
+    {
+      "prompt": "The commits exist; no branch points at them. Look at where HEAD has been.",
+      "expected_commands": ["git reflog", "git reflog -10", "git log -g --oneline"],
+      "fake_output": "b7c8d9e HEAD@{0}: checkout: moving from 4f5a6b7c to main\n4f5a6b7 HEAD@{1}: commit: Handle empty cart in tax calculation\ne3d2c1b HEAD@{2}: commit: Add regression test for empty cart\n7c2e0d4 HEAD@{3}: checkout: moving from main to v2.3.0",
+      "hint": "git reflog records every position HEAD has had, including commits no branch points to."
+    },
+    {
+      "prompt": "The second fix commit is 4f5a6b7. Give it a name so it can't be lost: create the branch fix/empty-cart-tax at that commit.",
+      "expected_commands": ["git branch fix/empty-cart-tax 4f5a6b7"],
+      "fake_output": "(no output: fix/empty-cart-tax now points at 4f5a6b7)",
+      "hint": "git branch <name> <sha>"
+    },
+    {
+      "prompt": "Confirm both commits are on the new branch, on top of v2.3.0.",
+      "expected_commands": ["git log --oneline v2.3.0..fix/empty-cart-tax", "git log --oneline fix/empty-cart-tax -3"],
+      "fake_output": "4f5a6b7 Handle empty cart in tax calculation\ne3d2c1b Add regression test for empty cart",
+      "hint": "git log --oneline <base>..<branch>"
+    },
+    {
+      "prompt": "Push it so it exists somewhere other than this laptop.",
+      "expected_commands": ["git push -u origin fix/empty-cart-tax", "git push --set-upstream origin fix/empty-cart-tax"],
+      "fake_output": "To github.com:acme/shop.git\n * [new branch]      fix/empty-cart-tax -> fix/empty-cart-tax\nbranch 'fix/empty-cart-tax' set up to track 'origin/fix/empty-cart-tax'.",
+      "hint": "git push -u origin <branch>"
+    }
+  ],
+  "resolution": "Checking out a tag (or a commit id, or a remote branch like origin/main) puts you in 'detached HEAD' state: HEAD points straight at a commit instead of at a branch. Commits made there are real, but nothing names them, so when you switch away they become unreachable and disappear from 'git log'. Git even warned about it at the time ('you are leaving 2 commits behind'), which is easy to miss. The reflog keeps every position HEAD has held for about 90 days, so the commits were one 'git branch <name> <sha>' away from safety. Note the reflog is local only: it isn't pushed, and a fresh clone doesn't have it. Prevention: when checking out a tag to work on it, create a branch immediately ('git switch -c fix/... v2.3.0').",
+  "real_commands_used": ["git branch -a", "git reflog", "git branch <name> <sha>", "git log --oneline A..B", "git push -u"]
+}

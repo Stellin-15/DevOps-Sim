@@ -1,0 +1,43 @@
+{
+  "id": "git-incident-006",
+  "type": "incident",
+  "category": "git",
+  "title": "The fixed feature branch merges 'successfully', and none of its code arrives",
+  "difficulty": "advanced",
+  "tags": ["git", "revert", "merge", "history"],
+  "intro": "Last week the pricing feature was merged, broke production, and was reverted with 'git revert -m 1'. The team fixed the bug on the same branch, feature/pricing, and merged it again today. The merge reported success, but main only has the small fix: none of the original feature's code is there.",
+  "steps": [
+    {
+      "prompt": "Look at recent history on main to see the merge, the revert, and today's merge.",
+      "expected_commands": ["git log --oneline --graph -8 main", "git log --oneline -8 main", "git log --oneline --graph main -8"],
+      "fake_output": "*   c9d0e1f Merge branch 'feature/pricing' (today)\n|\\\n| * 5a6b7c8 Fix rounding bug in pricing\n* | 8a9b0c1 Revert \"Merge branch 'feature/pricing'\"\n* |   4d5e6f7 Merge branch 'feature/pricing' (last week)\n|\\|\n| * 2b3c4d5 Add pricing rules engine\n| * 1a2b3c4 Add pricing tables",
+      "hint": "git log --oneline --graph shows the shape."
+    },
+    {
+      "prompt": "See what today's merge c9d0e1f actually brought into main.",
+      "expected_commands": ["git show --stat c9d0e1f", "git diff --stat c9d0e1f^1 c9d0e1f", "git show c9d0e1f --stat"],
+      "fake_output": "Merge: 8a9b0c1 5a6b7c8\n src/pricing/rounding.py | 4 ++--\n 1 file changed, 2 insertions(+), 2 deletions(-)",
+      "hint": "git show --stat <merge> lists the files it changed."
+    },
+    {
+      "prompt": "Only the fix arrived. Check whether Git thinks the original feature commits are already part of main.",
+      "expected_commands": ["git branch --contains 2b3c4d5", "git merge-base --is-ancestor 2b3c4d5 main && echo yes", "git log --oneline main | grep 2b3c4d5"],
+      "fake_output": "  feature/pricing\n* main",
+      "hint": "git branch --contains <sha> lists the branches that already include a commit."
+    },
+    {
+      "prompt": "main already 'contains' those commits; the revert undid their changes but not the fact that they were merged. Bring the feature back by reverting the revert commit 8a9b0c1.",
+      "expected_commands": ["git revert 8a9b0c1", "git revert --no-edit 8a9b0c1"],
+      "fake_output": "[main e1f2a3b] Revert \"Revert \"Merge branch 'feature/pricing'\"\"\n 9 files changed, 210 insertions(+), 31 deletions(-)",
+      "hint": "Reverting a revert re-applies the original changes."
+    },
+    {
+      "prompt": "Confirm the feature's files are back on main: check that src/pricing/engine.py exists at HEAD.",
+      "expected_commands": ["git ls-tree -r HEAD --name-only | grep pricing/engine.py", "git show HEAD:src/pricing/engine.py | head -5", "git ls-files src/pricing/engine.py"],
+      "fake_output": "src/pricing/engine.py",
+      "hint": "git ls-tree -r HEAD --name-only lists every file in the commit."
+    }
+  ],
+  "resolution": "A revert undoes a commit's changes; it doesn't undo the history. After last week's merge, the feature's commits were ancestors of main, and the revert added a new commit that removed their changes while leaving them in history. So when the branch was merged again, Git saw that main already contained those commits and brought across only what was new since: the small fix. The merge 'succeeded' with almost nothing in it. This surprises nearly everyone the first time. The remedy is to revert the revert, which re-applies the original changes, after which the fix on top makes sense. To avoid it: when a merged feature is reverted, either revert the revert before re-merging, or rebase the feature onto main as new commits (new ids, so Git treats them as unmerged work). Squash merges avoid the problem too, since the branch's own commits never enter main's history.",
+  "real_commands_used": ["git log --oneline --graph", "git show --stat <merge>", "git branch --contains <sha>", "git revert <revert-sha>", "git ls-tree -r HEAD --name-only"]
+}
