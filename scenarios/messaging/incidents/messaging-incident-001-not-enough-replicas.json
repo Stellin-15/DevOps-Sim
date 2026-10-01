@@ -1,0 +1,49 @@
+{
+  "id": "messaging-incident-001",
+  "type": "incident",
+  "category": "messaging",
+  "title": "One broker is down for patching and nothing can publish payments",
+  "difficulty": "advanced",
+  "tags": ["kafka", "replication", "min-insync-replicas", "availability"],
+  "intro": "Broker 2 of a three-broker Kafka cluster was stopped for a routine kernel patch. The orders topic is unaffected. Every producer to the payments topic is failing with 'NotEnoughReplicasException: Messages are rejected since there are fewer in-sync replicas than required'. The cluster is supposed to tolerate one broker being down. BS holds the bootstrap address.",
+  "steps": [
+    {
+      "prompt": "See which partitions have lost a replica.",
+      "expected_commands": ["kafka-topics.sh --bootstrap-server $BS --describe --under-replicated-partitions", "kafka-topics --bootstrap-server $BS --describe --under-replicated-partitions", "kafka-topics.sh --describe --under-replicated-partitions --bootstrap-server $BS"],
+      "fake_output": "Topic: orders    Partition: 1   Leader: 0   Replicas: 2,0,1   Isr: 0,1\nTopic: orders    Partition: 4   Leader: 1   Replicas: 2,1,0   Isr: 1,0\nTopic: payments  Partition: 0   Leader: 0   Replicas: 0,2     Isr: 0\nTopic: payments  Partition: 2   Leader: 1   Replicas: 2,1     Isr: 1",
+      "hint": "kafka-topics.sh --bootstrap-server $BS --describe --under-replicated-partitions"
+    },
+    {
+      "prompt": "Look at the difference. orders partitions have three replicas and two are still in sync. payments partitions have only two replicas, and one is left. Describe the payments topic to see its settings.",
+      "expected_commands": ["kafka-topics.sh --bootstrap-server $BS --describe --topic payments", "kafka-topics --bootstrap-server $BS --describe --topic payments", "kafka-topics.sh --describe --topic payments --bootstrap-server $BS"],
+      "fake_output": "Topic: payments   PartitionCount: 3   ReplicationFactor: 2   Configs: min.insync.replicas=2\n  Partition: 0   Leader: 0   Replicas: 0,2   Isr: 0\n  Partition: 1   Leader: 0   Replicas: 0,1   Isr: 0,1\n  Partition: 2   Leader: 1   Replicas: 2,1   Isr: 1",
+      "hint": "kafka-topics.sh --bootstrap-server $BS --describe --topic payments"
+    },
+    {
+      "prompt": "ReplicationFactor 2 with min.insync.replicas=2: both copies must acknowledge every write, so losing either broker stops writes to that partition. What's the right immediate action?\n  a) Lower min.insync.replicas to 1 on payments so writes continue on a single copy\n  b) Bring broker 2 back: the patch can wait, and the data stays protected\n  c) Delete the topic\n  d) Restart the producers\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "a) works, and every payment written now exists on ONE broker: lose it before broker 2 returns and those payments are gone\nb) restores service in a minute with no reduction in safety",
+      "hint": "This topic carries payments. Which option can lose data?"
+    },
+    {
+      "prompt": "Start Kafka again on broker 2 (host kafka-2).",
+      "expected_commands": ["ssh kafka-2 sudo systemctl start kafka", "ssh kafka-2 'sudo systemctl start kafka'", "ssh kafka-2 \"sudo systemctl start kafka\"", "ssh kafka-2 sudo systemctl restart kafka"],
+      "fake_output": "(no output)",
+      "hint": "ssh kafka-2 sudo systemctl start kafka"
+    },
+    {
+      "prompt": "Wait for it to catch up, then confirm nothing is under-replicated.",
+      "expected_commands": ["kafka-topics.sh --bootstrap-server $BS --describe --under-replicated-partitions", "kafka-topics --bootstrap-server $BS --describe --under-replicated-partitions", "kafka-topics.sh --describe --under-replicated-partitions --bootstrap-server $BS"],
+      "fake_output": "(no output)",
+      "hint": "The same command as the first step."
+    },
+    {
+      "prompt": "Producers are working again. The topic still can't survive a broker restart. The durable fix is a third replica: a reassignment plan in add-replica.json gives every payments partition replicas on brokers 0, 1, and 2. Execute it.",
+      "expected_commands": ["kafka-reassign-partitions.sh --bootstrap-server $BS --reassignment-json-file add-replica.json --execute", "kafka-reassign-partitions --bootstrap-server $BS --reassignment-json-file add-replica.json --execute", "kafka-reassign-partitions.sh --bootstrap-server $BS --execute --reassignment-json-file add-replica.json"],
+      "fake_output": "Current partition replica assignment\n...\nSuccessfully started partition reassignments for payments-0,payments-1,payments-2",
+      "hint": "kafka-reassign-partitions.sh --bootstrap-server $BS --reassignment-json-file add-replica.json --execute"
+    }
+  ],
+  "resolution": "The cluster did tolerate one broker being down, for every topic configured to allow it. The orders topic has three replicas and needs two in sync, so with broker 2 gone it carried on with two. The payments topic had been created by hand with a replication factor of 2, and later someone set min.insync.replicas=2 on it 'for safety'. Each setting is reasonable alone. Together they mean every write needs both copies, so the topic has no tolerance for any broker being unavailable: not a failure, not even a planned restart. Producers using acks=all were refused, which is Kafka keeping its promise: it won't accept a write it can't store on the required number of copies. Nothing was lost. Lowering min.insync.replicas to 1 would have restored writes at once, and it's the tempting move at 3 a.m., but it means new payments exist on a single disk until the other broker returns. Bringing the broker back was just as fast and kept the guarantee. The real repair is the topology: replication factor 3 with min.insync.replicas 2, which leaves room for one broker to be down while still requiring two copies of every write. What to change: create topics from code with enforced defaults (default.replication.factor=3, min.insync.replicas=2 at the broker), and audit existing topics for RF below 3 or min ISR equal to RF. Before any broker maintenance, check that no topic would drop below its minimum, which is exactly the under-replicated-partitions check plus this arithmetic. And test maintenance on a staging cluster that has the same topic settings as production.",
+  "real_commands_used": ["kafka-topics.sh --describe --under-replicated-partitions", "kafka-topics.sh --describe --topic <topic>", "systemctl start kafka", "kafka-reassign-partitions.sh --reassignment-json-file <plan> --execute"]
+}

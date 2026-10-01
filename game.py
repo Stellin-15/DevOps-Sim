@@ -49,6 +49,7 @@ CATEGORY_LABELS = {
     "webservers": "Web Servers & Proxies",
     "identity": "Identity & Secrets",
     "scripting": "Scripting",
+    "messaging": "Messaging",
 }
 
 

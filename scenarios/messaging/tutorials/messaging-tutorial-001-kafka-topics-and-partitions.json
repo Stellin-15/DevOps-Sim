@@ -1,0 +1,48 @@
+{
+  "id": "messaging-tutorial-001",
+  "type": "tutorial",
+  "category": "messaging",
+  "title": "Kafka Anatomy: Topics, Partitions, Leaders, and Replicas",
+  "difficulty": "intermediate",
+  "tags": ["kafka", "topics", "partitions", "replication"],
+  "intro": "Kafka is a log that many services append to and read from. To operate it you need four words: a topic is split into partitions, each partition has one leader broker that takes the writes, and replicas on other brokers copy it. The cluster has three brokers; the shell variable BS holds a bootstrap address (kafka-0:9092).",
+  "steps": [
+    {
+      "prompt": "List the topics in the cluster.",
+      "expected_commands": ["kafka-topics.sh --bootstrap-server $BS --list", "kafka-topics --bootstrap-server $BS --list", "kafka-topics.sh --list --bootstrap-server $BS"],
+      "fake_output": "__consumer_offsets\norders\npayments\nshipping-events",
+      "explanation": "Three application topics, and Kafka's own topic for storing consumer positions.",
+      "why": "The bootstrap server is only a first contact: the client asks it for the full list of brokers and then talks to whichever one leads each partition. So a client needs network access to every broker, at the address each broker advertises. A wrong 'advertised.listeners' setting is the usual reason a client can list topics and then can't produce."
+    },
+    {
+      "prompt": "Describe the topic orders.",
+      "expected_commands": ["kafka-topics.sh --bootstrap-server $BS --describe --topic orders", "kafka-topics --bootstrap-server $BS --describe --topic orders", "kafka-topics.sh --describe --topic orders --bootstrap-server $BS"],
+      "fake_output": "Topic: orders   PartitionCount: 6   ReplicationFactor: 3   Configs: min.insync.replicas=2,retention.ms=604800000\n  Partition: 0   Leader: 1   Replicas: 1,2,0   Isr: 1,2,0\n  Partition: 1   Leader: 2   Replicas: 2,0,1   Isr: 2,0,1\n  Partition: 2   Leader: 0   Replicas: 0,1,2   Isr: 0,1,2\n  Partition: 3   Leader: 1   Replicas: 1,0,2   Isr: 1,0,2\n  Partition: 4   Leader: 2   Replicas: 2,1,0   Isr: 2,1,0\n  Partition: 5   Leader: 0   Replicas: 0,2,1   Isr: 0,2,1",
+      "explanation": "Six partitions, three copies of each, leaders spread evenly over brokers 0, 1, and 2, and every replica in sync.",
+      "why": "This output is the health check for a topic. 'Replicas' is where the copies should be; 'Isr' (in-sync replicas) is which of them are caught up right now. When Isr is shorter than Replicas, a broker is down or behind. Partitions are the unit of parallelism: one partition is read by at most one consumer in a group, so six partitions means at most six consumers working in parallel."
+    },
+    {
+      "prompt": "With ReplicationFactor 3 and min.insync.replicas=2, and producers using acks=all, how many brokers can fail before producers start getting errors?\n  a) None\n  b) One: with two replicas still in sync, writes are acknowledged; with only one, they're refused\n  c) Two\n  d) All three\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "3 in sync  -> writes accepted\n2 in sync  -> writes accepted (still meets min.insync.replicas=2)\n1 in sync  -> NotEnoughReplicasException: writes refused, reads still work",
+      "hint": "acks=all waits for the in-sync set, and min.insync.replicas is the smallest set allowed.",
+      "explanation": "One broker can fail. A second failure stops writes, on purpose.",
+      "why": "This trio is how Kafka's durability is set: three copies, at least two must confirm each write, and the producer waits for them. Refusing writes with one copy left is the system choosing 'unavailable' over 'might lose data'. RF 3 with min.insync.replicas 2 is the standard production setting; RF 2 with min ISR 2 can't survive any failure (messaging-incident-001)."
+    },
+    {
+      "prompt": "Create a topic named refunds with 6 partitions and a replication factor of 3.",
+      "expected_commands": ["kafka-topics.sh --bootstrap-server $BS --create --topic refunds --partitions 6 --replication-factor 3", "kafka-topics --bootstrap-server $BS --create --topic refunds --partitions 6 --replication-factor 3", "kafka-topics.sh --bootstrap-server $BS --create --topic refunds --replication-factor 3 --partitions 6"],
+      "fake_output": "Created topic refunds.",
+      "explanation": "A new topic with six partitions, each on all three brokers.",
+      "why": "Create topics explicitly, in code (Terraform, or Strimzi's KafkaTopic objects). With auto-creation on, a typo in a topic name silently creates a new topic with the broker defaults, often one partition and one replica, and messages vanish into it. Turn auto.create.topics.enable off in production."
+    },
+    {
+      "prompt": "The orders topic needs more parallelism, so someone proposes raising it from 6 to 12 partitions. Messages are keyed by customer id, and consumers rely on each customer's events arriving in order. What happens to ordering?\n  a) Nothing changes\n  b) Existing keys map to different partitions afterwards, so a customer's new events can land on a different partition from their old ones and be processed out of order\n  c) Kafka re-sorts everything\n  d) The topic is deleted\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "partition = hash(key) % partition_count\ncustomer 8812:  hash % 6 = 2     ->   hash % 12 = 8\nold events stay on partition 2, new events go to partition 8, consumed independently",
+      "hint": "The key decides the partition, and the formula includes the partition count.",
+      "explanation": "Adding partitions breaks per-key ordering across the change.",
+      "why": "Kafka guarantees order only within a partition. The partition for a key depends on the partition count, so changing the count moves keys. Partitions can never be reduced, either. Choose the count with growth in mind when creating a topic. If you must add them to a keyed topic, do it when the backlog is drained, or migrate to a new topic."
+    }
+  ]
+}

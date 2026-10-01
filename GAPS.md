@@ -1469,7 +1469,69 @@ script it, with tests.
 
 ---
 
-# Part 21 — The backlog: everything that isn't in the game yet
+# Part 21 — Messaging
+
+**Content:** 7 tutorials, 4 incidents.
+
+System Design (Part 16) explains why a queue sits between two services.
+This part is about operating one: Kafka first, then RabbitMQ and the
+cloud queues.
+
+## Covered
+
+Every section of `commands/messaging.md`:
+- **Kafka anatomy:** topics, partitions, leaders, in-sync replicas, the
+  replication factor / `min.insync.replicas` / `acks` trio, and what
+  adding partitions does to key ordering.
+- **Reading a topic by hand:** the console consumer and producer, and
+  kcat for the last messages, their coordinates, or one exact offset.
+- **Consumer groups:** lag per partition, group state, the partition
+  count as the limit on parallelism, offset resets, and idempotency.
+- **Retention:** time and size limits, per-topic overrides, disk use,
+  log compaction, and what an offline consumer loses.
+- **Brokers:** the KRaft quorum, under-replicated partitions as the gate
+  for a rolling restart, preferred leaders, and reassignment.
+- **RabbitMQ:** watermarks and alarms, queue depth with consumer counts,
+  bounding queues with policies, and acknowledgements.
+- **Cloud queues:** SQS attributes, the visibility timeout, dead-letter
+  queues, and redrive.
+
+Incidents:
+- writes refused during a one-broker restart (replication factor 2 with
+  a minimum of 2 in sync);
+- a consumer group that never stops rebalancing after processing got
+  slower;
+- a poison message freezing one partition;
+- RabbitMQ blocking every publisher because one abandoned queue filled
+  its memory.
+
+## Still missing
+
+- **A real broker.** Outputs are pre-written; a single-node Kafka or
+  RabbitMQ in a container is the practice ground.
+- Kafka security (TLS, SASL, ACLs), quotas, and multi-tenancy.
+- Schema registry and compatibility rules, Kafka Connect, Kafka Streams
+  and ksqlDB, MirrorMaker and cross-cluster replication.
+- Strimzi and other Kubernetes operators for Kafka; managed services
+  (MSK, Confluent Cloud, Event Hubs).
+- RabbitMQ clustering, quorum queues in depth, exchanges and routing
+  topologies, and streams.
+- NATS, Pulsar, and Redis Streams.
+- Google Pub/Sub and Azure Service Bus hands-on (named, not practised).
+- Exactly-once semantics and transactions, beyond idempotent consumers.
+
+## Readiness verdict
+
+Enough to answer the on-call questions for an event-driven system: is
+the message in the topic, who's behind and on which partition, is the
+group working or reshuffling, and what a broker restart will do to each
+topic. The incidents cover the failures that produce the strangest
+symptoms. Running a large Kafka estate (capacity, security, upgrades,
+tenancy) is a job in itself.
+
+---
+
+# Part 22 — The backlog: everything that isn't in the game yet
 
 The parts above each list what's missing *inside* a category. This part
 lists whole topics with no category at all, in three tiers. Nobody needs
@@ -1485,9 +1547,9 @@ employer uses it.
    remains is listed under Part 17's "Still missing": a real database
    to query, SQL and tuning depth, MongoDB, and
    Elasticsearch/OpenSearch.
-2. **Messaging systems.** Kafka operations beyond consumer lag (brokers,
-   in-sync replicas, retention, rebalancing), RabbitMQ, and the cloud
-   queues (SQS/SNS, Pub/Sub, Service Bus).
+2. ~~**Messaging systems**~~: **now a category** (Messaging): Kafka
+   operations, RabbitMQ, and SQS. Security, schema registry, Connect,
+   and the other brokers are under that part's "Still missing".
 3. ~~**Web servers and proxies**~~: **now a category** (Part 18): nginx
    operations, TLS with certbot, log analysis, gateway errors, limits,
    caching, capacity, and HAProxy. Depth topics (rewrites, the stream
@@ -1591,13 +1653,13 @@ If content is added in the order that helps most people soonest:
 4. ~~Kubernetes ecosystem~~ (done);
 5. ~~Jenkins and GitLab CI~~ (done);
 6. ~~Python for automation, as Writing Labs~~ (done);
-7. Kafka operations;
+7. ~~Kafka operations~~ (done);
 8. serverless;
 9. then tier B by demand.
 
 ---
 
-# Part 22 — Overall: will this make you proficient in DevOps?
+# Part 23 — Overall: will this make you proficient in DevOps?
 
 ## By the numbers
 
@@ -1623,7 +1685,8 @@ If content is added in the order that helps most people soonest:
 | Web Servers & Proxies | 11 | 6 | 2 Writing Labs (nginx configuration) |
 | Identity & Secrets | 9 | 5 | 2 Writing Labs (Vault policy, cert-manager) |
 | Scripting | 8 | 4 | 2 Writing Labs (Python) |
-| **Total** | **259** | **132** | 41 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
+| Messaging | 7 | 4 | |
+| **Total** | **266** | **136** | 41 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -1635,7 +1698,7 @@ command beats the alternatives — not just what it does.
 will know the commands, the failure modes, and — most importantly — the
 debugging method** (check the layer before guessing the fix; refused vs
 timeout; verify after every change; revoke before cleaning up; revert
-don't force-push). The 132 incidents are modeled on the kinds of problems
+don't force-push). The 136 incidents are modeled on the kinds of problems
 that genuinely trip up working engineers, and working through them
 builds judgment that command references alone never will.
 

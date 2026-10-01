@@ -1,0 +1,48 @@
+{
+  "id": "messaging-tutorial-006",
+  "type": "tutorial",
+  "category": "messaging",
+  "title": "RabbitMQ: Queues, Consumers, and Alarms",
+  "difficulty": "intermediate",
+  "tags": ["rabbitmq", "queues", "amqp", "operations"],
+  "intro": "RabbitMQ is a traditional message broker: producers publish to exchanges, which route messages into queues, and a message is removed once a consumer acknowledges it. It's the opposite design from Kafka's log, and it fails differently: its danger is queues that grow without limit. You're on a RabbitMQ node.",
+  "steps": [
+    {
+      "prompt": "Check the node's overall status.",
+      "expected_commands": ["sudo rabbitmq-diagnostics status", "rabbitmq-diagnostics status", "sudo rabbitmqctl status"],
+      "fake_output": "Runtime\nOS PID: 1204\nRabbitMQ version: 3.13.7\nUptime (seconds): 1814400\n\nMemory\nTotal memory used: 5.9 gb\nMemory high watermark setting: 0.4 of available memory, computed to: 6.4 gb\n\nFile Descriptors\nTotal: 412, limit: 65536\n\nFree Disk Space\nLow free disk space watermark: 2 gb\nFree disk space: 41 gb",
+      "explanation": "5.9 GB of memory in use, against a high watermark of 6.4 GB.",
+      "why": "The watermarks are RabbitMQ's self-defence. Above the memory watermark, or below the disk one, it raises an alarm and blocks every connection that publishes, cluster-wide, until the resource recovers. Publishers don't get an error; their publish call just hangs. Memory at 92% of the watermark is close to that."
+    },
+    {
+      "prompt": "Check whether any resource alarm is active right now.",
+      "expected_commands": ["sudo rabbitmq-diagnostics alarms", "rabbitmq-diagnostics alarms"],
+      "fake_output": "Node rabbit@mq-1 reported no local alarms",
+      "explanation": "No alarm yet.",
+      "why": "This is the first command when publishers 'freeze' with no errors. An active alarm explains it at once. In 'rabbitmqctl list_connections name state', blocked publishers show as 'blocking' or 'blocked'. Consumers are never blocked, on purpose, so that they can drain the queues and clear the alarm."
+    },
+    {
+      "prompt": "Find what's using the memory: list every queue with its message count and number of consumers.",
+      "expected_commands": ["sudo rabbitmqctl list_queues name messages consumers", "rabbitmqctl list_queues name messages consumers"],
+      "fake_output": "Timeout: 60.0 seconds ...\nListing queues for vhost / ...\nname            messages  consumers\norders.new      12        4\nemail.send      9120044   0\npayments.retry  310       2\nwebhooks.out    48        3",
+      "explanation": "email.send holds 9.1 million messages and has no consumers at all.",
+      "why": "The two numbers to read together: messages and consumers. A deep queue with consumers means they're too slow. A deep queue with zero consumers means the consuming service is down or was never started, and nothing will ever drain it. Unlike Kafka, a queue has no retention: messages wait until consumed, so an abandoned queue grows until the broker hits its watermark."
+    },
+    {
+      "prompt": "Cap the damage any one queue can do. Set a policy named limit-email on queues matching ^email\\. so they hold at most 100000 messages and reject new publishes beyond that.",
+      "expected_commands": ["sudo rabbitmqctl set_policy limit-email \"^email\\.\" '{\"max-length\":100000,\"overflow\":\"reject-publish\"}' --apply-to queues", "rabbitmqctl set_policy limit-email \"^email\\.\" '{\"max-length\":100000,\"overflow\":\"reject-publish\"}' --apply-to queues", "sudo rabbitmqctl set_policy limit-email '^email\\.' '{\"max-length\":100000,\"overflow\":\"reject-publish\"}' --apply-to queues"],
+      "fake_output": "Setting policy \"limit-email\" for pattern \"^email\\.\" to \"{\"max-length\":100000,\"overflow\":\"reject-publish\"}\" with priority \"0\" for vhost \"/\" ...",
+      "hint": "sudo rabbitmqctl set_policy limit-email \"^email\\.\" '{\"max-length\":100000,\"overflow\":\"reject-publish\"}' --apply-to queues",
+      "explanation": "Queues whose names start with 'email.' are now bounded.",
+      "why": "A policy applies settings to every queue matching a pattern, including queues created later, and can be changed without touching applications. A bounded queue turns 'the whole broker stops' into 'this one producer gets an error it can handle'. The default overflow, drop-head, silently discards the oldest messages instead; choose deliberately. Policies also set message TTLs and dead-letter exchanges."
+    },
+    {
+      "prompt": "A consumer takes a message, crashes before finishing, and never acknowledges it. What does RabbitMQ do with the message?\n  a) It's lost\n  b) When the consumer's connection closes, the unacknowledged message returns to the queue and is delivered again\n  c) It's deleted after a minute\n  d) It blocks the queue for ever\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "deliver -> (consumer working, message 'unacked') -> ack    : removed\ndeliver -> (consumer crashes, connection closes)        : requeued, redelivered=true",
+      "hint": "That's what acknowledgements are for.",
+      "explanation": "Unacked messages are redelivered. That's at-least-once delivery.",
+      "why": "This only works with manual acknowledgement after the work is done. With automatic ack, the message is considered delivered the moment it's sent, and a crash loses it. Redelivery means a message can be processed twice, so consumers must be idempotent. A message that crashes every consumer is redelivered for ever unless a delivery limit or dead-letter exchange takes it out of the loop (quorum queues support a delivery limit directly)."
+    }
+  ]
+}

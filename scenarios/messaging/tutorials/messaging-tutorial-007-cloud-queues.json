@@ -1,0 +1,47 @@
+{
+  "id": "messaging-tutorial-007",
+  "type": "tutorial",
+  "category": "messaging",
+  "title": "Cloud Queues: SQS Visibility Timeouts and Dead-Letter Queues",
+  "difficulty": "intermediate",
+  "tags": ["sqs", "sns", "dead-letter-queue", "aws"],
+  "intro": "Managed queues remove the broker to operate and leave two settings that cause nearly all the trouble: how long a message stays hidden while a consumer works on it, and what happens to a message that keeps failing. The examples use Amazon SQS; Google Pub/Sub and Azure Service Bus have the same ideas under other names. The queue's URL is in the variable QUEUE_URL.",
+  "steps": [
+    {
+      "prompt": "Show all the attributes of the queue.",
+      "expected_commands": ["aws sqs get-queue-attributes --queue-url $QUEUE_URL --attribute-names All", "aws sqs get-queue-attributes --queue-url \"$QUEUE_URL\" --attribute-names All", "aws sqs get-queue-attributes --attribute-names All --queue-url $QUEUE_URL"],
+      "fake_output": "{\n  \"Attributes\": {\n    \"ApproximateNumberOfMessages\": \"41204\",\n    \"ApproximateNumberOfMessagesNotVisible\": \"310\",\n    \"VisibilityTimeout\": \"30\",\n    \"MessageRetentionPeriod\": \"345600\",\n    \"RedrivePolicy\": \"{\\\"deadLetterTargetArn\\\":\\\"arn:aws:sqs:us-east-1:111122223333:orders-dlq\\\",\\\"maxReceiveCount\\\":5}\"\n  }\n}",
+      "explanation": "41,204 messages waiting, 310 being worked on, a 30-second visibility timeout, 4-day retention, and a dead-letter queue after 5 receives.",
+      "why": "'NotVisible' messages have been handed to a consumer and are hidden from others until the visibility timeout expires or the consumer deletes them. That count is your in-flight work. The backlog, ApproximateNumberOfMessages, is the number to scale consumers on and alert on, along with the age of the oldest message."
+    },
+    {
+      "prompt": "Processing one message takes about 90 seconds, and the visibility timeout is 30. What happens?\n  a) Nothing unusual\n  b) After 30 seconds the message becomes visible again while the first consumer is still working, a second consumer takes it, and the work is done twice or more\n  c) The message is deleted\n  d) The queue pauses\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "t=0s   consumer A receives message (hidden for 30s)\nt=30s  timeout expires, message visible again\nt=31s  consumer B receives the same message\nt=90s  A finishes and deletes; B is still processing its copy",
+      "hint": "The queue has no idea the first consumer is still busy.",
+      "explanation": "A timeout shorter than the work means duplicate processing.",
+      "why": "This is the classic SQS bug, and it gets worse under load: slower processing means more timeouts, which means more duplicates, which means more load. Each redelivery also counts towards maxReceiveCount, so healthy messages end up in the dead-letter queue. Set the timeout comfortably above the slowest processing time, or have the consumer extend it while working (ChangeMessageVisibility)."
+    },
+    {
+      "prompt": "Raise the queue's visibility timeout to 180 seconds.",
+      "expected_commands": ["aws sqs set-queue-attributes --queue-url $QUEUE_URL --attributes VisibilityTimeout=180", "aws sqs set-queue-attributes --queue-url \"$QUEUE_URL\" --attributes VisibilityTimeout=180", "aws sqs set-queue-attributes --attributes VisibilityTimeout=180 --queue-url $QUEUE_URL"],
+      "fake_output": "(no output)",
+      "explanation": "Messages now stay hidden for three minutes after being received.",
+      "why": "The cost of a long timeout is slower recovery: if a consumer crashes, its message waits the full timeout before anyone else can take it. So it's a balance, around twice the usual processing time for most systems. For a Lambda consumer, AWS recommends at least six times the function's timeout."
+    },
+    {
+      "prompt": "Messages that failed 5 times are in the dead-letter queue, whose URL is in DLQ_URL. Look at one without consuming it: receive a single message with a visibility timeout of 0.",
+      "expected_commands": ["aws sqs receive-message --queue-url $DLQ_URL --max-number-of-messages 1 --visibility-timeout 0", "aws sqs receive-message --queue-url \"$DLQ_URL\" --max-number-of-messages 1 --visibility-timeout 0", "aws sqs receive-message --queue-url $DLQ_URL --visibility-timeout 0 --max-number-of-messages 1"],
+      "fake_output": "{\n  \"Messages\": [{\n    \"MessageId\": \"c1d2e3f4-0000-4a5b-8c7d-example00001\",\n    \"Body\": \"{\\\"order_id\\\":4812906,\\\"total_cents\\\":\\\"12900\\\"}\",\n    \"Attributes\": {\"ApproximateReceiveCount\": \"6\"}\n  }]\n}",
+      "explanation": "A message that failed repeatedly: total_cents is a string where the consumer expects a number.",
+      "why": "A dead-letter queue is where poison messages go so that they stop blocking and stop burning compute. It's useless unless someone looks: alert on any message arriving in a DLQ. A visibility timeout of 0 lets you peek, since the message becomes visible again at once. The body tells you whether the fault is the message (fix the producer) or the consumer (fix and replay)."
+    },
+    {
+      "prompt": "The consumer bug is fixed. Send the dead-lettered messages back to their original queue. The DLQ's ARN is arn:aws:sqs:us-east-1:111122223333:orders-dlq.",
+      "expected_commands": ["aws sqs start-message-move-task --source-arn arn:aws:sqs:us-east-1:111122223333:orders-dlq"],
+      "fake_output": "{\n  \"TaskHandle\": \"eyJ0YXNrSWQiOiJleGFtcGxlIn0=\"\n}",
+      "explanation": "A redrive task is moving the messages back to the source queue to be processed again.",
+      "why": "Redrive only makes sense after the cause is fixed; otherwise the messages fail five more times and come straight back. And since they'll be processed again, perhaps days late, the consumer must be idempotent and must tolerate old messages. Standard queues deliver at least once and don't preserve order; FIFO queues give ordering and deduplication within a message group, at lower throughput."
+    }
+  ]
+}

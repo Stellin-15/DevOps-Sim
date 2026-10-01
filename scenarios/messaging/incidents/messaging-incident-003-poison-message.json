@@ -1,0 +1,49 @@
+{
+  "id": "messaging-incident-003",
+  "type": "incident",
+  "category": "messaging",
+  "title": "One partition has stopped moving, and a pod restarts every 20 seconds",
+  "difficulty": "intermediate",
+  "tags": ["kafka", "poison-message", "offsets", "dead-letter"],
+  "intro": "Orders from some customers are stuck 'processing' while most go through normally. The order-processor deployment in namespace shop has three pods; one of them is in CrashLoopBackOff, and whichever pod it is keeps changing. BS holds the bootstrap address. The consumer group is order-processor, on the topic orders.",
+  "steps": [
+    {
+      "prompt": "Look at the group's lag per partition.",
+      "expected_commands": ["kafka-consumer-groups.sh --bootstrap-server $BS --describe --group order-processor", "kafka-consumer-groups --bootstrap-server $BS --describe --group order-processor", "kafka-consumer-groups.sh --bootstrap-server $BS --group order-processor --describe"],
+      "fake_output": "GROUP            TOPIC    PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG     CONSUMER-ID\norder-processor  orders   0          801880          801880          0       worker-1-a1f9\norder-processor  orders   1          799415          799415          0       worker-1-a1f9\norder-processor  orders   2          802144          802144          0       worker-2-7c2b\norder-processor  orders   3          802020          812204          10184   -\norder-processor  orders   4          800731          800731          0       worker-3-4e8a\norder-processor  orders   5          801007          801007          0       worker-3-4e8a",
+      "hint": "kafka-consumer-groups.sh --bootstrap-server $BS --describe --group order-processor"
+    },
+    {
+      "prompt": "Five partitions are caught up. Partition 3 is 10,184 behind, frozen at offset 802020, with no consumer holding it right now. See why the pods crash: search the deployment's logs, including the previous container's, for the last error lines.",
+      "expected_commands": ["kubectl logs deployment/order-processor -n shop --previous --tail=20", "kubectl logs deploy/order-processor -n shop --previous --tail=20", "kubectl logs -n shop deployment/order-processor --previous --tail=20", "kubectl logs deployment/order-processor -n shop --tail=20 --previous"],
+      "fake_output": "INFO  assigned partitions: orders-3\nINFO  processing orders-3 offset 802020\nERROR unhandled exception\n  File \"consumer.py\", line 88, in handle\n    total = msg[\"total_cents\"] + shipping_cents\nTypeError: can only concatenate str (not \"int\") to str\nprocess exited with code 1",
+      "hint": "kubectl logs deployment/order-processor -n shop --previous --tail=20"
+    },
+    {
+      "prompt": "The consumer crashes on partition 3, offset 802020, every time. Look at that exact message.",
+      "expected_commands": ["kcat -b $BS -C -t orders -p 3 -o 802020 -c 1", "kcat -C -b $BS -t orders -p 3 -o 802020 -c 1", "kcat -b $BS -C -t orders -p 3 -o 802020 -c 1 -e"],
+      "fake_output": "{\"order_id\":4812906,\"customer\":1204,\"total_cents\":\"12900\"}",
+      "hint": "kcat -b $BS -C -t orders -p 3 -o 802020 -c 1"
+    },
+    {
+      "prompt": "total_cents is the string \"12900\"; the consumer expects a number. One malformed message, and everything behind it on that partition is blocked. The message has been saved for the producing team. To move past it, the group's offset must be changed, which needs the group to have no running members. Scale the deployment to zero.",
+      "expected_commands": ["kubectl scale deployment order-processor --replicas=0 -n shop", "kubectl scale deployment/order-processor --replicas=0 -n shop", "kubectl scale deploy order-processor --replicas=0 -n shop", "kubectl scale deployment order-processor -n shop --replicas=0"],
+      "fake_output": "deployment.apps/order-processor scaled",
+      "hint": "kubectl scale deployment order-processor --replicas=0 -n shop"
+    },
+    {
+      "prompt": "Skip the bad message: set the group's offset on partition 3 of orders to 802021, and apply it.",
+      "expected_commands": ["kafka-consumer-groups.sh --bootstrap-server $BS --group order-processor --topic orders:3 --reset-offsets --to-offset 802021 --execute", "kafka-consumer-groups --bootstrap-server $BS --group order-processor --topic orders:3 --reset-offsets --to-offset 802021 --execute", "kafka-consumer-groups.sh --bootstrap-server $BS --group order-processor --reset-offsets --topic orders:3 --to-offset 802021 --execute"],
+      "fake_output": "GROUP            TOPIC    PARTITION  NEW-OFFSET\norder-processor  orders   3          802021",
+      "hint": "kafka-consumer-groups.sh --bootstrap-server $BS --group order-processor --topic orders:3 --reset-offsets --to-offset 802021 --execute"
+    },
+    {
+      "prompt": "Bring the consumers back with 3 replicas.",
+      "expected_commands": ["kubectl scale deployment order-processor --replicas=3 -n shop", "kubectl scale deployment/order-processor --replicas=3 -n shop", "kubectl scale deploy order-processor --replicas=3 -n shop", "kubectl scale deployment order-processor -n shop --replicas=3"],
+      "fake_output": "deployment.apps/order-processor scaled",
+      "hint": "kubectl scale deployment order-processor --replicas=3 -n shop"
+    }
+  ],
+  "resolution": "A partition is processed strictly in order, so a message the consumer can't handle is a wall. The consumer read offset 802020, hit a type error because a producer had sent total_cents as text, and crashed without committing. On restart it resumed from the last committed offset, the same message, and crashed again. Meanwhile the group rebalanced each time, handing partition 3 to another pod, which is why the crash appeared to wander between pods. The 10,184 good messages behind it waited. The picture is distinctive: lag on exactly one partition, with a current offset that never changes, and a crash log naming that offset. Compare messaging-incident-002, where the offsets moved but slowly. Skipping it was a manual offset reset to the next message, done with the consumers stopped, after saving the bad message so that the order isn't simply lost: someone has to process order 4812906 by hand and tell the producing team. Manual surgery at this level shouldn't be the normal answer. A consumer should treat a message it can't process as data, not as a reason to die: catch the failure, publish the message to a dead-letter topic with the error and its original coordinates, commit, and carry on. Then one bad message costs one message, and an alert on the dead-letter topic tells you about it. Retries belong in between, for failures that might pass (a database briefly down), with a limit. Upstream, a schema registry with compatibility checks would have rejected the malformed message at the producer, which is the only place it can be fixed properly.",
+  "real_commands_used": ["kafka-consumer-groups.sh --describe --group <group>", "kubectl logs deployment/<name> --previous", "kcat -C -t <topic> -p <partition> -o <offset> -c 1", "kubectl scale deployment --replicas=0", "kafka-consumer-groups.sh --reset-offsets --to-offset <n> --execute", "kubectl scale deployment --replicas=3"]
+}

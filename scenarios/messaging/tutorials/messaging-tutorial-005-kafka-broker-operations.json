@@ -1,0 +1,47 @@
+{
+  "id": "messaging-tutorial-005",
+  "type": "tutorial",
+  "category": "messaging",
+  "title": "Broker Operations: Under-Replication, Leaders, and Rolling Restarts",
+  "difficulty": "advanced",
+  "tags": ["kafka", "brokers", "replication", "maintenance"],
+  "intro": "Kafka is built to lose a broker without anyone noticing, provided you only take one away at a time and check the cluster has healed before the next. This tutorial is the routine for patching brokers safely. The cluster has brokers 0, 1, and 2, runs in KRaft mode, and BS holds the bootstrap address.",
+  "steps": [
+    {
+      "prompt": "Before touching anything, check the controller quorum that manages cluster metadata.",
+      "expected_commands": ["kafka-metadata-quorum.sh --bootstrap-server $BS describe --status", "kafka-metadata-quorum --bootstrap-server $BS describe --status"],
+      "fake_output": "ClusterId:              x7Qk2mB9T1uVwYz0\nLeaderId:               1\nLeaderEpoch:            42\nHighWatermark:          9120044\nMaxFollowerLag:         0\nCurrentVoters:          [0,1,2]\nCurrentObservers:       []",
+      "explanation": "Three controllers voting, node 1 leading, and no follower behind.",
+      "why": "In KRaft mode Kafka keeps its own metadata with a Raft quorum, replacing ZooKeeper. The quorum needs a majority: with three voters, one can be down. Take a second one down and the cluster can't elect leaders or create topics. Older clusters use ZooKeeper for this, with the same majority rule."
+    },
+    {
+      "prompt": "The health check that matters most: list partitions that are under-replicated anywhere in the cluster.",
+      "expected_commands": ["kafka-topics.sh --bootstrap-server $BS --describe --under-replicated-partitions", "kafka-topics --bootstrap-server $BS --describe --under-replicated-partitions", "kafka-topics.sh --describe --under-replicated-partitions --bootstrap-server $BS"],
+      "fake_output": "(no output)",
+      "explanation": "Nothing listed: every partition has all its replicas in sync.",
+      "why": "Empty output is the green light. An under-replicated partition has fewer in-sync copies than it should, so the cluster has less safety margin than you think. This is the gate in a rolling restart: never stop a broker while anything is under-replicated, because the partitions it leads may be on their last in-sync copy."
+    },
+    {
+      "prompt": "Broker 2 has been restarted for a patch. Check under-replication again.",
+      "expected_commands": ["kafka-topics.sh --bootstrap-server $BS --describe --under-replicated-partitions", "kafka-topics --bootstrap-server $BS --describe --under-replicated-partitions", "kafka-topics.sh --describe --under-replicated-partitions --bootstrap-server $BS"],
+      "fake_output": "Topic: orders   Partition: 1   Leader: 0   Replicas: 2,0,1   Isr: 0,1\nTopic: orders   Partition: 4   Leader: 1   Replicas: 2,1,0   Isr: 1,0\nTopic: payments Partition: 0   Leader: 0   Replicas: 0,2,1   Isr: 0,1",
+      "explanation": "Broker 2 is back and still catching up: it's missing from the Isr of its partitions.",
+      "why": "A restarted broker has to copy what it missed before rejoining the in-sync set, which takes seconds to hours depending on traffic and how long it was down. During this window the cluster is one failure from trouble. Wait for this list to be empty before restarting the next broker. Automation that restarts brokers on a fixed timer, without this check, is how rolling restarts cause outages."
+    },
+    {
+      "prompt": "A few minutes later the list is empty. But notice that partitions 1 and 4 of orders were led by broker 2 before, and other brokers lead them now. Move leadership back to each partition's preferred broker.",
+      "expected_commands": ["kafka-leader-election.sh --bootstrap-server $BS --election-type preferred --all-topic-partitions", "kafka-leader-election --bootstrap-server $BS --election-type preferred --all-topic-partitions", "kafka-leader-election.sh --bootstrap-server $BS --all-topic-partitions --election-type preferred"],
+      "fake_output": "Successfully completed leader election (PREFERRED) for partitions orders-1, orders-4, shipping-events-2",
+      "explanation": "Leadership returned to the first replica in each partition's list.",
+      "why": "When a broker stops, its partitions' leadership moves to others, and doesn't automatically move back at once. After a rolling restart the last broker restarted leads nothing and the first leads too much, so load is lopsided. The first broker in a partition's replica list is its 'preferred' leader. Kafka rebalances this itself every few minutes if auto.leader.rebalance.enable is on; this command does it now."
+    },
+    {
+      "prompt": "A new broker, 3, has been added. Does existing data move to it automatically?\n  a) Yes, Kafka rebalances partitions onto new brokers\n  b) No: existing partitions stay where they are until you reassign them (kafka-reassign-partitions, or Cruise Control); only new topics will use the new broker\n  c) Only on Sundays\n  d) The new broker replaces an old one\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "$ kafka-reassign-partitions.sh --bootstrap-server $BS --reassignment-json-file plan.json --execute --throttle 50000000\nSuccessfully started partition reassignments for orders-0, orders-1, ...",
+      "hint": "Kafka never moves partition data by itself.",
+      "explanation": "Adding a broker adds capacity nothing uses until partitions are reassigned.",
+      "why": "Reassignment copies whole partitions across the network, which competes with live traffic, so it's run with a throttle and watched. Tools such as Cruise Control (and the managed services) generate and execute balanced plans. Forgetting this step is why a cluster can be 'expanded' and still have full disks on the old brokers."
+    }
+  ]
+}

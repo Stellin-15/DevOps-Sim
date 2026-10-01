@@ -371,7 +371,8 @@ the engine, loader, sandboxes, yaml_lab, career_path, mystery, or scenario conte
 | Web Servers & Proxies | 11 | 6 | nginx (test and reload, server blocks and locations, reverse proxying, TLS with certbot, access-log analysis, reading 502/503/504, rate and body limits, caching and gzip, connection and file-descriptor capacity), HAProxy draining, and recognising Envoy, Caddy, Traefik, and Apache; plus 2 nginx Writing Labs |
 | Identity & Secrets | 9 | 5 | reading JWTs, OAuth 2.0 and OIDC flows, Kubernetes workload identity, Vault (KV, policies, dynamic database credentials), External Secrets Operator, SOPS and Sealed Secrets, PKI and mutual TLS, cert-manager; plus 2 Writing Labs |
 | Scripting | 8 | 4 | Python environments and pinned dependencies, running and debugging scripts, pytest/ruff/mypy, jq in depth, yq, regular expressions, Makefiles, building and testing Go tools; plus 2 Python Writing Labs |
-| **Total** | **259** | **132** | + 41 Writing Labs |
+| Messaging | 7 | 4 | Kafka (topics and replication, reading a topic by hand, consumer groups and lag, retention and compaction, broker operations), RabbitMQ alarms and queue limits, SQS visibility timeouts and dead-letter queues |
+| **Total** | **266** | **136** | + 41 Writing Labs |
 
 The three clouds use different names for the same ideas (security group
 vs NSG vs firewall rule; CloudTrail vs Activity Log vs Audit Logs). The

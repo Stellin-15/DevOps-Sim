@@ -1,0 +1,49 @@
+{
+  "id": "messaging-incident-002",
+  "type": "incident",
+  "category": "messaging",
+  "title": "Six healthy consumers, and the lag only goes up",
+  "difficulty": "advanced",
+  "tags": ["kafka", "consumer-groups", "rebalance", "lag"],
+  "intro": "The email-sender consumers have fallen 2 million messages behind on the notifications topic and the gap is widening. All six pods of the deployment email-sender in namespace shop are Running with no restarts. CPU is low. Yesterday a change made each email include a rendered PDF receipt, which takes about a second per message. BS holds the bootstrap address; the consumer group is email-sender.",
+  "steps": [
+    {
+      "prompt": "Check the group's state.",
+      "expected_commands": ["kafka-consumer-groups.sh --bootstrap-server $BS --describe --group email-sender --state", "kafka-consumer-groups --bootstrap-server $BS --describe --group email-sender --state", "kafka-consumer-groups.sh --bootstrap-server $BS --group email-sender --describe --state"],
+      "fake_output": "GROUP          COORDINATOR (ID)   ASSIGNMENT-STRATEGY  STATE                #MEMBERS\nemail-sender   kafka-1:9092 (1)   range                PreparingRebalance   2",
+      "hint": "kafka-consumer-groups.sh --bootstrap-server $BS --describe --group email-sender --state"
+    },
+    {
+      "prompt": "PreparingRebalance, with 2 members where there should be 6. Run it again a few seconds later to see whether that's a moment or a pattern.",
+      "expected_commands": ["kafka-consumer-groups.sh --bootstrap-server $BS --describe --group email-sender --state", "kafka-consumer-groups --bootstrap-server $BS --describe --group email-sender --state", "kafka-consumer-groups.sh --bootstrap-server $BS --group email-sender --describe --state"],
+      "fake_output": "GROUP          COORDINATOR (ID)   ASSIGNMENT-STRATEGY  STATE                #MEMBERS\nemail-sender   kafka-1:9092 (1)   range                PreparingRebalance   5",
+      "hint": "The same command again."
+    },
+    {
+      "prompt": "Still rebalancing, with a different member count. The group never settles. The pods aren't crashing, so Kafka is deciding they're dead. Ask the consumers why: search the deployment's recent logs for 'poll'.",
+      "expected_commands": ["kubectl logs deployment/email-sender -n shop --tail=200 | grep -i poll", "kubectl logs deploy/email-sender -n shop --tail=200 | grep -i poll", "kubectl logs -n shop deployment/email-sender --tail=200 | grep -i poll", "kubectl logs deployment/email-sender -n shop --tail=200 | grep poll"],
+      "fake_output": "WARN  consumer poll timeout has expired. This means the time between subsequent calls to poll() was longer than the configured max.poll.interval.ms, which typically implies that the poll loop is spending too much time processing messages.\nINFO  Member email-sender-3-a1f9 sending LeaveGroup request to coordinator due to consumer poll timeout has expired\nINFO  (Re-)joining group",
+      "hint": "kubectl logs deployment/email-sender -n shop --tail=200 | grep -i poll"
+    },
+    {
+      "prompt": "The consumers take too long between polls and are thrown out of the group. Look at the settings they run with: show the deployment's environment variables containing POLL.",
+      "expected_commands": ["kubectl set env deployment/email-sender -n shop --list | grep POLL", "kubectl set env deploy/email-sender -n shop --list | grep POLL", "kubectl set env deployment/email-sender --list -n shop | grep POLL", "kubectl describe deployment email-sender -n shop | grep POLL"],
+      "fake_output": "MAX_POLL_RECORDS=500\nMAX_POLL_INTERVAL_MS=300000",
+      "hint": "kubectl set env deployment/email-sender -n shop --list | grep POLL"
+    },
+    {
+      "prompt": "Each poll fetches up to 500 messages and must finish them within 300 seconds. At one second per message that's 500 seconds: every batch misses the deadline. Fetch fewer per poll: set MAX_POLL_RECORDS to 100 on the deployment.",
+      "expected_commands": ["kubectl set env deployment/email-sender -n shop MAX_POLL_RECORDS=100", "kubectl set env deploy/email-sender -n shop MAX_POLL_RECORDS=100", "kubectl set env deployment/email-sender MAX_POLL_RECORDS=100 -n shop"],
+      "fake_output": "deployment.apps/email-sender env updated",
+      "hint": "kubectl set env deployment/email-sender -n shop MAX_POLL_RECORDS=100"
+    },
+    {
+      "prompt": "After the pods roll, check the group has settled.",
+      "expected_commands": ["kafka-consumer-groups.sh --bootstrap-server $BS --describe --group email-sender --state", "kafka-consumer-groups --bootstrap-server $BS --describe --group email-sender --state", "kafka-consumer-groups.sh --bootstrap-server $BS --group email-sender --describe --state"],
+      "fake_output": "GROUP          COORDINATOR (ID)   ASSIGNMENT-STRATEGY  STATE    #MEMBERS\nemail-sender   kafka-1:9092 (1)   range                Stable   6",
+      "hint": "The same command as the first step."
+    }
+  ],
+  "resolution": "A Kafka consumer proves it's alive by calling poll() again within max.poll.interval.ms. These consumers fetched 500 messages per poll and had five minutes to finish them. That was easy when a message took a few milliseconds. Yesterday's change added a PDF to every email, about one second each, so a full batch took over eight minutes. Every consumer missed its deadline on every batch. Kafka's response is to assume the consumer has hung, remove it from the group, and reassign its partitions, which triggers a rebalance of the whole group. The removed consumer, still alive, finishes its batch, finds it can't commit its offsets because it no longer owns the partitions, and rejoins, causing another rebalance. The new owner starts the same messages again from the last committed offset. So the group spent its time reshuffling and reprocessing the same batches: pods Running, CPU low, lag climbing, and customers receiving the same email several times. The state told the story: a group that's never Stable is rebalancing, and the consumer's own log names the cause precisely. Fetching 100 messages per poll made each batch take about 100 seconds, well inside the deadline, and the group settled. The alternatives are raising max.poll.interval.ms, or better, making the work lighter: hand the slow part to a worker pool, or produce the PDF in a separate stage. The general rule: batch size times worst-case time per message must fit inside the poll interval, with margin, and any change that makes processing slower needs that sum redone. Monitor rebalance rate and time-since-last-poll, not only lag; and a cooperative assignment strategy keeps a rebalance from stopping the whole group.",
+  "real_commands_used": ["kafka-consumer-groups.sh --describe --group <group> --state", "kubectl logs deployment/<name> | grep -i poll", "kubectl set env deployment/<name> --list", "kubectl set env deployment/<name> MAX_POLL_RECORDS=100"]
+}

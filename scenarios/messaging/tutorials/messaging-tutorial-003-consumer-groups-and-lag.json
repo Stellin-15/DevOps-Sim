@@ -1,0 +1,49 @@
+{
+  "id": "messaging-tutorial-003",
+  "type": "tutorial",
+  "category": "messaging",
+  "title": "Consumer Groups, Lag, and Resetting Offsets",
+  "difficulty": "intermediate",
+  "tags": ["kafka", "consumer-groups", "lag", "offsets"],
+  "intro": "Consumers that share a group id split a topic's partitions between them, and Kafka remembers how far the group has read in each partition: its offset. Lag, the distance between that and the end of the log, is the most important number in a Kafka-based system. The variable BS holds the bootstrap address; the group is order-processor.",
+  "steps": [
+    {
+      "prompt": "Show the position and lag of the group order-processor on every partition.",
+      "expected_commands": ["kafka-consumer-groups.sh --bootstrap-server $BS --describe --group order-processor", "kafka-consumer-groups --bootstrap-server $BS --describe --group order-processor", "kafka-consumer-groups.sh --bootstrap-server $BS --group order-processor --describe"],
+      "fake_output": "GROUP            TOPIC    PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG     CONSUMER-ID\norder-processor  orders   0          801880          801880          0       worker-1-a1f9\norder-processor  orders   1          799412          799415          3       worker-1-a1f9\norder-processor  orders   2          802140          802144          4       worker-2-7c2b\norder-processor  orders   3          760112          802021          41909   worker-2-7c2b\norder-processor  orders   4          800731          800731          0       worker-3-4e8a\norder-processor  orders   5          801005          801007          2       worker-3-4e8a",
+      "explanation": "Five partitions are within a few messages of the end. Partition 3 is 41,909 behind.",
+      "why": "Lag per partition tells you much more than a total. Even lag everywhere means the consumers are too slow for the traffic: add consumers, up to the partition count. Lag on one partition means something specific to it: a hot key sending most traffic there (systemdesign-incident-001), or a message the consumer can't get past. Watch whether CURRENT-OFFSET moves between two runs: a growing lag with a moving offset is slowness; a frozen offset is a stuck consumer."
+    },
+    {
+      "prompt": "Check the state of the group as a whole.",
+      "expected_commands": ["kafka-consumer-groups.sh --bootstrap-server $BS --describe --group order-processor --state", "kafka-consumer-groups --bootstrap-server $BS --describe --group order-processor --state", "kafka-consumer-groups.sh --bootstrap-server $BS --group order-processor --describe --state"],
+      "fake_output": "GROUP            COORDINATOR (ID)   ASSIGNMENT-STRATEGY  STATE    #MEMBERS\norder-processor  kafka-1:9092 (1)   cooperative-sticky   Stable   3",
+      "explanation": "Stable, with three members.",
+      "why": "Stable means partitions are assigned and consumers are working. PreparingRebalance or CompletingRebalance means the group is reshuffling who owns which partition, during which little or nothing is consumed. A rebalance happens when a member joins, leaves, or is judged dead. A group that's rebalancing constantly looks 'up' and gets nothing done (messaging-incident-002)."
+    },
+    {
+      "prompt": "Three consumers share six partitions. If you scale the group to ten consumers, how many will be doing work?\n  a) Ten\n  b) Six: a partition is read by only one consumer in a group, so the other four sit idle\n  c) Three\n  d) One\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "6 partitions, 10 consumers  ->  6 assigned, 4 idle (standby)\nmaximum useful consumers in a group = number of partitions",
+      "hint": "A partition can't be shared within a group.",
+      "explanation": "The partition count is the ceiling on parallelism.",
+      "why": "This is why autoscaling consumers past the partition count does nothing, and why the partition count has to be planned for peak load. If six fast consumers still can't keep up, the answers are: make each one faster (batching, less work per message), or more partitions, with the ordering consequences from messaging-tutorial-001."
+    },
+    {
+      "prompt": "A bug made the group skip a day of messages, and after the fix it must re-read from a point in time. Preview resetting its offsets on the topic orders to 2026-09-28T00:00:00.000, without applying it.",
+      "expected_commands": ["kafka-consumer-groups.sh --bootstrap-server $BS --group order-processor --topic orders --reset-offsets --to-datetime 2026-09-28T00:00:00.000 --dry-run", "kafka-consumer-groups --bootstrap-server $BS --group order-processor --topic orders --reset-offsets --to-datetime 2026-09-28T00:00:00.000 --dry-run", "kafka-consumer-groups.sh --bootstrap-server $BS --group order-processor --reset-offsets --topic orders --to-datetime 2026-09-28T00:00:00.000 --dry-run"],
+      "fake_output": "GROUP            TOPIC    PARTITION  NEW-OFFSET\norder-processor  orders   0          788102\norder-processor  orders   1          785940\norder-processor  orders   2          788611\norder-processor  orders   3          760112\norder-processor  orders   4          787204\norder-processor  orders   5          787390",
+      "hint": "kafka-consumer-groups.sh --bootstrap-server $BS --group order-processor --topic orders --reset-offsets --to-datetime 2026-09-28T00:00:00.000 --dry-run",
+      "explanation": "The offsets the group would be moved back to, about 13,000 messages per partition.",
+      "why": "Replaying history is Kafka's superpower over a traditional queue: the messages are still there, so fixing a consumer bug and re-reading is possible. Always --dry-run first. Other targets are --to-earliest, --to-latest (skip the backlog, which discards work), and --shift-by. The group must have no running members when you apply a reset, or it's refused."
+    },
+    {
+      "prompt": "Re-reading means every message since midnight is processed a second time. What must be true of the consumer for that to be safe?\n  a) It must be fast\n  b) It must be idempotent: processing the same message twice has the same effect as once\n  c) It must use more partitions\n  d) Nothing: Kafka prevents duplicates\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "not idempotent: 'charge the card'           -> replay charges customers again\nidempotent:     'charge order 4812906 once' -> replay finds it already done and skips",
+      "hint": "Think about a consumer that sends an email or charges a card for each message.",
+      "explanation": "Idempotent processing is what makes replay, and ordinary retries, safe.",
+      "why": "Kafka delivers at least once: after any crash or rebalance, some messages are delivered again, replay or not. A consumer that isn't idempotent is already producing occasional duplicates; a reset just makes it obvious. Use a unique id from the message as a deduplication key, or make the write itself an upsert (systemdesign-incident-003 is the double charge)."
+    }
+  ]
+}

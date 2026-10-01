@@ -1,0 +1,48 @@
+{
+  "id": "messaging-tutorial-004",
+  "type": "tutorial",
+  "category": "messaging",
+  "title": "Retention, Compaction, and Topic Configuration",
+  "difficulty": "intermediate",
+  "tags": ["kafka", "retention", "compaction", "configuration"],
+  "intro": "Kafka keeps messages after they're read, for as long as the topic's retention says. That setting decides how much disk the cluster needs and how far back a consumer can replay. Getting it wrong either fills the brokers' disks or deletes data a slow consumer hadn't read yet. The variable BS holds the bootstrap address.",
+  "steps": [
+    {
+      "prompt": "Show the configuration overrides set on the topic orders.",
+      "expected_commands": ["kafka-configs.sh --bootstrap-server $BS --entity-type topics --entity-name orders --describe", "kafka-configs --bootstrap-server $BS --entity-type topics --entity-name orders --describe", "kafka-configs.sh --bootstrap-server $BS --describe --entity-type topics --entity-name orders"],
+      "fake_output": "Dynamic configs for topic orders are:\n  retention.ms=604800000 sensitive=false synonyms={DYNAMIC_TOPIC_CONFIG:retention.ms=604800000}\n  min.insync.replicas=2 sensitive=false synonyms={DYNAMIC_TOPIC_CONFIG:min.insync.replicas=2}",
+      "explanation": "Messages are kept for 604,800,000 ms (7 days), and writes need 2 in-sync replicas.",
+      "why": "Only overrides are listed; anything not shown uses the broker's default. Retention is by time (retention.ms), by size per partition (retention.bytes), or both, whichever is reached first. Deletion happens a whole segment file at a time, so data can live somewhat longer than the setting says."
+    },
+    {
+      "prompt": "The shipping-events topic is filling the brokers' disks and its consumers never look back more than a few hours. Set its retention to 24 hours (86400000 ms).",
+      "expected_commands": ["kafka-configs.sh --bootstrap-server $BS --entity-type topics --entity-name shipping-events --alter --add-config retention.ms=86400000", "kafka-configs --bootstrap-server $BS --entity-type topics --entity-name shipping-events --alter --add-config retention.ms=86400000", "kafka-configs.sh --bootstrap-server $BS --alter --entity-type topics --entity-name shipping-events --add-config retention.ms=86400000"],
+      "fake_output": "Completed updating config for topic shipping-events.",
+      "explanation": "The topic now keeps one day of messages; older segments are deleted within minutes.",
+      "why": "Topic settings change live, with no restart. Lowering retention is the quickest safe way to free broker disk in an emergency, far better than deleting files from a broker's data directory, which corrupts it. Before lowering it, check the slowest consumer's lag: anything it hasn't read that's older than the new retention is gone for good."
+    },
+    {
+      "prompt": "See how much disk the topic shipping-events uses on each broker.",
+      "expected_commands": ["kafka-log-dirs.sh --bootstrap-server $BS --describe --topic-list shipping-events", "kafka-log-dirs --bootstrap-server $BS --describe --topic-list shipping-events", "kafka-log-dirs.sh --describe --bootstrap-server $BS --topic-list shipping-events"],
+      "fake_output": "{\"brokers\":[\n {\"broker\":0,\"logDirs\":[{\"logDir\":\"/var/lib/kafka\",\"partitions\":[{\"partition\":\"shipping-events-0\",\"size\":41204410112},{\"partition\":\"shipping-events-1\",\"size\":40871120044}]}]},\n {\"broker\":1,\"logDirs\":[{\"logDir\":\"/var/lib/kafka\",\"partitions\":[{\"partition\":\"shipping-events-0\",\"size\":41204410112}]}]}\n]}",
+      "explanation": "About 41 GB per partition replica.",
+      "why": "Disk needed is roughly: message rate times message size times retention times replication factor. Every replica is a full copy, so RF 3 triples it. A broker that runs out of disk shuts down, and its partitions lose a replica, so alert on broker disk well before it's full and size retention from the arithmetic, not from a default."
+    },
+    {
+      "prompt": "A topic named customer-profile holds the latest profile for each customer id (the key). Consumers only ever need the newest value per key. Which cleanup policy fits?\n  a) delete: remove messages older than the retention time\n  b) compact: keep at least the latest message for every key, removing older ones for the same key\n  c) No cleanup\n  d) Truncate nightly\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "before: (8812, v1) (1204, v1) (8812, v2) (8812, v3) (1204, v2)\nafter : (8812, v3) (1204, v2)\n\ncleanup.policy=compact",
+      "hint": "The topic is being used as a table, not as a stream of events.",
+      "explanation": "Log compaction: the topic becomes a durable 'latest value per key' store.",
+      "why": "A compacted topic never loses the current state of any key, however old, which makes it a changelog a new consumer can read from the start to rebuild a full table. Kafka's own __consumer_offsets works this way. A message with a null value is a 'tombstone' that deletes the key. Don't use it for event history: compaction throws intermediate events away."
+    },
+    {
+      "prompt": "A consumer is offline for nine days. The topic's retention is seven. What does it find when it returns?\n  a) Everything, in order\n  b) Its committed offset no longer exists: the oldest two days it hadn't read were deleted, and it resumes according to auto.offset.reset (earliest remaining, or latest)\n  c) An empty topic\n  d) The broker waits for it\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "committed offset 760112 < log start offset 788102  ->  OffsetOutOfRange\nauto.offset.reset=earliest -> resume at 788102 (two days of messages lost)\nauto.offset.reset=latest   -> resume at the end (nine days lost)",
+      "hint": "Retention doesn't know or care whether anyone has read a message.",
+      "explanation": "Kafka deletes by age, read or not. The gap is silent data loss for that consumer.",
+      "why": "This is the opposite of a traditional queue, where an unread message waits for ever. Retention must be longer than your worst realistic consumer outage, including the time to notice it. Alert on consumer lag measured in time, and compare it with retention: a group whose lag is approaching the retention period is about to lose data."
+    }
+  ]
+}

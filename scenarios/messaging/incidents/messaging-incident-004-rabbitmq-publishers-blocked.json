@@ -1,0 +1,49 @@
+{
+  "id": "messaging-incident-004",
+  "type": "incident",
+  "category": "messaging",
+  "title": "Checkout hangs for every customer, and no service reports an error",
+  "difficulty": "intermediate",
+  "tags": ["rabbitmq", "memory-alarm", "queues", "backpressure"],
+  "intro": "Checkout requests hang until they time out. The checkout service's logs show no errors, only requests that never finish. Its last step publishes an 'order placed' message to RabbitMQ. The database is healthy. Two days ago the email team scaled their email-worker deployment (namespace shop) to zero for a migration. You have a shell on the RabbitMQ node, mq-1.",
+  "steps": [
+    {
+      "prompt": "Requests that hang with no error, ending at a publish to RabbitMQ. Check whether the broker has raised a resource alarm.",
+      "expected_commands": ["sudo rabbitmq-diagnostics alarms", "rabbitmq-diagnostics alarms"],
+      "fake_output": "Node rabbit@mq-1 reported 1 local alarm:\n  memory alarm on node rabbit@mq-1",
+      "hint": "sudo rabbitmq-diagnostics alarms"
+    },
+    {
+      "prompt": "A memory alarm: RabbitMQ is blocking all publishers. Confirm that's what checkout is experiencing: list connections with their state.",
+      "expected_commands": ["sudo rabbitmqctl list_connections name state", "rabbitmqctl list_connections name state", "sudo rabbitmqctl list_connections user state"],
+      "fake_output": "Listing connections ...\nname                                state\n10.1.4.21:51022 -> 10.1.9.5:5672    blocked\n10.1.4.22:40110 -> 10.1.9.5:5672    blocked\n10.1.5.30:38822 -> 10.1.9.5:5672    blocked\n10.1.6.12:44190 -> 10.1.9.5:5672    running",
+      "hint": "sudo rabbitmqctl list_connections name state"
+    },
+    {
+      "prompt": "Publishers are blocked; only a consumer's connection is still running. Find what filled the memory: list queues with message and consumer counts.",
+      "expected_commands": ["sudo rabbitmqctl list_queues name messages consumers", "rabbitmqctl list_queues name messages consumers"],
+      "fake_output": "Listing queues for vhost / ...\nname            messages   consumers\norders.new      3          4\nemail.send      11204410   0\nwebhooks.out    12         3",
+      "hint": "sudo rabbitmqctl list_queues name messages consumers"
+    },
+    {
+      "prompt": "email.send has 11.2 million messages and zero consumers: the email workers were scaled to zero two days ago and every order since has queued an email. The email team confirms the migration is finished. Start the workers again: scale deployment email-worker in namespace shop to 6 replicas.",
+      "expected_commands": ["kubectl scale deployment email-worker --replicas=6 -n shop", "kubectl scale deployment/email-worker --replicas=6 -n shop", "kubectl scale deploy email-worker --replicas=6 -n shop", "kubectl scale deployment email-worker -n shop --replicas=6"],
+      "fake_output": "deployment.apps/email-worker scaled",
+      "hint": "kubectl scale deployment email-worker --replicas=6 -n shop"
+    },
+    {
+      "prompt": "Consumers are never blocked, so the queue is draining. Check the alarm again after a few minutes.",
+      "expected_commands": ["sudo rabbitmq-diagnostics alarms", "rabbitmq-diagnostics alarms"],
+      "fake_output": "Node rabbit@mq-1 reported no local alarms",
+      "hint": "sudo rabbitmq-diagnostics alarms"
+    },
+    {
+      "prompt": "Checkout is working. Make sure a stalled email queue can never stop checkout again: set a policy named limit-email on queues matching ^email\\. with a maximum length of 500000 messages that rejects new publishes when full.",
+      "expected_commands": ["sudo rabbitmqctl set_policy limit-email \"^email\\.\" '{\"max-length\":500000,\"overflow\":\"reject-publish\"}' --apply-to queues", "rabbitmqctl set_policy limit-email \"^email\\.\" '{\"max-length\":500000,\"overflow\":\"reject-publish\"}' --apply-to queues", "sudo rabbitmqctl set_policy limit-email '^email\\.' '{\"max-length\":500000,\"overflow\":\"reject-publish\"}' --apply-to queues"],
+      "fake_output": "Setting policy \"limit-email\" for pattern \"^email\\.\" to \"{\"max-length\":500000,\"overflow\":\"reject-publish\"}\" ...",
+      "hint": "sudo rabbitmqctl set_policy limit-email \"^email\\.\" '{\"max-length\":500000,\"overflow\":\"reject-publish\"}' --apply-to queues"
+    }
+  ],
+  "resolution": "The least important queue in the system stopped the most important flow. The email workers were scaled to zero for a migration and nobody scaled them back. Orders kept arriving, each one adding a message to email.send, and with no consumer the queue grew for two days, to 11 million messages, until the broker's memory use crossed its high watermark. RabbitMQ then did what it's designed to do to protect itself: it raised a memory alarm and stopped reading from every connection that publishes, on every queue. Checkout's publish call simply never returned. No error, no exception, nothing in any log: a blocked publisher looks exactly like a hang. That's why this was hard to see from the application side and obvious from the broker in one command. Starting the consumers was the fix; they aren't blocked during an alarm precisely so that they can drain the backlog. The durable fixes are about containing a failure to the thing that failed. Bound the queues: a max-length policy makes a full email queue reject new email messages instead of sinking the whole broker, and the publisher can decide what to do about that. Put a timeout on publishing in the application, and decide what checkout should do when it can't queue an email: almost certainly complete the order anyway. An email is not worth a failed sale (sre-tutorial-009 calls this graceful degradation). Use publisher confirms so a publish that didn't land is known. Monitor queue depth and consumer count per queue, and alert on any queue with messages and zero consumers. And a deployment scaled to zero 'temporarily' needs an owner and a reminder; nothing in the system will notice that it's missing.",
+  "real_commands_used": ["rabbitmq-diagnostics alarms", "rabbitmqctl list_connections name state", "rabbitmqctl list_queues name messages consumers", "kubectl scale deployment --replicas=6", "rabbitmqctl set_policy ... max-length ... --apply-to queues"]
+}

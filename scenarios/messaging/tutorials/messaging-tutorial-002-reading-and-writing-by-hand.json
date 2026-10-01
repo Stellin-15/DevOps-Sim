@@ -1,0 +1,47 @@
+{
+  "id": "messaging-tutorial-002",
+  "type": "tutorial",
+  "category": "messaging",
+  "title": "Looking Inside a Topic: Consuming and Producing by Hand",
+  "difficulty": "intermediate",
+  "tags": ["kafka", "kcat", "debugging", "consumers"],
+  "intro": "'Is the message even in the topic?' is the question that splits most messaging problems in two: a producer problem, or a consumer problem. You answer it by reading the topic yourself. The variable BS holds the bootstrap address. The topic is orders.",
+  "steps": [
+    {
+      "prompt": "Read the first 3 messages of the topic orders with Kafka's console consumer, starting from the beginning, then stop.",
+      "expected_commands": ["kafka-console-consumer.sh --bootstrap-server $BS --topic orders --from-beginning --max-messages 3", "kafka-console-consumer --bootstrap-server $BS --topic orders --from-beginning --max-messages 3", "kafka-console-consumer.sh --bootstrap-server $BS --topic orders --max-messages 3 --from-beginning"],
+      "fake_output": "{\"order_id\":4410001,\"customer\":8812,\"total_cents\":4599}\n{\"order_id\":4410002,\"customer\":1204,\"total_cents\":12900}\n{\"order_id\":4410003,\"customer\":55310,\"total_cents\":2350}\nProcessed a total of 3 messages",
+      "explanation": "The oldest three messages still retained in the topic.",
+      "why": "Without --from-beginning the consumer waits for new messages only. Without --max-messages it runs until you stop it. This consumer uses a throwaway group, so it doesn't disturb the real consumers' positions. Reading a topic is safe: unlike a traditional queue, consuming doesn't remove anything."
+    },
+    {
+      "prompt": "kcat is the faster tool. Use it in consumer mode to show the last 5 messages of orders and exit.",
+      "expected_commands": ["kcat -b $BS -C -t orders -o -5 -e", "kcat -C -b $BS -t orders -o -5 -e", "kcat -b $BS -t orders -C -o -5 -e"],
+      "fake_output": "{\"order_id\":4812903,\"customer\":41002,\"total_cents\":1999}\n{\"order_id\":4812906,\"customer\":1204,\"total_cents\":12900}\n{\"order_id\":4812904,\"customer\":9917,\"total_cents\":8800}\n{\"order_id\":4812907,\"customer\":88120,\"total_cents\":4599}\n{\"order_id\":4812905,\"customer\":55310,\"total_cents\":2350}\n% Reached end of topic orders [2] at offset 802144",
+      "explanation": "The newest messages. Notice they're not in order_id order.",
+      "why": "'-o -5' means five from the end, per partition; '-e' exits at the end instead of waiting. The order looks shuffled because the messages come from six partitions, each ordered only within itself. If you need 'the latest for customer 1204 in order', you need that customer's partition, not the topic."
+    },
+    {
+      "prompt": "Show which partition, offset, and key each message has: consume the last 3 with a format string printing partition, offset, key, and value.",
+      "expected_commands": ["kcat -b $BS -C -t orders -o -3 -e -f '%p %o %k %s\\n'", "kcat -b $BS -C -t orders -o -3 -e -f \"%p %o %k %s\\n\"", "kcat -C -b $BS -t orders -o -3 -e -f '%p %o %k %s\\n'"],
+      "fake_output": "0 801877 8812 {\"order_id\":4812899,\"customer\":8812,...}\n0 801878 41002 {\"order_id\":4812903,\"customer\":41002,...}\n3 802020 1204 {\"order_id\":4812906,\"customer\":1204,...}",
+      "hint": "kcat -b $BS -C -t orders -o -3 -e -f '%p %o %k %s\\n'",
+      "explanation": "Each message's coordinates: partition and offset, plus its key.",
+      "why": "A message is identified by topic, partition, and offset, and that triple is what appears in consumer error logs. Seeing the key explains the partition: all of customer 1204's orders are on partition 3. A producer that sends no key spreads messages across partitions with no ordering at all, which is a frequent cause of 'events arrived out of order'."
+    },
+    {
+      "prompt": "A consumer's log says it failed on partition 3 at offset 802020. Fetch exactly that one message.",
+      "expected_commands": ["kcat -b $BS -C -t orders -p 3 -o 802020 -c 1", "kcat -C -b $BS -t orders -p 3 -o 802020 -c 1", "kcat -b $BS -C -t orders -p 3 -o 802020 -c 1 -e"],
+      "fake_output": "{\"order_id\":4812906,\"customer\":1204,\"total_cents\":\"12900\"}",
+      "explanation": "The message that broke the consumer: total_cents is a string here, where every other message has a number.",
+      "why": "Going straight to the offending message turns a vague 'consumer is crashing' into a specific payload you can show the producing team. This is the poison-message pattern: one malformed message that a consumer can't process and can't get past (messaging-incident-003). Schemas enforced at produce time (a schema registry) are what stop it at the source."
+    },
+    {
+      "prompt": "Publish a test message to a scratch topic, test-scratch, with the console producer reading from standard input: send the text hello.",
+      "expected_commands": ["echo hello | kafka-console-producer.sh --bootstrap-server $BS --topic test-scratch", "echo \"hello\" | kafka-console-producer.sh --bootstrap-server $BS --topic test-scratch", "echo hello | kafka-console-producer --bootstrap-server $BS --topic test-scratch", "echo hello | kcat -b $BS -P -t test-scratch"],
+      "fake_output": "(no output: one message sent)",
+      "explanation": "One message written to the scratch topic.",
+      "why": "Producing by hand tests the path end to end: network, authentication, ACLs, and the topic. Do it on a scratch topic. Hand-producing into a real topic means real consumers will process your test message as a real order, and unlike a database row, you can't delete it afterwards."
+    }
+  ]
+}
