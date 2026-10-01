@@ -29,8 +29,8 @@ The source-of-truth docs, all already in the repo, are:
   the game always teaches syntax that matches the real tool.
 - **GAPS.md** — an honest, periodically-updated self-assessment of what
   kube-sim does and doesn't prepare someone for. Part 1 is the deepest
-  (Kubernetes / CKA); Parts 2-18 give each other category its own
-  covered / still-missing / readiness-verdict section; Part 19 is the
+  (Kubernetes / CKA); every other category has its own part with a
+  covered / still-missing / readiness-verdict section; the Backlog part is the
   tiered backlog of whole topics not in the game yet (commonly used,
   role-dependent, niche); the final part is the overall verdict on
   DevOps proficiency, with totals and a recommended path. Read the relevant part before adding content so new scenarios
@@ -562,7 +562,16 @@ final `resolution` debrief instead).
 python -m pytest
 ```
 
-(`pytest.ini` points it at `tests/`.) Twenty-one files:
+(`pytest.ini` points it at `tests/`.) The files:
+- `test_docs_sync.py` — the counts quoted in GAPS.md, README.md, and
+  CLAUDE.md match the content. **After adding or removing scenarios,
+  run `python tools/sync_docs.py`**: it rewrites the per-category
+  counts, totals, lab and path counts, and renumbers GAPS.md's
+  'Part N' headings in file order. A new category needs its rows
+  written by hand first (GAPS.md table, README table, the depth list
+  below, a GAPS part inserted before the Backlog part, and a label in
+  `tools/sync_docs.py` if it isn't a plain capitalised key); the tool
+  reports what's missing.
 - `test_engine.py` — matching/normalization logic, proven kubectl-agnostic
 - `test_scenario_loader.py` — category-aware JSON loading (`list_categories`,
   category-filtered vs. aggregated `load_tutorials`/`load_incidents`,
@@ -684,7 +693,7 @@ See GAPS.md's final 'Overall' part for the reasoning. In priority order:
    Route 53, Kyverno and Falco, writing Terraform modules and dynamic
    blocks, plus Writing Labs yaml-031 (getopts, `while read`) and
    yaml-032 (a Terraform module).
-6b. **The topic backlog is GAPS.md Part 19**, in three tiers, with a
+6b. **The topic backlog is GAPS.md's Backlog part**, in three tiers, with a
    suggested build order. ✓ Its first two items are done: the
    `databases` category (12 tutorials, 6 incidents, path-013) and the
    `webservers` category (11 tutorials, 6 incidents, 2 nginx Writing

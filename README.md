@@ -424,7 +424,7 @@ root cause and how to prevent it.
 
 Honest answer — see **GAPS.md**, which assesses every category
 individually (covered / still missing / readiness verdict) plus an
-overall verdict in its final part. **GAPS.md Part 19 is the full list of
+overall verdict in its final part. **GAPS.md's Backlog part is the full list of
 topics this game doesn't teach yet**, in three tiers (commonly used,
 role-dependent, and niche), so you can see what's left to learn. In short: completing everything here makes
 you a strong DevOps *operator* — you'll know the commands, the failure
@@ -458,7 +458,7 @@ category (PostgreSQL operations, SQL, recovery, MySQL, Redis) → Web
 Servers & Proxies category (nginx, HAProxy, and an nginx lab format).
 
 Next, in priority order (details in CLAUDE.md and GAPS.md):
-- The topic backlog in GAPS.md Part 19: identity and secrets next
+- The topic backlog in GAPS.md's Backlog part: identity and secrets next
   (Vault, OIDC, mTLS), then the Kubernetes ecosystem, then Jenkins and
   GitLab CI
 - Exam-specific gap passes for other certifications (CKAD, Terraform

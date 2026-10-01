@@ -13,7 +13,7 @@ Terraform, Networking, CI/CD, Monitoring, MLOps, the three clouds,
 Security, Server Fleet Ops, SRE, Git, System Design, Databases, and Web
 Servers) gets its own section
 further down, written the same way: what's covered, what a real job
-expects, what's still missing. Part 19 is the backlog: every topic that
+expects, what's still missing. The Backlog part lists every topic that
 isn't in the game yet, in tiers. The final section is a cross-category
 summary: what "proficient in DevOps" actually requires beyond any single
 tool, and how far this game gets you toward it.
@@ -1314,7 +1314,7 @@ on purpose.
 
 # Part 19 — The backlog: everything that isn't in the game yet
 
-Parts 1 to 18 each list what's missing *inside* a category. This part
+The parts above each list what's missing *inside* a category. This part
 lists whole topics with no category at all, in three tiers. Nobody needs
 all of it. Tier A is worth learning for almost any DevOps, platform, or
 SRE role; tier B depends on the job; tier C is for when a specific
@@ -1528,7 +1528,7 @@ that no amount of additional scenario content can fully close:
    Stats screen shows which categories you've passed, your best score
    in each, and what to do next.
 4. Complete the Writing Labs for each category.
-5. Play all fourteen Career Paths to practice switching layers mid-problem —
+5. Play all 14 Career Paths to practice switching layers mid-problem —
    especially "The Worst On-Call Night".
 6. Play every Mystery Incident, then replay it to aim for 100. Scoring
    near the expert's command count means you went straight to the right
@@ -1542,7 +1542,7 @@ that no amount of additional scenario content can fully close:
 9. For certification goals, see Part 1 (CKA); similar exam-specific gap
    passes haven't been done for other certs (e.g. Terraform Associate,
    AWS) yet.
-10. Then widen. Part 19 lists everything this game doesn't teach yet,
+10. Then widen. The Backlog part lists everything this game doesn't teach yet,
     in three tiers. Start with tier A (identity and secrets, a
     scripting language, messaging): those come up in almost every
     role.
