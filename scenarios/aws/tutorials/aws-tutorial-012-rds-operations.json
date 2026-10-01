@@ -1,0 +1,46 @@
+{
+  "id": "aws-tutorial-012",
+  "type": "tutorial",
+  "category": "aws",
+  "title": "RDS: Operating a Managed Database",
+  "difficulty": "intermediate",
+  "tags": ["aws", "rds", "databases", "backup"],
+  "intro": "RDS runs the database server for you: patching, backups, replication, failover. You still own the decisions: how it's sized, whether it survives an availability-zone failure, how far back you can restore, and what happens when someone runs a bad migration. The instance here is shop-prod.",
+  "steps": [
+    {
+      "prompt": "Show the key facts about the instance shop-prod: class, engine, Multi-AZ, storage, and status.",
+      "expected_commands": ["aws rds describe-db-instances --db-instance-identifier shop-prod --query 'DBInstances[0].[DBInstanceClass,Engine,EngineVersion,MultiAZ,AllocatedStorage,DBInstanceStatus]'", "aws rds describe-db-instances --db-instance-identifier shop-prod"],
+      "fake_output": "[\n    \"db.r6g.xlarge\",\n    \"postgres\",\n    \"15.7\",\n    false,\n    500,\n    \"available\"\n]",
+      "explanation": "PostgreSQL 15.7 on an r6g.xlarge with 500 GB, and Multi-AZ is false.",
+      "why": "Multi-AZ false on a production database is the finding. With Multi-AZ, RDS keeps a synchronous standby in another zone and fails over in a minute or two. Without it, a zone failure or a hardware fault means restoring from backup, with downtime measured in tens of minutes or more."
+    },
+    {
+      "prompt": "Check how far back you could restore: show the backup retention period and the latest restorable time for shop-prod.",
+      "expected_commands": ["aws rds describe-db-instances --db-instance-identifier shop-prod --query 'DBInstances[0].[BackupRetentionPeriod,LatestRestorableTime]'"],
+      "fake_output": "[\n    7,\n    \"2026-09-28T10:14:55+00:00\"\n]",
+      "explanation": "7 days of backups, restorable to within about five minutes of now.",
+      "why": "Automated backups plus transaction logs give point-in-time recovery to any second inside the retention window. That's the defence against the failure replicas can't help with: a bad DELETE or migration is replicated to every copy instantly."
+    },
+    {
+      "prompt": "Before a risky migration, take a manual snapshot of shop-prod named shop-prod-pre-migration-0928.",
+      "expected_commands": ["aws rds create-db-snapshot --db-instance-identifier shop-prod --db-snapshot-identifier shop-prod-pre-migration-0928"],
+      "fake_output": "{\n  \"DBSnapshot\": {\n    \"DBSnapshotIdentifier\": \"shop-prod-pre-migration-0928\",\n    \"Status\": \"creating\"\n  }\n}",
+      "explanation": "A manual snapshot is being created.",
+      "why": "Manual snapshots are kept until you delete them; automated ones expire with the retention period and are deleted with the instance. A named snapshot before a migration gives a clear, labelled restore point."
+    },
+    {
+      "prompt": "The migration deleted the wrong rows at 10:05. Restore a copy of shop-prod as it was at 10:04 UTC into a new instance, shop-prod-restore.",
+      "expected_commands": ["aws rds restore-db-instance-to-point-in-time --source-db-instance-identifier shop-prod --target-db-instance-identifier shop-prod-restore --restore-time 2026-09-28T10:04:00Z"],
+      "fake_output": "{\n  \"DBInstance\": {\n    \"DBInstanceIdentifier\": \"shop-prod-restore\",\n    \"DBInstanceStatus\": \"creating\"\n  }\n}",
+      "explanation": "A new instance is being built from the backups, as of 10:04.",
+      "why": "A restore always creates a new instance; it never rewinds the existing one. So recovery means copying the lost rows back from the restored copy, or repointing the application at it. The restore takes time that grows with the database size: measure it before you need it, because that number is your real recovery time."
+    },
+    {
+      "prompt": "Turn on Multi-AZ for shop-prod, applying the change in the next maintenance window rather than immediately.",
+      "expected_commands": ["aws rds modify-db-instance --db-instance-identifier shop-prod --multi-az --no-apply-immediately", "aws rds modify-db-instance --db-instance-identifier shop-prod --multi-az"],
+      "fake_output": "{\n  \"DBInstance\": {\n    \"DBInstanceIdentifier\": \"shop-prod\",\n    \"PendingModifiedValues\": {\"MultiAZ\": true}\n  }\n}",
+      "explanation": "The change is pending and will apply in the maintenance window.",
+      "why": "--apply-immediately on some changes (instance class, some parameter changes) restarts the database right now, in the middle of the day. The default is to wait for the maintenance window. Check 'PendingModifiedValues' so a queued change doesn't surprise you later, and test a failover on purpose with 'reboot-db-instance --force-failover'."
+    }
+  ]
+}

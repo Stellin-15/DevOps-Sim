@@ -9,9 +9,11 @@ scenario" for "ready."
 
 **Structure:** the first half of this file is the original, deepest
 assessment — **Kubernetes / CKA**. Each other category (Docker, Linux,
-Terraform, Networking, CI/CD, Monitoring, MLOps) gets its own section
+Terraform, Networking, CI/CD, Monitoring, MLOps, the three clouds,
+Security, Server Fleet Ops, SRE, Git, and System Design) gets its own section
 further down, written the same way: what's covered, what a real job
-expects, what's still missing. The final section is a cross-category
+expects, what's still missing. Part 17 is the backlog: every topic that
+isn't in the game yet, in tiers. The final section is a cross-category
 summary: what "proficient in DevOps" actually requires beyond any single
 tool, and how far this game gets you toward it.
 
@@ -149,14 +151,17 @@ plane being the actual outage).
 - ~~Dynamic storage provisioning failures~~: **done** in incident-013 (a
   PVC stuck Pending on a StorageClass that doesn't exist in this cluster,
   plus the "PVCs are immutable, StatefulSets never update them" trap).
-  Volume *mount* failures (for example FailedAttachVolume, or a
-  multi-attach error on a ReadWriteOnce volume) still aren't covered.
+  Volume *attach* failures are now **done** too: incident-015 (a
+  Multi-Attach error when a rolling update starts the new pod on
+  another node while the old pod still holds a ReadWriteOnce volume).
 - ~~RBAC denial as an incident~~: **done** in incident-011 (a job that
   moved namespaces falls back to the 'default' service account;
   diagnosed from the 403 text and `auth can-i --as`).
 - ~~PodDisruptionBudget blocking a drain~~: **done** in incident-012.
-- Admission controllers / webhooks (still missing; also relevant to
-  enforcing image signatures, see Part 6)
+- ~~Admission controllers / webhooks~~: **done** in incident-014 (a
+  validating webhook with `failurePolicy: Fail` whose own pods are
+  down, so nothing can be created, including its replacement) and
+  security-tutorial-011 (Kyverno policies, Enforce vs Audit).
 - ~~More YAML Labs~~ — **done**: StatefulSet, Ingress (with TLS), HPA,
   and RBAC (Role + RoleBinding) labs added, for 9 Kubernetes labs total
 - Kubeflow at an operator level now lives in the MLOps category (Part 8);
@@ -225,7 +230,7 @@ structural, so run a real `docker build` on your own projects.
 
 # Part 3 — Linux
 
-**Content:** 14 tutorials, 6 incidents, 3 Writing Labs, and an interactive
+**Content:** 15 tutorials, 6 incidents, 4 Writing Labs, and an interactive
 Sandbox: a server with two random real problems (failed service blocked by
 a stray process, disk filled by a log held open by a process, runaway CPU,
 memory hog that got postgres OOM-killed, and, since the security pass, a
@@ -265,15 +270,18 @@ silently for weeks, and sshd StrictModes rejecting keys.
   (balanced if/fi, do/done, case/esac and quotes, plus required and
   forbidden text) — not a real bash parser or shellcheck, so subtler bugs
   go unnoticed. yaml-022 now adds arrays, functions with `local`, loops,
-  `trap ... EXIT` cleanup, and the `((n++))`-under-`set -e` trap. Still
-  unpracticed: `getopts` argument parsing, `while read` loops over
-  files, and a real shellcheck pass.
+  `trap ... EXIT` cleanup, and the `((n++))`-under-`set -e` trap, and
+  yaml-031 adds `getopts` option parsing and `while IFS= read -r`
+  loops over a file. Still unpracticed: a real shellcheck pass.
 - ~~`strace`/`lsof`~~: **closed** by linux-tutorial-013 (attach to a hung
   process, map fds to sockets, `-c` summaries, `-f -e trace=network`).
 - ~~Package management, firewalls~~: **closed** by linux-tutorial-014
   (apt/dnf, targeted upgrades, `dnf provides`, ufw with source
   restrictions, and the real `nft list ruleset`).
-- SELinux/AppArmor (still missing).
+- ~~SELinux~~: **closed** by linux-tutorial-015 (reading AVC denials
+  with `ausearch`, file contexts with `ls -Z`, `semanage fcontext` plus
+  `restorecon`, and booleans with `setsebool -P`). AppArmor, Ubuntu's
+  equivalent, is still missing.
 - ~~LVM and resizing a filesystem on a grown cloud volume~~: **closed** by
   servers-tutorial-010 (growpart, pvresize, `lvextend -r`, all online).
 - `tmux`/`screen` for surviving disconnects (mentioned, not practiced).
@@ -290,7 +298,8 @@ real scripts to finish the job.
 
 # Part 4 — Terraform
 
-**Content:** 11 tutorials, 6 incidents, 2 Writing Labs.
+**Content:** 12 tutorials, 6 incidents, 5 Writing Labs (the VPC and
+security-group labs are described under AWS, Part 9).
 
 ## Covered
 
@@ -323,9 +332,11 @@ state file.
 - ~~Modules, `for_each` vs `count`, data sources~~: **mostly closed** by
   terraform-tutorial-011 (the count-renumbering trap shown in a real
   plan, `state mv` vs `moved` blocks, moving resources into a module
-  with a zero-destroy plan, and version pinning). Still unpracticed:
-  *writing* a module's variables and outputs yourself (no HCL lab for
-  it yet), and `dynamic` blocks.
+  with a zero-destroy plan, and version pinning). Writing a module is
+  now **closed** too: terraform-tutorial-012 (validating a module in
+  isolation, variable validation, `dynamic` blocks, `terraform test`)
+  and Writing Lab yaml-032 (a module's variables.tf, a main.tf with a
+  dynamic block, and outputs.tf).
 - Cloud-provider knowledge itself (VPCs, IAM, subnets). Terraform is
   only as useful as your understanding of what it's creating.
   **Now partly covered** by the AWS category (Part 9) and its VPC
@@ -344,7 +355,7 @@ be genuinely productive.
 
 # Part 5 — Networking
 
-**Content:** 11 tutorials, 7 incidents.
+**Content:** 12 tutorials, 7 incidents.
 
 ## Covered
 
@@ -379,7 +390,9 @@ terminating load balancers.
   are still missing.
 - Load balancer internals (L4 vs L7, health checks, connection draining,
   sticky sessions) and service meshes.
-- IPv6.
+- ~~IPv6~~: **closed** at the basics level by networking-tutorial-012
+  (v6 addresses, AAAA records, `curl -6`, dual-stack listeners, and the
+  v6 routing table). IPv6-only clusters and NAT64 aren't covered.
 
 ## Readiness verdict
 
@@ -393,7 +406,7 @@ peering) is the next thing to learn, on real infrastructure.
 
 # Part 6 — CI/CD
 
-**Content:** 13 tutorials, 6 incidents, 3 Writing Labs.
+**Content:** 15 tutorials, 6 incidents, 3 Writing Labs.
 
 ## Covered
 
@@ -429,10 +442,15 @@ and recovering commits lost to a bad rebase.
   the same.
 - ~~SBOMs and supply-chain security~~: **mostly closed** by
   cicd-tutorial-012 (syft SBOMs, grype `--fail-on`, cosign sign/verify
-  by digest, `crane digest`). Still missing: SLSA provenance
-  attestations, and an admission policy that enforces signatures.
-- Database migrations in a deploy pipeline (expand/contract pattern) —
-  one of the hardest real-world CD problems.
+  by digest, `crane digest`). SLSA provenance is now **closed** by
+  cicd-tutorial-015 (`cosign attest` and `verify-attestation`, reading
+  the predicate, `gh attestation verify`), and admission enforcement
+  by security-tutorial-011 (Kyverno).
+- ~~Database migrations in a deploy pipeline~~: **closed** by
+  cicd-tutorial-014 (expand, backfill, contract, with `lock_timeout` so
+  a schema change can't queue behind a long query and block the
+  table). Online schema-change tools (gh-ost,
+  pt-online-schema-change) aren't covered.
 - ~~`git bisect`~~: **closed** by cicd-tutorial-013 (including `bisect
   run` with an exit-code test script and exit 125 to skip).
 
@@ -447,7 +465,7 @@ writing that this game only partially supports today.
 
 # Part 7 — Monitoring & Observability
 
-**Content:** 12 tutorials, 6 incidents, 2 Writing Labs.
+**Content:** 13 tutorials, 6 incidents, 2 Writing Labs.
 
 ## Covered
 
@@ -473,8 +491,10 @@ journald volume.
 - ~~Distributed tracing~~: **closed** at the operator level by
   monitoring-tutorial-011 (collector health and its span-loss metrics,
   finding services missing from Jaeger, filtering traces by duration,
-  reading a span tree). *Instrumenting* code with OpenTelemetry SDKs
-  isn't practiced.
+  reading a span tree). Instrumenting is now covered by
+  monitoring-tutorial-013 (auto-instrumentation, the `OTEL_*`
+  variables, head vs tail sampling, `otelcol validate`). Writing manual
+  spans in code isn't practiced.
 - ~~SLOs and error budgets~~: **closed** by monitoring-tutorial-012 (a
   good/total SLI, budget remaining, burn rate, multi-window 14.4x
   paging, and `promtool test rules`). Writing the burn-rate rule file
@@ -495,14 +515,14 @@ journald volume.
 Strong on the Prometheus/logging operator skills that most on-call
 rotations rely on, and on the specific ways monitoring systems fail.
 Tracing and SLO burn-rate alerting are now covered at the operator
-level. What's left is authoring: instrumenting services and writing
-dashboards.
+level, and so is auto-instrumenting a service. What's left is
+authoring: manual spans in code, and writing dashboards.
 
 ---
 
 # Part 8 — MLOps
 
-**Content:** 12 tutorials, 7 incidents.
+**Content:** 14 tutorials, 7 incidents.
 
 ## Covered
 
@@ -534,26 +554,31 @@ and an unreproducible model trained on unversioned data.
   than GPU utilization) and mlops-incident-007 (a crash loop caused by
   a model swap's 128k default context). Quantization and speculative
   decoding aren't covered.
-- Distributed training (multi-GPU/multi-node, NCCL issues) (still
-  missing).
+- ~~Distributed training~~: **closed** at the operator level by
+  mlops-tutorial-013 (GPU topology, `torchrun`, learning-rate scaling,
+  NCCL choosing the wrong interface, PyTorchJob). Batch schedulers
+  (Slurm, Volcano gang scheduling) are only mentioned.
 - Model registries' promotion workflows (staging → production approval).
-- Writing pipeline definitions (Kubeflow Pipelines / Airflow / Argo
-  Workflows DAGs).
+- ~~Pipeline DAGs~~: **partly closed** by mlops-tutorial-014, which
+  covers *operating* Airflow (import errors, `tasks test`, backfill and
+  idempotency, manual triggers). *Writing* a DAG file is still not
+  practiced; it would make a good Writing Lab.
 - Evaluation and data-validation tooling (Great Expectations, Evidently).
 
 ## Readiness verdict
 
 Covers the operational side of MLOps well — the parts where ML meets
 DevOps infrastructure, and the distinctive "nothing errors but the model
-is wrong" failure mode. LLM serving and feature stores are now covered;
-distributed training and writing pipeline DAGs are the biggest gaps
-remaining relative to what current MLOps roles ask for.
+is wrong" failure mode. LLM serving, feature stores, distributed
+training, and operating pipelines are now covered; writing pipeline DAGs
+and evaluation tooling are the biggest gaps remaining relative to what
+current MLOps roles ask for.
 
 ---
 
 # Part 9 — AWS
 
-**Content:** 11 tutorials, 7 incidents, an interactive AWS Sandbox, and
+**Content:** 13 tutorials, 7 incidents, an interactive AWS Sandbox, and
 4 Mystery Incidents on it.
 
 The sandbox is a fake account with one production VPC:
@@ -609,10 +634,15 @@ route, a security group missing 443, and a stateless NACL dropping replies.
   the object-vs-bucket ARN split), yaml-024 (a full two-tier VPC with IGW,
   NAT, and route tables), and yaml-025 (remove SSH from a security group
   in favour of SSM).
-- RDS/Aurora operations (failover, parameter groups, snapshots and restore),
-  DynamoDB capacity, and Lambda/serverless debugging.
-- Multi-account networking (Transit Gateway, VPC peering, PrivateLink) and
-  Route 53 DNS (records, health checks, failover routing).
+- ~~RDS operations~~: **closed** by aws-tutorial-012 (Multi-AZ, backup
+  retention, manual snapshots, point-in-time restore, pending
+  modifications). Aurora, parameter groups, DynamoDB capacity, and
+  Lambda/serverless debugging are still missing.
+- ~~Route 53~~: **closed** by aws-tutorial-013 (public vs private zones,
+  alias records, lowering the TTL before a migration, `get-change`, and
+  querying the authoritative servers). Health-check failover routing is
+  described, not practiced.
+- Multi-account networking (Transit Gateway, VPC peering, PrivateLink).
 - CloudFormation/CDK (Terraform is used as the infrastructure-as-code representative).
 - KMS key policies, and Secrets Manager rotation.
 - The AWS Certified Solutions Architect / SysOps exam breadth: this is an
@@ -751,7 +781,7 @@ The three clouds use different names for the same ideas:
 
 # Part 12 — Security (defensive)
 
-**Content:** 10 tutorials, 6 incidents, and 2 hacked-server Mystery Incidents
+**Content:** 11 tutorials, 6 incidents, and 2 hacked-server Mystery Incidents
 on the Linux sandbox.
 
 The Linux sandbox gained two compromise scenarios, and both are playable
@@ -804,10 +834,14 @@ cleanup counts as collateral damage:
   exposure, harden, detect, and respond.
 - SIEM work (writing detection rules in Sentinel, Splunk, or Elastic), and
   commercial EDR consoles.
-- SELinux/AppArmor policy troubleshooting (still also listed under Linux).
-- Kubernetes runtime security (Falco rules), admission policies (Kyverno or
-  Gatekeeper, which would also enforce image signatures from Part 6), and
-  network policy auditing.
+- ~~SELinux troubleshooting~~: **closed** by linux-tutorial-015 (Part 3).
+  AppArmor is still missing.
+- ~~Kubernetes admission policy and runtime detection~~: **closed** at the
+  operator level by security-tutorial-011 (Kyverno Enforce vs Audit, a
+  blocked privileged pod, `kyverno apply` in CI, policy reports, and reading
+  Falco alerts) and incident-014 (a webhook that deadlocks the cluster).
+  *Writing* Kyverno policies and Falco rules, OPA Gatekeeper, and network
+  policy auditing are still missing.
 - Incident-response process: evidence handling, legal and breach-notification
   duties. Only mentioned in debriefs.
 
@@ -954,27 +988,298 @@ hands-on companion.
 
 ---
 
-# Part 15 — Overall: will this make you proficient in DevOps?
+# Part 15 — Git
+
+**Content:** 11 tutorials, 6 incidents.
+
+Git already appeared inside CI/CD (Part 6): everyday workflow, revert vs
+reset, tags, and `git bisect`. This category is Git as a tool in its own
+right: how it stores things, and how to get out of trouble.
+
+## Covered
+
+Every section of `commands/git.md`:
+- **How Git stores things:** objects, refs, and HEAD, which is what makes
+  every later command predictable.
+- **Staging precisely:** partial staging and small, reviewable commits.
+- **Branches:** tracking, upstreams, and cleaning up merged branches.
+- **Merging and conflicts:** reading conflict markers, taking one side,
+  aborting, `rerere`, and reverting a merge with `revert -m`.
+- **Rebasing:** autosquash and fixup commits, `--onto`, staying current
+  with main, and pushing the result with `--force-with-lease`.
+- **Undoing:** the full matrix of restore, reset, revert, amend, and the
+  reflog, by what each one touches.
+- **Searching history:** blame, the pickaxe (`log -S`), and following a
+  line or a file through renames.
+- **Remotes:** forks, upstream sync, and pruning.
+- **Interruptions:** stash and worktrees.
+- **Configuration:** .gitignore, .gitattributes (line endings), and hooks.
+- **Large and unusual repositories:** shallow and partial clones, sparse
+  checkout, submodules, and LFS.
+- **Signing:** signed commits and tags, and verifying them.
+
+Incidents, each one a real "I've lost my work" moment:
+- three commits made on main that belonged on a branch;
+- commits made on a detached HEAD that seem to have vanished;
+- a push rejected for a 300MB file buried five commits back;
+- `reset --hard` over a day of uncommitted work, and what is and isn't
+  recoverable;
+- every file showing as modified (line endings), and a script that won't
+  run in a container;
+- a re-merged branch that "succeeds" and brings none of its code,
+  because the earlier merge was reverted.
+
+## Still missing
+
+- **A real repository.** Outputs are pre-written, so you never edit a
+  rebase todo list or resolve a conflict in your own editor. A Git
+  sandbox (a real temp repo the game inspects) would close this, and it's
+  the most valuable next step for this category.
+- Code-review practice: pull-request etiquette, stacked changes, Gerrit.
+- Branching strategies compared in depth (trunk-based vs GitFlow vs
+  release branches). CI/CD touches this; neither part drills it.
+- Platform settings that matter as much as commands: branch protection,
+  required checks, CODEOWNERS, merge queues.
+- Less common commands: `range-diff`, `subtree`, `bundle`, `notes`,
+  `maintenance`, and repository internals (packfiles, commit-graph).
+- Monorepo tooling at scale (sparse index, Sapling, build-system
+  integration).
+
+## Readiness verdict
+
+Enough to stop being afraid of Git. You'll know which undo command
+touches what, that almost anything committed is recoverable through the
+reflog, and that uncommitted work is not. The incidents cover the
+situations that make people re-clone the repository. Practise the same
+recoveries in a throwaway real repo, because conflict resolution is a
+hands-on skill.
+
+---
+
+# Part 16 — System Design
+
+**Content:** 11 tutorials, 6 incidents, 2 Writing Labs (design documents).
+
+System design is mostly judgment, which a command matcher can't check
+directly. So this category mixes three kinds of step:
+- **real commands** against the pieces designs are built from (nginx,
+  Redis, PostgreSQL, Kafka, etcd, HTTP headers with curl);
+- **decision steps**, multiple-choice questions where you type a letter,
+  each with a `why` that explains the trade-off and why the other
+  options lose;
+- **design documents**, written in Markdown in your own editor and
+  checked for the sections a real design review expects.
+
+## Covered
+
+Every section of `commands/systemdesign.md`:
+- **Estimation:** requests per second, storage, and bandwidth from daily
+  users, and what the numbers rule in or out.
+- **Scaling out:** load balancers, health checks, and stateless servers.
+- **Caching:** cache-aside vs write-through, expiry, eviction, and
+  stampedes.
+- **Databases:** indexes and query plans, and choosing a store.
+- **Replication:** read replicas, lag, and failover.
+- **Partitioning:** shard keys, hot partitions, and consistent hashing.
+- **Queues:** asynchronous work, consumer lag, retries, dead-letter
+  queues, and backpressure.
+- **Consistency:** availability trade-offs and quorums.
+- **API robustness:** rate limiting, idempotency keys, and timeouts.
+- **The edge:** CDNs, HTTP caching headers, and DNS.
+- **A worked design:** a URL shortener, end to end.
+
+Incidents are the failures those designs produce:
+- one partition doing all the work (a bad key);
+- "I saved it and it changed back" (reading from a lagging replica);
+- customers charged twice (a retry without an idempotency key);
+- scaling the app tier took the database down (connection exhaustion);
+- stale prices after a sale ended (cache and CDN expiry);
+- a queue that grew without limit and took its neighbours with it.
+
+Writing Labs yaml-029 and yaml-030 have you write design documents for
+a URL shortener and a rate limiter.
+
+## Still missing
+
+- **Feedback on quality.** The design-document labs check that the
+  required sections and key terms are present. They can't tell a good
+  design from a bad one that uses the right words. Have a person review
+  your documents.
+- Distributed transactions: sagas, the outbox pattern, two-phase commit.
+- CQRS and event sourcing.
+- Multi-region designs: active-active, data residency, failover.
+- Consensus internals (Raft) beyond quorum arithmetic.
+- Probabilistic structures (Bloom filters, HyperLogLog), search systems,
+  and real-time delivery (WebSockets, long polling).
+- More worked designs. Only two exist; interviews and real work draw on
+  many (chat, a news feed, payments, notifications, a job scheduler).
+- Speaking a design aloud under time pressure, which is its own skill.
+
+## Readiness verdict
+
+A solid base: you can estimate, name the standard building blocks, and
+say what each one costs. You'll also recognise the classic failures from
+their symptoms, which is where most real design knowledge comes from.
+It is not yet interview-complete or architect-level: the missing topics
+above are where senior design discussions spend their time.
+
+---
+
+# Part 17 — The backlog: everything that isn't in the game yet
+
+Parts 1 to 16 each list what's missing *inside* a category. This part
+lists whole topics with no category at all, in three tiers. Nobody needs
+all of it. Tier A is worth learning for almost any DevOps, platform, or
+SRE role; tier B depends on the job; tier C is for when a specific
+employer uses it.
+
+## Tier A: commonly used, expected in most roles
+
+1. **Databases as an operator.** The biggest hole.
+   - PostgreSQL and MySQL administration: roles and grants,
+     `pg_stat_activity`, locks, vacuum and bloat, slow-query analysis.
+   - Backup and recovery: `pg_dump`, base backups, WAL archiving,
+     point-in-time recovery. (Only the RDS version is covered, in
+     aws-tutorial-012.)
+   - Replication set-up and failover (Patroni), and connection pooling
+     (PgBouncer).
+   - SQL itself: joins, aggregates, window functions, transactions, and
+     isolation levels.
+   - Redis operations (persistence, Sentinel, Cluster), MongoDB basics,
+     and Elasticsearch/OpenSearch cluster operations.
+2. **Messaging systems.** Kafka operations beyond consumer lag (brokers,
+   in-sync replicas, retention, rebalancing), RabbitMQ, and the cloud
+   queues (SQS/SNS, Pub/Sub, Service Bus).
+3. **Web servers and proxies.** nginx (server blocks, reverse proxying,
+   TLS, rate limits, `nginx -t`, access-log analysis), HAProxy, Envoy,
+   Traefik, and certificates from ACME (certbot).
+4. **A scripting language.** Python for automation (argparse,
+   subprocess, requests, boto3, virtual environments, pytest), Go basics
+   for reading and building tooling, `jq` and `yq` in depth, regular
+   expressions, and Makefiles.
+5. **Identity and secrets.** OAuth 2.0 and OIDC flows, JWTs, SAML and
+   SSO; HashiCorp Vault (KV, dynamic secrets, auth methods); External
+   Secrets Operator, Sealed Secrets, and SOPS; PKI, mTLS, and
+   cert-manager.
+6. **Other CI systems and release tooling.** Jenkins (Jenkinsfiles,
+   agents), GitLab CI, Azure DevOps Pipelines, Tekton. Artifact
+   repositories (Artifactory, Nexus, Harbor). Semantic versioning,
+   release automation, and Dependabot or Renovate.
+7. **The Kubernetes ecosystem.** Kustomize, *writing* Helm charts,
+   Gateway API, cert-manager, external-dns, autoscaling beyond HPA (VPA,
+   KEDA, Cluster Autoscaler, Karpenter), service mesh in depth, Flux,
+   and CKAD and CKS exam passes.
+8. **Serverless and managed compute.** Lambda, Cloud Functions, Azure
+   Functions, API gateways, ECS/Fargate, Cloud Run, App Service.
+9. **Logging pipelines.** Fluent Bit, Vector, Logstash, OpenSearch,
+   log-based metrics, and retention and cost control.
+10. **Performance engineering.** Flame graphs (perf, py-spy,
+    async-profiler), eBPF tools (bcc, bpftrace), continuous profiling,
+    and JVM garbage-collection basics.
+11. **FinOps.** Cost allocation by tag, rightsizing, commitments (Savings
+    Plans, committed use), spot and preemptible capacity, Kubecost or
+    OpenCost, and data-transfer costs.
+12. **Hosted observability.** Datadog, New Relic, CloudWatch in depth,
+    Sentry, and building Grafana dashboards.
+
+## Tier B: valuable, depends on the role
+
+- **Other infrastructure-as-code tools:** Pulumi, CloudFormation and
+  CDK, Bicep, Crossplane, OpenTofu, Terragrunt, Atlantis and Terraform
+  Cloud. Packer image builds. Policy as code (OPA/Rego, Checkov, tfsec).
+- **Advanced networking:** BGP basics, VPNs (WireGuard, IPsec), Transit
+  Gateway, peering and PrivateLink, running DNS servers, L4 vs L7 load
+  balancer internals, CNI internals (Cilium, Calico), HTTP/2, HTTP/3,
+  and gRPC debugging.
+- **Storage and disaster recovery:** Ceph and Rook, NFS, CSI snapshots,
+  Velero cluster backups, and DR drills against real RPO and RTO
+  targets.
+- **Multi-cluster and multi-tenancy:** Cluster API, Argo CD
+  ApplicationSets, vCluster, tenant isolation.
+- **Platform engineering:** Backstage, internal developer platforms,
+  golden paths, and DORA metrics.
+- **Compliance and governance:** SOC 2, ISO 27001, PCI-DSS, and HIPAA
+  basics; collecting audit evidence; cloud posture tools (Prowler,
+  ScoutSuite); threat modelling; SIEM detection rules; zero-trust
+  access.
+- **Data engineering:** writing Airflow DAGs, dbt, Spark on Kubernetes,
+  warehouses (BigQuery, Snowflake), and change data capture (Debezium).
+- **LLM operations:** evaluation harnesses, prompt and model versioning,
+  retrieval and vector databases, guardrails, quantization, and GPU cost
+  control.
+- **System design depth:** the list under Part 16.
+- **Testing in delivery:** contract tests, preview environments, flaky
+  test management.
+- **Authoring gaps named in earlier parts:** Kyverno policies and Falco
+  rules, an Airflow DAG, manual OpenTelemetry spans, Grafana dashboards,
+  and a burn-rate alert rule file. Each would be one Writing Lab.
+
+## Tier C: less popular, legacy, or niche
+
+- **Other orchestrators:** Nomad, Docker Swarm, Consul for service
+  discovery.
+- **Other configuration management:** Puppet, Chef, SaltStack.
+- **Other container tooling:** Podman, Buildah, Skopeo, containerd with
+  nerdctl and crictl, Kaniko, ko, Buildpacks; sandboxed runtimes
+  (gVisor, Kata, Firecracker); WebAssembly workloads.
+- **Kubernetes distributions:** OpenShift (`oc`, Routes, SCCs), Rancher
+  and RKE2, k3s, Talos; bare-metal load balancing (MetalLB, kube-vip).
+- **Build systems:** Bazel, Nix and NixOS, Pants, Earthly, Dagger.
+- **Other version control:** Gerrit, Perforce, Mercurial, monorepo
+  tooling.
+- **Windows administration:** PowerShell, Active Directory, Group
+  Policy, IIS, WinRM, Windows containers.
+- **Other clouds and on-premises:** Oracle Cloud, IBM Cloud,
+  DigitalOcean, Hetzner, OpenStack, VMware vSphere, Proxmox; bare-metal
+  provisioning (PXE, MAAS, Tinkerbell, IPMI and Redfish).
+- **Older monitoring:** Nagios, Zabbix, Icinga, Graphite and StatsD,
+  SNMP.
+- **High-performance computing:** Slurm, MPI, parallel filesystems.
+- **Edge:** k3s at the edge, KubeEdge.
+- **Mail and DNS hygiene:** SPF, DKIM, DMARC, DNSSEC.
+- **Mobile delivery:** Fastlane, app signing, store releases.
+- **More chaos tooling:** Litmus, Gremlin, and designing game days.
+
+## Suggested build order
+
+If content is added in the order that helps most people soonest:
+1. a Databases category (PostgreSQL operations, SQL, backup and
+   recovery, Redis);
+2. web servers and proxies (nginx, HAProxy);
+3. identity and secrets (Vault, OIDC, mTLS, cert-manager);
+4. Kubernetes ecosystem (Kustomize, Helm authoring, Gateway API,
+   autoscalers);
+5. Jenkins and GitLab CI;
+6. Python for automation, as Writing Labs;
+7. Kafka operations;
+8. serverless;
+9. then tier B by demand.
+
+---
+
+# Part 18 — Overall: will this make you proficient in DevOps?
 
 ## By the numbers
 
 | Category | Tutorials | Incidents | Extra |
 |---|---|---|---|
-| Kubernetes | 29 | 13 | 9 Writing Labs, 2 Sandboxes (explore, and fixable), 5 Mysteries |
+| Kubernetes | 29 | 15 | 9 Writing Labs, 2 Sandboxes (explore, and fixable), 5 Mysteries |
 | Docker | 11 | 5 | 3 Writing Labs (Dockerfile, Compose), Sandbox, 2 Mysteries |
-| Linux | 14 | 6 | 3 Writing Labs (bash), interactive Sandbox, 4 Mysteries |
-| Terraform | 11 | 6 | 2 Writing Labs (HCL) |
-| Networking | 11 | 7 | |
-| CI/CD | 13 | 6 | 3 Writing Labs (Actions) |
-| Monitoring | 12 | 6 | 2 Writing Labs (alert rules) |
-| MLOps | 12 | 7 | |
-| AWS | 11 | 7 | Sandbox (VPC), 4 Mysteries |
+| Linux | 15 | 6 | 4 Writing Labs (bash), interactive Sandbox, 4 Mysteries |
+| Terraform | 12 | 6 | 5 Writing Labs (HCL, including a module) |
+| Networking | 12 | 7 | |
+| CI/CD | 15 | 6 | 3 Writing Labs (Actions) |
+| Monitoring | 13 | 6 | 2 Writing Labs (alert rules) |
+| MLOps | 14 | 7 | |
+| AWS | 13 | 7 | 1 Writing Lab (IAM policy), Sandbox (VPC), 4 Mysteries |
 | Azure | 10 | 6 | Sandbox, 3 Mysteries |
-| Google Cloud | 10 | 6 | Sandbox, 3 Mysteries |
-| Security | 10 | 6 | 2 hacked-server Mysteries (Linux sandbox) |
-| Server Fleet Ops | 11 | 6 | |
-| SRE | 10 | 6 | |
-| **Total** | **175** | **93** | 28 Writing Labs, 11 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
+| Google Cloud | 10 | 6 | 1 Writing Lab (firewall), Sandbox, 3 Mysteries |
+| Security | 11 | 6 | 2 hacked-server Mysteries (Linux sandbox) |
+| Server Fleet Ops | 11 | 6 | 1 Writing Lab (Ansible) |
+| SRE | 10 | 6 | 1 Writing Lab (postmortem) |
+| Git | 11 | 6 | |
+| System Design | 11 | 6 | 2 Writing Labs (design documents) |
+| **Total** | **208** | **107** | 32 Writing Labs, 12 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -986,19 +1291,19 @@ command beats the alternatives — not just what it does.
 will know the commands, the failure modes, and — most importantly — the
 debugging method** (check the layer before guessing the fix; refused vs
 timeout; verify after every change; revoke before cleaning up; revert
-don't force-push). The 93 incidents are modeled on the kinds of problems
+don't force-push). The 107 incidents are modeled on the kinds of problems
 that genuinely trip up working engineers, and working through them
 builds judgment that command references alone never will.
 
 **It will not, on its own, make you fully proficient**, for four reasons
 that no amount of additional scenario content can fully close:
 
-1. **Authoring vs. operating.** Largely addressed: 28 Writing Labs now
+1. **Authoring vs. operating.** Largely addressed: 32 Writing Labs now
    have you write real Kubernetes manifests, GitHub Actions workflows,
    Prometheus alert rules, Compose files, Dockerfiles, Terraform (AWS
    VPCs and security groups, GCP firewalls), IAM policies, Ansible
-   playbooks, bash scripts, and a blameless postmortem, in your own
-   editor. What remains is **depth and
+   playbooks, bash scripts, a Terraform module, a blameless postmortem,
+   and two system design documents, in your own editor. What remains is **depth and
    realism**: the checkers are structural, not the real tools
    (`docker build`, `terraform validate`, shellcheck), so they confirm
    you wrote the right shape, not that it would actually run. Building
@@ -1019,8 +1324,8 @@ that no amount of additional scenario content can fully close:
    **Partly addressed.** The AWS category (Part 9) and its VPC sandbox
    teach networking layers, IAM, and incident response. Azure (Part 10)
    and Google Cloud (Part 11) cover the same ground on each platform,
-   with a cross-cloud map. Managed databases, serverless, and
-   multi-account networking still need a real account.
+   with a cross-cloud map. Serverless, multi-account networking, and
+   managed databases beyond the RDS basics still need a real account.
 4. **The human side of operations.** Incident command, communication
    during an outage, blameless postmortems, and knowing when to escalate.
    **Partly addressed** by the SRE category (Part 14), which covers
@@ -1040,7 +1345,7 @@ that no amount of additional scenario content can fully close:
    Stats screen shows which categories you've passed, your best score
    in each, and what to do next.
 4. Complete the Writing Labs for each category.
-5. Play all eleven Career Paths to practice switching layers mid-problem —
+5. Play all twelve Career Paths to practice switching layers mid-problem —
    especially "The Worst On-Call Night".
 6. Play every Mystery Incident, then replay it to aim for 100. Scoring
    near the expert's command count means you went straight to the right
@@ -1054,3 +1359,6 @@ that no amount of additional scenario content can fully close:
 9. For certification goals, see Part 1 (CKA); similar exam-specific gap
    passes haven't been done for other certs (e.g. Terraform Associate,
    AWS) yet.
+10. Then widen. Part 17 lists everything this game doesn't teach yet,
+    in three tiers. Start with tier A (databases, proxies, identity and
+    secrets, a scripting language): those come up in almost every role.

@@ -7,8 +7,9 @@ what's built, why it's shaped this way, and what's next.
 
 `kube-sim` — a terminal game for learning real DevOps command-line skills
 by typing them, not memorizing them. Originally Kubernetes-only; now a
-multi-category simulator spanning **Kubernetes, Docker, Linux, Terraform,
-Networking, CI/CD, Monitoring, and MLOps**, plus two modes that cut across
+multi-category simulator spanning 16 categories (**Kubernetes, Docker,
+Linux, Terraform, Networking, CI/CD, Monitoring, MLOps, AWS, Azure, GCP,
+Security, Servers, SRE, Git, and System Design**), plus two modes that cut across
 categories: **YAML Labs** (real manifest-editing practice) and **Career
 Paths** (chaining scenarios across categories into one realistic
 workflow, e.g. provision → containerize → deploy → automate → observe).
@@ -27,10 +28,11 @@ The source-of-truth docs, all already in the repo, are:
   the game always teaches syntax that matches the real tool.
 - **GAPS.md** — an honest, periodically-updated self-assessment of what
   kube-sim does and doesn't prepare someone for. Part 1 is the deepest
-  (Kubernetes / CKA); Parts 2-8 give each other category its own
-  covered / still-missing / readiness-verdict section; the final part is the
-  overall verdict on DevOps proficiency, with totals and a recommended
-  path. Read the relevant part before adding content so new scenarios
+  (Kubernetes / CKA); Parts 2-16 give each other category its own
+  covered / still-missing / readiness-verdict section; Part 17 is the
+  tiered backlog of whole topics not in the game yet (commonly used,
+  role-dependent, niche); the final part is the overall verdict on
+  DevOps proficiency, with totals and a recommended path. Read the relevant part before adding content so new scenarios
   target real gaps. Update it in the same commit whenever content closes
   a gap it names — future sessions should be able to trust it's current.
 
@@ -44,7 +46,11 @@ Don't duplicate content from these files elsewhere — link to them.
   matching, show `fake_output`/`explanation`/hints. This is what makes it
   possible to later add Docker/Terraform/CI content just by dropping in
   JSON with a different `category` — don't add any `if "kubectl"` type
-  branching here.
+  branching here. **Multiple-choice decision steps** need no engine
+  support either: the prompt lists options a) to d) and ends "Type the
+  letter.", and `expected_commands` is `["b"]`. System Design uses them
+  for trade-off questions, with the reasoning in `why`. (This is why the
+  reveal message says "The answer was:", not "The command was:".)
 - **scenario_loader.py** — category-aware. `list_categories()` dynamically
   discovers every subfolder of `scenarios/` that has a `tutorials/` or
   `incidents/` folder inside it (adding a category is a folder, zero code
@@ -391,21 +397,25 @@ unique). The Kubernetes-only `kubernetes.md` command reference is
 identical to (and replaces) the old root `COMMANDS.md`.
 
 Current per-category content depth (tutorials / incidents):
-- kubernetes: 29 / 13 (also has 9 Writing Labs, 2 sandboxes, 5 mysteries) — CKA-gap-filled
+- kubernetes: 29 / 15 (also has 9 Writing Labs, 2 sandboxes, 5 mysteries) — CKA-gap-filled
 - docker: 11 / 5 (+3 Writing Labs: 2 Dockerfile, 1 Compose)
-- linux: 14 / 6 (+3 Writing Labs: bash)
-- terraform: 11 / 6 (+2 Writing Labs: HCL)
-- networking: 11 / 7
-- cicd: 13 / 6 (+3 Writing Labs: GitHub Actions)
-- monitoring: 12 / 6 (+2 Writing Labs: alert rules)
-- mlops: 12 / 7
-- aws: 11 / 7 (+ AWS VPC sandbox, 4 mysteries)
+- linux: 15 / 6 (+4 Writing Labs: bash)
+- terraform: 12 / 6 (+5 Writing Labs: HCL, including a three-file module)
+- networking: 12 / 7
+- cicd: 15 / 6 (+3 Writing Labs: GitHub Actions)
+- monitoring: 13 / 6 (+2 Writing Labs: alert rules)
+- mlops: 14 / 7
+- aws: 13 / 7 (+1 Writing Lab, AWS VPC sandbox, 4 mysteries)
 - azure: 10 / 6 (+ Azure sandbox, 3 mysteries)
 - gcp: 10 / 6 (+ Google Cloud sandbox, 3 mysteries)
-- security: 10 / 6 (+ 2 hacked-server mysteries on the Linux sandbox)
+- security: 11 / 6 (+ 2 hacked-server mysteries on the Linux sandbox)
 - servers: 11 / 6 (fleet ops: Ansible, patching, time, LVM, backups)
 - sre: 10 / 6 (big-tech practices, via public tools)
-- **total: 175 tutorials, 93 incidents, 28 Writing Labs, 11 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
+- git: 11 / 6 (Git in its own right; everyday workflow, revert vs
+  reset, and bisect stay in cicd)
+- systemdesign: 11 / 6 (+2 design-document Writing Labs; mixes real
+  commands with multiple-choice decision steps)
+- **total: 208 tutorials, 107 incidents, 32 Writing Labs, 12 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with
@@ -427,7 +437,7 @@ existing tutorial/incident ids by id — no new scenario authoring, purely
 composition of what already exists. `test_career_path_content.py` enforces
 every step id resolves to a real scenario (self-consistency, same pattern
 as the other content tests) and that a path spans at least 2 categories
-(the whole point is combining categories, not padding one). Currently 11 paths: `path-001`
+(the whole point is combining categories, not padding one). Currently 12 paths: `path-001`
 build→ship (terraform → docker → kubernetes → cicd → monitoring),
 `path-002` incident chain (linux → networking → kubernetes → monitoring),
 `path-003` ML model laptop→production (mlops + docker), `path-004`
@@ -439,8 +449,9 @@ Night" (seven incidents only, across seven categories), and `path-007`
 LLM incident → SLOs, built from the step-5 new-topic content). Then
 `path-008` multi-cloud (aws → gcp → azure), `path-009` security incident
 response (security → aws → sre), `path-010` Patch Tuesday (security →
-servers → sre), and `path-011` SRE at scale (sre → monitoring →
-kubernetes). More paths need
+servers → sre), `path-011` SRE at scale (sre → monitoring →
+kubernetes), and `path-012` whiteboard to production (systemdesign →
+git → terraform → cicd → security). More paths need
 no new scenario content — just new orderings of existing ids.
 
 ## Build status vs. SPEC.md's v1–v6 order
@@ -463,7 +474,7 @@ no new scenario content — just new orderings of existing ids.
 
 **Kubernetes content specifically** (the other categories are summarized
 under "Multi-category expansion" above and detailed in GAPS.md): 29
-tutorials, 10 incidents, 5 YAML labs.
+tutorials, 15 incidents, 9 YAML labs.
 Tutorials/incidents are schema-valid per `tests/test_scenario_content.py`;
 YAML labs per `tests/test_yaml_lab_content.py` (which also proves every
 hand-written `solution` field actually passes its own `validate` spec —
@@ -494,6 +505,10 @@ pods, kubeadm bootstrap/upgrade, certificates, and cluster/pod security.
 - incident-011–013: an RBAC denial after a namespace move, a PDB that
   blocks a drain forever, and a PVC stuck Pending on a StorageClass that
   doesn't exist (all three from GAPS.md Part 1's backlog)
+- incident-014–015: an admission webhook with `failurePolicy: Fail`
+  whose own pods are down (nothing can be created, including its
+  replacement), and a Multi-Attach error on a ReadWriteOnce volume
+  during a rolling update
 
 Several steps deliberately combine multiple flags in one command
 (set-based label selectors, `--sort-by` + events, `autoscale` with three
@@ -643,9 +658,23 @@ See GAPS.md's final 'Overall' part for the reasoning. In priority order:
    handle_command() plus a SANDBOXES entry in game.py.
 5. v6 scenario-scaffolding CLI — more valuable now that content volume
    is large.
-6. Remaining named topic gaps (see each GAPS.md part's "Still missing"):
-   admission controllers, volume mount failures, SELinux, getopts and
-   `while read`, dynamic blocks and writing modules, cloud networking,
-   DB migrations in CD, SLSA provenance, distributed training, and
-   pipeline DAGs.
+6. ✓ **Named topic gaps closed** (the batch after Git and System
+   Design): admission webhooks and Multi-Attach (incident-014/015),
+   SELinux, IPv6, DB migrations in CD, SLSA provenance, OpenTelemetry
+   instrumentation, distributed training, Airflow operations, RDS,
+   Route 53, Kyverno and Falco, writing Terraform modules and dynamic
+   blocks, plus Writing Labs yaml-031 (getopts, `while read`) and
+   yaml-032 (a Terraform module).
+6b. **The topic backlog is GAPS.md Part 17**, in three tiers, with a
+   suggested build order. Next up from it: a `databases` category
+   (PostgreSQL operations, SQL, backup and recovery, Redis; the menu
+   label already exists in `game.CATEGORY_LABELS`), then web servers
+   and proxies, identity and secrets (Vault, OIDC, mTLS), and the
+   Kubernetes ecosystem (Kustomize, Helm authoring, Gateway API).
+   Authoring gaps that would each be one Writing Lab: a Kyverno
+   policy, an Airflow DAG, a burn-rate alert rule file.
+6c. A **Git sandbox** (a real temp repository the game inspects) is the
+   most valuable follow-up for the git category: outputs are
+   pre-written today, so rebase todo lists and conflicts are never
+   edited for real.
 7. Keep GAPS.md current: every content pass should update its part.

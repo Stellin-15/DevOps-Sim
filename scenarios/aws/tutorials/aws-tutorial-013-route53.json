@@ -1,0 +1,46 @@
+{
+  "id": "aws-tutorial-013",
+  "type": "tutorial",
+  "category": "aws",
+  "title": "Route 53: DNS Records, Aliases, and Failover",
+  "difficulty": "intermediate",
+  "tags": ["aws", "route53", "dns", "failover"],
+  "intro": "Route 53 is AWS's DNS service. DNS is where a deployment becomes visible to the world, and where a small mistake becomes a large outage that takes as long as the record's TTL to fix. The domain is example.com, in hosted zone Z0123456789ABCDEFGHIJ.",
+  "steps": [
+    {
+      "prompt": "List the hosted zones in the account.",
+      "expected_commands": ["aws route53 list-hosted-zones"],
+      "fake_output": "{\n  \"HostedZones\": [\n    {\"Id\": \"/hostedzone/Z0123456789ABCDEFGHIJ\", \"Name\": \"example.com.\", \"Config\": {\"PrivateZone\": false}},\n    {\"Id\": \"/hostedzone/Z0987654321ZYXWVUTSRQ\", \"Name\": \"example.com.\", \"Config\": {\"PrivateZone\": true}}\n  ]\n}",
+      "explanation": "Two zones for the same name: one public, one private.",
+      "why": "A private zone answers only inside the VPCs attached to it. Having both is called split-horizon DNS: the same name resolves to internal addresses from inside and public ones from outside. It's also a classic source of 'it resolves on the server but not on my laptop'."
+    },
+    {
+      "prompt": "List the records in the public zone Z0123456789ABCDEFGHIJ.",
+      "expected_commands": ["aws route53 list-resource-record-sets --hosted-zone-id Z0123456789ABCDEFGHIJ"],
+      "fake_output": "Name                 Type   TTL    Value\nexample.com.         A      -      ALIAS dualstack.shop-alb-123456.us-east-1.elb.amazonaws.com.\nwww.example.com.     CNAME  300    example.com.\napi.example.com.     A      86400  198.51.100.10\nexample.com.         MX     3600   10 mail.example.com.",
+      "explanation": "The apex is an alias to the load balancer; api has a fixed IP with a 24-hour TTL.",
+      "why": "An ALIAS record is Route 53's answer to 'a CNAME isn't allowed at the top of a domain': it points example.com at an AWS resource and follows that resource's addresses automatically. The 86400-second TTL on api is a risk: if that IP ever changes, some users keep the old one for a day."
+    },
+    {
+      "prompt": "You're migrating api.example.com to a new address next week. First lower its TTL: apply the change described in lower-ttl.json to zone Z0123456789ABCDEFGHIJ.",
+      "expected_commands": ["aws route53 change-resource-record-sets --hosted-zone-id Z0123456789ABCDEFGHIJ --change-batch file://lower-ttl.json"],
+      "fake_output": "{\n  \"ChangeInfo\": {\n    \"Id\": \"/change/C0445566778899AABBCC\",\n    \"Status\": \"PENDING\",\n    \"SubmittedAt\": \"2026-09-28T10:20:00Z\"\n  }\n}",
+      "explanation": "The change is submitted and propagating to Route 53's servers.",
+      "why": "Lower the TTL (to 60 seconds, say) at least one old-TTL period before a migration, here a full day ahead. Then the cut-over, and a rollback if needed, takes effect in a minute. Lowering it at the moment of the change does nothing for clients that already cached the old answer."
+    },
+    {
+      "prompt": "Check whether change C0445566778899AABBCC has reached all of Route 53's name servers.",
+      "expected_commands": ["aws route53 get-change --id C0445566778899AABBCC", "aws route53 get-change --id /change/C0445566778899AABBCC"],
+      "fake_output": "{\n  \"ChangeInfo\": {\"Id\": \"/change/C0445566778899AABBCC\", \"Status\": \"INSYNC\"}\n}",
+      "explanation": "INSYNC: every Route 53 name server has the change.",
+      "why": "INSYNC means Route 53 is serving the new record. It says nothing about resolvers around the world that cached the old answer: they keep it until the old TTL runs out. That's the difference between 'propagated' and 'everyone sees it'."
+    },
+    {
+      "prompt": "Verify what the authoritative servers answer, bypassing any cache: query api.example.com directly at ns-512.awsdns-00.net.",
+      "expected_commands": ["dig +short api.example.com @ns-512.awsdns-00.net", "dig @ns-512.awsdns-00.net api.example.com +short", "dig api.example.com @ns-512.awsdns-00.net"],
+      "fake_output": "198.51.100.10",
+      "explanation": "The authoritative answer, straight from Route 53.",
+      "why": "Asking the authoritative server tells you what the truth is now; asking your normal resolver tells you what's cached. Comparing the two settles most 'DNS hasn't updated' arguments. For automatic failover between regions, Route 53 health checks with failover or weighted records switch the answer when an endpoint stops responding, again limited by TTL."
+    }
+  ]
+}

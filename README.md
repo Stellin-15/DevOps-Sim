@@ -3,8 +3,8 @@
 A terminal-based game for learning real DevOps command-line skills by
 typing them, not memorizing them. Started as Kubernetes-only; now spans
 **Kubernetes, Docker, Linux, Terraform, Networking, CI/CD, Monitoring,
-MLOps, AWS, Azure, Google Cloud, Security, Server Fleet Ops, and SRE**
-(how large companies run production). Runs entirely locally — no real infrastructure, no network calls,
+MLOps, AWS, Azure, Google Cloud, Security, Server Fleet Ops, SRE**
+(how large companies run production), **Git, and System Design**. Runs entirely locally — no real infrastructure, no network calls,
 no backend. Every command output you see is a pre-written simulated
 string.
 
@@ -33,11 +33,12 @@ string.
   The game writes a real file to `workspace/`, tells you what to build or
   fix, and you edit it in your actual editor (vim, nano, VS Code —
   whatever you'd really use). Typing the apply command reads your real
-  file and checks it field by field. 28 labs across ten formats:
+  file and checks it field by field. 32 labs across eleven formats:
   Kubernetes manifests, GitHub Actions workflows, Prometheus alert rules,
   Docker Compose files, Dockerfiles, Terraform (AWS VPCs, security
-  groups, GCP firewalls), AWS IAM policies, Ansible playbooks, bash
-  scripts, and a blameless postmortem in Markdown.
+  groups, GCP firewalls, a reusable module), AWS IAM policies, Ansible
+  playbooks, bash scripts, a blameless postmortem, and system design
+  documents in Markdown.
   Half are "write from scratch", half are "fix this broken or dangerous
   file". This is the skill a command-matcher can't fake.
 - **Exam Mode** — pick a category and a number of questions; they're drawn
@@ -349,28 +350,30 @@ the engine, loader, sandboxes, yaml_lab, career_path, mystery, or scenario conte
 
 | Category | Tutorials | Incidents | Topics |
 |---|---|---|---|
-| Kubernetes | 29 | 13 | pods → operators, full CKA coverage incl. etcd, kubeadm, certs, security, RBAC/PDB/storage incidents; plus 9 Writing Labs and Sandbox |
+| Kubernetes | 29 | 15 | pods → operators, full CKA coverage incl. etcd, kubeadm, certs, security, RBAC/PDB/storage/admission-webhook/Multi-Attach incidents; plus 9 Writing Labs and 2 Sandboxes |
 | Docker | 11 | 5 | images/layers, volumes, networking, Compose, cleanup, Dockerfiles, runtime limits, container security, BuildKit/buildx multi-platform; plus 3 Writing Labs (2 Dockerfile, Compose) |
-| Linux | 14 | 6 | find, text pipelines, processes/signals, systemd, networking, users/permissions, SSH, cron, disks, performance, strace/lsof, packages/firewalls; plus 3 bash-script Writing Labs |
-| Terraform | 11 | 6 | safe CI workflow, modules/for_each/moved blocks, variables/outputs, state inspection & refactoring, import, workspaces, remote state/locking, providers, debugging; plus 2 HCL Writing Labs |
-| Networking | 11 | 7 | DNS, refused vs timeout, ports/nmap, routing/ARP, firewalls, TLS/openssl, HTTP/curl, in-cluster networking, CIDR, tcpdump, MTU black holes |
-| CI/CD | 13 | 6 | git workflows, revert vs reset, git bisect, tags/releases, GitHub Actions CLI, secrets/OIDC, local CI repro, rolling/blue-green/canary, GitOps (Argo CD), SBOMs/scanning/signing; plus 3 workflow Writing Labs |
-| Monitoring | 12 | 6 | PromQL, golden signals, tracing (OTel/Jaeger), SLOs and burn-rate alerts, Prometheus ops, alerting/Alertmanager, journald, Elasticsearch, Loki, Grafana API; plus 2 alert-rule Writing Labs |
-| MLOps | 12 | 7 | environments, GPUs, MLflow, DVC, serving, KServe/Kubeflow, profiling, model monitoring, model canaries, LLM serving (vLLM), feature stores (Feast) |
-| AWS | 11 | 7 | profiles/identity, EC2, SSM vs SSH, VPC anatomy, security groups vs NACLs, IAM, S3, CloudWatch/CloudTrail, ALB/ASG, EKS/ECR, cost; plus a VPC Sandbox |
+| Linux | 15 | 6 | find, text pipelines, processes/signals, systemd, networking, users/permissions, SSH, cron, disks, performance, strace/lsof, packages/firewalls, SELinux; plus 4 bash-script Writing Labs |
+| Terraform | 12 | 6 | safe CI workflow, modules/for_each/moved blocks, writing modules (validation, dynamic blocks, terraform test), variables/outputs, state inspection & refactoring, import, workspaces, remote state/locking, providers, debugging; plus 5 HCL Writing Labs |
+| Networking | 12 | 7 | DNS, refused vs timeout, ports/nmap, routing/ARP, firewalls, TLS/openssl, HTTP/curl, in-cluster networking, CIDR, tcpdump, MTU black holes, IPv6 |
+| CI/CD | 15 | 6 | git workflows, revert vs reset, git bisect, tags/releases, GitHub Actions CLI, secrets/OIDC, local CI repro, rolling/blue-green/canary, GitOps (Argo CD), SBOMs/scanning/signing, SLSA provenance, zero-downtime database migrations; plus 3 workflow Writing Labs |
+| Monitoring | 13 | 6 | PromQL, golden signals, tracing (OTel/Jaeger), OpenTelemetry instrumentation, SLOs and burn-rate alerts, Prometheus ops, alerting/Alertmanager, journald, Elasticsearch, Loki, Grafana API; plus 2 alert-rule Writing Labs |
+| MLOps | 14 | 7 | environments, GPUs, MLflow, DVC, serving, KServe/Kubeflow, profiling, model monitoring, model canaries, LLM serving (vLLM), feature stores (Feast), distributed training, Airflow pipelines |
+| AWS | 13 | 7 | profiles/identity, EC2, SSM vs SSH, VPC anatomy, security groups vs NACLs, IAM, S3, CloudWatch/CloudTrail, ALB/ASG, EKS/ECR, cost, RDS, Route 53; plus a VPC Sandbox |
 | Azure | 10 | 6 | subscriptions, resource groups/locks, VMs (stop vs deallocate), Run Command/Bastion/az ssh, VNets/NSGs, UDRs/Network Watcher, RBAC/managed identity, Key Vault/storage, Monitor/KQL, AKS |
 | Google Cloud | 10 | 6 | configurations/projects/APIs, Compute Engine filters, IAP SSH/serial console, global VPCs, tag-based firewalls, Cloud NAT, IAM without keys/impersonation, Cloud Storage, logging/quotas, GKE/Workload Identity |
-| Security | 10 | 6 | nmap discovery/TLS checks, Trivy/kube-bench, Lynis/OpenSCAP CIS audits, SSH hardening, fail2ban, auditd, osquery/AIDE, secrets scanning, compromise triage; plus 2 hacked-server mysteries |
+| Security | 11 | 6 | nmap discovery/TLS checks, Trivy/kube-bench, Lynis/OpenSCAP CIS audits, SSH hardening, fail2ban, auditd, osquery/AIDE, secrets scanning, compromise triage, Kubernetes admission policy (Kyverno) and runtime detection (Falco); plus 2 hacked-server mysteries |
 | Server Fleet Ops | 11 | 6 | Ansible (inventories, safe playbook runs, rolling serial updates, Vault/lint), Debian and RHEL patching with rollback, kernels and reboots, SSM Patch Manager, chrony, LVM growth, backups with real restore tests |
 | SRE | 10 | 6 | incident first ten minutes, Argo Rollouts canaries, Istio resilience, capacity planning, load testing (k6/vegeta), chaos engineering, feature flags/kill switches, postmortem timelines, graceful degradation, production readiness reviews |
-| **Total** | **175** | **93** | + 28 Writing Labs |
+| Git | 11 | 6 | objects/refs/HEAD, precise staging, branches, merge conflicts, rebase (autosquash, --onto), the undo matrix and reflog, searching history, remotes and forks, stash/worktrees, config/attributes/hooks, shallow and partial clones, submodules, LFS, signing |
+| System Design | 11 | 6 | estimation, load balancing, caching, indexes and query plans, replication, sharding, queues, consistency and quorums, rate limiting and idempotency, CDNs, a worked URL shortener; real commands plus multiple-choice trade-off questions; plus 2 design-document Writing Labs |
+| **Total** | **208** | **107** | + 32 Writing Labs |
 
 The three clouds use different names for the same ideas (security group
 vs NSG vs firewall rule; CloudTrail vs Activity Log vs Audit Logs). The
 cross-cloud map at the end of GAPS.md Part 11 lines them up side by
 side.
 
-Plus **11 Career Paths** chaining scenarios across categories:
+Plus **12 Career Paths** chaining scenarios across categories:
 - ship a feature end to end;
 - a production incident chain;
 - an ML model from laptop to production;
@@ -381,7 +384,9 @@ Plus **11 Career Paths** chaining scenarios across categories:
 - the same job on AWS, Google Cloud, and Azure;
 - security incident response end to end;
 - Patch Tuesday for a fleet;
-- SRE at scale, from readiness review to postmortem.
+- SRE at scale, from readiness review to postmortem;
+- whiteboard to production (estimate → design → clean history → Terraform
+  module → zero-downtime migration → provenance → admission policy).
 
 Plus **23 Mystery Incidents**, symptom only:
 - Kubernetes: 503s while every pod is Running, a deploy that never
@@ -412,7 +417,9 @@ root cause and how to prevent it.
 
 Honest answer — see **GAPS.md**, which assesses every category
 individually (covered / still missing / readiness verdict) plus an
-overall verdict in its final part. In short: completing everything here makes
+overall verdict in its final part. **GAPS.md Part 17 is the full list of
+topics this game doesn't teach yet**, in three tiers (commonly used,
+role-dependent, and niche), so you can see what's left to learn. In short: completing everything here makes
 you a strong DevOps *operator* — you'll know the commands, the failure
 modes, and the debugging method. To be fully proficient you also need to
 practice *authoring* (Dockerfiles, Terraform, pipeline YAML, scripts),
@@ -434,9 +441,17 @@ sandbox, and AWS mysteries → Azure and Google Cloud categories → Security
 category and hacked-server mysteries → Server Fleet Ops category → SRE
 category → cloud, Ansible, and postmortem Writing Labs, plus four more
 career paths → Stats screen → Azure and Google Cloud sandboxes with
-mysteries → a fixable Kubernetes sandbox with five Kubernetes mysteries.
+mysteries → a fixable Kubernetes sandbox with five Kubernetes mysteries →
+Git category → System Design category (with multiple-choice decision
+steps and design-document labs) → a gap-closing batch (admission
+webhooks, Multi-Attach, SELinux, IPv6, database migrations, SLSA
+provenance, OpenTelemetry instrumentation, distributed training, Airflow,
+RDS, Route 53, Kyverno/Falco, Terraform modules, getopts).
 
 Next, in priority order (details in CLAUDE.md and GAPS.md):
+- The topic backlog in GAPS.md Part 17, starting with a Databases
+  category (PostgreSQL operations, SQL, backup and recovery, Redis),
+  then web servers and proxies, and identity and secrets
 - Exam-specific gap passes for other certifications (CKAD, Terraform
   Associate, AWS/Azure/GCP associate exams)
 - More sandboxes (Kubernetes, Docker, Linux, and AWS exist; Terraform

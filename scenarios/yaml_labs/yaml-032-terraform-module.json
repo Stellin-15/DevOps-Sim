@@ -1,0 +1,80 @@
+{
+  "id": "yaml-032",
+  "type": "yaml_lab",
+  "category": "terraform",
+  "title": "Write a Reusable Terraform Module: Variables, a Dynamic Block, and Outputs",
+  "difficulty": "advanced",
+  "tags": ["terraform", "modules", "dynamic", "validation"],
+  "intro": "terraform-tutorial-012 reviewed a module someone else wrote. Now write it: a security-group module in three files, the standard layout. variables.tf is the module's inputs, main.tf its private implementation, and outputs.tf what callers get back.",
+  "steps": [
+    {
+      "file": "variables.tf",
+      "format": "hcl",
+      "starter_content": "",
+      "prompt": "Write variables.tf with four variables:\n- \"name\": type = string\n- \"vpc_id\": type = string\n- \"environment\": type = string, with a validation block whose condition is\n    contains([\"dev\", \"staging\", \"prod\"], var.environment)\n  and whose error_message is \"environment must be dev, staging, or prod.\"\n- \"ingress_ports\": type = list(number), default = [80, 443]\nGive every variable a description.",
+      "apply_commands": ["terraform validate", "check"],
+      "validate": {
+        "fields": {
+          "variable.name.type": "string",
+          "variable.name.description": "ANY",
+          "variable.vpc_id.type": "string",
+          "variable.vpc_id.description": "ANY",
+          "variable.environment.type": "string",
+          "variable.environment.description": "ANY",
+          "variable.environment.validation.condition": {"contains": ["contains(", "dev", "staging", "prod", "var.environment"]},
+          "variable.environment.validation.error_message": {"contains": "environment must be"},
+          "variable.ingress_ports.type": "list(number)",
+          "variable.ingress_ports.default": [80, 443],
+          "variable.ingress_ports.description": "ANY"
+        }
+      },
+      "hint": "A variable block: variable \"name\" { type = string  description = \"...\" }. The validation block goes inside the variable block: validation { condition = contains([\"dev\", \"staging\", \"prod\"], var.environment)  error_message = \"environment must be dev, staging, or prod.\" }. Types are unquoted: string, list(number).",
+      "solution": "variable \"name\" {\n  type        = string\n  description = \"Name prefix for the security group\"\n}\n\nvariable \"vpc_id\" {\n  type        = string\n  description = \"VPC to create the security group in\"\n}\n\nvariable \"environment\" {\n  type        = string\n  description = \"Deployment environment\"\n\n  validation {\n    condition     = contains([\"dev\", \"staging\", \"prod\"], var.environment)\n    error_message = \"environment must be dev, staging, or prod.\"\n  }\n}\n\nvariable \"ingress_ports\" {\n  type        = list(number)\n  description = \"TCP ports to allow in\"\n  default     = [80, 443]\n}\n",
+      "fake_output": "Success! The configuration is valid.",
+      "explanation": "Four typed, documented inputs. Three are required (no default); one has a sensible default.",
+      "why": "A variable with no default is required: the caller must decide. Give defaults only where one value is right nearly everywhere, and never for anything environment-specific such as a VPC id. Types catch a string passed where a list was expected at plan time. Descriptions are the module's documentation: terraform-docs builds the README from them."
+    },
+    {
+      "file": "main.tf",
+      "format": "hcl",
+      "starter_content": "resource \"aws_security_group\" \"this\" {\n  name   = \"web-sg\"\n  vpc_id = \"vpc-0abc1234\"\n\n  ingress {\n    from_port   = 80\n    to_port     = 80\n    protocol    = \"tcp\"\n    cidr_blocks = [\"10.0.0.0/16\"]\n  }\n\n  ingress {\n    from_port   = 443\n    to_port     = 443\n    protocol    = \"tcp\"\n    cidr_blocks = [\"10.0.0.0/16\"]\n  }\n}\n",
+      "prompt": "main.tf has everything hardcoded. Make it use the module's variables:\n- name = \"${var.name}-${var.environment}-sg\"\n- vpc_id = var.vpc_id\n- Replace the two ingress blocks with ONE dynamic \"ingress\" block:\n    for_each = var.ingress_ports\n    and a content block with from_port = ingress.value, to_port = ingress.value,\n    protocol = \"tcp\", cidr_blocks = [\"10.0.0.0/16\"]\n- Add tags = { Environment = var.environment }",
+      "apply_commands": ["terraform validate", "terraform plan", "check"],
+      "validate": {
+        "fields": {
+          "resource.aws_security_group.this.name": {"contains": ["${var.name}", "${var.environment}"]},
+          "resource.aws_security_group.this.vpc_id": "var.vpc_id",
+          "resource.aws_security_group.this.dynamic.ingress.for_each": "var.ingress_ports",
+          "resource.aws_security_group.this.dynamic.ingress.content.from_port": "ingress.value",
+          "resource.aws_security_group.this.dynamic.ingress.content.to_port": "ingress.value",
+          "resource.aws_security_group.this.dynamic.ingress.content.protocol": "tcp",
+          "resource.aws_security_group.this.tags.Environment": "var.environment"
+        },
+        "absent": ["vpc-0abc1234", "from_port   = 80", "from_port = 80", "from_port   = 443", "from_port = 443"]
+      },
+      "hint": "dynamic \"ingress\" {\n  for_each = var.ingress_ports\n  content {\n    from_port = ingress.value\n    to_port   = ingress.value\n    protocol  = \"tcp\"\n    cidr_blocks = [\"10.0.0.0/16\"]\n  }\n}\nInside content, the current item is <block label>.value, here ingress.value. Delete both literal ingress blocks and the hardcoded vpc id.",
+      "solution": "resource \"aws_security_group\" \"this\" {\n  name   = \"${var.name}-${var.environment}-sg\"\n  vpc_id = var.vpc_id\n\n  dynamic \"ingress\" {\n    for_each = var.ingress_ports\n    content {\n      from_port   = ingress.value\n      to_port     = ingress.value\n      protocol    = \"tcp\"\n      cidr_blocks = [\"10.0.0.0/16\"]\n    }\n  }\n\n  tags = {\n    Environment = var.environment\n  }\n}\n",
+      "fake_output": "Success! The configuration is valid.\n\n  # aws_security_group.this will be created\n      + ingress { from_port = 80,  to_port = 80,  protocol = \"tcp\" }\n      + ingress { from_port = 443, to_port = 443, protocol = \"tcp\" }\n\nPlan: 1 to add, 0 to change, 0 to destroy.",
+      "explanation": "The same two rules, now generated from the caller's list, with nothing environment-specific left in the module.",
+      "why": "A module must contain no value that belongs to one environment: the hardcoded VPC id was the reason this file couldn't be reused. The dynamic block's iterator is named after the block (ingress.value; ingress.key is the index). Naming the single resource 'this' is the convention for a module that manages one main thing. Keep dynamic blocks for nested blocks whose count really varies; they cost readability."
+    },
+    {
+      "file": "outputs.tf",
+      "format": "hcl",
+      "starter_content": "",
+      "prompt": "Write outputs.tf with one output, \"security_group_id\":\n- value = aws_security_group.this.id\n- a description",
+      "apply_commands": ["terraform validate", "check"],
+      "validate": {
+        "fields": {
+          "output.security_group_id.value": "aws_security_group.this.id",
+          "output.security_group_id.description": "ANY"
+        }
+      },
+      "hint": "output \"security_group_id\" {\n  value       = aws_security_group.this.id\n  description = \"...\"\n}",
+      "solution": "output \"security_group_id\" {\n  value       = aws_security_group.this.id\n  description = \"ID of the security group\"\n}\n",
+      "fake_output": "Success! The configuration is valid.",
+      "explanation": "The module now returns the one thing callers need: the id to attach to instances and load balancers.",
+      "why": "Callers use it as module.web_sg.security_group_id. Outputs are the only way out of a module, so they're its public contract: add freely, but renaming or removing one breaks every caller. Mark an output 'sensitive = true' if it carries a secret, so plan output hides it. The caller's side is: module \"web_sg\" { source = \"./modules/web_sg\"  name = \"shop\"  vpc_id = aws_vpc.main.id  environment = \"prod\" }."
+    }
+  ]
+}

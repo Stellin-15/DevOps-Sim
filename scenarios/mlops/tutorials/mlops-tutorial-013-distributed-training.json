@@ -1,0 +1,47 @@
+{
+  "id": "mlops-tutorial-013",
+  "type": "tutorial",
+  "category": "mlops",
+  "title": "Distributed Training Across GPUs",
+  "difficulty": "advanced",
+  "tags": ["mlops", "training", "gpu", "pytorch", "distributed"],
+  "intro": "One GPU isn't enough for the new model, so training has to spread across four on this node, and later across nodes. Distributed training fails in its own ways: one process hangs the rest, GPUs wait on each other, and the effective batch size changes without anyone deciding it should.",
+  "steps": [
+    {
+      "prompt": "Check how the GPUs are connected to each other and to the CPUs.",
+      "expected_commands": ["nvidia-smi topo -m", "nvidia-smi topo --matrix"],
+      "fake_output": "        GPU0  GPU1  GPU2  GPU3  CPU Affinity  NUMA Affinity\nGPU0     X    NV4   SYS   SYS   0-31          0\nGPU1    NV4    X    SYS   SYS   0-31          0\nGPU2    SYS   SYS    X    NV4   32-63         1\nGPU3    SYS   SYS   NV4    X    32-63         1",
+      "explanation": "GPUs 0-1 and 2-3 are each linked by NVLink (NV4); across the pairs they go through the system bus (SYS).",
+      "why": "Training constantly passes gradients between GPUs, so the slowest link sets the pace. NVLink is far faster than going through PCIe and the CPU. Knowing the topology explains why 4 GPUs sometimes give much less than a 4x speed-up."
+    },
+    {
+      "prompt": "Launch train.py on all 4 GPUs of this node with PyTorch's distributed launcher.",
+      "expected_commands": ["torchrun --nproc_per_node=4 train.py", "torchrun --nproc_per_node 4 train.py"],
+      "fake_output": "[rank 0] using cuda:0  [rank 1] using cuda:1  [rank 2] using cuda:2  [rank 3] using cuda:3\nepoch 0 step 100  loss 2.412  1,840 samples/s",
+      "explanation": "Four processes, one per GPU, training one model together.",
+      "why": "torchrun starts one process per GPU and sets up their ranks; the script wraps the model in DistributedDataParallel. Each process sees a different slice of the data per step. If one process crashes, torchrun stops the rest, which is better than three processes waiting for ever on the fourth."
+    },
+    {
+      "prompt": "Each GPU now processes a batch of 64, so the effective batch size is 256. If you leave the learning rate at its single-GPU value, what's the usual consequence and fix?\n  a) Nothing changes\n  b) Training is slower to converge per sample; scale the learning rate up roughly in proportion to the batch size, with a warm-up\n  c) Training crashes with out-of-memory\n  d) The model becomes more accurate automatically\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "1 GPU:  batch 64,  lr 0.001\n4 GPUs: batch 256, lr 0.004 (linear scaling rule), ramped up over the first few hundred steps",
+      "hint": "Four times the batch means four times fewer weight updates per epoch.",
+      "explanation": "Scale the learning rate with the batch size, and warm it up.",
+      "why": "Going distributed silently changes the training recipe: bigger batches mean fewer, smoother updates. The linear scaling rule with a warm-up is the standard starting point. Results that 'got worse after we added GPUs' are very often this, not a bug."
+    },
+    {
+      "prompt": "A multi-node run hangs at start-up with no error. Rerun it with NCCL's debug output turned on to see where the GPUs fail to connect.",
+      "expected_commands": ["NCCL_DEBUG=INFO torchrun --nproc_per_node=4 train.py", "NCCL_DEBUG=INFO torchrun --nproc_per_node 4 train.py"],
+      "fake_output": "NCCL INFO NET/Socket : Using [0]eth0:10.0.5.11<0> [1]docker0:172.17.0.1<0>\nNCCL INFO NET/Socket : selected interface docker0\nNCCL WARN Connect to 172.17.0.1<49152> failed : Connection timed out",
+      "explanation": "NCCL picked the docker0 bridge interface, which other nodes can't reach.",
+      "why": "NCCL is the library GPUs use to talk to each other, and a silent hang at start-up is almost always it choosing the wrong network interface or being blocked by a firewall. NCCL_DEBUG=INFO shows the choice; NCCL_SOCKET_IFNAME=eth0 fixes it. Without the debug flag this looks like a frozen job with nothing to go on."
+    },
+    {
+      "prompt": "On Kubernetes, distributed jobs are run by the Kubeflow Training Operator. Check the status of PyTorch jobs in the namespace ml.",
+      "expected_commands": ["kubectl get pytorchjobs -n ml", "kubectl get pytorchjob -n ml"],
+      "fake_output": "NAME            STATE     AGE\nresnet-ddp-01   Running   14m\nbert-ft-07      Failed    2h",
+      "explanation": "One job is running, and one failed.",
+      "why": "A PyTorchJob creates a master pod and worker pods and wires up their addresses, replacing hand-built launch scripts. For jobs that run for days, the essentials are checkpointing (so a lost node costs minutes, not days) and all-or-nothing scheduling (so a job that needs 8 GPUs doesn't start with 5 and wait)."
+    }
+  ]
+}

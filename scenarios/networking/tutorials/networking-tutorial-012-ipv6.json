@@ -1,0 +1,46 @@
+{
+  "id": "networking-tutorial-012",
+  "type": "tutorial",
+  "category": "networking",
+  "title": "IPv6 and Dual-Stack Basics",
+  "difficulty": "intermediate",
+  "tags": ["ipv6", "dual-stack", "networking", "dns"],
+  "intro": "IPv4 addresses ran out years ago, and cloud providers now charge for each public one. More and more traffic is IPv6, especially from mobile networks. Most servers are 'dual-stack': they have both. The commands are the ones you know, with a -6; the surprises are in the details.",
+  "steps": [
+    {
+      "prompt": "Show this server's IPv6 addresses.",
+      "expected_commands": ["ip -6 addr", "ip -6 addr show", "ip -6 a"],
+      "fake_output": "2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP>\n    inet6 2001:db8:1234:1::a1/64 scope global\n    inet6 fe80::4c2:a1ff:fe3b:9d02/64 scope link",
+      "explanation": "A global address (2001:db8:...) and a link-local one (fe80::...).",
+      "why": "Every IPv6 interface has a link-local address (fe80::/10), valid only on its own network segment and used for neighbour discovery. The global address is the routable one. There's no NAT in normal IPv6: each server has a public address, so the firewall is the only thing between it and the internet."
+    },
+    {
+      "prompt": "Check whether shop.example.com has an IPv6 address in DNS.",
+      "expected_commands": ["dig +short AAAA shop.example.com", "dig AAAA shop.example.com +short", "dig shop.example.com AAAA +short"],
+      "fake_output": "2001:db8:1234:1::a1",
+      "explanation": "An AAAA record: the IPv6 equivalent of an A record.",
+      "why": "A name can have both A and AAAA records. Modern clients try both and use whichever connects first ('happy eyeballs'), usually preferring IPv6. So publishing an AAAA record sends real users to IPv6 straight away, working or not."
+    },
+    {
+      "prompt": "Test the site over IPv6 only.",
+      "expected_commands": ["curl -6 -sI https://shop.example.com", "curl -6 -I https://shop.example.com", "curl -6 https://shop.example.com"],
+      "fake_output": "curl: (28) Failed to connect to shop.example.com port 443 after 5001 ms: Timeout was reached",
+      "explanation": "The site times out over IPv6 (it works over IPv4).",
+      "why": "This is the classic dual-stack failure: an AAAA record exists, but the IPv6 path is broken. IPv6-preferring clients wait for a timeout before falling back, so some users see a slow site and others don't. '-4' and '-6' force each protocol, so you can test both separately."
+    },
+    {
+      "prompt": "See whether the web server is even listening on IPv6: list listening TCP sockets.",
+      "expected_commands": ["ss -tlnp", "sudo ss -tlnp", "ss -tulnp"],
+      "fake_output": "State   Local Address:Port   Process\nLISTEN  0.0.0.0:443          users:((\"nginx\",pid=812))\nLISTEN  0.0.0.0:80           users:((\"nginx\",pid=812))\nLISTEN  [::]:22              users:((\"sshd\",pid=610))",
+      "explanation": "nginx listens on 0.0.0.0 (IPv4) only. sshd listens on [::], which covers IPv6.",
+      "why": "'0.0.0.0:443' means all IPv4 addresses; '[::]:443' means all IPv6 addresses. nginx needs an explicit 'listen [::]:443 ssl;' line. A service bound only to IPv4 on a host that advertises an AAAA record is the most common cause of this failure."
+    },
+    {
+      "prompt": "Check the IPv6 routing table for a default route.",
+      "expected_commands": ["ip -6 route", "ip -6 route show", "ip -6 r"],
+      "fake_output": "2001:db8:1234:1::/64 dev eth0 proto kernel metric 256\nfe80::/64 dev eth0 proto kernel metric 256\ndefault via fe80::1 dev eth0 proto ra metric 1024",
+      "explanation": "A default route through fe80::1, learned from a router advertisement.",
+      "why": "IPv6 hosts usually learn their gateway from router advertisements rather than DHCP, and the gateway is a link-local address. Remember the firewall as well: ip6tables and nftables rules are separate from the IPv4 ones, and cloud security groups need their own ::/0 rules. A host hardened on IPv4 can be wide open, or completely closed, on IPv6."
+    }
+  ]
+}

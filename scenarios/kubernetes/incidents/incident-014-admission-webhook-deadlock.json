@@ -1,0 +1,49 @@
+{
+  "id": "incident-014",
+  "type": "incident",
+  "category": "kubernetes",
+  "title": "Nothing can be created in the cluster (an admission webhook deadlock)",
+  "difficulty": "advanced",
+  "tags": ["admission", "webhooks", "control-plane", "debugging"],
+  "intro": "After a node failure overnight, every 'kubectl apply' and every new pod in the cluster is rejected with an 'Internal error ... failed calling webhook'. Existing pods keep running. A policy engine was installed last month as a validating admission webhook, in the namespace policy-system.",
+  "steps": [
+    {
+      "prompt": "Reproduce it: try to create a pod named test from the nginx image in the default namespace.",
+      "expected_commands": ["kubectl run test --image=nginx", "kubectl run test --image nginx"],
+      "fake_output": "Error from server (InternalError): Internal error occurred: failed calling webhook \"validate.policy.example.com\": failed to call webhook: Post \"https://policy-webhook.policy-system.svc:443/validate?timeout=10s\": no endpoints available for service \"policy-webhook\"",
+      "hint": "kubectl run <name> --image=<image>"
+    },
+    {
+      "prompt": "The API server can't reach the webhook's Service. List the validating webhook configurations.",
+      "expected_commands": ["kubectl get validatingwebhookconfigurations", "kubectl get validatingwebhookconfiguration"],
+      "fake_output": "NAME           WEBHOOKS   AGE\npolicy-check   1          34d",
+      "hint": "kubectl get validatingwebhookconfigurations"
+    },
+    {
+      "prompt": "Look at how policy-check is configured.",
+      "expected_commands": ["kubectl get validatingwebhookconfiguration policy-check -o yaml", "kubectl get validatingwebhookconfigurations policy-check -o yaml", "kubectl describe validatingwebhookconfiguration policy-check"],
+      "fake_output": "webhooks:\n- name: validate.policy.example.com\n  clientConfig:\n    service: {name: policy-webhook, namespace: policy-system, path: /validate}\n  failurePolicy: Fail\n  rules:\n  - operations: [\"CREATE\", \"UPDATE\"]\n    apiGroups: [\"*\"]\n    resources: [\"*\"]\n  namespaceSelector: {}\n  timeoutSeconds: 10",
+      "hint": "Look at failurePolicy, the rules, and namespaceSelector."
+    },
+    {
+      "prompt": "It applies to every resource in every namespace and fails closed. Check the webhook's own pods in policy-system.",
+      "expected_commands": ["kubectl get pods -n policy-system", "kubectl get po -n policy-system"],
+      "fake_output": "No resources found in policy-system namespace.",
+      "hint": "kubectl get pods -n policy-system"
+    },
+    {
+      "prompt": "Its pods died with the node, and replacements can't be created, because creating a pod requires the webhook. Break the deadlock: patch policy-check so the webhook's failurePolicy is Ignore.",
+      "expected_commands": ["kubectl patch validatingwebhookconfiguration policy-check --type=json -p='[{\"op\":\"replace\",\"path\":\"/webhooks/0/failurePolicy\",\"value\":\"Ignore\"}]'", "kubectl patch validatingwebhookconfiguration policy-check --type=json -p '[{\"op\":\"replace\",\"path\":\"/webhooks/0/failurePolicy\",\"value\":\"Ignore\"}]'"],
+      "fake_output": "validatingwebhookconfiguration.admissionregistration.k8s.io/policy-check patched",
+      "hint": "A JSON patch replacing /webhooks/0/failurePolicy with \"Ignore\"."
+    },
+    {
+      "prompt": "Now the webhook's pods can be scheduled again. Wait for its deployment policy-webhook in policy-system to roll out.",
+      "expected_commands": ["kubectl rollout status deployment/policy-webhook -n policy-system", "kubectl rollout status deploy/policy-webhook -n policy-system"],
+      "fake_output": "Waiting for deployment \"policy-webhook\" rollout to finish: 0 of 2 updated replicas are available...\ndeployment \"policy-webhook\" successfully rolled out",
+      "hint": "kubectl rollout status deployment/<name> -n <ns>"
+    }
+  ],
+  "resolution": "A validating admission webhook is called by the API server before objects are stored. With failurePolicy: Fail, an unreachable webhook means every matching request is rejected. This one matched every resource in every namespace, including its own, so when its pods were lost, the replacement pods needed the webhook's approval to exist: a deadlock that takes out the whole cluster's ability to change anything. Setting failurePolicy to Ignore temporarily let the pods be created; set it back to Fail once the webhook is healthy, if the policy is security-critical. The durable fixes are in the webhook's configuration: exclude its own namespace and kube-system with a namespaceSelector, run several replicas spread across nodes with a PodDisruptionBudget, and keep the timeout short. The same reasoning applies to mutating webhooks (service meshes, secret injectors). When 'nothing can be created' and the error mentions a webhook, look at the webhook configurations first.",
+  "real_commands_used": ["kubectl run", "kubectl get validatingwebhookconfigurations", "kubectl get validatingwebhookconfiguration -o yaml", "kubectl get pods -n", "kubectl patch --type=json", "kubectl rollout status"]
+}

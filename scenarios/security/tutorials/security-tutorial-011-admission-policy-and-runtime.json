@@ -1,0 +1,46 @@
+{
+  "id": "security-tutorial-011",
+  "type": "tutorial",
+  "category": "security",
+  "title": "Kubernetes Guard Rails: Admission Policies (Kyverno) and Runtime Detection (Falco)",
+  "difficulty": "advanced",
+  "tags": ["security", "kubernetes", "kyverno", "falco", "admission"],
+  "intro": "Scanning finds problems; policy prevents them. An admission controller checks every object before the cluster accepts it, so 'no privileged pods' or 'only signed images' becomes a rule nobody can forget. Runtime detection watches what containers actually do once they're running. Kyverno and Falco are the common open-source choices.",
+  "steps": [
+    {
+      "prompt": "List the cluster-wide Kyverno policies and whether they block or only report.",
+      "expected_commands": ["kubectl get clusterpolicy", "kubectl get clusterpolicies", "kubectl get cpol"],
+      "fake_output": "NAME                        ADMISSION   BACKGROUND   VALIDATE ACTION   READY\ndisallow-privileged         true        true         Enforce           True\nrequire-signed-images       true        true         Enforce           True\nrequire-resource-limits     true        true         Audit             True",
+      "explanation": "Two policies block violations; one only reports them.",
+      "why": "Enforce rejects the request; Audit lets it through and records a violation. New policies start in Audit, so you see what they'd break before they break it. A policy engine is itself an admission webhook, with the failure mode shown in incident-014: exclude its own namespace and run it with several replicas."
+    },
+    {
+      "prompt": "Test the privileged-pod policy: try to run a privileged pod named hack from the alpine image.",
+      "expected_commands": ["kubectl run hack --image=alpine --privileged", "kubectl run hack --image alpine --privileged", "kubectl run hack --privileged --image=alpine"],
+      "fake_output": "Error from server: admission webhook \"validate.kyverno.svc-fail\" denied the request:\n\nresource Pod/default/hack was blocked due to the following policies\n\ndisallow-privileged:\n  privileged-containers: 'validation error: Privileged mode is disallowed. rule privileged-containers failed at path /spec/containers/0/securityContext/privileged/'",
+      "explanation": "The API server refused to create the pod, and said which policy and which field.",
+      "why": "A privileged container has nearly full access to its node, so it's the usual route from 'compromised pod' to 'compromised cluster'. Blocking it at admission means a mistake in a manifest, or an attacker with deploy rights, can't create one. Kubernetes' built-in Pod Security Admission covers these baseline rules too (tutorial-027); Kyverno adds custom ones."
+    },
+    {
+      "prompt": "Test a manifest against the policies before it reaches the cluster, in CI: apply the policy file policies/ to deployment.yaml with the Kyverno CLI.",
+      "expected_commands": ["kyverno apply policies/ --resource deployment.yaml", "kyverno apply policies/ -r deployment.yaml"],
+      "fake_output": "Applying 3 policy rule(s) to 1 resource(s)...\n\npolicy require-resource-limits -> resource default/Deployment/api failed:\n  validate-limits: validation error: CPU and memory limits are required.\n\npass: 2, fail: 1, warn: 0, error: 0, skip: 0",
+      "explanation": "The manifest would violate the resource-limits policy.",
+      "why": "Running policies in CI gives developers the failure in their pull request, not at deploy time. The same policy files serve both places, so the rules can't drift apart."
+    },
+    {
+      "prompt": "See what the audit-mode policy has caught so far across the cluster.",
+      "expected_commands": ["kubectl get policyreport -A", "kubectl get policyreports -A", "kubectl get polr -A"],
+      "fake_output": "NAMESPACE   NAME                        PASS   FAIL   WARN   ERROR   SKIP\nshop        cpol-require-resource-limits   14     3      0      0       0\nlegacy      cpol-require-resource-limits   2      9      0      0       0",
+      "explanation": "3 violations in shop, 9 in legacy.",
+      "why": "Policy reports are the to-do list before switching a policy to Enforce: fix or exempt what fails, then turn enforcement on. Jumping straight to Enforce blocks the next deploy of every non-compliant workload, usually during an incident."
+    },
+    {
+      "prompt": "Admission checks what is deployed; runtime detection watches behaviour. Look at Falco's recent alerts.",
+      "expected_commands": ["kubectl logs -n falco -l app.kubernetes.io/name=falco --tail=20", "kubectl logs -n falco -l app.kubernetes.io/name=falco", "kubectl logs -n falco daemonset/falco --tail=20"],
+      "fake_output": "10:41:02 Notice A shell was spawned in a container with an attached terminal (user=root container=checkout-5d7c8b6a4-m8n2q shell=bash parent=runc)\n10:41:19 Warning Sensitive file opened for reading by non-trusted program (file=/etc/shadow command=cat /etc/shadow container=checkout-5d7c8b6a4-m8n2q)\n10:42:07 Error Outbound connection to a known crypto-mining pool (connection=10.1.4.21:51876->45.9.148.3:3333 container=checkout-5d7c8b6a4-m8n2q)",
+      "explanation": "Someone opened a shell in a production container, read /etc/shadow, and connected to a mining pool.",
+      "why": "Falco watches system calls and matches them against rules, so it sees what a signed, scanned, policy-compliant image does after it's been compromised. Those three alerts in sequence are the attack in security-incident-004 and mystery-linux-005, caught as it happens. Send the alerts somewhere a person will see them; a detection nobody reads isn't one."
+    }
+  ]
+}

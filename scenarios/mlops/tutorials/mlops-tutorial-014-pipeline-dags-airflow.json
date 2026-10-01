@@ -1,0 +1,46 @@
+{
+  "id": "mlops-tutorial-014",
+  "type": "tutorial",
+  "category": "mlops",
+  "title": "Pipelines as DAGs: Operating Airflow",
+  "difficulty": "intermediate",
+  "tags": ["mlops", "airflow", "pipelines", "orchestration"],
+  "intro": "A training pipeline is a chain of steps: extract data, validate it, build features, train, evaluate, register. Orchestrators such as Airflow, Kubeflow Pipelines, and Argo Workflows describe that chain as a DAG (a graph of tasks with dependencies), then schedule, retry, and record it. Airflow is the most widely used. The DAG here is retrain_churn_model.",
+  "steps": [
+    {
+      "prompt": "List the DAGs Airflow has loaded.",
+      "expected_commands": ["airflow dags list"],
+      "fake_output": "dag_id               | filepath              | owner   | paused\n=====================+=======================+=========+=======\nretrain_churn_model  | retrain_churn.py      | ml-team | False\nnightly_features     | nightly_features.py   | ml-team | False",
+      "explanation": "Two DAGs, both active.",
+      "why": "A DAG file is Python that Airflow parses on a loop. A new DAG that doesn't appear here was either not picked up or failed to parse, which the next step checks."
+    },
+    {
+      "prompt": "A colleague's new DAG isn't in the list. Check for DAG files that failed to import.",
+      "expected_commands": ["airflow dags list-import-errors"],
+      "fake_output": "filepath                 | error\n=========================+==================================================================\n/dags/score_customers.py | ModuleNotFoundError: No module named 'feast'",
+      "explanation": "score_customers.py imports a package that isn't installed on the scheduler.",
+      "why": "Import errors are silent in the DAG list: the DAG simply isn't there. Because the scheduler re-parses DAG files constantly, heavy work at the top of a DAG file (database calls, loading a model) also slows every other DAG. Keep the top level cheap."
+    },
+    {
+      "prompt": "Run one task on its own, without recording the run or its dependencies: the train task of retrain_churn_model for the logical date 2026-09-27.",
+      "expected_commands": ["airflow tasks test retrain_churn_model train 2026-09-27"],
+      "fake_output": "[2026-09-28 10:02:11] INFO - loading features for 2026-09-27\n[2026-09-28 10:04:40] INFO - trained model auc=0.871\n[2026-09-28 10:04:41] INFO - Marking task as SUCCESS",
+      "explanation": "The task ran for that date and passed, with nothing written to Airflow's database.",
+      "why": "'tasks test' is the debugging tool: one task, in the foreground, with logs on your terminal. The date matters: every run has a logical date, the period of data it covers, and a task should use it rather than 'now'. That's what makes a run repeatable."
+    },
+    {
+      "prompt": "The feature data for 20 to 26 September was corrected upstream. Re-run the DAG for those dates.",
+      "expected_commands": ["airflow dags backfill -s 2026-09-20 -e 2026-09-26 retrain_churn_model", "airflow dags backfill --start-date 2026-09-20 --end-date 2026-09-26 retrain_churn_model"],
+      "fake_output": "[backfill progress] | finished run 7 of 7 | tasks waiting: 0 | succeeded: 42 | failed: 0",
+      "explanation": "Seven daily runs were re-executed, each for its own date.",
+      "why": "Backfill only works if tasks are idempotent: running the 23rd again must overwrite the 23rd's output, not append to it. Write to a location or partition named by the logical date. Tasks that use 'today' or append blindly are the main reason pipelines can't be safely re-run."
+    },
+    {
+      "prompt": "Trigger a run now, outside the schedule.",
+      "expected_commands": ["airflow dags trigger retrain_churn_model"],
+      "fake_output": "Created <DagRun retrain_churn_model @ 2026-09-28T10:10:00+00:00: manual__2026-09-28T10:10:00+00:00, state:queued>",
+      "explanation": "A manual run is queued.",
+      "why": "A pipeline also needs a gate before a new model replaces the old one: compare the evaluation metric with the current production model and stop if it's worse (mlops-tutorial-010 covers the rollout). 'The pipeline succeeded' only means the code ran, not that the model is better."
+    }
+  ]
+}

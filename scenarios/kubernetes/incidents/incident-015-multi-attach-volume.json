@@ -1,0 +1,49 @@
+{
+  "id": "incident-015",
+  "type": "incident",
+  "category": "kubernetes",
+  "title": "A routine image update leaves the pod stuck in ContainerCreating (Multi-Attach)",
+  "difficulty": "intermediate",
+  "tags": ["storage", "volumes", "deployment-strategy", "debugging"],
+  "intro": "The reports service runs as a single-replica Deployment with a persistent volume for its cache. A routine image update an hour ago left the new pod, reports-7d8c9f6b5-k2m4x, in ContainerCreating. The old pod is still Running, so the service works, but the rollout never completes. Namespace: shop.",
+  "steps": [
+    {
+      "prompt": "Describe the stuck pod reports-7d8c9f6b5-k2m4x in shop and read its events.",
+      "expected_commands": ["kubectl describe pod reports-7d8c9f6b5-k2m4x -n shop", "kubectl describe po reports-7d8c9f6b5-k2m4x -n shop"],
+      "fake_output": "Node:  node-2\nEvents:\n  Warning  FailedAttachVolume  attachdetach-controller  Multi-Attach error for volume \"pvc-3f1c2a9e-7b6d-4e5f-8a9b-0c1d2e3f4a5b\" Volume is already used by pod(s) reports-5c6d7e8f9-h7j2q\n  Warning  FailedMount  kubelet  Unable to attach or mount volumes: unmounted volumes=[cache], timed out waiting for the condition",
+      "hint": "The Events at the bottom explain why a pod is stuck in ContainerCreating."
+    },
+    {
+      "prompt": "The volume is still attached for the old pod. See which node each reports pod is on.",
+      "expected_commands": ["kubectl get pods -n shop -l app=reports -o wide", "kubectl get po -n shop -l app=reports -o wide"],
+      "fake_output": "NAME                       READY   STATUS              NODE\nreports-5c6d7e8f9-h7j2q    1/1     Running             node-1\nreports-7d8c9f6b5-k2m4x    0/1     ContainerCreating   node-2",
+      "hint": "-o wide shows the node."
+    },
+    {
+      "prompt": "Old pod on node-1, new pod on node-2. Check the access mode of the claim reports-cache in shop.",
+      "expected_commands": ["kubectl get pvc reports-cache -n shop", "kubectl get pvc reports-cache -n shop -o jsonpath='{.spec.accessModes}'", "kubectl get pvc -n shop"],
+      "fake_output": "NAME            STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS\nreports-cache   Bound    pvc-3f1c2a9e-7b6d-4e5f-8a9b-0c1d2e3f4a5b   50Gi       RWO            gp3-ssd",
+      "hint": "Look at ACCESS MODES."
+    },
+    {
+      "prompt": "RWO (ReadWriteOnce): the volume can be attached to one node at a time. Check the deployment's update strategy.",
+      "expected_commands": ["kubectl get deployment reports -n shop -o jsonpath='{.spec.strategy}'", "kubectl get deploy reports -n shop -o jsonpath='{.spec.strategy}'", "kubectl describe deployment reports -n shop"],
+      "fake_output": "{\"rollingUpdate\":{\"maxSurge\":\"25%\",\"maxUnavailable\":\"25%\"},\"type\":\"RollingUpdate\"}",
+      "hint": ".spec.strategy shows RollingUpdate or Recreate."
+    },
+    {
+      "prompt": "A rolling update starts the new pod before stopping the old one, but both can't hold the volume. Switch the reports deployment to the Recreate strategy.",
+      "expected_commands": ["kubectl patch deployment reports -n shop -p '{\"spec\":{\"strategy\":{\"type\":\"Recreate\",\"rollingUpdate\":null}}}'", "kubectl patch deploy reports -n shop -p '{\"spec\":{\"strategy\":{\"type\":\"Recreate\",\"rollingUpdate\":null}}}'"],
+      "fake_output": "deployment.apps/reports patched",
+      "hint": "Patch .spec.strategy to {\"type\":\"Recreate\",\"rollingUpdate\":null}."
+    },
+    {
+      "prompt": "Watch the rollout finish.",
+      "expected_commands": ["kubectl rollout status deployment/reports -n shop", "kubectl rollout status deploy/reports -n shop"],
+      "fake_output": "deployment \"reports\" successfully rolled out",
+      "hint": "kubectl rollout status deployment/<name> -n <ns>"
+    }
+  ],
+  "resolution": "A ReadWriteOnce volume attaches to a single node. The Deployment's default RollingUpdate strategy brings the new pod up first and only then removes the old one, so for a moment both want the volume. When the scheduler put the new pod on a different node, the attach failed with a Multi-Attach error, the new pod never became Ready, and the rollout waited for ever, with the old pod kept alive precisely because its replacement wasn't ready. Recreate stops the old pod first, releasing the volume, at the cost of a short gap in service. For a single-replica workload with its own disk that's the honest trade-off. The better structural answer is a StatefulSet, which is built for pods with their own storage and replaces them in order. If several pods really need the same files, you need storage that supports ReadWriteMany (NFS, EFS, CephFS). The same Multi-Attach error also appears when a node dies without detaching its volumes; there the fix is waiting for (or forcing) the detach, shown by 'kubectl get volumeattachment'.",
+  "real_commands_used": ["kubectl describe pod", "kubectl get pods -o wide", "kubectl get pvc", "kubectl get deployment -o jsonpath strategy", "kubectl patch deployment (strategy Recreate)", "kubectl rollout status"]
+}

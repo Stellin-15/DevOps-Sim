@@ -1,0 +1,53 @@
+{
+  "id": "linux-tutorial-015",
+  "type": "tutorial",
+  "category": "linux",
+  "title": "SELinux: When Permissions Look Right and It Still Says Denied",
+  "difficulty": "advanced",
+  "tags": ["selinux", "security", "rhel", "troubleshooting"],
+  "intro": "On RHEL, Rocky, and Fedora, a second permission system sits on top of the normal one. SELinux labels every file, process, and port, and a policy says which labels may touch which. The symptom is always the same: file permissions look right, the service runs as the right user, and you still get 'Permission denied'. nginx here can't serve files from /srv/www.",
+  "steps": [
+    {
+      "prompt": "Check whether SELinux is enforcing.",
+      "expected_commands": ["getenforce", "sestatus"],
+      "fake_output": "Enforcing",
+      "explanation": "SELinux is on and blocking violations.",
+      "why": "Three modes: Enforcing (blocks and logs), Permissive (logs only), Disabled. The widespread 'fix' of running 'setenforce 0' or disabling SELinux removes a layer that contains a compromised service, such as a web server that's been broken into and is trying to read /etc/shadow. Learn to fix the label instead; it's usually one command."
+    },
+    {
+      "prompt": "Find what SELinux denied recently.",
+      "expected_commands": ["sudo ausearch -m AVC -ts recent", "ausearch -m AVC -ts recent", "sudo ausearch -m avc -ts recent"],
+      "fake_output": "type=AVC msg=audit(1790000000.412:881): avc:  denied  { read } for  pid=2211 comm=\"nginx\" name=\"index.html\" dev=\"sda1\" ino=41922 scontext=system_u:system_r:httpd_t:s0 tcontext=unconfined_u:object_r:default_t:s0 tclass=file permissive=0",
+      "explanation": "nginx (type httpd_t) was denied reading a file labelled default_t.",
+      "why": "An AVC denial names everything: the process's type (scontext httpd_t), the target's type (tcontext default_t), and the operation. Here the rule is simple: the web server may read files labelled as web content, and default_t isn't. Pipe the output into 'audit2why' for a plain-language explanation."
+    },
+    {
+      "prompt": "Look at the SELinux labels on the files in /srv/www.",
+      "expected_commands": ["ls -Z /srv/www", "ls -lZ /srv/www", "ls -Zl /srv/www"],
+      "fake_output": "unconfined_u:object_r:default_t:s0 index.html\nunconfined_u:object_r:default_t:s0 style.css",
+      "explanation": "The files carry default_t, the label for 'nothing in particular'.",
+      "why": "Files get their label from the directory they're created in. /var/www is labelled for web content by default; /srv/www isn't, so anything created there gets default_t. 'ls -Z' and 'ps -Z' show the labels of files and processes."
+    },
+    {
+      "prompt": "Tell the policy that /srv/www and everything under it is web content (type httpd_sys_content_t).",
+      "expected_commands": ["sudo semanage fcontext -a -t httpd_sys_content_t \"/srv/www(/.*)?\"", "sudo semanage fcontext -a -t httpd_sys_content_t '/srv/www(/.*)?'", "semanage fcontext -a -t httpd_sys_content_t \"/srv/www(/.*)?\""],
+      "fake_output": "(no output: the rule is saved in the policy)",
+      "explanation": "A persistent rule: paths matching /srv/www(/.*)? should be httpd_sys_content_t.",
+      "why": "'semanage fcontext' records the rule; it doesn't relabel anything yet. That's what separates it from 'chcon', which changes labels directly but is undone the next time the filesystem is relabelled. Always use semanage for a fix that should last."
+    },
+    {
+      "prompt": "Apply the rule to the existing files, recursively, showing what changes.",
+      "expected_commands": ["sudo restorecon -Rv /srv/www", "restorecon -Rv /srv/www", "sudo restorecon -R -v /srv/www"],
+      "fake_output": "Relabeled /srv/www from unconfined_u:object_r:default_t:s0 to unconfined_u:object_r:httpd_sys_content_t:s0\nRelabeled /srv/www/index.html from unconfined_u:object_r:default_t:s0 to unconfined_u:object_r:httpd_sys_content_t:s0",
+      "explanation": "The files now carry the web-content label, and nginx can read them.",
+      "why": "restorecon sets labels to whatever the policy says they should be. It's also the fix for files that were moved with 'mv' (which keeps the old label) instead of copied. 'restorecon -Rv' is the single most useful SELinux command."
+    },
+    {
+      "prompt": "nginx also needs to proxy to a backend over the network, which SELinux blocks by default. Allow it permanently.",
+      "expected_commands": ["sudo setsebool -P httpd_can_network_connect 1", "setsebool -P httpd_can_network_connect 1", "sudo setsebool -P httpd_can_network_connect on"],
+      "fake_output": "(no output: the boolean is set and saved)",
+      "explanation": "The web server may now open outbound network connections.",
+      "why": "Booleans are pre-built switches for common needs ('getsebool -a | grep httpd' lists them). -P makes the change survive a reboot. The third common case is a service on a non-standard port: 'semanage port -a -t http_port_t -p tcp 8081'. Files, booleans, and ports cover nearly every SELinux problem you'll meet."
+    }
+  ]
+}

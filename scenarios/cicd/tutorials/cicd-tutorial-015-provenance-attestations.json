@@ -1,0 +1,46 @@
+{
+  "id": "cicd-tutorial-015",
+  "type": "tutorial",
+  "category": "cicd",
+  "title": "Build Provenance and Attestations (SLSA)",
+  "difficulty": "advanced",
+  "tags": ["cicd", "supply-chain", "slsa", "attestation"],
+  "intro": "A signature (cicd-tutorial-012) proves who signed an image. Provenance answers a harder question: how was it built? From which commit, by which workflow, on which builder. SLSA (Supply-chain Levels for Software Artifacts) is the framework for it, and an attestation is a signed statement about an artifact. The image here is registry.example.com/api@sha256:9f86d081884c7d65.",
+  "steps": [
+    {
+      "prompt": "Attach a signed SLSA provenance statement (in provenance.json) to the image, using the key cosign.key.",
+      "expected_commands": ["cosign attest --predicate provenance.json --type slsaprovenance --key cosign.key registry.example.com/api@sha256:9f86d081884c7d65", "cosign attest --key cosign.key --type slsaprovenance --predicate provenance.json registry.example.com/api@sha256:9f86d081884c7d65"],
+      "fake_output": "Using payload from: provenance.json\nPushing attestation to: registry.example.com/api",
+      "explanation": "The provenance is signed and stored next to the image in the registry.",
+      "why": "An attestation binds a claim ('built from commit a1f9c3e by workflow release.yml') to an exact digest. In practice the build platform generates and signs the provenance itself, because provenance written by the same script that could have been tampered with proves little. That separation is what the higher SLSA levels require."
+    },
+    {
+      "prompt": "Before deploying, verify that the image has valid SLSA provenance signed by your key (cosign.pub).",
+      "expected_commands": ["cosign verify-attestation --type slsaprovenance --key cosign.pub registry.example.com/api@sha256:9f86d081884c7d65", "cosign verify-attestation --key cosign.pub --type slsaprovenance registry.example.com/api@sha256:9f86d081884c7d65"],
+      "fake_output": "Verification for registry.example.com/api@sha256:9f86d081884c7d65 --\nThe following checks were performed on each of these signatures:\n  - The cosign claims were validated\n  - The signatures were verified against the specified public key\n{\"payloadType\":\"application/vnd.in-toto+json\",\"payload\":\"eyJfdHlwZSI6...\"}",
+      "explanation": "The attestation is genuine and belongs to this exact image.",
+      "why": "Verification tells you the statement is authentic; you still have to check what it says. A policy then asserts facts from the payload: built from the main branch, by the release workflow, in your organisation's repository."
+    },
+    {
+      "prompt": "Read the provenance: decode the attestation payload and show which repository and commit the image was built from.",
+      "expected_commands": ["cosign verify-attestation --type slsaprovenance --key cosign.pub registry.example.com/api@sha256:9f86d081884c7d65 | jq -r .payload | base64 -d | jq '.predicate.buildDefinition.externalParameters'", "cosign verify-attestation --type slsaprovenance --key cosign.pub registry.example.com/api@sha256:9f86d081884c7d65 | jq -r .payload | base64 -d | jq ."],
+      "fake_output": "{\n  \"workflow\": {\n    \"ref\": \"refs/heads/main\",\n    \"repository\": \"https://github.com/acme/api\",\n    \"path\": \".github/workflows/release.yml\"\n  }\n}",
+      "explanation": "Built from acme/api's main branch by release.yml.",
+      "why": "This is the question provenance exists to answer. An image built from a developer's laptop, or from a fork, or from an unreviewed branch, can be signed correctly and still shouldn't reach production. Provenance makes 'only artifacts built by our release pipeline from main' a checkable rule."
+    },
+    {
+      "prompt": "GitHub can generate and verify attestations for you. Verify a downloaded release file, api-linux-amd64.tar.gz, against the repository acme/api.",
+      "expected_commands": ["gh attestation verify api-linux-amd64.tar.gz --repo acme/api", "gh attestation verify api-linux-amd64.tar.gz -R acme/api"],
+      "fake_output": "Loaded digest sha256:4f5a6b7c8d9e... for file://api-linux-amd64.tar.gz\nLoaded 1 attestation from GitHub API\n✓ Verification succeeded!\n\n  - Build repo: acme/api\n  - Build workflow: .github/workflows/release.yml@refs/tags/v2.4.0\n  - Signer workflow: .github/workflows/release.yml@refs/tags/v2.4.0",
+      "explanation": "The file was built by acme/api's release workflow at tag v2.4.0.",
+      "why": "GitHub's artifact attestations use keyless signing: the workflow's own identity signs, so there's no key to store or leak. Adding the 'attest-build-provenance' action to a release workflow is the cheapest way to reach SLSA build level 2."
+    },
+    {
+      "prompt": "Verification only matters if the cluster enforces it. Check that an admission policy requiring attestations exists (the cluster uses Kyverno).",
+      "expected_commands": ["kubectl get clusterpolicy", "kubectl get clusterpolicies", "kubectl get cpol"],
+      "fake_output": "NAME                      ADMISSION   BACKGROUND   VALIDATE ACTION   READY\nrequire-signed-images     true        true         Enforce           True\nrequire-slsa-provenance   true        true         Audit             True",
+      "explanation": "Signatures are enforced. Provenance is only audited (logged, not blocked) for now.",
+      "why": "Roll policies out in Audit mode first, to see what would be rejected, then switch to Enforce. security-tutorial-011 covers the admission side. Without enforcement, signing and provenance are paperwork: an attacker who can push to the registry can still get an image to run."
+    }
+  ]
+}

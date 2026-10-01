@@ -1,0 +1,31 @@
+{
+  "id": "yaml-031",
+  "type": "yaml_lab",
+  "category": "linux",
+  "title": "Write a Script with Options: getopts and while read",
+  "difficulty": "advanced",
+  "tags": ["bash", "scripting", "getopts", "while-read"],
+  "intro": "The earlier bash labs hardcoded their inputs. A script other people run needs options (-f, -t, -v), a usage message, and sensible errors for bad input. It also needs to read a file line by line correctly, which most hand-written scripts get wrong. Write a script that checks every host listed in a file.",
+  "steps": [
+    {
+      "file": "check-hosts.sh",
+      "format": "bash",
+      "starter_content": "#!/usr/bin/env bash\n# Check every host listed in a file.\n# Usage: check-hosts.sh -f hosts_file [-t timeout] [-v]\n",
+      "prompt": "Write check-hosts.sh:\n(1) 'set -euo pipefail'.\n(2) A function usage() that prints 'Usage: $0 -f hosts_file [-t timeout] [-v]' to stderr and runs 'exit 2'.\n(3) Defaults: file=\"\", timeout=5, verbose=0.\n(4) Parse options with: while getopts \":f:t:vh\" opt; do case \"$opt\" in ... esac; done\n    f) sets file=\"$OPTARG\"; t) sets timeout=\"$OPTARG\"; v) sets verbose=1; h) calls usage;\n    \\?) prints 'Unknown option: -$OPTARG' to stderr and calls usage;\n    :) prints 'Option -$OPTARG needs a value' to stderr and calls usage.\n(5) After the loop: shift $((OPTIND - 1))\n(6) If file is empty, call usage: [[ -n \"$file\" ]] || usage\n(7) Read the file line by line with: while IFS= read -r host; do ... done < \"$file\"\n    Skip blank lines and lines starting with #. For each host run\n    ping -c 1 -W \"$timeout\" \"$host\" (output to /dev/null). If it fails, print 'DOWN <host>' to stderr.\n    If it succeeds and verbose is 1, print 'UP <host>'.",
+      "apply_commands": ["bash -n check-hosts.sh", "./check-hosts.sh -f hosts.txt", "shellcheck check-hosts.sh", "check"],
+      "validate": {
+        "fields": {
+          "shebang": {"contains": "bash"},
+          "text": {"contains": ["set -euo pipefail", "usage()", "exit 2", "while getopts \":f:t:vh\" opt", "case \"$opt\" in", "file=\"$OPTARG\"", "timeout=\"$OPTARG\"", "verbose=1", "\\?)", ":)", "esac", "shift $((OPTIND - 1))", "[[ -n \"$file\" ]] || usage", "while IFS= read -r host", "done < \"$file\"", "ping -c 1 -W \"$timeout\" \"$host\"", ">&2"]}
+        },
+        "order": ["set -euo pipefail", "usage()", "while getopts", "case \"$opt\" in", "esac", "shift $((OPTIND - 1))", "|| usage", "while IFS= read -r host", "done < \"$file\""],
+        "absent": ["for host in $(cat", "for host in `cat", "cat \"$file\" | while", "cat $file"]
+      },
+      "hint": "The option loop:\n  while getopts \":f:t:vh\" opt; do\n    case \"$opt\" in\n      f) file=\"$OPTARG\" ;;\n      ...\n      \\?) echo \"Unknown option: -$OPTARG\" >&2; usage ;;\n      :) echo \"Option -$OPTARG needs a value\" >&2; usage ;;\n    esac\n  done\nThe skip line inside the read loop: [[ -z \"$host\" || \"$host\" == \\#* ]] && continue\nThe file is fed to the loop at the end: done < \"$file\" (not 'cat file | while', and not 'for host in $(cat file)').",
+      "solution": "#!/usr/bin/env bash\n# Check every host listed in a file.\n# Usage: check-hosts.sh -f hosts_file [-t timeout] [-v]\nset -euo pipefail\n\nusage() {\n  echo \"Usage: $0 -f hosts_file [-t timeout] [-v]\" >&2\n  exit 2\n}\n\nfile=\"\"\ntimeout=5\nverbose=0\n\nwhile getopts \":f:t:vh\" opt; do\n  case \"$opt\" in\n    f) file=\"$OPTARG\" ;;\n    t) timeout=\"$OPTARG\" ;;\n    v) verbose=1 ;;\n    h) usage ;;\n    \\?) echo \"Unknown option: -$OPTARG\" >&2; usage ;;\n    :) echo \"Option -$OPTARG needs a value\" >&2; usage ;;\n  esac\ndone\nshift $((OPTIND - 1))\n\n[[ -n \"$file\" ]] || usage\n\nwhile IFS= read -r host; do\n  [[ -z \"$host\" || \"$host\" == \\#* ]] && continue\n  if ping -c 1 -W \"$timeout\" \"$host\" > /dev/null 2>&1; then\n    if [[ \"$verbose\" -eq 1 ]]; then\n      echo \"UP   $host\"\n    fi\n  else\n    echo \"DOWN $host\" >&2\n  fi\ndone < \"$file\"\n",
+      "fake_output": "$ ./check-hosts.sh -v -t 2 -f hosts.txt\nUP   web-1.internal\nDOWN db-2.internal\nUP   cache-1.internal\n$ ./check-hosts.sh -t\nOption -t needs a value\nUsage: ./check-hosts.sh -f hosts_file [-t timeout] [-v]\n$ echo $?\n2",
+      "explanation": "The script takes options in any order, explains itself when misused, and reads the host file one line at a time without mangling it.",
+      "why": "The details each prevent a specific bug. (1) In the getopts string, a letter followed by a colon takes a value (f: and t:), and the leading colon turns on silent mode, so you handle errors yourself: '?' for an unknown option and ':' for a missing value, each with OPTARG holding the offending letter. (2) 'shift $((OPTIND - 1))' removes the parsed options, leaving any positional arguments in \"$@\". (3) Exit code 2 is the convention for 'you called me wrong', distinct from 1 for 'I ran and failed'. (4) 'while IFS= read -r' is the only correct way to read lines: IFS= keeps leading and trailing spaces, and -r stops backslashes being eaten. 'for host in $(cat file)' splits on every space and expands wildcards. (5) 'cat file | while' runs the loop in a subshell, so variables set inside it (a failure counter, say) are lost when it ends; 'done < file' keeps the loop in the current shell. (6) One trap this script avoids by using ping: a command inside the loop that reads standard input, ssh above all, swallows the rest of the file and the loop ends after one host. Give such commands '< /dev/null', or use 'ssh -n'. getopts handles only short options; for --long options, scripts loop over \"$@\" with a case statement instead."
+    }
+  ]
+}

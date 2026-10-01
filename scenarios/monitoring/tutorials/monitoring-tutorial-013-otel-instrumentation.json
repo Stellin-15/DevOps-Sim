@@ -1,0 +1,46 @@
+{
+  "id": "monitoring-tutorial-013",
+  "type": "tutorial",
+  "category": "monitoring",
+  "title": "Instrumenting a Service with OpenTelemetry",
+  "difficulty": "intermediate",
+  "tags": ["opentelemetry", "tracing", "instrumentation", "observability"],
+  "intro": "monitoring-tutorial-011 read traces that already existed. Someone has to produce them. OpenTelemetry's auto-instrumentation adds traces to common frameworks and libraries without code changes, and it's configured almost entirely through environment variables. The service is a Python app, checkout, that currently reports nothing.",
+  "steps": [
+    {
+      "prompt": "Install the instrumentation libraries that match the packages this app already uses.",
+      "expected_commands": ["opentelemetry-bootstrap -a install", "opentelemetry-bootstrap --action=install"],
+      "fake_output": "Installing opentelemetry-instrumentation-flask\nInstalling opentelemetry-instrumentation-requests\nInstalling opentelemetry-instrumentation-psycopg2\nInstalling opentelemetry-instrumentation-redis",
+      "explanation": "It detected Flask, requests, psycopg2, and redis, and installed an instrumentation package for each.",
+      "why": "Auto-instrumentation wraps the libraries where requests enter and leave a service (the web framework, HTTP clients, database drivers), which is where most of the useful spans are. It needs 'opentelemetry-distro' and an exporter package installed first. Java, Node.js, and .NET have equivalent agents."
+    },
+    {
+      "prompt": "Run the app under the instrumentation wrapper, naming the service checkout and exporting to the collector at http://otel-collector:4317.",
+      "expected_commands": ["OTEL_SERVICE_NAME=checkout OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317 opentelemetry-instrument python app.py"],
+      "fake_output": " * Running on http://0.0.0.0:8080\n(instrumentation active: flask, requests, psycopg2, redis)",
+      "explanation": "The app runs unchanged, and now emits a span for every request, outbound call, and query.",
+      "why": "OTEL_SERVICE_NAME is the one setting that must never be missing: without it the service shows up as 'unknown_service', and its traces are useless. Using environment variables means the same image works in every environment; in Kubernetes they go in the Deployment's env, or are injected by the OpenTelemetry Operator."
+    },
+    {
+      "prompt": "At 4,000 requests a second, tracing everything is expensive. Run the app sampling 10% of traces, respecting the decision made by the calling service.",
+      "expected_commands": ["OTEL_SERVICE_NAME=checkout OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317 OTEL_TRACES_SAMPLER=parentbased_traceidratio OTEL_TRACES_SAMPLER_ARG=0.1 opentelemetry-instrument python app.py"],
+      "fake_output": " * Running on http://0.0.0.0:8080\n(sampler: parentbased_traceidratio, ratio 0.1)",
+      "explanation": "One trace in ten is kept, and a trace is kept or dropped as a whole across services.",
+      "why": "'parentbased' means a service follows its caller's decision, so you never get half a trace. Sampling at the start (head sampling) is cheap but random, so it mostly keeps boring, successful traces. To keep all errors and slow requests, sample in the collector after the trace is complete (tail sampling), which costs more memory there."
+    },
+    {
+      "prompt": "The collector's pipeline config was edited to add tail sampling. Validate otel-config.yaml before restarting the collector.",
+      "expected_commands": ["otelcol validate --config=otel-config.yaml", "otelcol validate --config otel-config.yaml", "otelcol-contrib validate --config=otel-config.yaml"],
+      "fake_output": "(no output: the configuration is valid)",
+      "explanation": "The receivers, processors, exporters, and pipelines are consistent.",
+      "why": "A collector with a broken config stops every service's telemetry at once, so validate in CI as you would with 'promtool check' or 'nginx -t'. The usual mistake is defining a processor but not adding it to a pipeline, which validates fine and silently does nothing, so check the 'service.pipelines' section by eye too."
+    },
+    {
+      "prompt": "Confirm traces are arriving: ask Jaeger (port 16686) which services it knows about.",
+      "expected_commands": ["curl -s localhost:16686/api/services", "curl localhost:16686/api/services", "curl -s http://localhost:16686/api/services"],
+      "fake_output": "{\"data\":[\"frontend\",\"checkout\",\"payments\",\"inventory\",\"shipping\"],\"total\":5}",
+      "explanation": "checkout is reporting.",
+      "why": "Always verify at the destination. For anything auto-instrumentation can't see (a business step such as 'apply discount', or a custom attribute like the order id), add spans in code with the OpenTelemetry API. Auto first, manual where it adds meaning. And never put personal data or secrets in span attributes: traces are widely readable."
+    }
+  ]
+}

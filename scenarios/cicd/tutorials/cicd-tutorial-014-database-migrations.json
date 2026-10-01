@@ -1,0 +1,46 @@
+{
+  "id": "cicd-tutorial-014",
+  "type": "tutorial",
+  "category": "cicd",
+  "title": "Zero-Downtime Database Migrations: Expand, Migrate, Contract",
+  "difficulty": "advanced",
+  "tags": ["cicd", "migrations", "databases", "zero-downtime"],
+  "intro": "Code can be rolled back in seconds; a database schema change can't. And during a rolling deploy, old and new code run side by side against the same database. The task: rename the column users.fullname to display_name without downtime. Doing it in one step ('ALTER TABLE ... RENAME') breaks every old pod the moment it runs. The safe way takes several deploys.",
+  "steps": [
+    {
+      "prompt": "Expand: add the new column display_name (text, nullable) to users. Protect the site by giving up if the table lock can't be had within 3 seconds.",
+      "expected_commands": ["psql -c \"SET lock_timeout = '3s'; ALTER TABLE users ADD COLUMN display_name text;\"", "psql -c \"SET lock_timeout='3s'; ALTER TABLE users ADD COLUMN display_name text;\""],
+      "fake_output": "SET\nALTER TABLE",
+      "explanation": "A new, empty, nullable column. Old code doesn't know about it and isn't affected.",
+      "why": "Adding a nullable column is quick and backwards-compatible. The lock_timeout matters: ALTER TABLE needs a brief exclusive lock, and if a long-running query holds the table, the ALTER waits, and every other query queues up behind it. Without a timeout, a 'harmless' migration takes the site down. With one, it fails fast and you retry."
+    },
+    {
+      "prompt": "Deploy code that writes to BOTH columns. Then backfill existing rows in small batches rather than one giant UPDATE: run the first batch of 10,000.",
+      "expected_commands": ["psql -c \"UPDATE users SET display_name = fullname WHERE id IN (SELECT id FROM users WHERE display_name IS NULL LIMIT 10000);\""],
+      "fake_output": "UPDATE 10000",
+      "explanation": "10,000 rows copied; repeat until none are left.",
+      "why": "One UPDATE over 50 million rows holds locks for minutes, bloats the table, and floods the replicas with changes (replication lag). Small batches with a pause between them keep the database healthy. The dual-write deploy has to come first, or rows changed during the backfill would be missed."
+    },
+    {
+      "prompt": "Verify the backfill is complete before going further: count rows where display_name is still NULL.",
+      "expected_commands": ["psql -c \"SELECT count(*) FROM users WHERE display_name IS NULL;\"", "psql -c \"SELECT count(*) FROM users WHERE display_name IS NULL\""],
+      "fake_output": " count\n-------\n     0",
+      "explanation": "Every row has the new column filled.",
+      "why": "Each phase has a check before the next begins. Now you can deploy code that reads from display_name (still writing both), then code that stops writing fullname. Each of those deploys can be rolled back on its own, because the database still satisfies the previous version."
+    },
+    {
+      "prompt": "Contract: only after no deployed code reads or writes fullname, and a few days have passed, drop the old column.",
+      "expected_commands": ["psql -c \"SET lock_timeout = '3s'; ALTER TABLE users DROP COLUMN fullname;\"", "psql -c \"SET lock_timeout='3s'; ALTER TABLE users DROP COLUMN fullname;\""],
+      "fake_output": "SET\nALTER TABLE",
+      "explanation": "The old column is gone.",
+      "why": "This is the one step you can't undo, which is why it comes last and after a waiting period. If you'd dropped it in the same release that stopped using it, a rollback of that release would hit a missing column."
+    },
+    {
+      "prompt": "In the pipeline, migrations run as a separate step before the new code rolls out. Check which migrations have been applied (the project uses Alembic).",
+      "expected_commands": ["alembic current", "alembic history", "alembic history --verbose"],
+      "fake_output": "a1b2c3d4e5f6 (head)  drop users.fullname\n9f8e7d6c5b4a         add users.display_name",
+      "explanation": "The schema is at the latest migration.",
+      "why": "Migration tools (Alembic, Flyway, Liquibase, Rails migrations) record which changes have run, so every environment reaches the same schema in the same order. Run them as a distinct pipeline step, not on application start-up: ten pods starting at once shouldn't race to migrate. The whole pattern has one rule: every schema change must be compatible with both the previous and the next version of the code."
+    }
+  ]
+}

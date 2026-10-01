@@ -1,0 +1,53 @@
+{
+  "id": "terraform-tutorial-012",
+  "type": "tutorial",
+  "category": "terraform",
+  "title": "Writing Your Own Module: Validation, Dynamic Blocks, and Tests",
+  "difficulty": "advanced",
+  "tags": ["terraform", "modules", "dynamic", "validation", "testing"],
+  "intro": "The earlier module tutorials used modules other people wrote. Now your team has written one, in modules/web_sg: a security group whose ingress rules are generated from a list of ports. A module is an interface: variables are its inputs, outputs are its return values, and everything else is private. This tutorial exercises that interface the way a reviewer would.",
+  "steps": [
+    {
+      "prompt": "Check the module on its own, without touching any backend or state. First initialise it in its directory, modules/web_sg, with the backend disabled.",
+      "expected_commands": ["terraform -chdir=modules/web_sg init -backend=false"],
+      "fake_output": "Initializing provider plugins...\n- Installing hashicorp/aws v5.70.0...\n\nTerraform has been successfully initialized!",
+      "explanation": "Providers are installed for the module directory, and no state backend was configured.",
+      "why": "-chdir runs Terraform as if you'd changed into that directory, which keeps CI scripts free of cd. -backend=false is what makes this safe in a pull-request check: it needs no credentials for the state bucket, so it can run on untrusted branches."
+    },
+    {
+      "prompt": "Now validate the module in modules/web_sg.",
+      "expected_commands": ["terraform -chdir=modules/web_sg validate"],
+      "fake_output": "Success! The configuration is valid.",
+      "explanation": "The module's syntax, references, and types are consistent.",
+      "why": "validate checks the module in isolation: every variable it reads is declared, every attribute exists on its resource type. It doesn't call the cloud API, so it can't tell you a VPC id is wrong. That's plan's job. Run fmt, validate, then plan, cheapest first."
+    },
+    {
+      "prompt": "The module declares a validation rule: environment must be dev, staging, or prod. From the root configuration, prove the rule works by planning with environment set to qa.",
+      "expected_commands": ["terraform plan -var environment=qa", "terraform plan -var=environment=qa", "terraform plan -var 'environment=qa'", "terraform plan -var \"environment=qa\""],
+      "fake_output": "Error: Invalid value for variable\n\n  on main.tf line 14, in module \"web_sg\":\n  14:   environment = var.environment\n    var.environment is \"qa\"\n\nenvironment must be dev, staging, or prod.\n\nThis was checked by the validation rule at modules/web_sg/variables.tf:9,3-13.",
+      "explanation": "The plan stopped before reading any infrastructure, with the module author's own message.",
+      "why": "A validation block turns a mistake into a clear error at plan time, in the caller's terms. Without it, a typo such as 'prd' flows into names and tags, and you find out from a strangely named resource in the console. Validate anything with a small set of legal values: environments, instance sizes, CIDR formats."
+    },
+    {
+      "prompt": "Plan with the real values (the defaults) and see what the module's dynamic block generates from ingress_ports = [80, 443].",
+      "expected_commands": ["terraform plan"],
+      "fake_output": "  # module.web_sg.aws_security_group.this will be created\n  + resource \"aws_security_group\" \"this\" {\n      + name   = \"shop-prod-sg\"\n      + ingress {\n          + from_port   = 80\n          + to_port     = 80\n          + protocol    = \"tcp\"\n          + cidr_blocks = [\"10.0.0.0/16\"]\n        }\n      + ingress {\n          + from_port   = 443\n          + to_port     = 443\n          + protocol    = \"tcp\"\n          + cidr_blocks = [\"10.0.0.0/16\"]\n        }\n    }\n\nPlan: 1 to add, 0 to change, 0 to destroy.",
+      "explanation": "One dynamic block in the module became two ingress blocks, one per port.",
+      "why": "for_each and count repeat whole resources. A dynamic block repeats a nested block inside one resource (ingress rules, disk attachments, tags on some resources), which nothing else can do. Use it only for that: a dynamic block is harder to read than literal blocks, so two fixed rules should stay written out."
+    },
+    {
+      "prompt": "The module has tests in its tests/ directory (.tftest.hcl files). Run them from modules/web_sg.",
+      "expected_commands": ["terraform -chdir=modules/web_sg test"],
+      "fake_output": "tests/ports.tftest.hcl... in progress\n  run \"creates_one_rule_per_port\"... pass\n  run \"rejects_unknown_environment\"... pass\ntests/ports.tftest.hcl... tearing down\ntests/ports.tftest.hcl... pass\n\nSuccess! 2 passed, 0 failed.",
+      "explanation": "Both test runs passed: the rule count matches the port list, and a bad environment is rejected.",
+      "why": "terraform test (built in since 1.6) runs plan or apply against the module and checks assertions. With 'command = plan' and mocked providers, it needs no cloud account and runs in seconds. Tests are what let you change a shared module without breaking the twenty configurations that call it."
+    },
+    {
+      "prompt": "Apply has run. Read the module's result the way a caller would: show the root output web_sg_id.",
+      "expected_commands": ["terraform output web_sg_id", "terraform output -raw web_sg_id"],
+      "fake_output": "\"sg-0a1b2c3d4e5f67890\"",
+      "explanation": "The security group's id, passed up from the module's own output.",
+      "why": "A caller can only see what a module declares as outputs; its resources are otherwise private. So outputs are a contract: removing or renaming one breaks callers, like changing a function's return value. Publish modules with a version tag and pin callers to it (terraform-tutorial-008), so a change reaches each environment when that team chooses."
+    }
+  ]
+}

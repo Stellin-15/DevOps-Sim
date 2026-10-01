@@ -1,0 +1,21 @@
+{
+  "id": "path-012",
+  "type": "career_path",
+  "title": "From Whiteboard to Production: Design It, Build It, Prove It",
+  "difficulty": "advanced",
+  "tags": ["systemdesign", "git", "cicd", "terraform", "security"],
+  "intro": "You're the engineer who owns a new service from the first estimate to the first incident. Size it on paper, design it, keep the history clean enough to review, write the infrastructure as a module, ship a schema change without downtime, prove where the artifact came from, enforce that proof in the cluster, and then handle the two failures that designs like this one actually have.",
+  "steps": [
+    "systemdesign-tutorial-001",
+    "systemdesign-tutorial-011",
+    "git-tutorial-002",
+    "git-tutorial-005",
+    "terraform-tutorial-012",
+    "cicd-tutorial-014",
+    "cicd-tutorial-015",
+    "security-tutorial-011",
+    "systemdesign-incident-004",
+    "systemdesign-incident-003"
+  ],
+  "resolution": "A design is a set of numbers and trade-offs before it is any code: the estimate chose the architecture, and the architecture chose the failure modes. Small commits and a rebased branch made the change reviewable; a tested module made the infrastructure repeatable; expand-and-contract made the schema change invisible to users; provenance plus an admission policy meant only what the pipeline built could run. The two incidents at the end, connection exhaustion on scale-out and a double charge from a retried request, were both predictable from the design, which is the point of writing one. Finish with the design-doc Writing Labs (yaml-029, yaml-030) and the module lab (yaml-032)."
+}
