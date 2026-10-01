@@ -34,7 +34,7 @@ string.
   The game writes a real file to `workspace/`, tells you what to build or
   fix, and you edit it in your actual editor (vim, nano, VS Code —
   whatever you'd really use). Typing the apply command reads your real
-  file and checks it field by field. 36 labs across twelve formats:
+  file and checks it field by field. 38 labs across twelve formats:
   Kubernetes manifests, GitHub Actions workflows, Prometheus alert rules,
   Docker Compose files, Dockerfiles, Terraform (AWS VPCs, security
   groups, GCP firewalls, a reusable module), AWS IAM policies, Ansible
@@ -351,7 +351,7 @@ the engine, loader, sandboxes, yaml_lab, career_path, mystery, or scenario conte
 
 | Category | Tutorials | Incidents | Topics |
 |---|---|---|---|
-| Kubernetes | 29 | 15 | pods → operators, full CKA coverage incl. etcd, kubeadm, certs, security, RBAC/PDB/storage/admission-webhook/Multi-Attach incidents; plus 9 Writing Labs and 2 Sandboxes |
+| Kubernetes | 35 | 17 | pods → operators, full CKA coverage incl. etcd, kubeadm, certs, security, RBAC/PDB/storage/admission-webhook/Multi-Attach incidents, and the ecosystem (Kustomize, Helm chart authoring, Gateway API, VPA/KEDA/Karpenter, Flux, Linkerd); plus 11 Writing Labs and 2 Sandboxes |
 | Docker | 11 | 5 | images/layers, volumes, networking, Compose, cleanup, Dockerfiles, runtime limits, container security, BuildKit/buildx multi-platform; plus 3 Writing Labs (2 Dockerfile, Compose) |
 | Linux | 15 | 6 | find, text pipelines, processes/signals, systemd, networking, users/permissions, SSH, cron, disks, performance, strace/lsof, packages/firewalls, SELinux; plus 4 bash-script Writing Labs |
 | Terraform | 12 | 6 | safe CI workflow, modules/for_each/moved blocks, writing modules (validation, dynamic blocks, terraform test), variables/outputs, state inspection & refactoring, import, workspaces, remote state/locking, providers, debugging; plus 5 HCL Writing Labs |
@@ -370,7 +370,7 @@ the engine, loader, sandboxes, yaml_lab, career_path, mystery, or scenario conte
 | Databases | 12 | 6 | psql, on-call SQL (joins, GROUP BY, window functions), transactions and isolation, roles and privileges, pg_stat_activity and lock chains, slow queries (pg_stat_statements, EXPLAIN), vacuum and wraparound, pg_dump/pg_restore, point-in-time recovery (pgBackRest), Patroni failover, MySQL, Redis operations |
 | Web Servers & Proxies | 11 | 6 | nginx (test and reload, server blocks and locations, reverse proxying, TLS with certbot, access-log analysis, reading 502/503/504, rate and body limits, caching and gzip, connection and file-descriptor capacity), HAProxy draining, and recognising Envoy, Caddy, Traefik, and Apache; plus 2 nginx Writing Labs |
 | Identity & Secrets | 9 | 5 | reading JWTs, OAuth 2.0 and OIDC flows, Kubernetes workload identity, Vault (KV, policies, dynamic database credentials), External Secrets Operator, SOPS and Sealed Secrets, PKI and mutual TLS, cert-manager; plus 2 Writing Labs |
-| **Total** | **240** | **124** | + 36 Writing Labs |
+| **Total** | **246** | **126** | + 38 Writing Labs |
 
 The three clouds use different names for the same ideas (security group
 vs NSG vs firewall rule; CloudTrail vs Activity Log vs Audit Logs). The

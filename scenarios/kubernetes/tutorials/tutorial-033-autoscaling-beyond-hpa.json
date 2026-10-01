@@ -1,0 +1,47 @@
+{
+  "id": "tutorial-033",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Autoscaling Beyond HPA: VPA, KEDA, and Karpenter",
+  "difficulty": "advanced",
+  "tags": ["autoscaling", "vpa", "keda", "karpenter"],
+  "intro": "The HPA (tutorial-013) adds pods when CPU rises. Three questions it can't answer: are the pods the right size, what if the signal is a queue and not CPU, and where do new pods go when the nodes are full? VPA, KEDA, and a node autoscaler such as Karpenter answer one each. You're in namespace shop.",
+  "steps": [
+    {
+      "prompt": "The Vertical Pod Autoscaler watches real usage and recommends requests. Read its recommendation for the VPA named api in namespace shop.",
+      "expected_commands": ["kubectl describe vpa api -n shop", "kubectl describe verticalpodautoscaler api -n shop", "kubectl get vpa api -n shop -o yaml"],
+      "fake_output": "Spec:\n  Update Policy:\n    Update Mode:  Off\nStatus:\n  Recommendation:\n    Container Recommendations:\n      Container Name:  api\n      Lower Bound:     cpu: 120m,  memory: 310Mi\n      Target:          cpu: 180m,  memory: 400Mi\n      Upper Bound:     cpu: 420m,  memory: 610Mi\n\n(current requests: cpu 2000m, memory 4Gi)",
+      "explanation": "The container uses about 180m CPU and 400Mi of memory; it requests 2 CPUs and 4Gi.",
+      "why": "Requests ten times too high are the most common waste in a cluster: the scheduler reserves what's requested, so nodes look full while sitting idle. Update mode Off gives recommendations only, which is the safe way to run VPA: read the numbers and set requests yourself. In Auto mode it evicts pods to resize them."
+    },
+    {
+      "prompt": "Can the same Deployment use HPA on CPU and VPA in Auto mode on CPU together?\n  a) Yes, they cooperate\n  b) No: both react to the same signal, so VPA changing the request shifts the utilisation HPA measures, and they fight\n  c) Only on Tuesdays\n  d) VPA replaces HPA entirely\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "HPA: utilisation = usage / request. VPA raises the request -> utilisation falls -> HPA removes pods\n     -> usage per pod rises -> VPA raises the request again ...",
+      "hint": "HPA's CPU percentage is measured against the request that VPA is changing.",
+      "explanation": "Don't drive both from the same metric.",
+      "why": "The safe combinations are: HPA on CPU with VPA in recommendation mode, or HPA on a custom metric (requests per second) with VPA managing CPU and memory. Sizing pods correctly comes first either way, because HPA's percentages mean nothing against a wildly wrong request."
+    },
+    {
+      "prompt": "The worker Deployment processes a queue; CPU says nothing about how much work is waiting. KEDA scales on external signals. Look at the ScaledObjects in namespace shop.",
+      "expected_commands": ["kubectl get scaledobject -n shop", "kubectl get scaledobjects -n shop", "kubectl get so -n shop"],
+      "fake_output": "NAME     SCALETARGETKIND      SCALETARGETNAME   MIN   MAX   TRIGGERS   READY   ACTIVE\nworker   apps/v1.Deployment   worker            0     40    kafka      True    False",
+      "explanation": "worker scales between 0 and 40 pods on a Kafka trigger, and is currently inactive: no lag, so zero pods.",
+      "why": "KEDA creates and feeds an HPA for you from a trigger: Kafka consumer lag, queue length, a Prometheus query, a cron schedule, and dozens more. Scaling to zero is what plain HPA can't do, and it's what makes event-driven workers cheap. ACTIVE False with READY True is healthy and idle; READY False means KEDA can't reach the event source."
+    },
+    {
+      "prompt": "When pods can't be scheduled, something must add nodes. This cluster uses Karpenter. List the NodePools that define what it may create.",
+      "expected_commands": ["kubectl get nodepool", "kubectl get nodepools"],
+      "fake_output": "NAME      NODECLASS   NODES   READY   AGE\ndefault   default     14      True    200d\ngpu       gpu         2       True    90d",
+      "explanation": "Two pools: general-purpose with 14 nodes, and GPU with 2.",
+      "why": "Karpenter watches for unschedulable pods and launches a node that fits them, choosing the instance type from what the NodePool allows, usually in under a minute. The older Cluster Autoscaler instead grows fixed node groups one size at a time. Each NodePool has limits (total CPU and memory) that cap the spend, and reaching one is a classic reason pods stay Pending (incident-017)."
+    },
+    {
+      "prompt": "See the individual nodes Karpenter has launched and what type each is.",
+      "expected_commands": ["kubectl get nodeclaim", "kubectl get nodeclaims"],
+      "fake_output": "NAME            TYPE          CAPACITY    ZONE         NODE                         READY   AGE\ndefault-7xk2m   m7g.2xlarge   on-demand   us-east-1a   ip-10-0-1-21.ec2.internal    True    6d\ndefault-b9q4t   c7g.4xlarge   spot        us-east-1b   ip-10-0-2-88.ec2.internal    True    3h\ngpu-m2n8c       g5.2xlarge    on-demand   us-east-1a   ip-10-0-1-77.ec2.internal    True    2d",
+      "explanation": "A mix of instance types, on-demand and spot, each chosen to fit the pods waiting at the time.",
+      "why": "A NodeClaim is one node Karpenter asked for. It also consolidates: when pods would fit on fewer or cheaper nodes, it drains and replaces nodes, which saves money and means nodes come and go all day. So workloads need what makes that safe: several replicas, PodDisruptionBudgets (incident-012), and graceful shutdown. Spot nodes add two-minute interruptions on top."
+    }
+  ]
+}

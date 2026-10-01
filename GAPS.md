@@ -165,6 +165,14 @@ plane being the actual outage).
   security-tutorial-011 (Kyverno policies, Enforce vs Audit).
 - ~~More YAML Labs~~ — **done**: StatefulSet, Ingress (with TLS), HPA,
   and RBAC (Role + RoleBinding) labs added, for 9 Kubernetes labs total
+- ~~The wider ecosystem~~: **done** in tutorial-030 to 035 (Kustomize,
+  writing a Helm chart, Gateway API, VPA/KEDA/Karpenter, Flux, and
+  Linkerd), incident-016 (a Helm release stuck in pending-upgrade) and
+  incident-017 (a node autoscaler stopped by its own limit), plus
+  Writing Labs yaml-037 (a Kustomize overlay) and yaml-038 (an
+  HTTPRoute with a canary split). Not covered: external-dns, writing
+  chart templates in depth (helpers, hooks, library charts), Cluster
+  API, and CKAD/CKS-specific passes.
 - Kubeflow at an operator level now lives in the MLOps category (Part 8);
   deep Kubeflow Pipelines authoring remains out of scope
 
@@ -1419,10 +1427,11 @@ employer uses it.
    agents), GitLab CI, Azure DevOps Pipelines, Tekton. Artifact
    repositories (Artifactory, Nexus, Harbor). Semantic versioning,
    release automation, and Dependabot or Renovate.
-7. **The Kubernetes ecosystem.** Kustomize, *writing* Helm charts,
-   Gateway API, cert-manager, external-dns, autoscaling beyond HPA (VPA,
-   KEDA, Cluster Autoscaler, Karpenter), service mesh in depth, Flux,
-   and CKAD and CKS exam passes.
+7. ~~**The Kubernetes ecosystem**~~: **done** inside the Kubernetes
+   category (tutorial-030 to 035, two incidents, two labs): Kustomize,
+   Helm chart authoring, Gateway API, VPA/KEDA/Karpenter, Flux, and
+   Linkerd; cert-manager is in Identity and Secrets. Still open:
+   external-dns, and CKAD and CKS exam passes.
 8. **Serverless and managed compute.** Lambda, Cloud Functions, Azure
    Functions, API gateways, ECS/Fargate, Cloud Run, App Service.
 9. **Logging pipelines.** Fluent Bit, Vector, Logstash, OpenSearch,
@@ -1500,8 +1509,7 @@ If content is added in the order that helps most people soonest:
 1. ~~a Databases category~~ (done, Part 17);
 2. ~~web servers and proxies~~ (done, Part 18);
 3. ~~identity and secrets~~ (done);
-4. Kubernetes ecosystem (Kustomize, Helm authoring, Gateway API,
-   autoscalers);
+4. ~~Kubernetes ecosystem~~ (done);
 5. Jenkins and GitLab CI;
 6. Python for automation, as Writing Labs;
 7. Kafka operations;
@@ -1516,7 +1524,7 @@ If content is added in the order that helps most people soonest:
 
 | Category | Tutorials | Incidents | Extra |
 |---|---|---|---|
-| Kubernetes | 29 | 15 | 9 Writing Labs, 2 Sandboxes (explore, and fixable), 5 Mysteries |
+| Kubernetes | 35 | 17 | 11 Writing Labs, 2 Sandboxes (explore, and fixable), 5 Mysteries |
 | Docker | 11 | 5 | 3 Writing Labs (Dockerfile, Compose), Sandbox, 2 Mysteries |
 | Linux | 15 | 6 | 4 Writing Labs (bash), interactive Sandbox, 4 Mysteries |
 | Terraform | 12 | 6 | 5 Writing Labs (HCL, including a module) |
@@ -1535,7 +1543,7 @@ If content is added in the order that helps most people soonest:
 | Databases | 12 | 6 | |
 | Web Servers & Proxies | 11 | 6 | 2 Writing Labs (nginx configuration) |
 | Identity & Secrets | 9 | 5 | 2 Writing Labs (Vault policy, cert-manager) |
-| **Total** | **240** | **124** | 36 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
+| **Total** | **246** | **126** | 38 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -1547,14 +1555,14 @@ command beats the alternatives — not just what it does.
 will know the commands, the failure modes, and — most importantly — the
 debugging method** (check the layer before guessing the fix; refused vs
 timeout; verify after every change; revoke before cleaning up; revert
-don't force-push). The 124 incidents are modeled on the kinds of problems
+don't force-push). The 126 incidents are modeled on the kinds of problems
 that genuinely trip up working engineers, and working through them
 builds judgment that command references alone never will.
 
 **It will not, on its own, make you fully proficient**, for four reasons
 that no amount of additional scenario content can fully close:
 
-1. **Authoring vs. operating.** Largely addressed: 36 Writing Labs now
+1. **Authoring vs. operating.** Largely addressed: 38 Writing Labs now
    have you write real Kubernetes manifests, GitHub Actions workflows,
    Prometheus alert rules, Compose files, Dockerfiles, Terraform (AWS
    VPCs and security groups, GCP firewalls), IAM policies, Ansible

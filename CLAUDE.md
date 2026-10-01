@@ -398,7 +398,7 @@ unique). The Kubernetes-only `kubernetes.md` command reference is
 identical to (and replaces) the old root `COMMANDS.md`.
 
 Current per-category content depth (tutorials / incidents):
-- kubernetes: 29 / 15 (also has 9 Writing Labs, 2 sandboxes, 5 mysteries) — CKA-gap-filled
+- kubernetes: 35 / 17 (also has 11 Writing Labs, 2 sandboxes, 5 mysteries) — CKA-gap-filled
 - docker: 11 / 5 (+3 Writing Labs: 2 Dockerfile, 1 Compose)
 - linux: 15 / 6 (+4 Writing Labs: bash)
 - terraform: 12 / 6 (+5 Writing Labs: HCL, including a three-file module)
@@ -433,7 +433,7 @@ Current per-category content depth (tutorials / incidents):
   `contains` check now names only the substrings the closest candidate
   lacks.
 - identity: 9 / 5 (+2 Writing Labs): JWTs, OAuth/OIDC, workload identity, Vault, External Secrets, SOPS, mTLS, cert-manager
-- **total: 240 tutorials, 124 incidents, 36 Writing Labs, 14 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
+- **total: 246 tutorials, 126 incidents, 38 Writing Labs, 14 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with
@@ -493,8 +493,8 @@ no new scenario content — just new orderings of existing ids.
       at full depth, plus Career Paths chaining them together
 
 **Kubernetes content specifically** (the other categories are summarized
-under "Multi-category expansion" above and detailed in GAPS.md): 29
-tutorials, 15 incidents, 9 YAML labs.
+under "Multi-category expansion" above and detailed in GAPS.md; counts
+are in the depth list there).
 Tutorials/incidents are schema-valid per `tests/test_scenario_content.py`;
 YAML labs per `tests/test_yaml_lab_content.py` (which also proves every
 hand-written `solution` field actually passes its own `validate` spec —
@@ -518,6 +518,8 @@ pods, kubeadm bootstrap/upgrade, certificates, and cluster/pod security.
   upgrades, certificates, cluster/pod security (SecurityContext, Pod
   Security Admission), kubeadm bootstrap (init/join), Operators &
   custom controllers (builds on tutorial-018's CRDs)
+- tutorial-030–035: the ecosystem around the core (Kustomize, writing
+  a Helm chart, Gateway API, VPA/KEDA/Karpenter, Flux, Linkerd)
 - incident-006–010: ImagePullBackOff, a readiness-probe cascading
   failure, a CoreDNS outage, a silently-broken HPA (missing
   metrics-server), a NotReady node — chosen to cover common real
@@ -529,6 +531,9 @@ pods, kubeadm bootstrap/upgrade, certificates, and cluster/pod security.
   whose own pods are down (nothing can be created, including its
   replacement), and a Multi-Attach error on a ReadWriteOnce volume
   during a rolling update
+- incident-016–017: a Helm release stuck in pending-upgrade after a
+  cancelled pipeline, and Pending pods behind a Karpenter NodePool
+  limit
 
 Several steps deliberately combine multiple flags in one command
 (set-based label selectors, `--sort-by` + events, `autoscale` with three

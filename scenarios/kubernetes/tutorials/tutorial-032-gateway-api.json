@@ -1,0 +1,47 @@
+{
+  "id": "tutorial-032",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Gateway API: The Successor to Ingress",
+  "difficulty": "intermediate",
+  "tags": ["gateway-api", "httproute", "ingress", "traffic"],
+  "intro": "Ingress (tutorial-010) put everything into one object and left the interesting features to controller-specific annotations. Gateway API splits the job by role: the platform team owns a Gateway (the listener and its certificates), and each application team attaches its own HTTPRoute. Traffic splitting and header matching are standard fields. The shop team's routes are in namespace shop.",
+  "steps": [
+    {
+      "prompt": "See which gateway implementations are installed.",
+      "expected_commands": ["kubectl get gatewayclass", "kubectl get gatewayclasses", "kubectl get gc"],
+      "fake_output": "NAME    CONTROLLER                      ACCEPTED   AGE\nenvoy   gateway.envoyproxy.io/gatewayclass-controller   True       60d",
+      "explanation": "One class, implemented by Envoy Gateway.",
+      "why": "A GatewayClass is to Gateways what an IngressClass is to Ingresses: it names the controller that will act on them. The same route definitions work across implementations (Envoy Gateway, Istio, Cilium, NGINX, cloud load balancers), which is the portability Ingress annotations never had."
+    },
+    {
+      "prompt": "List the Gateways in every namespace.",
+      "expected_commands": ["kubectl get gateway -A", "kubectl get gateways -A", "kubectl get gtw -A", "kubectl get gateway --all-namespaces"],
+      "fake_output": "NAMESPACE   NAME     CLASS   ADDRESS        PROGRAMMED   AGE\ninfra       public   envoy   203.0.113.80   True         60d",
+      "explanation": "One Gateway, public, in the infra namespace, with an external address.",
+      "why": "The Gateway is the load balancer: its listeners define ports, hostnames, and TLS certificates. It lives in the platform team's namespace, and its 'allowedRoutes' setting decides which namespaces may attach routes. PROGRAMMED True means the data plane has actually been configured, which is the status to check when nothing answers."
+    },
+    {
+      "prompt": "List the HTTPRoutes in namespace shop.",
+      "expected_commands": ["kubectl get httproute -n shop", "kubectl get httproutes -n shop"],
+      "fake_output": "NAME       HOSTNAMES                AGE\nshop       [\"shop.example.com\"]     60d\nshop-api   [\"api.example.com\"]      2m",
+      "explanation": "Two routes. shop-api was created two minutes ago.",
+      "why": "An HTTPRoute holds the routing rules for one application and points at a Gateway through 'parentRefs'. The application team can change paths, weights, and timeouts without touching the shared Gateway or needing permission on it."
+    },
+    {
+      "prompt": "api.example.com returns 404. Check whether the new route shop-api was accepted by the Gateway.",
+      "expected_commands": ["kubectl describe httproute shop-api -n shop", "kubectl describe httproutes shop-api -n shop", "kubectl get httproute shop-api -n shop -o yaml"],
+      "fake_output": "Spec:\n  Parent Refs:\n    Name:       public\n    Namespace:  infra\n  Rules:\n    Backend Refs:\n      Name:  api\n      Port:  8080\nStatus:\n  Parents:\n    Conditions:\n      Type:     Accepted\n      Status:   True\n      Type:     ResolvedRefs\n      Status:   False\n      Reason:   BackendNotFound\n      Message:  service \"api\" not found in namespace \"shop\"",
+      "explanation": "The Gateway accepted the route, but its backend Service 'api' doesn't exist in namespace shop.",
+      "why": "Every Gateway API object reports conditions in its status, written by the controller, which makes failures readable in a way Ingress never was. Accepted False means the Gateway refused the route (wrong namespace or hostname). ResolvedRefs False means the route is fine and what it points at isn't. Here the Service is named api-svc; the route has a typo."
+    },
+    {
+      "prompt": "The shop team wants to send 10% of traffic to a new version. In an HTTPRoute, how is that expressed?\n  a) An annotation specific to the controller\n  b) Two backendRefs in one rule, with weight 90 and weight 10\n  c) Two Gateways\n  d) It needs a service mesh\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "rules:\n  - backendRefs:\n      - name: shop-v1\n        port: 8080\n        weight: 90\n      - name: shop-v2\n        port: 8080\n        weight: 10",
+      "hint": "It's a standard field, which is the point of the new API.",
+      "explanation": "Weighted backendRefs: a canary split in portable YAML.",
+      "why": "With Ingress this needed controller-specific annotations and a second Ingress object. Here it's part of the specification, as are header and method matching, redirects, rewrites, and timeouts. Progressive delivery tools (Argo Rollouts, Flagger) adjust these weights for you. To point at a Service in another namespace, the owner of that namespace must create a ReferenceGrant, which stops one team routing traffic to another team's backend without consent."
+    }
+  ]
+}

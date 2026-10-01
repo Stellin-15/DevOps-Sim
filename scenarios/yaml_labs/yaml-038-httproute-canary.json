@@ -1,0 +1,42 @@
+{
+  "id": "yaml-038",
+  "type": "yaml_lab",
+  "category": "kubernetes",
+  "title": "Write a Gateway API HTTPRoute with a Canary Split",
+  "difficulty": "intermediate",
+  "tags": ["gateway-api", "httproute", "canary", "traffic"],
+  "intro": "The shop team is releasing version 2 and wants 10% of real traffic on it first. With Gateway API that's a standard field, not a controller-specific annotation. Write the route: it attaches to the platform team's Gateway and splits traffic between the two Services.",
+  "steps": [
+    {
+      "file": "httproute.yaml",
+      "starter_content": "",
+      "prompt": "Write httproute.yaml:\n- apiVersion gateway.networking.k8s.io/v1, kind HTTPRoute, named shop, in namespace shop\n- spec.parentRefs: one entry: the Gateway named public in namespace infra\n- spec.hostnames: shop.example.com\n- spec.rules: one rule with\n    - matches: a path match of type PathPrefix with value /\n    - backendRefs: shop-v1 port 8080 weight 90, and shop-v2 port 8080 weight 10\n    - timeouts.request: 10s",
+      "apply_commands": ["kubectl apply -f httproute.yaml", "kubectl apply --dry-run=server -f httproute.yaml", "check"],
+      "validate": {
+        "kind": "HTTPRoute",
+        "fields": {
+          "apiVersion": "gateway.networking.k8s.io/v1",
+          "metadata.name": "shop",
+          "metadata.namespace": "shop",
+          "spec.parentRefs[0].name": "public",
+          "spec.parentRefs[0].namespace": "infra",
+          "spec.hostnames[*]": "shop.example.com",
+          "spec.rules[0].matches[0].path.type": "PathPrefix",
+          "spec.rules[0].matches[0].path.value": "/",
+          "spec.rules[0].backendRefs[0].name": "shop-v1",
+          "spec.rules[0].backendRefs[0].port": 8080,
+          "spec.rules[0].backendRefs[0].weight": 90,
+          "spec.rules[0].backendRefs[1].name": "shop-v2",
+          "spec.rules[0].backendRefs[1].port": 8080,
+          "spec.rules[0].backendRefs[1].weight": 10,
+          "spec.rules[0].timeouts.request": "10s"
+        }
+      },
+      "hint": "spec:\n  parentRefs:\n    - name: public\n      namespace: infra\n  hostnames:\n    - shop.example.com\n  rules:\n    - matches:\n        - path:\n            type: PathPrefix\n            value: /\n      backendRefs:\n        - name: shop-v1\n          port: 8080\n          weight: 90\n        - name: shop-v2\n          port: 8080\n          weight: 10\n      timeouts:\n        request: 10s",
+      "solution": "apiVersion: gateway.networking.k8s.io/v1\nkind: HTTPRoute\nmetadata:\n  name: shop\n  namespace: shop\nspec:\n  parentRefs:\n    - name: public\n      namespace: infra\n  hostnames:\n    - shop.example.com\n  rules:\n    - matches:\n        - path:\n            type: PathPrefix\n            value: /\n      backendRefs:\n        - name: shop-v1\n          port: 8080\n          weight: 90\n        - name: shop-v2\n          port: 8080\n          weight: 10\n      timeouts:\n        request: 10s\n",
+      "fake_output": "httproute.gateway.networking.k8s.io/shop created",
+      "explanation": "A route on the shared Gateway that sends nine requests in ten to version 1 and one in ten to version 2.",
+      "why": "parentRefs is the attachment: the route asks to join the Gateway named public in another namespace, and that Gateway's allowedRoutes decides whether namespace shop may. So the platform team keeps control of listeners and certificates while app teams own their routing. Weights are relative, not percentages: 90 and 10, or 9 and 1, mean the same. Rolling forward is a change to two numbers, and rolling back is setting the new backend's weight to 0, which takes effect in seconds without restarting anything. Check the result in the route's status (Accepted, ResolvedRefs) before trusting it, as in tutorial-032. A weight split is random per request, so one user may see both versions; to keep a user on one, match on a header or cookie in a separate rule. The request timeout is also a standard field here, where Ingress needed an annotation."
+    }
+  ]
+}

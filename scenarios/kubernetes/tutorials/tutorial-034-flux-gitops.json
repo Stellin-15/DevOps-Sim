@@ -1,0 +1,46 @@
+{
+  "id": "tutorial-034",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Flux: GitOps from Inside the Cluster",
+  "difficulty": "intermediate",
+  "tags": ["flux", "gitops", "reconciliation", "kustomize"],
+  "intro": "CI/CD covered GitOps with Argo CD. Flux is the other widely used tool, and works the same way underneath: controllers in the cluster pull from Git and apply what they find, on a loop. It has no central UI; you drive it with the flux CLI and ordinary Kubernetes objects. The cluster syncs from the repository fleet-infra.",
+  "steps": [
+    {
+      "prompt": "Check where Flux pulls from, and whether the latest commit has been fetched: list its Git sources in all namespaces.",
+      "expected_commands": ["flux get sources git -A", "flux get sources git --all-namespaces", "flux get source git -A"],
+      "fake_output": "NAMESPACE     NAME          REVISION             SUSPENDED   READY   MESSAGE\nflux-system   fleet-infra   main@sha1:a1f9c3e2   False       True    stored artifact for revision 'main@sha1:a1f9c3e2'",
+      "explanation": "One source, on main at commit a1f9c3e2, fetched successfully.",
+      "why": "Flux splits the work in two. A source controller fetches Git (or Helm, or OCI) and stores an artifact; other controllers apply it. So the first question when a change hasn't arrived is whether the source has the commit. If READY is False here, it's credentials or network, and nothing downstream can be current."
+    },
+    {
+      "prompt": "List what Flux applies from that source: the Kustomizations in all namespaces.",
+      "expected_commands": ["flux get kustomizations -A", "flux get kustomizations --all-namespaces", "flux get ks -A"],
+      "fake_output": "NAMESPACE     NAME             REVISION             SUSPENDED   READY   MESSAGE\nflux-system   infrastructure   main@sha1:a1f9c3e2   False       True    Applied revision: main@sha1:a1f9c3e2\nflux-system   apps             main@sha1:7c2b0d14   False       False   Deployment/shop/api dry-run failed: spec.template.spec.containers[0].resources.limits.memory: Invalid value: \"1GB\"",
+      "explanation": "infrastructure is current. apps is stuck on an older commit because a manifest is invalid.",
+      "why": "A Flux Kustomization is 'apply this path from that source, every N minutes'. When a manifest fails validation, Flux applies nothing from that Kustomization and stays on the last good revision, which is safer than applying half. The message names the object and field: '1GB' isn't a Kubernetes quantity ('1Gi' is). The fix belongs in Git."
+    },
+    {
+      "prompt": "The fix has been pushed. Don't wait for the next interval: fetch the source and reconcile the Kustomization apps now.",
+      "expected_commands": ["flux reconcile kustomization apps --with-source", "flux reconcile ks apps --with-source", "flux reconcile kustomization apps --with-source -n flux-system"],
+      "fake_output": "► annotating GitRepository fleet-infra in flux-system namespace\n✔ fetched revision main@sha1:e4d7a920\n► annotating Kustomization apps in flux-system namespace\n✔ applied revision main@sha1:e4d7a920",
+      "explanation": "Flux fetched the new commit and applied it.",
+      "why": "--with-source refreshes Git first; without it Flux re-applies the commit it already has, which is the usual reason 'reconcile did nothing'. Reconciling is always safe: it only ever applies what Git says."
+    },
+    {
+      "prompt": "During an incident you need to change a Deployment by hand, and Flux would revert it within minutes. Pause reconciliation of the Kustomization apps.",
+      "expected_commands": ["flux suspend kustomization apps", "flux suspend ks apps", "flux suspend kustomization apps -n flux-system"],
+      "fake_output": "► suspending kustomization apps in flux-system namespace\n✔ kustomization suspended",
+      "explanation": "Flux leaves everything under apps alone until it's resumed.",
+      "why": "Reverting manual changes is the feature: the cluster can't drift from Git. In an emergency that same feature undoes your fix, so suspend first, deliberately. Then the obligation is yours: put the change into Git and resume ('flux resume kustomization apps'), or the cluster stays frozen and silently out of date. Alert on anything suspended for longer than a few hours."
+    },
+    {
+      "prompt": "Find recent errors across all of Flux's controllers.",
+      "expected_commands": ["flux logs --level=error", "flux logs --level error", "flux logs --level=error -A", "flux logs --level=error --all-namespaces"],
+      "fake_output": "2026-09-28T11:02:14Z error Kustomization/apps.flux-system - Reconciliation failed after 1.2s, next try in 10m0s: Deployment/shop/api dry-run failed\n2026-09-28T09:40:01Z error HelmRelease/redis.cache - Helm upgrade failed: timed out waiting for the condition",
+      "explanation": "The earlier manifest error, and a Helm release that timed out this morning.",
+      "why": "With no UI, the logs and 'flux get all -A' are the dashboard, and nobody watches them. Configure Flux's notification controller to send failures to chat or to post commit statuses, so that a sync failing on Friday isn't discovered when Monday's deploy mysteriously doesn't arrive."
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "id": "tutorial-030",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Kustomize: One Base, Many Environments",
+  "difficulty": "intermediate",
+  "tags": ["kustomize", "manifests", "environments", "gitops"],
+  "intro": "The same application runs in dev, staging, and production with small differences: replica count, image tag, a hostname. Copying the manifests three times guarantees they drift apart. Kustomize keeps one base and describes each environment as a patch on top, with no templating language, and it's built into kubectl. The repository has base/ and overlays/dev, overlays/prod.",
+  "steps": [
+    {
+      "prompt": "Render the production overlay to the terminal without applying anything.",
+      "expected_commands": ["kubectl kustomize overlays/prod", "kustomize build overlays/prod", "kubectl kustomize overlays/prod/"],
+      "fake_output": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  labels:\n    env: prod\n  name: shop\n  namespace: shop-prod\nspec:\n  replicas: 6\n  template:\n    spec:\n      containers:\n      - image: registry.example.com/shop:1.8.2\n        name: shop\n        resources:\n          limits:\n            memory: 1Gi",
+      "explanation": "The base Deployment with production's namespace, label, replica count, image tag, and memory limit applied.",
+      "why": "Rendering first shows exactly what will be sent to the cluster: plain YAML, with nothing hidden. That's Kustomize's main difference from Helm: there are no templates to evaluate in your head, only patches over valid manifests. 'kubectl kustomize' uses the version built into kubectl, which lags the standalone 'kustomize' binary; pick one and use it in CI too."
+    },
+    {
+      "prompt": "See what applying the production overlay would change in the live cluster.",
+      "expected_commands": ["kubectl diff -k overlays/prod", "kubectl diff -k overlays/prod/", "kubectl diff --kustomize overlays/prod"],
+      "fake_output": "--- live\n+++ merged\n@@ spec.template.spec.containers[0] @@\n-        image: registry.example.com/shop:1.8.1\n+        image: registry.example.com/shop:1.8.2",
+      "explanation": "One line would change: the image tag.",
+      "why": "-k tells kubectl to build the directory with Kustomize first. Diffing against the live cluster catches what rendering alone can't: a field someone changed by hand, or a much bigger change than the pull request suggested. Make it a required step before any production apply."
+    },
+    {
+      "prompt": "Apply the production overlay.",
+      "expected_commands": ["kubectl apply -k overlays/prod", "kubectl apply -k overlays/prod/", "kubectl apply --kustomize overlays/prod"],
+      "fake_output": "deployment.apps/shop configured",
+      "explanation": "The rendered manifests were applied in one step.",
+      "why": "In a GitOps setup you wouldn't run this by hand: Argo CD or Flux builds the overlay and applies it when the repository changes. Both understand Kustomize natively, which is one reason it's the common choice for environment configuration."
+    },
+    {
+      "prompt": "CI has built a new image. From inside overlays/prod, set the image named shop to registry.example.com/shop:1.8.3 in the kustomization file.",
+      "expected_commands": ["kustomize edit set image shop=registry.example.com/shop:1.8.3"],
+      "fake_output": "(no output: kustomization.yaml updated)\n\nimages:\n- name: shop\n  newName: registry.example.com/shop\n  newTag: 1.8.3",
+      "explanation": "The overlay's images section now pins the new tag.",
+      "why": "This is how a pipeline promotes a build: it changes one line in the overlay and commits it, and Git records who deployed what and when. The base manifest is never edited. Pin a digest ('newName@sha256:...') instead of a tag when you need the exact bytes guaranteed."
+    },
+    {
+      "prompt": "A base ConfigMap is created with configMapGenerator, which adds a hash to its name (app-config-7g2k9d4c5t). Why is that hash useful?\n  a) It makes the name harder to guess\n  b) A changed config gets a new name, which changes the Deployment's pod template, so pods roll out automatically with the new config\n  c) It encrypts the data\n  d) It saves etcd space\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "config changed -> ConfigMap app-config-m9t4h2f8kc (new name)\n               -> Deployment now references the new name\n               -> pod template changed -> rolling update",
+      "hint": "Normally, editing a ConfigMap doesn't restart the pods that use it.",
+      "explanation": "The hash turns a config change into a rollout.",
+      "why": "A plain ConfigMap edited in place reaches no running pod until something restarts it, which is the same trap as a rotated Secret. Generated names fix it, and they make rollback complete as well: reverting the commit brings back the old config and the old pods together. Old ConfigMaps are left behind and need pruning, which GitOps tools do for you."
+    }
+  ]
+}

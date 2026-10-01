@@ -1,0 +1,47 @@
+{
+  "id": "tutorial-031",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Writing a Helm Chart, Not Just Installing One",
+  "difficulty": "intermediate",
+  "tags": ["helm", "charts", "templating", "releases"],
+  "intro": "tutorial-019 installed someone else's chart. Sooner or later you maintain your own: templates, default values, and the checks that stop a bad chart reaching a cluster. You're packaging the shop service as a chart named shop.",
+  "steps": [
+    {
+      "prompt": "Scaffold a new chart named shop.",
+      "expected_commands": ["helm create shop"],
+      "fake_output": "Creating shop\n\nshop/\n  Chart.yaml          # name, version, appVersion\n  values.yaml         # defaults\n  templates/          # deployment.yaml, service.yaml, ingress.yaml, _helpers.tpl, ...\n  charts/             # dependencies",
+      "explanation": "A working chart with a Deployment, Service, Ingress, and helpers.",
+      "why": "The scaffold is a reasonable starting point because it encodes conventions: standard labels, a helper for names, sane defaults. Chart.yaml has two versions: 'version' is the chart's own and must change with every chart change; 'appVersion' is the application it deploys. Mixing them up makes rollbacks confusing."
+    },
+    {
+      "prompt": "After editing the templates, check the chart for errors and bad practice.",
+      "expected_commands": ["helm lint shop", "helm lint ./shop", "helm lint shop/"],
+      "fake_output": "==> Linting shop\n[ERROR] templates/deployment.yaml: unable to parse YAML: error converting YAML to JSON: yaml: line 31: did not find expected key\n\nError: 1 chart(s) linted, 1 chart(s) failed",
+      "explanation": "The rendered Deployment isn't valid YAML at line 31.",
+      "why": "The classic Helm bug is indentation: templates produce text, and a block inserted with the wrong 'nindent' gives YAML that's broken or, worse, valid with the wrong structure. lint renders with default values and parses the result. Run it in CI on every chart change."
+    },
+    {
+      "prompt": "The indentation is fixed. Render the chart locally with the production values file values-prod.yaml, using the release name shop, to read what it would create.",
+      "expected_commands": ["helm template shop shop -f values-prod.yaml", "helm template shop ./shop -f values-prod.yaml", "helm template shop shop --values values-prod.yaml", "helm template shop ./shop --values values-prod.yaml"],
+      "fake_output": "---\n# Source: shop/templates/deployment.yaml\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: shop\nspec:\n  replicas: 6\n  template:\n    spec:\n      containers:\n        - name: shop\n          image: \"registry.example.com/shop:1.8.2\"\n          resources:\n            limits:\n              memory: 1Gi",
+      "explanation": "The exact manifests Helm would send, with production's values merged over the defaults.",
+      "why": "'helm template' needs no cluster, so it works in a pull-request check, and its output can be diffed between chart versions or fed to policy tools (kyverno apply, kubeconform). Values merge in order: chart defaults, then each -f file, then --set. Review rendered output, not templates: the templates are the same for every environment, and the bugs are in the combination."
+    },
+    {
+      "prompt": "Deploy it: install or upgrade the release shop from the chart in namespace shop with the production values, rolling back automatically if it fails, with a 5-minute timeout.",
+      "expected_commands": ["helm upgrade --install shop shop -n shop -f values-prod.yaml --atomic --timeout 5m", "helm upgrade --install shop ./shop -n shop -f values-prod.yaml --atomic --timeout 5m", "helm upgrade --install shop shop -n shop -f values-prod.yaml --atomic --timeout=5m", "helm upgrade shop shop --install -n shop -f values-prod.yaml --atomic --timeout 5m"],
+      "fake_output": "Release \"shop\" has been upgraded. Happy Helming!\nNAME: shop\nNAMESPACE: shop\nSTATUS: deployed\nREVISION: 12",
+      "hint": "helm upgrade --install shop shop -n shop -f values-prod.yaml --atomic --timeout 5m",
+      "explanation": "Revision 12 is deployed, and Helm waited until the pods were ready.",
+      "why": "'upgrade --install' is the one command for both first install and every later deploy, which is what a pipeline needs. --atomic waits for the resources to become ready and rolls back by itself if they don't within the timeout; without it a broken release is marked 'deployed' the moment the manifests are accepted. A pipeline killed mid-upgrade can leave the release locked (incident-016)."
+    },
+    {
+      "prompt": "Production differs from what you expected. Show the values the live release shop in namespace shop was actually deployed with.",
+      "expected_commands": ["helm get values shop -n shop", "helm get values shop --namespace shop", "helm -n shop get values shop"],
+      "fake_output": "USER-SUPPLIED VALUES:\nimage:\n  tag: 1.8.2\nreplicaCount: 6\nresources:\n  limits:\n    memory: 1Gi",
+      "explanation": "The values supplied at the last upgrade, as Helm recorded them.",
+      "why": "Helm stores each revision's values and manifests in the cluster, so this is the truth about what was deployed, whatever the repository says now. 'helm get manifest' shows the rendered objects, and 'helm history' the revisions. It doesn't show changes made by hand with kubectl afterwards: Helm compares against its own record, so manual edits are invisible to it until the next upgrade overwrites them."
+    }
+  ]
+}

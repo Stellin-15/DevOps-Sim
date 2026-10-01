@@ -1,0 +1,36 @@
+{
+  "id": "yaml-037",
+  "type": "yaml_lab",
+  "category": "kubernetes",
+  "title": "Write a Kustomize Production Overlay",
+  "difficulty": "intermediate",
+  "tags": ["kustomize", "overlays", "environments"],
+  "intro": "The base in ../../base defines the shop Deployment and Service once. Production differs in five small ways. Express only those differences in the overlay's kustomization.yaml, without copying or editing the base.",
+  "steps": [
+    {
+      "file": "kustomization.yaml",
+      "starter_content": "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\n",
+      "prompt": "Complete kustomization.yaml (for overlays/prod):\n- resources: one entry, ../../base\n- namespace: shop-prod\n- labels: one entry with pairs env: prod (use the 'labels' field with a 'pairs' map)\n- images: the image named shop gets newTag \"1.8.2\"\n- replicas: the Deployment named shop gets count 6\n- patches: one entry that points at the file memory-limit.yaml using 'path'",
+      "apply_commands": ["kubectl kustomize .", "kubectl apply -k .", "kustomize build .", "check"],
+      "validate": {
+        "kind": "Kustomization",
+        "fields": {
+          "apiVersion": "kustomize.config.k8s.io/v1beta1",
+          "resources[*]": "../../base",
+          "namespace": "shop-prod",
+          "labels[0].pairs.env": "prod",
+          "images[0].name": "shop",
+          "images[0].newTag": "1.8.2",
+          "replicas[0].name": "shop",
+          "replicas[0].count": 6,
+          "patches[0].path": "memory-limit.yaml"
+        }
+      },
+      "hint": "resources:\n  - ../../base\nnamespace: shop-prod\nlabels:\n  - pairs:\n      env: prod\nimages:\n  - name: shop\n    newTag: \"1.8.2\"\nreplicas:\n  - name: shop\n    count: 6\npatches:\n  - path: memory-limit.yaml\nQuote the tag so YAML doesn't read it as a number.",
+      "solution": "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\n\nresources:\n  - ../../base\n\nnamespace: shop-prod\n\nlabels:\n  - pairs:\n      env: prod\n\nimages:\n  - name: shop\n    newTag: \"1.8.2\"\n\nreplicas:\n  - name: shop\n    count: 6\n\npatches:\n  - path: memory-limit.yaml\n",
+      "fake_output": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  labels:\n    env: prod\n  name: shop\n  namespace: shop-prod\nspec:\n  replicas: 6\n  template:\n    spec:\n      containers:\n      - image: registry.example.com/shop:1.8.2",
+      "explanation": "An overlay that states only what production changes: namespace, a label, the image tag, the replica count, and one patch file.",
+      "why": "Each field is a purpose-built transformer, and using them beats writing patches by hand. 'images' changes the tag wherever that image appears, which is what a pipeline edits to promote a build ('kustomize edit set image'). 'replicas' and 'namespace' do one job each. 'labels' with pairs adds metadata labels without touching selectors; the older 'commonLabels' also rewrites selectors, and since a Deployment's selector is immutable, adding a common label to a live Deployment makes the apply fail. 'patches' is the general tool for everything else, here a small file that sets only the memory limit. Quote tags like \"1.8\" or \"20240928\": unquoted, YAML reads some of them as numbers and changes them. Keep overlays this small: when an overlay grows to restate most of the base, the base is wrong."
+    }
+  ]
+}

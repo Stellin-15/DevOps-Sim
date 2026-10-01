@@ -401,6 +401,44 @@ hpa     = horizontalpodautoscaler
 crd     = customresourcedefinition
 ```
 
+## Ecosystem: Kustomize, Helm Authoring, Gateway API, Autoscalers, GitOps, Mesh
+
+```
+kubectl kustomize overlays/prod              # render, don't apply
+kubectl diff -k overlays/prod
+kubectl apply -k overlays/prod
+kustomize edit set image shop=registry.example.com/shop:1.8.2
+
+helm create <chart>
+helm lint <chart>
+helm template <release> <chart> -f values-prod.yaml
+helm upgrade --install <release> <chart> -n <ns> --atomic --timeout 5m
+helm history <release> -n <ns>         helm rollback <release> <revision> -n <ns>
+helm get values <release> -n <ns>      helm get manifest <release> -n <ns>
+helm package <chart>
+
+kubectl get gatewayclass
+kubectl get gateway -A
+kubectl get httproute -A               kubectl describe httproute <name> -n <ns>
+kubectl get referencegrant -A
+
+kubectl describe vpa <name> -n <ns>
+kubectl get scaledobject -n <ns>       kubectl describe scaledobject <name> -n <ns>
+kubectl get nodepool                   kubectl describe nodepool <name>
+kubectl get nodeclaim
+kubectl logs -n kube-system deployment/karpenter
+
+flux get kustomizations -A             flux get sources git -A
+flux reconcile kustomization <name> --with-source
+flux suspend kustomization <name>      flux resume kustomization <name>
+flux logs --level=error
+
+linkerd check
+linkerd viz stat deploy -n <ns>
+linkerd viz edges deployment -n <ns>
+linkerd viz tap deploy/<name> -n <ns>
+```
+
 ---
 
 *This file is a reference for writing scenario JSON — pull `expected_commands` values from here so the game teaches syntax that actually matches real kubectl.*

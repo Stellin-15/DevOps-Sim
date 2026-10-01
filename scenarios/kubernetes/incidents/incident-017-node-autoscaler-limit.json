@@ -1,0 +1,49 @@
+{
+  "id": "incident-017",
+  "type": "incident",
+  "category": "kubernetes",
+  "title": "Traffic is climbing, the HPA wants more pods, and they all stay Pending",
+  "difficulty": "advanced",
+  "tags": ["karpenter", "autoscaling", "pending", "capacity"],
+  "intro": "A marketing campaign went live at noon. The api Deployment in namespace shop is scaling out as designed: its HPA has asked for 40 replicas. Only 22 are running; the rest have been Pending for ten minutes, and latency is rising. The cluster uses Karpenter to add nodes, and it has always just worked.",
+  "steps": [
+    {
+      "prompt": "See the Pending pods in namespace shop.",
+      "expected_commands": ["kubectl get pods -n shop --field-selector=status.phase=Pending", "kubectl get pods -n shop --field-selector status.phase=Pending", "kubectl get pods -n shop | grep Pending", "kubectl get pods -n shop"],
+      "fake_output": "NAME                   READY   STATUS    RESTARTS   AGE\napi-6c9d7f5b8-2xkq4    0/1     Pending   0          10m\napi-6c9d7f5b8-7hm2n    0/1     Pending   0          10m\napi-6c9d7f5b8-b4t9w    0/1     Pending   0          10m\n... (18 pods)",
+      "hint": "kubectl get pods -n shop --field-selector=status.phase=Pending"
+    },
+    {
+      "prompt": "Find out why one of them isn't scheduled: describe pod api-6c9d7f5b8-2xkq4 and read its events.",
+      "expected_commands": ["kubectl describe pod api-6c9d7f5b8-2xkq4 -n shop", "kubectl describe pod -n shop api-6c9d7f5b8-2xkq4", "kubectl describe po api-6c9d7f5b8-2xkq4 -n shop"],
+      "fake_output": "Events:\n  Warning  FailedScheduling  10m   default-scheduler  0/14 nodes are available: 14 Insufficient cpu. preemption: 0/14 nodes are available: 14 No preemption victims found for incoming pod.\n  Warning  FailedScheduling  9m    karpenter          Failed to schedule pod, all available instance types exceed limits for nodepool: \"default\"",
+      "hint": "kubectl describe pod <name> -n shop"
+    },
+    {
+      "prompt": "Two messages. The scheduler says all 14 nodes are full, which is normal: that's Karpenter's cue. Karpenter says every instance type would 'exceed limits for nodepool default'. Look at that NodePool's limits and current usage.",
+      "expected_commands": ["kubectl describe nodepool default", "kubectl describe nodepools default", "kubectl get nodepool default -o yaml"],
+      "fake_output": "Spec:\n  Limits:\n    Cpu:     200\n    Memory:  800Gi\nStatus:\n  Resources:\n    Cpu:     196\n    Memory:  412Gi\n    Nodes:   14",
+      "hint": "kubectl describe nodepool default"
+    },
+    {
+      "prompt": "The pool may hold 200 CPUs and already has 196. The smallest allowed node adds 8, so Karpenter can add nothing. The limit was set a year ago as a spending cap. The on-call lead approves doubling it for the campaign. Patch the NodePool default so spec.limits.cpu is 400.",
+      "expected_commands": ["kubectl patch nodepool default --type=merge -p '{\"spec\":{\"limits\":{\"cpu\":\"400\"}}}'", "kubectl patch nodepool default --type merge -p '{\"spec\":{\"limits\":{\"cpu\":\"400\"}}}'", "kubectl patch nodepool default --type=merge -p '{\"spec\":{\"limits\":{\"cpu\":400}}}'", "kubectl patch nodepool default -p '{\"spec\":{\"limits\":{\"cpu\":\"400\"}}}' --type=merge"],
+      "fake_output": "nodepool.karpenter.sh/default patched",
+      "hint": "kubectl patch nodepool default --type=merge -p '{\"spec\":{\"limits\":{\"cpu\":\"400\"}}}'"
+    },
+    {
+      "prompt": "Watch Karpenter act: list the node claims.",
+      "expected_commands": ["kubectl get nodeclaim", "kubectl get nodeclaims", "kubectl get nodeclaims -w", "kubectl get nodeclaim -w"],
+      "fake_output": "NAME            TYPE          CAPACITY    ZONE         NODE                        READY     AGE\ndefault-7xk2m   m7g.2xlarge   on-demand   us-east-1a   ip-10-0-1-21.ec2.internal   True      6d\n...\ndefault-q8w3r   c7g.8xlarge   on-demand   us-east-1b   ip-10-0-2-140.ec2.internal  True      48s\ndefault-z5n1d   c7g.8xlarge   on-demand   us-east-1c                               Unknown   12s",
+      "hint": "kubectl get nodeclaim"
+    },
+    {
+      "prompt": "New nodes are joining. Confirm the Deployment reaches its target: check the api Deployment in namespace shop.",
+      "expected_commands": ["kubectl get deployment api -n shop", "kubectl get deploy api -n shop", "kubectl get deployment/api -n shop", "kubectl rollout status deployment/api -n shop"],
+      "fake_output": "NAME   READY   UP-TO-DATE   AVAILABLE   AGE\napi    40/40   40           40          200d",
+      "hint": "kubectl get deployment api -n shop"
+    }
+  ],
+  "resolution": "Autoscaling is a chain, and every link has its own ceiling. The HPA did its part: more traffic, more replicas, up to its maximum of 40. The scheduler did its part: no room on 14 nodes, so the pods waited. Karpenter did its part too: it tried to launch nodes and was refused by its own NodePool, whose limit of 200 CPUs had been set a year ago as a cost guard and never revisited as the baseline grew to 196. Nothing was broken. Each component was obeying a limit, and the one that mattered hadn't been looked at in a year. The Pending pod's events told the whole story in two lines, which is why 'describe pod' is the first move for anything Pending; the second line named the NodePool. Raising the limit let Karpenter launch nodes within a minute. Other things that produce the same symptom, and are read the same way: the cloud account's instance or vCPU quota, no remaining IP addresses in the subnets, a pod that asks for a zone or instance type no NodePool allows, or a PersistentVolume pinning the pod to a zone that's full. The lessons are about limits as a system. Know every ceiling between a traffic spike and a served request: HPA maxReplicas, NodePool limits, cloud quotas, subnet sizes, and the database connection limit behind them (systemdesign-incident-004). Alert when usage passes 80% of any of them, so the conversation about raising a spending cap happens in a planning meeting and not during a campaign. And test it: a load test that scales the service to its HPA maximum would have found this limit on a quiet afternoon.",
+  "real_commands_used": ["kubectl get pods --field-selector=status.phase=Pending", "kubectl describe pod (FailedScheduling events)", "kubectl describe nodepool", "kubectl patch nodepool --type=merge", "kubectl get nodeclaim", "kubectl get deployment"]
+}

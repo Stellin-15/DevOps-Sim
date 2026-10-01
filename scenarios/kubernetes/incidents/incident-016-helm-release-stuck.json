@@ -1,0 +1,49 @@
+{
+  "id": "incident-016",
+  "type": "incident",
+  "category": "kubernetes",
+  "title": "Every deploy fails: 'another operation is in progress'",
+  "difficulty": "intermediate",
+  "tags": ["helm", "releases", "ci", "rollback"],
+  "intro": "The deploy pipeline for the shop service has failed three times in a row with 'Error: UPGRADE FAILED: another operation (install/upgrade/rollback) is in progress'. Nobody is deploying. An hour ago a pipeline run was cancelled half-way because it was taking too long. The release is shop, in namespace shop, and the site is still up.",
+  "steps": [
+    {
+      "prompt": "Look at the release's status. List releases in namespace shop, including ones that aren't in the deployed state.",
+      "expected_commands": ["helm list -n shop -a", "helm list -n shop --all", "helm ls -n shop -a", "helm list -a -n shop"],
+      "fake_output": "NAME   NAMESPACE   REVISION   UPDATED                    STATUS            CHART        APP VERSION\nshop   shop        13         2026-09-28 10:02:11 UTC    pending-upgrade   shop-0.9.4   1.8.3",
+      "hint": "helm list -n shop -a   (pending releases are hidden without -a)"
+    },
+    {
+      "prompt": "Revision 13 is 'pending-upgrade' and has been for an hour. See how the release got here: show its history.",
+      "expected_commands": ["helm history shop -n shop", "helm history shop --namespace shop", "helm -n shop history shop"],
+      "fake_output": "REVISION   UPDATED                    STATUS            CHART        APP VERSION   DESCRIPTION\n11         Fri Sep 25 14:10:02 2026   superseded        shop-0.9.3   1.8.1         Upgrade complete\n12         Sat Sep 26 09:31:40 2026   deployed          shop-0.9.3   1.8.2         Upgrade complete\n13         Mon Sep 28 10:02:11 2026   pending-upgrade   shop-0.9.4   1.8.3         Preparing upgrade",
+      "hint": "helm history shop -n shop"
+    },
+    {
+      "prompt": "Revision 12 is the last one that deployed; 13 never finished. Check what's actually running: which image is the Deployment shop using?",
+      "expected_commands": ["kubectl get deployment shop -n shop -o jsonpath='{.spec.template.spec.containers[0].image}'", "kubectl get deploy shop -n shop -o jsonpath='{.spec.template.spec.containers[0].image}'", "kubectl get deployment shop -n shop -o jsonpath=\"{.spec.template.spec.containers[0].image}\"", "kubectl get deployment shop -n shop -o wide"],
+      "fake_output": "registry.example.com/shop:1.8.3",
+      "hint": "kubectl get deployment shop -n shop -o jsonpath='{.spec.template.spec.containers[0].image}'"
+    },
+    {
+      "prompt": "The cluster has 1.8.3: the cancelled upgrade applied its manifests, then was killed before Helm recorded the result. Helm's record is stuck half-way and it refuses any new operation. Return the release to its last good revision, 12.",
+      "expected_commands": ["helm rollback shop 12 -n shop", "helm rollback shop 12 --namespace shop", "helm -n shop rollback shop 12", "helm rollback shop 12 -n shop --wait"],
+      "fake_output": "Rollback was a success! Happy Helming!",
+      "hint": "helm rollback shop 12 -n shop"
+    },
+    {
+      "prompt": "Confirm the release is back in a deployed state.",
+      "expected_commands": ["helm list -n shop -a", "helm list -n shop --all", "helm ls -n shop -a", "helm list -n shop", "helm status shop -n shop"],
+      "fake_output": "NAME   NAMESPACE   REVISION   UPDATED                    STATUS     CHART        APP VERSION\nshop   shop        14         2026-09-28 11:14:50 UTC    deployed   shop-0.9.3   1.8.2",
+      "hint": "helm list -n shop -a"
+    },
+    {
+      "prompt": "The lock is cleared, at revision 14 (a copy of 12). Now re-run the deploy the safe way: upgrade the release shop from the chart directory shop in namespace shop with values-prod.yaml, rolling back automatically on failure, with a 10-minute timeout.",
+      "expected_commands": ["helm upgrade --install shop shop -n shop -f values-prod.yaml --atomic --timeout 10m", "helm upgrade --install shop ./shop -n shop -f values-prod.yaml --atomic --timeout 10m", "helm upgrade shop shop -n shop -f values-prod.yaml --atomic --timeout 10m", "helm upgrade --install shop shop -n shop -f values-prod.yaml --atomic --timeout=10m"],
+      "fake_output": "Release \"shop\" has been upgraded. Happy Helming!\nSTATUS: deployed\nREVISION: 15",
+      "hint": "helm upgrade --install shop shop -n shop -f values-prod.yaml --atomic --timeout 10m"
+    }
+  ],
+  "resolution": "Helm records each operation as a revision stored in a Secret in the release's namespace. An upgrade writes a 'pending-upgrade' revision first, applies the manifests, waits, and then marks it deployed or failed. The pipeline run was cancelled between those steps: the process was killed, so nothing ever updated the record. From then on Helm saw an operation still in progress and refused to start another, which is a lock with nobody holding it. The cluster itself was fine, and in fact already running the new image, because the manifests had been applied before the kill. The fix is to move the record back to a known state. A rollback to the last deployed revision does that properly: it re-applies revision 12's manifests and writes a clean new revision. Some people delete the pending revision's Secret instead (sh.helm.release.v1.shop.v13), which also clears the lock and leaves the cluster running whatever was half-applied; rollback is the safer habit because the record and the cluster end up agreeing. Why was the run cancelled? Because it hung: the upgrade was waiting for pods that never became ready, with no timeout. Two flags prevent the whole thing. --timeout bounds how long Helm waits. --atomic makes Helm roll back by itself when the upgrade fails or times out, so the release never stays in a pending state. And pipelines should let a deploy job finish or fail by itself: cancelling a job that's changing production state leaves that state half-written, whatever the tool. If cancellation must be possible, the job needs a clean-up step that runs on cancel.",
+  "real_commands_used": ["helm list -n <ns> -a", "helm history <release>", "kubectl get deployment -o jsonpath (the image)", "helm rollback <release> <revision>", "helm upgrade --install --atomic --timeout"]
+}
