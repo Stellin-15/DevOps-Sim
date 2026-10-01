@@ -1,0 +1,53 @@
+{
+  "id": "webservers-tutorial-009",
+  "type": "tutorial",
+  "category": "webservers",
+  "title": "Capacity: Workers, Connections, and File Descriptors",
+  "difficulty": "advanced",
+  "tags": ["nginx", "tuning", "capacity", "file-descriptors"],
+  "intro": "nginx handles thousands of connections per worker without much CPU, so it rarely runs out of processing power. It runs out of slots: connections per worker, and open files per process. Those limits are set in three different places, and the lowest one wins. You're on web-1 ahead of a sale expected to triple traffic.",
+  "steps": [
+    {
+      "prompt": "See the worker settings in the effective configuration: search it for lines starting with worker_.",
+      "expected_commands": ["sudo nginx -T | grep worker_", "nginx -T | grep worker_", "sudo nginx -T 2>/dev/null | grep worker_", "sudo nginx -T | grep ^worker"],
+      "fake_output": "worker_processes auto;\n    worker_connections 768;",
+      "explanation": "One worker per CPU core (auto), and 768 connections per worker.",
+      "why": "Maximum connections is workers times worker_connections: on 4 cores, 3,072. As a reverse proxy each client request uses two connections, one to the client and one to the upstream, so that's about 1,500 concurrent requests. 768 is a distribution default and is low for a busy proxy. worker_processes auto is right; more workers than cores doesn't help."
+    },
+    {
+      "prompt": "nginx can report its live connection counts through the stub_status page, enabled here on localhost at /nginx_status. Fetch it.",
+      "expected_commands": ["curl -s http://127.0.0.1/nginx_status", "curl http://127.0.0.1/nginx_status", "curl -s http://localhost/nginx_status", "curl -s 127.0.0.1/nginx_status"],
+      "fake_output": "Active connections: 2204\nserver accepts handled requests\n 9120044 9118310 31204410\nReading: 12 Writing: 310 Waiting: 1882",
+      "explanation": "2,204 active connections out of a maximum of 3,072, and 'handled' is lower than 'accepts'.",
+      "why": "accepts minus handled (1,734 here) is connections nginx accepted and then had to drop because a limit was reached; on a healthy server the two are equal. 'Waiting' is idle keep-alive connections, which still occupy slots. At 72% of the limit before a tripling of traffic, this server will run out. Export these numbers to monitoring; this page is what the Prometheus nginx exporter reads."
+    },
+    {
+      "prompt": "Check whether the limit has already been hit: search /var/log/nginx/error.log for 'worker_connections are not enough' and count the matches.",
+      "expected_commands": ["grep -c \"worker_connections are not enough\" /var/log/nginx/error.log", "grep -c 'worker_connections are not enough' /var/log/nginx/error.log", "sudo grep -c \"worker_connections are not enough\" /var/log/nginx/error.log", "grep \"worker_connections are not enough\" /var/log/nginx/error.log | wc -l"],
+      "fake_output": "1734",
+      "explanation": "1,734 times, matching the dropped connections exactly.",
+      "why": "nginx says so plainly when it runs out, at 'alert' level, but only in the error log; clients just see connections reset. Raising worker_connections is the obvious fix, and it has a dependency that catches people: each connection needs a file descriptor, and that's limited separately."
+    },
+    {
+      "prompt": "Check the open-files limit that actually applies to a running worker. A worker's pid is 88120.",
+      "expected_commands": ["grep \"open files\" /proc/88120/limits", "grep 'open files' /proc/88120/limits", "cat /proc/88120/limits | grep \"open files\"", "sudo grep \"open files\" /proc/88120/limits", "grep -i \"open files\" /proc/88120/limits"],
+      "fake_output": "Max open files            1024                 524288               files",
+      "explanation": "The soft limit is 1,024 open files per worker; the hard limit is 524,288.",
+      "why": "This is the limit the process really has, whatever any config file says. With worker_connections at 4,096 and a limit of 1,024 files, nginx would fail with 'Too many open files' long before reaching its connection limit. /proc/<pid>/limits is the truth for a running process; 'ulimit -n' in your shell shows your shell's limit, which is irrelevant to a service started by systemd."
+    },
+    {
+      "prompt": "The configuration has been changed: worker_connections 4096 and worker_rlimit_nofile 16384. Test it and reload in one line, reloading only if the test passes.",
+      "expected_commands": ["sudo nginx -t && sudo systemctl reload nginx", "sudo nginx -t && sudo nginx -s reload", "nginx -t && systemctl reload nginx", "nginx -t && nginx -s reload"],
+      "fake_output": "nginx: the configuration file /etc/nginx/nginx.conf syntax is ok\nnginx: configuration file /etc/nginx/nginx.conf test is successful",
+      "explanation": "The test passed, so the reload ran.",
+      "why": "'&&' runs the reload only if the test succeeds, which is the safe one-liner to put in deploy scripts. worker_rlimit_nofile lets nginx raise its own workers' file limit, up to the hard limit, without touching systemd settings. Set it to at least twice worker_connections, since a proxied request uses two descriptors, plus some for log and cache files."
+    },
+    {
+      "prompt": "Verify it took effect on a new worker. The new worker's pid is 91004.",
+      "expected_commands": ["grep \"open files\" /proc/91004/limits", "grep 'open files' /proc/91004/limits", "cat /proc/91004/limits | grep \"open files\"", "sudo grep \"open files\" /proc/91004/limits", "grep -i \"open files\" /proc/91004/limits"],
+      "fake_output": "Max open files            16384                16384                files",
+      "explanation": "The new workers have 16,384 file descriptors each.",
+      "why": "Checking the running process closes the loop: three settings (worker_connections, worker_rlimit_nofile, and systemd's LimitNOFILE) can each be the bottleneck, and only /proc shows the result. One more limit sits outside nginx: connections to a single upstream address use local ports, about 28,000 by default. Upstream keepalive, which reuses connections, is what keeps a busy proxy from exhausting them."
+    }
+  ]
+}

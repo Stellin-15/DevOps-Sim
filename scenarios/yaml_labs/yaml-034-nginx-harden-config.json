@@ -1,0 +1,41 @@
+{
+  "id": "yaml-034",
+  "type": "yaml_lab",
+  "category": "webservers",
+  "title": "Harden an nginx Config: TLS, Limits, and an Exposed Admin Area",
+  "difficulty": "advanced",
+  "tags": ["nginx", "security", "hardening", "rate-limiting", "tls"],
+  "intro": "A security review flagged this server block. It works, which is how configurations like it survive for years: obsolete TLS versions, the nginx version advertised to scanners, a login form with no rate limit, an admin area open to the internet, and a directory listing over the uploads folder. Fix all of it without changing where anything is proxied.",
+  "steps": [
+    {
+      "file": "shop-secure.conf",
+      "format": "nginx",
+      "starter_content": "server {\n    listen 443 ssl;\n    server_name shop.example.com;\n\n    ssl_certificate     /etc/letsencrypt/live/shop.example.com/fullchain.pem;\n    ssl_certificate_key /etc/letsencrypt/live/shop.example.com/privkey.pem;\n    ssl_protocols TLSv1 TLSv1.1 TLSv1.2;\n    server_tokens on;\n\n    location / {\n        proxy_pass http://127.0.0.1:8000;\n    }\n\n    location /login {\n        proxy_pass http://127.0.0.1:8000;\n    }\n\n    location /admin/ {\n        proxy_pass http://127.0.0.1:8000;\n    }\n\n    location /uploads/ {\n        root /var/www/shop;\n        autoindex on;\n    }\n}\n",
+      "prompt": "Edit shop-secure.conf:\n\n(1) Above the server block, define a rate-limit zone:\n    limit_req_zone $binary_remote_addr zone=login:10m rate=5r/m;\n(2) Allow only modern TLS: ssl_protocols TLSv1.2 TLSv1.3;\n(3) Stop advertising the nginx version: server_tokens off;\n(4) In the server block, add HSTS:\n    add_header Strict-Transport-Security \"max-age=31536000\" always;\n(5) In the server block, cap request bodies: client_max_body_size 10m;\n(6) In location /login, apply the zone and return 429 when it trips:\n    limit_req zone=login burst=5 nodelay;\n    limit_req_status 429;\n(7) In location /admin/, permit only the office network 10.20.0.0/16 and refuse everyone else.\n(8) In location /uploads/, remove the directory listing.\n\nLeave every proxy_pass as it is.",
+      "apply_commands": ["nginx -t", "sudo nginx -t", "check"],
+      "validate": {
+        "fields": {
+          "limit_req_zone": {"contains": ["$binary_remote_addr", "zone=login:10m", "rate=5r/m"]},
+          "server.ssl_protocols": "TLSv1.2 TLSv1.3",
+          "server.server_tokens": "off",
+          "server.add_header": {"contains": ["Strict-Transport-Security", "max-age=31536000", "always"]},
+          "server.client_max_body_size": "10m",
+          "server.location./login.limit_req": {"contains": ["zone=login", "burst=5", "nodelay"]},
+          "server.location./login.limit_req_status": "429",
+          "server.location./login.proxy_pass": "http://127.0.0.1:8000",
+          "server.location./admin/.allow": "10.20.0.0/16",
+          "server.location./admin/.deny": "all",
+          "server.location./admin/.proxy_pass": "http://127.0.0.1:8000",
+          "server.location./uploads/.root": "/var/www/shop"
+        },
+        "order": ["allow 10.20.0.0/16", "deny all"],
+        "absent": ["autoindex on", "server_tokens on", "TLSv1 ", "TLSv1.1"]
+      },
+      "hint": "limit_req_zone goes outside the server block (it belongs to the http level). In /admin/ the order matters: 'allow 10.20.0.0/16;' first, then 'deny all;', because the first matching rule wins. Delete the 'autoindex on;' line (or set it to off). Quote the HSTS value: add_header Strict-Transport-Security \"max-age=31536000\" always;",
+      "solution": "limit_req_zone $binary_remote_addr zone=login:10m rate=5r/m;\n\nserver {\n    listen 443 ssl;\n    server_name shop.example.com;\n\n    ssl_certificate     /etc/letsencrypt/live/shop.example.com/fullchain.pem;\n    ssl_certificate_key /etc/letsencrypt/live/shop.example.com/privkey.pem;\n    ssl_protocols TLSv1.2 TLSv1.3;\n    server_tokens off;\n\n    add_header Strict-Transport-Security \"max-age=31536000\" always;\n    client_max_body_size 10m;\n\n    location / {\n        proxy_pass http://127.0.0.1:8000;\n    }\n\n    location /login {\n        limit_req zone=login burst=5 nodelay;\n        limit_req_status 429;\n        proxy_pass http://127.0.0.1:8000;\n    }\n\n    location /admin/ {\n        allow 10.20.0.0/16;\n        deny all;\n        proxy_pass http://127.0.0.1:8000;\n    }\n\n    location /uploads/ {\n        root /var/www/shop;\n    }\n}\n",
+      "fake_output": "nginx: the configuration file /etc/nginx/nginx.conf syntax is ok\nnginx: configuration file /etc/nginx/nginx.conf test is successful",
+      "explanation": "The same routing as before, with each finding from the review closed.",
+      "why": "In the order of the task. (1) and (6): 5 requests a minute per address on the login form makes password guessing impractical, while burst=5 with nodelay lets a person retry a mistyped password without waiting; 429 instead of the default 503 tells clients and dashboards it was a limit, not an outage. Behind a load balancer the key must be the real client address, or the limit applies to everyone at once (webservers-incident-006). (2) TLS 1.0 and 1.1 have known weaknesses and are refused by current browsers and by compliance standards such as PCI DSS. (3) server_tokens off removes the version from headers and error pages, so scanners can't match it against a list of vulnerabilities; it hides the number, it doesn't patch anything. (4) HSTS makes returning browsers use HTTPS without first asking over HTTP; 'always' adds it to error responses too. It's hard to undo, so begin with a short max-age on a real site. Remember that an add_header inside a location replaces all the inherited ones. (5) The 1 MB default is too small for many apps and unlimited is an invitation to fill the disk; choose a number. (7) allow before deny, because the first match wins. A network restriction beats a login page alone, since the admin application's own flaws are no longer reachable. (8) autoindex turned the uploads folder into a browsable list of every file customers ever uploaded. Also make sure uploaded files can never be executed: no PHP or CGI handler may match that path."
+    }
+  ]
+}

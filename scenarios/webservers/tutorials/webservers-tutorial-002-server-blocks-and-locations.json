@@ -1,0 +1,55 @@
+{
+  "id": "webservers-tutorial-002",
+  "type": "tutorial",
+  "category": "webservers",
+  "title": "Server Blocks and Locations: How nginx Picks What to Serve",
+  "difficulty": "intermediate",
+  "tags": ["nginx", "virtual-hosts", "locations", "routing"],
+  "intro": "One nginx serves many sites and many paths. For each request it makes two choices: which server block (by address, port, and the Host header), then which location inside it. Most 'nginx is serving the wrong thing' problems are one of those two choices going differently from what the author expected. You're on web-1.",
+  "steps": [
+    {
+      "prompt": "Test a site without touching DNS: request / from nginx on 127.0.0.1, with the Host header set to api.example.com.",
+      "expected_commands": ["curl -s -H \"Host: api.example.com\" http://127.0.0.1/", "curl -s -H 'Host: api.example.com' http://127.0.0.1/", "curl -H \"Host: api.example.com\" http://127.0.0.1/", "curl -s -H \"Host: api.example.com\" http://localhost/", "curl -s -H \"Host: api.example.com\" 127.0.0.1"],
+      "fake_output": "{\"service\":\"api\",\"status\":\"ok\"}",
+      "explanation": "nginx matched the Host header to the api.example.com server block.",
+      "why": "The Host header is how one IP address serves many sites. Setting it by hand lets you test a server block before DNS points at this machine, or check one specific server behind a load balancer. For HTTPS use 'curl --resolve api.example.com:443:127.0.0.1 https://api.example.com/' so the TLS name matches as well."
+    },
+    {
+      "prompt": "Now send a Host that no server block names: nosuchsite.example.com.",
+      "expected_commands": ["curl -s -H \"Host: nosuchsite.example.com\" http://127.0.0.1/", "curl -s -H 'Host: nosuchsite.example.com' http://127.0.0.1/", "curl -H \"Host: nosuchsite.example.com\" http://127.0.0.1/", "curl -s -H \"Host: nosuchsite.example.com\" http://localhost/", "curl -s -H \"Host: nosuchsite.example.com\" 127.0.0.1"],
+      "fake_output": "<html><title>Shop - Admin Login</title>...",
+      "explanation": "An unknown hostname got the admin login page.",
+      "why": "When no server_name matches, nginx uses the default server for that port: the one marked default_server, or failing that, the first one it loaded, which depends on file names. Here that happened to be the admin site, so anyone hitting the bare IP address sees it. The fix is an explicit catch-all that serves nothing."
+    },
+    {
+      "prompt": "What should the catch-all server block do with requests for unknown hostnames?\n  a) Proxy them to the main application\n  b) Be marked default_server and close the connection without a response (return 444), or return a plain 404\n  c) Redirect them to the admin site\n  d) Nothing: leave it to file order\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "server {\n    listen 80 default_server;\n    listen 443 ssl default_server;\n    server_name _;\n    ssl_reject_handshake on;\n    return 444;\n}",
+      "hint": "Unknown hostnames are mostly scanners working through IP ranges.",
+      "explanation": "An explicit default server that gives scanners nothing.",
+      "why": "444 is nginx-specific: close the connection with no response. '_' isn't special, just a name that will never match, so the block is only reached as the default. ssl_reject_handshake stops nginx presenting a real site's certificate to an unknown name, which would reveal your hostnames. Being explicit also means adding a new site file can never silently change which site is the default."
+    },
+    {
+      "prompt": "Inside a server block, locations decide. A server has these three:\n    location /images/ { ... }\n    location ~ \\.png$ { ... }\n    location = /images/logo.png { ... }\nWhich one handles a request for /images/logo.png?\n  a) /images/ because it's listed first\n  b) The regular expression, because regexes always win\n  c) The exact match (=), which is checked first and ends the search\n  d) Whichever is longest\nType the letter.",
+      "expected_commands": ["c"],
+      "fake_output": "1. exact match (=)              -> used at once if it matches\n2. longest prefix match         -> remembered; used at once if marked ^~\n3. regular expressions (~, ~*)  -> in file order; first match wins\n4. otherwise the remembered longest prefix",
+      "hint": "Order in the file only matters among regular expressions.",
+      "explanation": "Exact match wins. Without it, the regex would have beaten the /images/ prefix.",
+      "why": "This order surprises people: a regex location beats a longer, more specific prefix unless that prefix is marked ^~. So adding 'location ~ \\.php$' somewhere can quietly take requests away from 'location /uploads/', which is how uploaded files end up being executed. Use ^~ on prefixes that must not be overridden."
+    },
+    {
+      "prompt": "Check what a missing page returns on the shop site: request only the headers for /no-such-page with Host shop.example.com.",
+      "expected_commands": ["curl -sI -H \"Host: shop.example.com\" http://127.0.0.1/no-such-page", "curl -sI -H 'Host: shop.example.com' http://127.0.0.1/no-such-page", "curl -I -H \"Host: shop.example.com\" http://127.0.0.1/no-such-page", "curl -s -I -H \"Host: shop.example.com\" http://127.0.0.1/no-such-page"],
+      "fake_output": "HTTP/1.1 200 OK\nServer: nginx\nContent-Type: text/html\nContent-Length: 4810",
+      "explanation": "A page that doesn't exist returns 200 with the home page's HTML.",
+      "why": "That's 'try_files $uri $uri/ /index.html': if no file matches, serve index.html. It's correct for a single-page application, where the browser's router handles the path. It's wrong for anything else: monitoring sees every URL as healthy, and search engines index errors as pages. For a normal site, end the list with =404."
+    },
+    {
+      "prompt": "Find which locations exist for the shop site and what each does: print the effective configuration and show each location line with the 3 lines after it.",
+      "expected_commands": ["sudo nginx -T | grep -A3 location", "nginx -T | grep -A3 location", "sudo nginx -T | grep -A 3 location", "nginx -T | grep -A 3 location", "sudo nginx -T 2>/dev/null | grep -A3 location"],
+      "fake_output": "    location / {\n        try_files $uri $uri/ /index.html;\n    }\n--\n    location /api/ {\n        proxy_pass http://backend;\n        proxy_set_header Host $host;\n--\n    location ^~ /static/ {\n        root /var/www/shop;\n        expires 7d;",
+      "explanation": "Three locations: the app shell, the API proxy, and static files protected from regex overrides by ^~.",
+      "why": "With /static/ and 'root /var/www/shop', a request for /static/app.css reads /var/www/shop/static/app.css: root appends the whole URI. 'alias' replaces the matched prefix instead. Mixing the two up is the usual reason static files return 404 while the file is plainly on disk."
+    }
+  ]
+}

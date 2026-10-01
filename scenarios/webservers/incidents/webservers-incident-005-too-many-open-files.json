@@ -1,0 +1,55 @@
+{
+  "id": "webservers-incident-005",
+  "type": "incident",
+  "category": "webservers",
+  "title": "The sale started, CPU is at 20%, and connections are being dropped",
+  "difficulty": "advanced",
+  "tags": ["nginx", "file-descriptors", "capacity", "systemd"],
+  "intro": "The autumn sale began at 09:00 and traffic tripled. Customers report pages that hang or fail to load, intermittently. On web-1, CPU is at 20% and memory is fine. The app servers are barely busy. Last week, in preparation, worker_connections was raised from 768 to 8192. nginx's master process is pid 1042.",
+  "steps": [
+    {
+      "prompt": "A healthy-looking server that drops connections has usually hit a limit. See what nginx is logging: show the last 3 lines of /var/log/nginx/error.log.",
+      "expected_commands": ["sudo tail -3 /var/log/nginx/error.log", "tail -3 /var/log/nginx/error.log", "sudo tail -n 3 /var/log/nginx/error.log", "tail -n 3 /var/log/nginx/error.log"],
+      "fake_output": "2026/09/28 09:14:02 [crit] 88120#88120: accept4() failed (24: Too many open files)\n2026/09/28 09:14:02 [alert] 88121#88121: *4410218 socket() failed (24: Too many open files) while connecting to upstream\n2026/09/28 09:14:02 [crit] 88122#88122: accept4() failed (24: Too many open files)",
+      "hint": "tail -3 /var/log/nginx/error.log"
+    },
+    {
+      "prompt": "'Too many open files' on accept (new client connections) and on socket (connections to the app). Every connection is a file descriptor. Check the limit a worker actually has: worker pid 88120.",
+      "expected_commands": ["grep \"open files\" /proc/88120/limits", "grep 'open files' /proc/88120/limits", "cat /proc/88120/limits | grep \"open files\"", "sudo grep \"open files\" /proc/88120/limits", "grep -i \"open files\" /proc/88120/limits"],
+      "fake_output": "Max open files            1024                 1024                 files",
+      "hint": "grep \"open files\" /proc/<pid>/limits"
+    },
+    {
+      "prompt": "1,024, soft and hard, while worker_connections is 8192. Count how many descriptors that worker has open right now.",
+      "expected_commands": ["sudo ls /proc/88120/fd | wc -l", "ls /proc/88120/fd | wc -l", "sudo ls -1 /proc/88120/fd | wc -l"],
+      "fake_output": "1024",
+      "hint": "ls /proc/<pid>/fd | wc -l"
+    },
+    {
+      "prompt": "The worker is exactly at its limit. The limit comes from how nginx is started. Check what systemd gives the nginx service: show its LimitNOFILE property.",
+      "expected_commands": ["systemctl show nginx -p LimitNOFILE", "systemctl show nginx --property=LimitNOFILE", "systemctl show nginx --property LimitNOFILE", "sudo systemctl show nginx -p LimitNOFILE", "systemctl show nginx.service -p LimitNOFILE"],
+      "fake_output": "LimitNOFILE=1024",
+      "hint": "systemctl show nginx -p LimitNOFILE"
+    },
+    {
+      "prompt": "systemd caps the service at 1,024, hard limit included, so nginx can't raise it for itself. A drop-in file /etc/systemd/system/nginx.service.d/limits.conf setting LimitNOFILE=65536 has been written. Make systemd read it.",
+      "expected_commands": ["sudo systemctl daemon-reload", "systemctl daemon-reload"],
+      "fake_output": "(no output)",
+      "hint": "systemctl daemon-reload"
+    },
+    {
+      "prompt": "A resource limit is applied when a process starts, so a reload isn't enough here: the master process must be restarted, which briefly drops connections. Mid-sale, with connections already being dropped, that's the right trade. Check the config first, then restart nginx only if it passes.",
+      "expected_commands": ["sudo nginx -t && sudo systemctl restart nginx", "nginx -t && systemctl restart nginx"],
+      "fake_output": "nginx: the configuration file /etc/nginx/nginx.conf syntax is ok\nnginx: configuration file /etc/nginx/nginx.conf test is successful",
+      "hint": "sudo nginx -t && sudo systemctl restart nginx"
+    },
+    {
+      "prompt": "Verify the new limit on a running worker. A new worker's pid is 93310.",
+      "expected_commands": ["grep \"open files\" /proc/93310/limits", "grep 'open files' /proc/93310/limits", "cat /proc/93310/limits | grep \"open files\"", "sudo grep \"open files\" /proc/93310/limits", "grep -i \"open files\" /proc/93310/limits"],
+      "fake_output": "Max open files            65536                65536                files",
+      "hint": "grep \"open files\" /proc/<pid>/limits"
+    }
+  ],
+  "resolution": "The server had plenty of CPU and memory and had run out of a third resource that no dashboard was showing: file descriptors. Every connection nginx holds is an open file, and a proxied request needs two, one to the client and one to the app. Last week's preparation raised worker_connections to 8192, which is how many connections a worker is willing to handle. It didn't raise how many files the operating system lets the worker open, which was still 1,024. So each worker hit the lower limit at about 500 concurrent requests and began failing both to accept clients and to connect upstream: hangs and failures for users, with nothing wrong in any graph. The change wasn't load-tested, so the sale was the test. The limit has three layers and the lowest wins: worker_connections in nginx, worker_rlimit_nofile (nginx raising its own soft limit, up to the hard limit), and the hard limit the service is started with, which for a systemd service is LimitNOFILE in the unit, not /etc/security/limits.conf and not your shell's ulimit. Here the hard limit itself was 1,024, so it had to be raised in systemd, and because limits are fixed at process start, that needed a restart, not a reload. The check that settles it is /proc/<pid>/limits on the running worker: it shows the limit in force, whatever the config files say. For next time: set worker_rlimit_nofile to at least twice worker_connections whenever you raise it; graph open descriptors against the limit, and nginx's active connections against workers times worker_connections; and load-test capacity changes before the day they're needed. The nginx error log said exactly what was wrong at 'crit' level from the first minute; alerting on crit and alert lines there would have paged someone at 09:01.",
+  "real_commands_used": ["tail /var/log/nginx/error.log", "grep 'open files' /proc/<pid>/limits", "ls /proc/<pid>/fd | wc -l", "systemctl show nginx -p LimitNOFILE", "systemctl daemon-reload", "nginx -t && systemctl restart nginx"]
+}

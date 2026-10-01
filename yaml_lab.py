@@ -112,7 +112,14 @@ def validate_manifest(parsed, validate_spec: dict, text: str = "") -> list:
         elif "[*]" in path:
             wanted = expected if isinstance(expected, list) else [expected]
             for item in wanted:
-                if not any(_equal(v, item) for v in values):
+                if any(_equal(v, item) for v in values):
+                    continue
+                if isinstance(item, dict) and "contains" in item:
+                    # Name only what the closest candidate lacks, not the whole spec.
+                    needles = item["contains"] if isinstance(item["contains"], list) else [item["contains"]]
+                    missing = min(([n for n in needles if n not in str(v)] for v in values), key=len)
+                    problems.append(f"{path} is missing: {', '.join(repr(m) for m in missing)}")
+                else:
                     problems.append(f"no {path} matches {item!r} (found {values!r})")
         elif not _equal(values[0], expected):
             if isinstance(expected, dict) and "contains" in expected:
@@ -161,7 +168,7 @@ def prepare_file(step: dict) -> Path:
 
 def load_and_parse(file_path: Path, fmt: str = "yaml"):
     """Returns (parsed_obj_or_None, problems_list). fmt picks the parser
-    from lab_formats: yaml, dockerfile, hcl, or bash."""
+    in lab_formats.PARSERS (yaml, dockerfile, hcl, bash, nginx, ...)."""
     if not file_path.exists():
         return None, ["File not found — did you save it?"]
     try:

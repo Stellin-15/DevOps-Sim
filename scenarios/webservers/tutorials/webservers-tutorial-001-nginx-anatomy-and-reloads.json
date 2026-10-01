@@ -1,0 +1,53 @@
+{
+  "id": "webservers-tutorial-001",
+  "type": "tutorial",
+  "category": "webservers",
+  "title": "nginx Anatomy: Test, Reload, and Know What's Running",
+  "difficulty": "beginner",
+  "tags": ["nginx", "configuration", "reload", "basics"],
+  "intro": "Nearly every request to a production system goes through a reverse proxy, and nginx is the most common one. A mistake in its configuration takes down every site behind it at once, so the habit to build first is: test, then reload, never restart blind. You're on a web host, web-1, where nginx fronts the shop application.",
+  "steps": [
+    {
+      "prompt": "Someone edited the configuration. Before anything is reloaded, test it.",
+      "expected_commands": ["sudo nginx -t", "nginx -t"],
+      "fake_output": "nginx: [emerg] unexpected \"}\" in /etc/nginx/conf.d/shop.conf:14\nnginx: configuration file /etc/nginx/nginx.conf test failed",
+      "explanation": "The test failed, and names the file and line: shop.conf, line 14.",
+      "why": "The usual cause of an unexpected '}' is a missing semicolon on the line before it. Nothing has been applied: the running nginx still has the last good configuration in memory. That's the point of testing first. A 'systemctl restart nginx' with this file would have stopped nginx and then failed to start it, taking every site down."
+    },
+    {
+      "prompt": "The missing semicolon has been fixed. Test again.",
+      "expected_commands": ["sudo nginx -t", "nginx -t"],
+      "fake_output": "nginx: the configuration file /etc/nginx/nginx.conf syntax is ok\nnginx: configuration file /etc/nginx/nginx.conf test is successful",
+      "explanation": "The syntax is valid and the referenced files (certificates, includes) exist.",
+      "why": "nginx -t checks syntax and that files it needs can be opened. It can't tell you the configuration does what you meant, such as routing to the right backend. So the sequence is always test, reload, then make a real request."
+    },
+    {
+      "prompt": "The configuration is spread across included files. Print the whole effective configuration and find every server_name in it.",
+      "expected_commands": ["sudo nginx -T | grep server_name", "nginx -T | grep server_name", "sudo nginx -T 2>/dev/null | grep server_name"],
+      "fake_output": "    server_name _;\n    server_name shop.example.com www.shop.example.com;\n    server_name api.example.com;\n    server_name admin.example.com;",
+      "explanation": "Four server blocks: a catch-all and three sites.",
+      "why": "nginx -T (capital T) prints the configuration as nginx sees it, with every include expanded, which is the only reliable way to answer 'which file sets this?'. Grepping the files yourself misses includes and catches files that aren't loaded, such as a config left in sites-available without a link in sites-enabled."
+    },
+    {
+      "prompt": "Apply the new configuration without dropping connections.",
+      "expected_commands": ["sudo systemctl reload nginx", "sudo nginx -s reload", "systemctl reload nginx", "nginx -s reload"],
+      "fake_output": "(no output)",
+      "explanation": "nginx re-read its configuration. Requests in progress finished on the old one.",
+      "why": "On reload, the master process starts new workers with the new configuration and tells the old workers to finish their current requests and exit. Nobody is disconnected. A restart stops everything first, dropping connections, and if the new configuration is bad it never comes back. Reload also refuses a bad configuration and keeps running the old one."
+    },
+    {
+      "prompt": "See that process model for yourself: list the nginx processes with their pid, parent pid, and command.",
+      "expected_commands": ["ps -o pid,ppid,cmd -C nginx", "ps -C nginx -o pid,ppid,cmd", "ps -ef | grep nginx", "ps aux | grep nginx"],
+      "fake_output": "    PID    PPID CMD\n   1042       1 nginx: master process /usr/sbin/nginx -g daemon on; master_process on;\n  88120    1042 nginx: worker process\n  88121    1042 nginx: worker process\n  88122    1042 nginx: worker process\n  88123    1042 nginx: worker process\n  61007    1042 nginx: worker process is shutting down",
+      "explanation": "One master (pid 1042), four new workers, and one old worker still finishing a long request.",
+      "why": "The master runs as root so it can bind ports 80 and 443 and read private keys; the workers run as an unprivileged user and do the real work. 'worker process is shutting down' is an old worker draining after the reload. One that lingers for hours is usually holding a long-lived connection such as a WebSocket or a large download."
+    },
+    {
+      "prompt": "Confirm which addresses and ports nginx is actually listening on.",
+      "expected_commands": ["sudo ss -tlnp | grep nginx", "ss -tlnp | grep nginx"],
+      "fake_output": "LISTEN 0  511  0.0.0.0:80    0.0.0.0:*  users:((\"nginx\",pid=88120,fd=6),(\"nginx\",pid=1042,fd=6))\nLISTEN 0  511  0.0.0.0:443   0.0.0.0:*  users:((\"nginx\",pid=88120,fd=7),(\"nginx\",pid=1042,fd=7))",
+      "explanation": "Listening on ports 80 and 443, on all addresses.",
+      "why": "This checks the result, not the intention. A 'listen' line in a file that isn't included, or a reload that was refused, leaves the config and the reality different, and only the socket list shows the reality. It's also the first check when a site is unreachable: if the port isn't here, the problem is nginx; if it is, look at the firewall and the network."
+    }
+  ]
+}

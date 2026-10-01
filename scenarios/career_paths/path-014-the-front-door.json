@@ -1,0 +1,21 @@
+{
+  "id": "path-014",
+  "type": "career_path",
+  "title": "The Front Door: Everything Between the User and Your App",
+  "difficulty": "intermediate",
+  "tags": ["webservers", "networking", "systemdesign"],
+  "intro": "A request leaves a browser and, before your application sees it, passes through DNS, TLS, a load balancer, and a reverse proxy. When users say 'the site is down', the fault is in that chain more often than in the app. Walk the chain from the outside in: read HTTP and TLS with curl and openssl, then run the proxy that terminates them, then handle the failures that live there.",
+  "steps": [
+    "networking-tutorial-008",
+    "networking-tutorial-007",
+    "webservers-tutorial-001",
+    "webservers-tutorial-003",
+    "systemdesign-tutorial-002",
+    "webservers-tutorial-004",
+    "webservers-tutorial-006",
+    "webservers-incident-001",
+    "webservers-incident-002",
+    "webservers-incident-006"
+  ],
+  "resolution": "The proxy is the best-placed witness in your system: it sees every request, knows which upstream it tried, and writes down the exact system error it got. 502 means the app refused or broke; 504 means it was slow; a private address where a client's should be means a layer in front is hiding the truth. The three incidents had one thing in common: two things that everyone assumed were the same turned out to differ. The port the app listened on and the port the proxy called. The certificate on disk and the certificate being served. The client address and the address of the balancer in front. In each case the fix took minutes once someone compared them. Next, write the configuration yourself in the nginx Writing Labs (yaml-033, yaml-034)."
+}

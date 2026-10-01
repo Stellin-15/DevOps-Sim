@@ -1,0 +1,55 @@
+{
+  "id": "webservers-tutorial-007",
+  "type": "tutorial",
+  "category": "webservers",
+  "title": "Rate Limits, Body Limits, and Keeping Abuse off the App",
+  "difficulty": "intermediate",
+  "tags": ["nginx", "rate-limiting", "security", "limits"],
+  "intro": "The proxy is the cheapest place to refuse a request: it can turn away a flood before the application spends anything on it. System Design covered rate limiting as an idea; this is how it's configured and how you recognise it in logs. You're on web-1, where the login endpoint is being hit by a password-guessing script.",
+  "steps": [
+    {
+      "prompt": "See what limits are configured: search the effective configuration for limit_req.",
+      "expected_commands": ["sudo nginx -T | grep limit_req", "nginx -T | grep limit_req", "sudo nginx -T 2>/dev/null | grep limit_req"],
+      "fake_output": "    limit_req_zone $binary_remote_addr zone=login:10m rate=5r/m;\n        limit_req zone=login burst=5 nodelay;\n        limit_req_status 429;",
+      "explanation": "A zone named login allows 5 requests a minute per client address, with a burst of 5, and rejects the excess with 429.",
+      "why": "limit_req_zone defines the counter: the key (the client address), 10 MB of shared memory (about 160,000 addresses), and the rate. limit_req applies it in a location. 5 a minute means one request every 12 seconds, not five at once then nothing. 'burst=5' lets five extra through, and 'nodelay' serves them immediately instead of spacing them out, which is what a person retyping a password needs."
+    },
+    {
+      "prompt": "Test it. Send 20 requests to https://shop.example.com/login, 5 at a time, with ApacheBench.",
+      "expected_commands": ["ab -n 20 -c 5 https://shop.example.com/login", "ab -c 5 -n 20 https://shop.example.com/login"],
+      "fake_output": "Concurrency Level:      5\nComplete requests:      20\nFailed requests:        0\nNon-2xx responses:      14\nRequests per second:    212.40 [#/sec]",
+      "explanation": "6 requests succeeded (1 plus the burst of 5) and 14 were rejected.",
+      "why": "Always test a limit after setting it: a limit that never triggers and one that blocks real users look the same in a config file. The default rejection status is 503, which monitoring reads as 'the site is down'. Setting limit_req_status 429 (Too Many Requests) tells clients and dashboards what actually happened."
+    },
+    {
+      "prompt": "Find the rejections in the error log: search /var/log/nginx/error.log for 'limiting requests' and show the last 2.",
+      "expected_commands": ["grep \"limiting requests\" /var/log/nginx/error.log | tail -2", "grep 'limiting requests' /var/log/nginx/error.log | tail -2", "sudo grep \"limiting requests\" /var/log/nginx/error.log | tail -2", "grep \"limiting requests\" /var/log/nginx/error.log | tail -n 2"],
+      "fake_output": "2026/09/28 11:52:10 [error] *915500 limiting requests, excess: 5.940 by zone \"login\", client: 203.0.113.77, request: \"POST /login HTTP/1.1\"\n2026/09/28 11:52:10 [error] *915501 limiting requests, excess: 5.960 by zone \"login\", client: 203.0.113.77, request: \"POST /login HTTP/1.1\"",
+      "explanation": "Each rejection is logged with the zone and the client address.",
+      "why": "This is how you tell a rate-limit rejection from a real outage, and how you find who's being limited. If the client address is the same for every line and it's your load balancer's, the limit is counting all users as one; webservers-incident-006 is that mistake."
+    },
+    {
+      "prompt": "A different complaint: uploading a 12 MB product photo fails. Reproduce it: POST the file photo.jpg to https://shop.example.com/api/upload and print only the status code.",
+      "expected_commands": ["curl -s -o /dev/null -w \"%{http_code}\\n\" -F \"file=@photo.jpg\" https://shop.example.com/api/upload", "curl -s -o /dev/null -w '%{http_code}\\n' -F 'file=@photo.jpg' https://shop.example.com/api/upload", "curl -s -o /dev/null -w \"%{http_code}\\n\" -F file=@photo.jpg https://shop.example.com/api/upload", "curl -o /dev/null -s -w \"%{http_code}\\n\" -F \"file=@photo.jpg\" https://shop.example.com/api/upload"],
+      "fake_output": "413",
+      "hint": "curl -s -o /dev/null -w \"%{http_code}\\n\" -F \"file=@photo.jpg\" https://shop.example.com/api/upload",
+      "explanation": "413 Content Too Large, returned by nginx. The app never saw the request.",
+      "why": "client_max_body_size defaults to 1 MB, and nginx rejects anything bigger before proxying it. The application's logs show nothing, which is why this one confuses people. Raise it only in the upload location, not globally: a small default everywhere else stops someone posting gigabytes at your login form."
+    },
+    {
+      "prompt": "Rate limits count requests. A slow attack instead opens many connections and holds them. Check whether connections per client are limited: search the effective configuration for limit_conn.",
+      "expected_commands": ["sudo nginx -T | grep limit_conn", "nginx -T | grep limit_conn", "sudo nginx -T 2>/dev/null | grep limit_conn"],
+      "fake_output": "    limit_conn_zone $binary_remote_addr zone=perip:10m;\n    limit_conn perip 20;",
+      "explanation": "Each client address may hold at most 20 connections at once.",
+      "why": "limit_conn caps simultaneous connections, which is what protects against a client that opens thousands and sends data one byte at a time. Timeouts do the rest: client_header_timeout and client_body_timeout drop clients that are too slow. Limits at the proxy are a first line; a large distributed attack needs a CDN or the cloud provider's protection in front, because it never fits through one server's network link."
+    },
+    {
+      "prompt": "A stricter option for the admin area is to allow only the office network. Which is the correct pair of directives in 'location /admin/' to permit 10.20.0.0/16 and refuse everyone else?\n  a) deny all; allow 10.20.0.0/16;\n  b) allow 10.20.0.0/16; deny all;\n  c) allow all; deny 10.20.0.0/16;\n  d) The order doesn't matter\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "location /admin/ {\n    allow 10.20.0.0/16;\n    deny all;\n    proxy_pass http://backend;\n}",
+      "hint": "The rules are checked in order and the first match wins.",
+      "explanation": "Allow the network first, then deny everything else.",
+      "why": "allow and deny are evaluated top to bottom and stop at the first match, so 'deny all' first refuses everybody, including the office. Refused clients get 403. Behind a load balancer the address nginx sees is the balancer's, so this rule needs the real client address restored first, or it allows or blocks everyone together."
+    }
+  ]
+}

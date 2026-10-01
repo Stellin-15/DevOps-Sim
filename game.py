@@ -46,6 +46,7 @@ CATEGORY_LABELS = {
     "git": "Git",
     "systemdesign": "System Design",
     "databases": "Databases",
+    "webservers": "Web Servers & Proxies",
 }
 
 

@@ -1,0 +1,55 @@
+{
+  "id": "webservers-incident-004",
+  "type": "incident",
+  "category": "webservers",
+  "title": "The new site went live showing the admin login page",
+  "difficulty": "intermediate",
+  "tags": ["nginx", "virtual-hosts", "server_name", "default-server"],
+  "intro": "A new marketing site, promo.example.com, was launched an hour ago on web-1. Customers following the campaign link are seeing the staff admin login page instead, over HTTPS, with a certificate warning. The engineer who set it up says the config is there, 'nginx -t' passed, and nginx was reloaded.",
+  "steps": [
+    {
+      "prompt": "Reproduce it on the server itself, taking DNS out of the picture: request the page title from nginx on 127.0.0.1 with Host promo.example.com, showing only the line containing <title>.",
+      "expected_commands": ["curl -s -H \"Host: promo.example.com\" http://127.0.0.1/ | grep \"<title>\"", "curl -s -H 'Host: promo.example.com' http://127.0.0.1/ | grep '<title>'", "curl -s -H \"Host: promo.example.com\" http://127.0.0.1/ | grep -i title", "curl -s -H \"Host: promo.example.com\" http://127.0.0.1/ | grep title", "curl -s -H \"Host: promo.example.com\" http://127.0.0.1/"],
+      "fake_output": "<title>Shop - Admin Login</title>",
+      "hint": "curl -s -H \"Host: promo.example.com\" http://127.0.0.1/ | grep \"<title>\""
+    },
+    {
+      "prompt": "nginx itself returns the admin site for that hostname, so this isn't DNS or a CDN. List every server_name nginx has loaded.",
+      "expected_commands": ["sudo nginx -T | grep server_name", "nginx -T | grep server_name", "sudo nginx -T 2>/dev/null | grep server_name"],
+      "fake_output": "    server_name admin.example.com;\n    server_name shop.example.com www.shop.example.com;\n    server_name api.example.com;",
+      "hint": "nginx -T | grep server_name"
+    },
+    {
+      "prompt": "promo.example.com isn't there at all. nginx hasn't loaded the new config. See which files it includes: search the effective configuration for include lines.",
+      "expected_commands": ["sudo nginx -T | grep include", "nginx -T | grep include", "sudo nginx -T 2>/dev/null | grep include", "grep include /etc/nginx/nginx.conf", "sudo grep include /etc/nginx/nginx.conf"],
+      "fake_output": "    include /etc/nginx/mime.types;\n    include /etc/nginx/conf.d/*.conf;\n    include /etc/nginx/sites-enabled/*;",
+      "hint": "nginx -T | grep include"
+    },
+    {
+      "prompt": "nginx loads conf.d/*.conf and everything in sites-enabled. Find the new file: list both sites-available and sites-enabled.",
+      "expected_commands": ["ls -l /etc/nginx/sites-available /etc/nginx/sites-enabled", "ls -l /etc/nginx/sites-available/ /etc/nginx/sites-enabled/", "ls /etc/nginx/sites-available /etc/nginx/sites-enabled", "ls -la /etc/nginx/sites-available /etc/nginx/sites-enabled"],
+      "fake_output": "/etc/nginx/sites-available:\n-rw-r--r-- 1 root root  412 Jun  4 10:40 admin\n-rw-r--r-- 1 root root  880 Jun  4 10:40 api\n-rw-r--r-- 1 root root  733 Sep 28 13:02 promo\n-rw-r--r-- 1 root root 1204 Jul  6 09:15 shop\n\n/etc/nginx/sites-enabled:\nlrwxrwxrwx 1 root root 32 Jun  4 10:41 admin -> /etc/nginx/sites-available/admin\nlrwxrwxrwx 1 root root 30 Jun  4 10:41 api -> /etc/nginx/sites-available/api\nlrwxrwxrwx 1 root root 31 Jul  6 09:15 shop -> /etc/nginx/sites-available/shop",
+      "hint": "ls -l /etc/nginx/sites-available /etc/nginx/sites-enabled"
+    },
+    {
+      "prompt": "The promo file exists in sites-available and was never linked into sites-enabled, so nginx never read it. That's also why 'nginx -t' passed: it tested a configuration that didn't contain the new site. Enable it with a symbolic link.",
+      "expected_commands": ["sudo ln -s /etc/nginx/sites-available/promo /etc/nginx/sites-enabled/promo", "sudo ln -s /etc/nginx/sites-available/promo /etc/nginx/sites-enabled/", "ln -s /etc/nginx/sites-available/promo /etc/nginx/sites-enabled/promo", "ln -s /etc/nginx/sites-available/promo /etc/nginx/sites-enabled/"],
+      "fake_output": "(no output)",
+      "hint": "sudo ln -s /etc/nginx/sites-available/promo /etc/nginx/sites-enabled/promo"
+    },
+    {
+      "prompt": "Now the file is being read for the first time, so test it, and reload only if the test passes.",
+      "expected_commands": ["sudo nginx -t && sudo systemctl reload nginx", "sudo nginx -t && sudo nginx -s reload", "nginx -t && systemctl reload nginx", "nginx -t && nginx -s reload"],
+      "fake_output": "nginx: the configuration file /etc/nginx/nginx.conf syntax is ok\nnginx: configuration file /etc/nginx/nginx.conf test is successful",
+      "hint": "sudo nginx -t && sudo systemctl reload nginx"
+    },
+    {
+      "prompt": "Check the right site answers now: request the title again with Host promo.example.com.",
+      "expected_commands": ["curl -s -H \"Host: promo.example.com\" http://127.0.0.1/ | grep \"<title>\"", "curl -s -H 'Host: promo.example.com' http://127.0.0.1/ | grep '<title>'", "curl -s -H \"Host: promo.example.com\" http://127.0.0.1/ | grep -i title", "curl -s -H \"Host: promo.example.com\" http://127.0.0.1/ | grep title", "curl -s -H \"Host: promo.example.com\" http://127.0.0.1/"],
+      "fake_output": "<title>Autumn Sale - Shop</title>",
+      "hint": "The same command as the first step."
+    }
+  ],
+  "resolution": "Two separate mistakes combined. The first was small: the new site's file was created in sites-available and never linked into sites-enabled, so nginx never loaded it. 'nginx -t' passing proved nothing, because it tests the configuration nginx loads, and the new file wasn't part of it. The check that would have caught it is the one that showed the problem here: 'nginx -T | grep server_name' lists what's really loaded, and a request with the new Host header shows what's really served. The second mistake was older and turned a missing site into an embarrassing one. With no server block matching promo.example.com, nginx fell back to the default server for the port, and since none was marked default_server, that was the first one loaded: files load in alphabetical order, and 'admin' sorts first. So every unknown hostname, including every scanner hitting the bare IP address, was being shown the staff login page, with the admin site's certificate, which is why browsers warned. That had been true for months; the launch just pointed customers at it. Fixing the link solved today's problem. The lasting fix is an explicit catch-all default server that serves nothing (return 444, with ssl_reject_handshake on), so an unmatched name can never land on a real site again, whatever files are added or renamed. The admin site should also not be reachable from the internet at all: restrict it by network or put it behind the VPN. And the launch checklist should end with a request for the new hostname, not with 'the reload succeeded'.",
+  "real_commands_used": ["curl -H 'Host: <name>' http://127.0.0.1/", "nginx -T | grep server_name", "nginx -T | grep include", "ls -l sites-available sites-enabled", "ln -s to enable the site", "nginx -t && systemctl reload nginx"]
+}

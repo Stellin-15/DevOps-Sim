@@ -1,0 +1,55 @@
+{
+  "id": "webservers-tutorial-010",
+  "type": "tutorial",
+  "category": "webservers",
+  "title": "HAProxy: Draining a Server Without Dropping a Request",
+  "difficulty": "intermediate",
+  "tags": ["haproxy", "load-balancing", "draining", "operations"],
+  "intro": "HAProxy is the other proxy you'll meet most, often in front of databases and as a dedicated load balancer. Its advantage for operations is the runtime API: you can inspect and change live state through a socket without touching the config file. The host lb-1 balances the backend named app across the servers app1, app2, and app3. You need to take app2 out for maintenance.",
+  "steps": [
+    {
+      "prompt": "Check the configuration file /etc/haproxy/haproxy.cfg is valid.",
+      "expected_commands": ["sudo haproxy -c -f /etc/haproxy/haproxy.cfg", "haproxy -c -f /etc/haproxy/haproxy.cfg", "sudo haproxy -f /etc/haproxy/haproxy.cfg -c"],
+      "fake_output": "Configuration file is valid",
+      "explanation": "The file parses and is consistent.",
+      "why": "The same discipline as 'nginx -t': check before any reload. Warnings are printed here too, and are worth reading; a common one is a backend with no health check, which means HAProxy will keep sending traffic to a dead server."
+    },
+    {
+      "prompt": "Ask the running HAProxy for the state of its servers, through the admin socket at /run/haproxy/admin.sock.",
+      "expected_commands": ["echo \"show servers state\" | sudo socat stdio /run/haproxy/admin.sock", "echo \"show servers state\" | socat stdio /run/haproxy/admin.sock", "echo 'show servers state' | sudo socat stdio /run/haproxy/admin.sock", "echo 'show servers state' | socat stdio /run/haproxy/admin.sock"],
+      "fake_output": "# be_name srv_name srv_addr    srv_op_state srv_admin_state srv_check_status\napp       app1     10.0.1.11   2            0               L7OK\napp       app2     10.0.1.12   2            0               L7OK\napp       app3     10.0.1.13   2            0               L7OK",
+      "hint": "echo \"show servers state\" | sudo socat stdio /run/haproxy/admin.sock",
+      "explanation": "All three servers are up (operational state 2), in normal admin state (0), passing layer-7 health checks.",
+      "why": "Unlike open-source nginx, HAProxy checks its servers actively: 'option httpchk GET /health' requests a URL on a schedule and removes a server that fails before any user request reaches it. L7OK means the HTTP check passed; L4OK would mean only that the port accepts connections, which a hung application still does."
+    },
+    {
+      "prompt": "Put server app2 in backend app into drain mode.",
+      "expected_commands": ["echo \"set server app/app2 state drain\" | sudo socat stdio /run/haproxy/admin.sock", "echo \"set server app/app2 state drain\" | socat stdio /run/haproxy/admin.sock", "echo 'set server app/app2 state drain' | sudo socat stdio /run/haproxy/admin.sock", "echo 'set server app/app2 state drain' | socat stdio /run/haproxy/admin.sock"],
+      "fake_output": "(no output)",
+      "explanation": "app2 gets no new connections; the ones it has continue until they finish.",
+      "why": "Drain is the polite way to remove a server. 'maint' is the abrupt one: it also stops health checks and is for a server that's already broken. Draining first means no request is cut off mid-flight. Sessions pinned to app2 by a cookie still go there while it drains, which is why long-lived sticky sessions make maintenance slow."
+    },
+    {
+      "prompt": "Wait for it to empty. Show the current sessions for each server: from 'show stat', print the proxy name, server name, and current sessions (fields 1, 2, and 5 of the comma-separated output).",
+      "expected_commands": ["echo \"show stat\" | sudo socat stdio /run/haproxy/admin.sock | cut -d, -f1,2,5", "echo \"show stat\" | socat stdio /run/haproxy/admin.sock | cut -d, -f1,2,5", "echo 'show stat' | sudo socat stdio /run/haproxy/admin.sock | cut -d, -f1,2,5", "echo \"show stat\" | sudo socat stdio /run/haproxy/admin.sock | cut -d , -f 1,2,5"],
+      "fake_output": "# pxname,svname,scur\nweb,FRONTEND,412\napp,app1,208\napp,app2,0\napp,app3,204\napp,BACKEND,412",
+      "hint": "echo \"show stat\" | sudo socat stdio /run/haproxy/admin.sock | cut -d, -f1,2,5",
+      "explanation": "app2 has 0 current sessions; app1 and app3 are carrying its share.",
+      "why": "'show stat' is CSV with dozens of columns, so cut picks the useful ones; scur is current sessions. Check the other two numbers before starting maintenance: the remaining servers now carry 50% more each. If they were already near their limit, taking one out causes the outage you were trying to avoid."
+    },
+    {
+      "prompt": "Maintenance on app2 is done. Put it back into rotation.",
+      "expected_commands": ["echo \"set server app/app2 state ready\" | sudo socat stdio /run/haproxy/admin.sock", "echo \"set server app/app2 state ready\" | socat stdio /run/haproxy/admin.sock", "echo 'set server app/app2 state ready' | sudo socat stdio /run/haproxy/admin.sock", "echo 'set server app/app2 state ready' | socat stdio /run/haproxy/admin.sock"],
+      "fake_output": "(no output)",
+      "explanation": "app2 receives new connections again, once its health check passes.",
+      "why": "Runtime changes live in memory only: a reload or restart returns every server to what the config file says. That's usually what you want for maintenance. If a server should stay out, change the file as well. With 'slowstart 30s' on the server line, HAProxy ramps traffic up gradually so a cold application isn't hit with full load at once."
+    },
+    {
+      "prompt": "A config change (a new backend) has been validated. Apply it without dropping connections.",
+      "expected_commands": ["sudo systemctl reload haproxy", "systemctl reload haproxy"],
+      "fake_output": "(no output)",
+      "explanation": "A new HAProxy process took over the listening sockets; the old one finishes its connections and exits.",
+      "why": "Like nginx, reload is seamless and restart is not. The old process stays until its last connection closes, so a long-lived connection can keep an old process, with the old configuration, alive for hours; 'hard-stop-after' sets a deadline. This is one more reason to use the runtime API for routine changes: it needs no reload at all."
+    }
+  ]
+}

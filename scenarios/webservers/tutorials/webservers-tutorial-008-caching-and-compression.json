@@ -1,0 +1,54 @@
+{
+  "id": "webservers-tutorial-008",
+  "type": "tutorial",
+  "category": "webservers",
+  "title": "Proxy Caching and Compression",
+  "difficulty": "intermediate",
+  "tags": ["nginx", "caching", "gzip", "performance"],
+  "intro": "A proxy can answer some requests without asking the application at all, and shrink the ones it does pass back. Both are large, cheap performance gains, and both can go wrong in ways that are hard to see: stale pages, or one user's page served to another. You're on web-1, where the product catalogue at /api/products is slow and rarely changes.",
+  "steps": [
+    {
+      "prompt": "The catalogue location has proxy caching enabled with a header that reports the cache result. Request the headers of https://shop.example.com/api/products.",
+      "expected_commands": ["curl -sI https://shop.example.com/api/products", "curl -I https://shop.example.com/api/products", "curl -s -I https://shop.example.com/api/products"],
+      "fake_output": "HTTP/2 200\ncontent-type: application/json\ncache-control: public, max-age=300\nx-cache-status: MISS",
+      "explanation": "MISS: nginx didn't have it, asked the app, and stored the answer.",
+      "why": "'add_header X-Cache-Status $upstream_cache_status' is the first thing to add to any cached location: without it you can't tell whether caching is working. The values are MISS, HIT, EXPIRED, STALE, BYPASS, and UPDATING."
+    },
+    {
+      "prompt": "Request the same headers again.",
+      "expected_commands": ["curl -sI https://shop.example.com/api/products", "curl -I https://shop.example.com/api/products", "curl -s -I https://shop.example.com/api/products"],
+      "fake_output": "HTTP/2 200\ncontent-type: application/json\ncache-control: public, max-age=300\nx-cache-status: HIT",
+      "explanation": "HIT: answered from nginx's cache. The application wasn't contacted.",
+      "why": "For the next 5 minutes every request for this URL costs the app nothing. nginx takes the lifetime from the app's Cache-Control header, falling back to proxy_cache_valid. Even a 1-second cache on a busy endpoint turns thousands of identical requests a second into one."
+    },
+    {
+      "prompt": "Check how the cache is defined: search the effective configuration for proxy_cache.",
+      "expected_commands": ["sudo nginx -T | grep proxy_cache", "nginx -T | grep proxy_cache", "sudo nginx -T 2>/dev/null | grep proxy_cache"],
+      "fake_output": "    proxy_cache_path /var/cache/nginx keys_zone=app:10m max_size=1g inactive=60m;\n        proxy_cache app;\n        proxy_cache_valid 200 5m;\n        proxy_cache_use_stale error timeout updating http_502 http_504;\n        proxy_cache_lock on;",
+      "explanation": "Up to 1 GB on disk, entries dropped after 60 minutes unused, and two protective settings.",
+      "why": "proxy_cache_use_stale serves the last good copy when the app is failing or slow, so a brief outage is invisible for cached pages. proxy_cache_lock lets only one request rebuild an expired entry while the others wait, which prevents the stampede described in System Design. Those two lines are most of the reliability value of a proxy cache."
+    },
+    {
+      "prompt": "The cache key is the URL by default. Which of these responses must NOT be cached under that key?\n  a) The public product catalogue\n  b) A CSS file\n  c) /api/account, which returns the logged-in user's own details\n  d) The home page for anonymous visitors\nType the letter.",
+      "expected_commands": ["c"],
+      "fake_output": "request 1: alice GET /api/account  -> MISS, alice's details stored under key '/api/account'\nrequest 2: bob   GET /api/account  -> HIT, bob receives alice's details",
+      "hint": "Same URL, different answer depending on who asks.",
+      "explanation": "Per-user responses must never be stored under a key that doesn't include the user.",
+      "why": "This is how real data leaks happen through caches. nginx refuses to cache a response that sets a cookie or is marked private or no-store, but only if the app sends those headers. Defend at both ends: the app marks personal responses 'Cache-Control: private, no-store', and the proxy bypasses the cache when a session cookie or Authorization header is present (proxy_cache_bypass and proxy_no_cache)."
+    },
+    {
+      "prompt": "Now compression. Request the headers of https://shop.example.com/static/app.js, telling the server you accept gzip.",
+      "expected_commands": ["curl -sI -H \"Accept-Encoding: gzip\" https://shop.example.com/static/app.js", "curl -sI -H 'Accept-Encoding: gzip' https://shop.example.com/static/app.js", "curl -I -H \"Accept-Encoding: gzip\" https://shop.example.com/static/app.js", "curl -s -I -H \"Accept-Encoding: gzip\" https://shop.example.com/static/app.js"],
+      "fake_output": "HTTP/2 200\ncontent-type: application/javascript\ncontent-length: 1204410\ncache-control: max-age=604800",
+      "explanation": "No content-encoding header, and 1.2 MB: the file was sent uncompressed.",
+      "why": "'gzip on' by itself compresses only text/html. Every other type has to be listed in gzip_types: JavaScript, CSS, JSON, SVG. This is a very common omission, and text compresses to about a quarter of its size. Don't compress images, video, or archives, which are already compressed and just cost CPU."
+    },
+    {
+      "prompt": "gzip_types has been set and nginx reloaded. Request the same headers again.",
+      "expected_commands": ["curl -sI -H \"Accept-Encoding: gzip\" https://shop.example.com/static/app.js", "curl -sI -H 'Accept-Encoding: gzip' https://shop.example.com/static/app.js", "curl -I -H \"Accept-Encoding: gzip\" https://shop.example.com/static/app.js", "curl -s -I -H \"Accept-Encoding: gzip\" https://shop.example.com/static/app.js"],
+      "fake_output": "HTTP/2 200\ncontent-type: application/javascript\ncontent-encoding: gzip\nvary: Accept-Encoding\ncache-control: max-age=604800",
+      "explanation": "content-encoding: gzip, and a Vary header so caches keep compressed and uncompressed copies apart.",
+      "why": "Vary: Accept-Encoding tells any cache in between that the response depends on that request header. For static files, compress once at build time and serve the .gz file with gzip_static, which costs no CPU per request. The one-week max-age is safe only because the file name changes when the content does (app.3f9a2c.js); a fixed name with a long lifetime means users keep the old version."
+    }
+  ]
+}

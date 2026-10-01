@@ -1,0 +1,55 @@
+{
+  "id": "webservers-incident-006",
+  "type": "incident",
+  "category": "webservers",
+  "title": "The new rate limit is blocking every customer at once",
+  "difficulty": "advanced",
+  "tags": ["nginx", "rate-limiting", "load-balancer", "x-forwarded-for", "real-ip"],
+  "intro": "Yesterday a per-client rate limit was added to /api/ on web-1: 10 requests a second per IP address, to stop a scraper. It was tested from a laptop and worked. This morning, at normal traffic, about 80% of API calls are being rejected with 429 for all customers. web-1 sits behind a cloud load balancer whose nodes have addresses in 10.0.0.0/24.",
+  "steps": [
+    {
+      "prompt": "See who the limiter thinks it's limiting: search /var/log/nginx/error.log for 'limiting requests' and show the last 3 lines.",
+      "expected_commands": ["grep \"limiting requests\" /var/log/nginx/error.log | tail -3", "grep 'limiting requests' /var/log/nginx/error.log | tail -3", "sudo grep \"limiting requests\" /var/log/nginx/error.log | tail -3", "grep \"limiting requests\" /var/log/nginx/error.log | tail -n 3"],
+      "fake_output": "2026/09/28 08:31:07 [error] *510221 limiting requests, excess: 20.410 by zone \"api\", client: 10.0.0.5, request: \"GET /api/products HTTP/1.1\"\n2026/09/28 08:31:07 [error] *510224 limiting requests, excess: 20.770 by zone \"api\", client: 10.0.0.6, request: \"POST /api/cart HTTP/1.1\"\n2026/09/28 08:31:07 [error] *510230 limiting requests, excess: 20.130 by zone \"api\", client: 10.0.0.5, request: \"GET /api/search HTTP/1.1\"",
+      "hint": "grep \"limiting requests\" /var/log/nginx/error.log | tail -3"
+    },
+    {
+      "prompt": "The 'clients' are 10.0.0.5 and 10.0.0.6: private addresses. Check how many distinct client addresses nginx has seen at all: count requests per address (field 1) in /var/log/nginx/access.log, most frequent first.",
+      "expected_commands": ["awk '{print $1}' /var/log/nginx/access.log | sort | uniq -c | sort -rn", "awk '{print $1}' /var/log/nginx/access.log | sort | uniq -c | sort -nr", "awk '{print $1}' /var/log/nginx/access.log | sort | uniq -c | sort -rn | head", "awk '{ print $1 }' /var/log/nginx/access.log | sort | uniq -c | sort -rn"],
+      "fake_output": " 412044 10.0.0.5\n 409871 10.0.0.6\n     12 127.0.0.1",
+      "hint": "awk '{print $1}' /var/log/nginx/access.log | sort | uniq -c | sort -rn"
+    },
+    {
+      "prompt": "Every request appears to come from two addresses: the load balancer's nodes. nginx is counting all customers as two clients. The balancer passes the real address in a header. Confirm it: capture one request's headers on port 80 with tcpdump, printing packet contents as text, stopping after 20 packets, and show the X-Forwarded-For line.",
+      "expected_commands": ["sudo tcpdump -i any -A -c 20 port 80 | grep -i x-forwarded-for", "sudo tcpdump -A -c 20 port 80 | grep -i x-forwarded-for", "sudo tcpdump -i any -A -c 20 port 80 | grep -i X-Forwarded-For", "sudo tcpdump -i any -c 20 -A port 80 | grep -i x-forwarded-for", "tcpdump -i any -A -c 20 port 80 | grep -i x-forwarded-for"],
+      "fake_output": "X-Forwarded-For: 198.51.100.14\nX-Forwarded-For: 203.0.113.9\nX-Forwarded-For: 192.0.2.61",
+      "hint": "sudo tcpdump -i any -A -c 20 port 80 | grep -i x-forwarded-for"
+    },
+    {
+      "prompt": "The real addresses arrive in X-Forwarded-For and nginx ignores them. Check whether the real-IP module is configured: search the effective configuration for real_ip.",
+      "expected_commands": ["sudo nginx -T | grep real_ip", "nginx -T | grep real_ip", "sudo nginx -T 2>/dev/null | grep real_ip"],
+      "fake_output": "(no output)",
+      "hint": "nginx -T | grep real_ip"
+    },
+    {
+      "prompt": "Not configured. A file /etc/nginx/conf.d/realip.conf has been written with:\n    set_real_ip_from 10.0.0.0/24;\n    real_ip_header X-Forwarded-For;\n    real_ip_recursive on;\nTest and reload, reloading only if the test passes.",
+      "expected_commands": ["sudo nginx -t && sudo systemctl reload nginx", "sudo nginx -t && sudo nginx -s reload", "nginx -t && systemctl reload nginx", "nginx -t && nginx -s reload"],
+      "fake_output": "nginx: the configuration file /etc/nginx/nginx.conf syntax is ok\nnginx: configuration file /etc/nginx/nginx.conf test is successful",
+      "hint": "sudo nginx -t && sudo systemctl reload nginx"
+    },
+    {
+      "prompt": "Verify nginx now sees individual clients: show the client address (field 1) of the last 5 requests in the access log.",
+      "expected_commands": ["tail -5 /var/log/nginx/access.log | awk '{print $1}'", "tail -n 5 /var/log/nginx/access.log | awk '{print $1}'", "awk '{print $1}' /var/log/nginx/access.log | tail -5", "awk '{print $1}' /var/log/nginx/access.log | tail -n 5"],
+      "fake_output": "198.51.100.14\n203.0.113.9\n192.0.2.61\n198.51.100.201\n203.0.113.77",
+      "hint": "tail -5 /var/log/nginx/access.log | awk '{print $1}'"
+    },
+    {
+      "prompt": "Confirm the limiter is now only catching the scraper: show the client addresses in the last 3 'limiting requests' lines of the error log.",
+      "expected_commands": ["grep \"limiting requests\" /var/log/nginx/error.log | tail -3", "grep 'limiting requests' /var/log/nginx/error.log | tail -3", "sudo grep \"limiting requests\" /var/log/nginx/error.log | tail -3", "grep \"limiting requests\" /var/log/nginx/error.log | tail -n 3"],
+      "fake_output": "2026/09/28 08:44:10 [error] *518802 limiting requests, excess: 20.100 by zone \"api\", client: 203.0.113.77, request: \"GET /api/products?page=4120 HTTP/1.1\"\n2026/09/28 08:44:10 [error] *518805 limiting requests, excess: 20.300 by zone \"api\", client: 203.0.113.77, request: \"GET /api/products?page=4121 HTTP/1.1\"\n2026/09/28 08:44:10 [error] *518809 limiting requests, excess: 20.500 by zone \"api\", client: 203.0.113.77, request: \"GET /api/products?page=4122 HTTP/1.1\"",
+      "hint": "The same command as the first step."
+    }
+  ],
+  "resolution": "The rate limit was written correctly and keyed on the wrong thing. '$binary_remote_addr' is the address of whoever opened the TCP connection to nginx, and behind a load balancer that's always the balancer. So the limit of 10 requests a second 'per client' was really 10 a second for each of two balancer nodes, shared by every customer. It passed its test because the engineer's laptop, alone, never exceeded it. At real traffic of around 100 requests a second, 80% were rejected. The error log showed it in the first line: the limited 'client' was 10.0.0.5, a private address that can't be a customer. The access log made it certain: two addresses for 800,000 requests. The real-IP module fixes it at the source: for connections arriving from trusted proxies, it replaces the client address with the one from X-Forwarded-For, and everything downstream uses the real one, including rate limits, allow and deny rules, access logs, and the address passed on to the app. The 'set_real_ip_from' line is the security-critical part. X-Forwarded-For is a header any client can send, so it must only be believed when the connection comes from your own balancer. Trusting it from anywhere (0.0.0.0/0) lets an attacker pick a new fake address for every request and walk straight past the limit. real_ip_recursive makes nginx skip trusted addresses in the list and take the last untrusted one, which is the right client when there are several proxies. Lessons: test limits with realistic traffic through the real path, not from one machine; treat a private address in the 'client' position of any log as a sign that the real address is being lost; and note that the logs had been wrong for as long as the balancer had been there, which means every past investigation that used client addresses from this server was working with the wrong data.",
+  "real_commands_used": ["grep 'limiting requests' in the nginx error log", "awk '{print $1}' access.log | sort | uniq -c | sort -rn", "tcpdump -A port 80 | grep -i x-forwarded-for", "nginx -T | grep real_ip", "nginx -t && systemctl reload nginx", "tail access.log | awk '{print $1}'"]
+}

@@ -1,0 +1,55 @@
+{
+  "id": "webservers-tutorial-006",
+  "type": "tutorial",
+  "category": "webservers",
+  "title": "502, 503, 504: What the Proxy Is Telling You",
+  "difficulty": "intermediate",
+  "tags": ["nginx", "errors", "upstream", "troubleshooting"],
+  "intro": "The three gateway errors are the proxy's report about the application behind it, and each means something different. nginx's error log records exactly which upstream it tried and what went wrong. Reading that line correctly sends you to the right layer first time. You're on web-1; the log is /var/log/nginx/error.log, and the app servers are 10.0.1.11 and 10.0.1.12 on port 8080.",
+  "steps": [
+    {
+      "prompt": "Users report 502s. Find the upstream errors in the error log: search it for the word upstream and show the last 3 matches.",
+      "expected_commands": ["grep upstream /var/log/nginx/error.log | tail -3", "sudo grep upstream /var/log/nginx/error.log | tail -3", "grep upstream /var/log/nginx/error.log | tail -n 3", "sudo grep upstream /var/log/nginx/error.log | tail -n 3"],
+      "fake_output": "2026/09/28 11:40:07 [error] *914402 connect() failed (111: Connection refused) while connecting to upstream, upstream: \"http://10.0.1.12:8080/api/checkout\"\n2026/09/28 11:40:09 [error] *914455 connect() failed (111: Connection refused) while connecting to upstream, upstream: \"http://10.0.1.12:8080/api/cart\"\n2026/09/28 11:40:12 [error] *914481 connect() failed (111: Connection refused) while connecting to upstream, upstream: \"http://10.0.1.12:8080/api/checkout\"",
+      "explanation": "'Connection refused' from 10.0.1.12:8080, every time. 10.0.1.11 doesn't appear.",
+      "why": "Refused means the host is up and nothing is listening on that port: the app process on 10.0.1.12 has stopped or is listening somewhere else. A firewall or a dead host would give a timeout instead. The log names the server, so you know which machine to look at without guessing."
+    },
+    {
+      "prompt": "Confirm it from here, bypassing nginx: request the app's /health endpoint directly on 10.0.1.12 port 8080, headers only.",
+      "expected_commands": ["curl -sI http://10.0.1.12:8080/health", "curl -I http://10.0.1.12:8080/health", "curl -s -I http://10.0.1.12:8080/health", "curl -sI 10.0.1.12:8080/health"],
+      "fake_output": "curl: (7) Failed to connect to 10.0.1.12 port 8080 after 2 ms: Connection refused",
+      "explanation": "The same refusal, with nginx out of the picture.",
+      "why": "Calling the upstream directly splits the problem in two. If the direct call fails as well, it's the app or the path to it. If the direct call works and the proxied one doesn't, it's the proxy's configuration: the wrong address, a header, a timeout. This one command saves a lot of arguing about whose problem it is."
+    },
+    {
+      "prompt": "A different complaint: report exports fail after a long wait. Search the error log for 'timed out' and show the last match.",
+      "expected_commands": ["grep \"timed out\" /var/log/nginx/error.log | tail -1", "grep 'timed out' /var/log/nginx/error.log | tail -1", "sudo grep \"timed out\" /var/log/nginx/error.log | tail -1", "grep \"timed out\" /var/log/nginx/error.log | tail -n 1"],
+      "fake_output": "2026/09/28 11:31:50 [error] *913107 upstream timed out (110: Connection timed out) while reading response header from upstream, request: \"GET /api/reports/export HTTP/1.1\", upstream: \"http://10.0.1.11:8080/api/reports/export\"",
+      "explanation": "nginx connected, sent the request, and gave up waiting for the reply.",
+      "why": "The phrase after 'while' tells you the stage. 'while connecting to upstream' means the app couldn't be reached at all. 'while reading response header' means it accepted the request and didn't answer within proxy_read_timeout. The client sees 504 for this one."
+    },
+    {
+      "prompt": "Match each status to its meaning. The app accepted the connection but took too long to answer. Which status did the client get?\n  a) 502 Bad Gateway\n  b) 503 Service Unavailable\n  c) 504 Gateway Timeout\n  d) 499\nType the letter.",
+      "expected_commands": ["c"],
+      "fake_output": "502  the upstream refused, reset, or sent invalid HTTP; or none are live   -> app down or crashing\n503  a limit rejected it, or the app itself said it's unavailable        -> rate limit, overload\n504  the upstream didn't answer in time                                   -> app slow or stuck\n499  the client closed the connection before nginx answered               -> usually slowness upstream",
+      "hint": "The word in the name is 'Timeout'.",
+      "explanation": "504: the gateway timed out waiting.",
+      "why": "502 means broken, 504 means slow, and they send you to different places: process and crash logs for a 502, database and dependency latency for a 504. A 500, by contrast, comes from the application itself and nginx just passes it on, so it has no line in nginx's error log. Raising the proxy timeout hides a 504; it doesn't fix why the app is slow."
+    },
+    {
+      "prompt": "Later, both app servers are being restarted at once by a bad deploy. Search the error log for 'no live upstreams' and show the last match.",
+      "expected_commands": ["grep \"no live upstreams\" /var/log/nginx/error.log | tail -1", "grep 'no live upstreams' /var/log/nginx/error.log | tail -1", "sudo grep \"no live upstreams\" /var/log/nginx/error.log | tail -1", "grep \"no live upstreams\" /var/log/nginx/error.log | tail -n 1"],
+      "fake_output": "2026/09/28 12:05:44 [error] *920118 no live upstreams while connecting to upstream, request: \"GET /api/cart HTTP/1.1\", upstream: \"http://backend/api/cart\"",
+      "explanation": "Every server in the upstream group is marked failed, so nginx has nowhere to send requests.",
+      "why": "After max_fails failures a server is skipped for fail_timeout. If that happens to all of them, nginx answers immediately with a 502 without trying anyone. Note the upstream is shown by its group name, 'backend', not an address. This is what restarting all instances together looks like from the proxy, and why deploys roll one at a time."
+    },
+    {
+      "prompt": "For one slow request, see where the time goes. Time a call to http://127.0.0.1/api/search with Host shop.example.com, printing the connect time, time to first byte, and total.",
+      "expected_commands": ["curl -s -o /dev/null -H \"Host: shop.example.com\" -w \"connect=%{time_connect} ttfb=%{time_starttransfer} total=%{time_total}\\n\" http://127.0.0.1/api/search", "curl -s -o /dev/null -H 'Host: shop.example.com' -w 'connect=%{time_connect} ttfb=%{time_starttransfer} total=%{time_total}\\n' http://127.0.0.1/api/search", "curl -o /dev/null -s -w \"connect=%{time_connect} ttfb=%{time_starttransfer} total=%{time_total}\\n\" -H \"Host: shop.example.com\" http://127.0.0.1/api/search"],
+      "fake_output": "connect=0.000412 ttfb=12.440118 total=12.441002",
+      "hint": "curl -s -o /dev/null -H \"Host: shop.example.com\" -w \"connect=%{time_connect} ttfb=%{time_starttransfer} total=%{time_total}\\n\" http://127.0.0.1/api/search",
+      "explanation": "Connecting was instant; the first byte took 12.4 seconds; the body then arrived at once.",
+      "why": "Time to first byte is the server thinking. A large gap between first byte and total would be a big response or a slow network instead. Here all 12 seconds are the application working before it sends anything, so the fix is in the app or its database, and no proxy setting will help."
+    }
+  ]
+}

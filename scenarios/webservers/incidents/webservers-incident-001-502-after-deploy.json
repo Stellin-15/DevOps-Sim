@@ -1,0 +1,55 @@
+{
+  "id": "webservers-incident-001",
+  "type": "incident",
+  "category": "webservers",
+  "title": "502 Bad Gateway on every page, and the app says it's healthy",
+  "difficulty": "beginner",
+  "tags": ["nginx", "502", "upstream", "ports"],
+  "intro": "A deploy to web-1 finished ten minutes ago. Since then https://shop.example.com returns 502 on every request. The application team says their service is running and passing its own health check. nginx hasn't been touched: its last config change was weeks ago. The app runs on the same host as nginx, as the systemd service shop.",
+  "steps": [
+    {
+      "prompt": "Start with what nginx recorded. Show the last 3 lines of /var/log/nginx/error.log.",
+      "expected_commands": ["sudo tail -3 /var/log/nginx/error.log", "tail -3 /var/log/nginx/error.log", "sudo tail -n 3 /var/log/nginx/error.log", "tail -n 3 /var/log/nginx/error.log"],
+      "fake_output": "2026/09/28 14:12:40 [error] *77120 connect() failed (111: Connection refused) while connecting to upstream, server: shop.example.com, request: \"GET / HTTP/1.1\", upstream: \"http://127.0.0.1:8080/\"\n2026/09/28 14:12:41 [error] *77124 connect() failed (111: Connection refused) while connecting to upstream, server: shop.example.com, request: \"GET /cart HTTP/1.1\", upstream: \"http://127.0.0.1:8080/cart\"\n2026/09/28 14:12:41 [error] *77131 connect() failed (111: Connection refused) while connecting to upstream, server: shop.example.com, request: \"GET / HTTP/1.1\", upstream: \"http://127.0.0.1:8080/\"",
+      "hint": "tail -3 /var/log/nginx/error.log"
+    },
+    {
+      "prompt": "nginx is trying 127.0.0.1:8080 and being refused: nothing is listening there. Check the app really is running: show the status of the shop service.",
+      "expected_commands": ["systemctl status shop", "sudo systemctl status shop", "systemctl status shop.service"],
+      "fake_output": "● shop.service - Shop application\n     Active: active (running) since Mon 2026-09-28 14:02:11 UTC; 10min ago\n   Main PID: 60412 (gunicorn)\n     CGroup: /system.slice/shop.service\n             ├─60412 gunicorn: master [shop]\n             └─60418 gunicorn: worker [shop]\n\nSep 28 14:02:11 web-1 gunicorn[60412]: Listening at: http://127.0.0.1:8000 (60412)",
+      "hint": "systemctl status <service>"
+    },
+    {
+      "prompt": "The app team is right that it's running. The last log line is the clue. Confirm which ports the app is listening on.",
+      "expected_commands": ["sudo ss -tlnp | grep gunicorn", "ss -tlnp | grep gunicorn", "sudo ss -tlnp | grep 60412", "sudo ss -tlnp", "ss -tlnp"],
+      "fake_output": "LISTEN 0  2048  127.0.0.1:8000  0.0.0.0:*  users:((\"gunicorn\",pid=60418,fd=5),(\"gunicorn\",pid=60412,fd=5))",
+      "hint": "ss -tlnp | grep gunicorn"
+    },
+    {
+      "prompt": "The app listens on 8000; nginx proxies to 8080. Find where nginx sets that: search /etc/nginx for 8080, showing file names and line numbers.",
+      "expected_commands": ["grep -rn 8080 /etc/nginx", "sudo grep -rn 8080 /etc/nginx", "grep -rn 8080 /etc/nginx/", "grep -rn \"8080\" /etc/nginx", "grep -rn 8080 /etc/nginx/conf.d"],
+      "fake_output": "/etc/nginx/conf.d/shop.conf:9:        proxy_pass http://127.0.0.1:8080;",
+      "hint": "grep -rn 8080 /etc/nginx"
+    },
+    {
+      "prompt": "The deploy changed the app's port to 8000 (the new default in its config template) and nobody told the proxy. The team decides 8000 is the intended port going forward. Change 8080 to 8000 in /etc/nginx/conf.d/shop.conf with sed.",
+      "expected_commands": ["sudo sed -i 's/8080/8000/' /etc/nginx/conf.d/shop.conf", "sudo sed -i 's/8080/8000/g' /etc/nginx/conf.d/shop.conf", "sed -i 's/8080/8000/' /etc/nginx/conf.d/shop.conf", "sudo sed -i 's/127.0.0.1:8080/127.0.0.1:8000/' /etc/nginx/conf.d/shop.conf", "sudo sed -i \"s/8080/8000/\" /etc/nginx/conf.d/shop.conf"],
+      "fake_output": "(no output)",
+      "hint": "sudo sed -i 's/8080/8000/' /etc/nginx/conf.d/shop.conf"
+    },
+    {
+      "prompt": "Test the configuration and reload nginx only if the test passes.",
+      "expected_commands": ["sudo nginx -t && sudo systemctl reload nginx", "sudo nginx -t && sudo nginx -s reload", "nginx -t && systemctl reload nginx", "nginx -t && nginx -s reload"],
+      "fake_output": "nginx: the configuration file /etc/nginx/nginx.conf syntax is ok\nnginx: configuration file /etc/nginx/nginx.conf test is successful",
+      "hint": "sudo nginx -t && sudo systemctl reload nginx"
+    },
+    {
+      "prompt": "Verify from the outside: request the headers of https://shop.example.com/.",
+      "expected_commands": ["curl -sI https://shop.example.com/", "curl -I https://shop.example.com/", "curl -sI https://shop.example.com", "curl -s -I https://shop.example.com/"],
+      "fake_output": "HTTP/2 200\nserver: nginx\ncontent-type: text/html; charset=utf-8",
+      "hint": "curl -sI https://shop.example.com/"
+    }
+  ],
+  "resolution": "Both teams were right, which is what made this confusing: the app was healthy and nginx hadn't changed. The deploy shipped a new app config template whose default port was 8000 instead of 8080. The app started cleanly on 8000 and passed its own health check, which calls the app directly. nginx kept proxying to 8080, where nothing was listening any more, and the kernel refused each connection, which nginx reports to the client as 502. The error log said so in one line: 'connect() failed (111: Connection refused)' with the exact address tried. 'Refused' specifically means the host is reachable and the port is closed, so the next check is always what's listening (ss -tlnp), and comparing that with what the proxy expects. The fix was one character class in one file, tested before the reload. The lessons are about the gap between the two halves. A health check that bypasses the proxy can't see a mismatch between them; check the service the way users reach it, through nginx, as part of the deploy. The port is a contract between two configs owned by two teams; define it once (a shared variable in the deploy tooling, or a Unix socket path) so they can't drift. And a deploy that takes the site from 200 to 502 should roll itself back: that needs the post-deploy check to be the user's path.",
+  "real_commands_used": ["tail /var/log/nginx/error.log", "systemctl status <app>", "ss -tlnp", "grep -rn <port> /etc/nginx", "sed -i to fix the port", "nginx -t && systemctl reload nginx", "curl -sI through the proxy"]
+}

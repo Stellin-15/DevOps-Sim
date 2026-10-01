@@ -1,0 +1,54 @@
+{
+  "id": "webservers-tutorial-004",
+  "type": "tutorial",
+  "category": "webservers",
+  "title": "TLS Termination and Certificates That Renew Themselves",
+  "difficulty": "intermediate",
+  "tags": ["nginx", "tls", "certbot", "lets-encrypt", "https"],
+  "intro": "The proxy is usually where HTTPS ends: it holds the certificate, decrypts, and talks plain HTTP to the app. Certificates from Let's Encrypt last 90 days, so renewal has to be automatic, and an expired certificate is one of the most common avoidable outages. You're on web-1, serving shop.example.com, with certbot installed.",
+  "steps": [
+    {
+      "prompt": "List the certificates certbot manages on this host, with their expiry dates.",
+      "expected_commands": ["sudo certbot certificates", "certbot certificates"],
+      "fake_output": "Found the following certs:\n  Certificate Name: shop.example.com\n    Domains: shop.example.com www.shop.example.com\n    Expiry Date: 2026-10-19 08:12:44+00:00 (VALID: 21 days)\n    Certificate Path: /etc/letsencrypt/live/shop.example.com/fullchain.pem\n    Private Key Path: /etc/letsencrypt/live/shop.example.com/privkey.pem",
+      "explanation": "One certificate covering two names, valid for another 21 days.",
+      "why": "certbot renews when under 30 days remain, so 21 days means renewal is overdue: it has been trying and failing, or isn't scheduled. This is what a monitoring check on certificate expiry is for; alert at 20 days or so, which leaves time to fix a broken renewal calmly."
+    },
+    {
+      "prompt": "Check whether automatic renewal is scheduled: look for a certbot timer.",
+      "expected_commands": ["systemctl list-timers | grep certbot", "sudo systemctl list-timers | grep certbot", "systemctl list-timers --all | grep certbot"],
+      "fake_output": "Mon 2026-09-28 23:41:10 UTC  12h left  Mon 2026-09-28 11:02:31 UTC  1h ago  certbot.timer  certbot.service",
+      "explanation": "The timer exists and ran an hour ago. So renewal is running, and failing.",
+      "why": "Packages install either a systemd timer or a cron job that runs 'certbot renew' twice a day; it does nothing until a certificate is within 30 days of expiry. A timer that runs isn't the same as a renewal that works, which is the next check."
+    },
+    {
+      "prompt": "Run the renewal as a rehearsal, against the staging servers, without replacing any certificate.",
+      "expected_commands": ["sudo certbot renew --dry-run", "certbot renew --dry-run"],
+      "fake_output": "Simulating renewal of an existing certificate for shop.example.com and www.shop.example.com\n\nCertbot failed to authenticate some domains (authenticator: webroot). The Certificate Authority reported these problems:\n  Domain: www.shop.example.com\n  Type:   unauthorized\n  Detail: 203.0.113.80: Invalid response from http://www.shop.example.com/.well-known/acme-challenge/x7Qk: 404",
+      "explanation": "The challenge for www.shop.example.com returned 404, so the authority couldn't confirm you control that name.",
+      "why": "--dry-run is the tool for exactly this: it exercises the whole renewal without using up rate limits or touching the live certificate. With the HTTP challenge, Let's Encrypt fetches a file from /.well-known/acme-challenge/ on port 80 of each name. Here the www server block doesn't serve that path. Renewals break like this after config changes: redirects, a new server block, or a firewall closing port 80."
+    },
+    {
+      "prompt": "The www server block now serves the challenge path, and nginx was reloaded. Rehearse the renewal again.",
+      "expected_commands": ["sudo certbot renew --dry-run", "certbot renew --dry-run"],
+      "fake_output": "Simulating renewal of an existing certificate for shop.example.com and www.shop.example.com\n\nCongratulations, all simulated renewals succeeded:\n  /etc/letsencrypt/live/shop.example.com/fullchain.pem (success)",
+      "explanation": "The rehearsal passes; tonight's scheduled run will renew for real.",
+      "why": "Renewing writes new files, but nginx keeps the certificate it loaded in memory until it's reloaded. Add a deploy hook (a script in /etc/letsencrypt/renewal-hooks/deploy/ that runs 'systemctl reload nginx') or the new certificate sits on disk while the old one expires in production. webservers-incident-002 is that outage."
+    },
+    {
+      "prompt": "Check what's actually being served, which is what clients see: fetch the certificate from shop.example.com port 443 and print its dates and subject.",
+      "expected_commands": ["openssl s_client -connect shop.example.com:443 -servername shop.example.com </dev/null | openssl x509 -noout -dates -subject", "openssl s_client -connect shop.example.com:443 -servername shop.example.com < /dev/null | openssl x509 -noout -dates -subject", "echo | openssl s_client -connect shop.example.com:443 -servername shop.example.com | openssl x509 -noout -dates -subject", "openssl s_client -connect shop.example.com:443 -servername shop.example.com </dev/null 2>/dev/null | openssl x509 -noout -dates -subject"],
+      "fake_output": "notBefore=Jul 21 08:12:45 2026 GMT\nnotAfter=Oct 19 08:12:44 2026 GMT\nsubject=CN = shop.example.com",
+      "hint": "openssl s_client -connect shop.example.com:443 -servername shop.example.com </dev/null | openssl x509 -noout -dates -subject",
+      "explanation": "The served certificate expires on 19 October, matching the file on disk.",
+      "why": "The file and the served certificate can differ, so monitor the served one, from outside. -servername sends the hostname (SNI); without it a server with several sites returns its default certificate and you check the wrong one. Use fullchain.pem, not cert.pem, in nginx: without the intermediate certificate, browsers often cope and command-line clients and mobile apps fail."
+    },
+    {
+      "prompt": "Confirm plain HTTP is redirected to HTTPS: request only the headers of http://shop.example.com/cart.",
+      "expected_commands": ["curl -sI http://shop.example.com/cart", "curl -I http://shop.example.com/cart", "curl -s -I http://shop.example.com/cart"],
+      "fake_output": "HTTP/1.1 301 Moved Permanently\nServer: nginx\nLocation: https://shop.example.com/cart",
+      "explanation": "A permanent redirect to the same path over HTTPS.",
+      "why": "'return 301 https://$host$request_uri;' in the port-80 server keeps the path and query string. Keep the ACME challenge location above that redirect in the same server block, or renewals break. Then add HSTS on the HTTPS side (Strict-Transport-Security) so returning browsers skip the insecure first request entirely; start with a short max-age, because HSTS can't be undone quickly if HTTPS breaks."
+    }
+  ]
+}

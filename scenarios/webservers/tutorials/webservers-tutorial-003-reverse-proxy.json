@@ -1,0 +1,54 @@
+{
+  "id": "webservers-tutorial-003",
+  "type": "tutorial",
+  "category": "webservers",
+  "title": "Reverse Proxying: Upstreams, Headers, and the Trailing Slash",
+  "difficulty": "intermediate",
+  "tags": ["nginx", "reverse-proxy", "upstream", "headers"],
+  "intro": "As a reverse proxy, nginx accepts the client's connection and makes its own request to an application server, the upstream. The application now sees nginx as its client, so anything it needs to know about the real one has to be passed along in headers. You're on web-1; the app servers are 10.0.1.11 and 10.0.1.12 on port 8080.",
+  "steps": [
+    {
+      "prompt": "Ask the application what it sees. The app has a debug endpoint, /api/debug/request, that echoes the request it received. Call it through nginx with Host shop.example.com.",
+      "expected_commands": ["curl -s -H \"Host: shop.example.com\" http://127.0.0.1/api/debug/request", "curl -s -H 'Host: shop.example.com' http://127.0.0.1/api/debug/request", "curl -H \"Host: shop.example.com\" http://127.0.0.1/api/debug/request"],
+      "fake_output": "{\n  \"path\": \"/api/debug/request\",\n  \"remote_addr\": \"10.0.1.5\",\n  \"headers\": {\n    \"Host\": \"backend\",\n    \"Connection\": \"close\"\n  }\n}",
+      "explanation": "The app thinks the client is 10.0.1.5 (nginx itself) and the host is 'backend' (the upstream's name).",
+      "why": "By default nginx sets Host to the proxy_pass target and passes nothing about the original client. So the app logs every request as coming from the proxy, builds links and redirects to http://backend/, and can't tell HTTP from HTTPS. Each of those is a header nginx has to be told to send."
+    },
+    {
+      "prompt": "The location block has been edited to add the standard headers. Check they're in the effective configuration.",
+      "expected_commands": ["sudo nginx -T | grep proxy_set_header", "nginx -T | grep proxy_set_header", "sudo nginx -T 2>/dev/null | grep proxy_set_header"],
+      "fake_output": "        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;",
+      "explanation": "The four headers nearly every proxied application needs.",
+      "why": "Host keeps the name the client asked for. X-Forwarded-For carries the client address, appended to any existing list so a chain of proxies is recorded. X-Forwarded-Proto tells the app the client used https, without which it generates http links or redirects in a loop. One trap: proxy_set_header lines are inherited from the outer level only if a block defines none of its own, so adding a single header in a location silently drops all the inherited ones."
+    },
+    {
+      "prompt": "The location is 'location /api/' and the app's routes also begin with /api/. Which proxy_pass keeps the path unchanged, so /api/users reaches the app as /api/users?\n  a) proxy_pass http://backend;      (no path after the name)\n  b) proxy_pass http://backend/;     (a trailing slash)\n  c) They behave the same\n  d) Neither: paths can't be passed through\nType the letter.",
+      "expected_commands": ["a"],
+      "fake_output": "location /api/ { proxy_pass http://backend;  }   /api/users -> upstream gets /api/users\nlocation /api/ { proxy_pass http://backend/; }   /api/users -> upstream gets /users",
+      "hint": "With a URI part on proxy_pass (even a single slash), nginx replaces the matched location prefix with it.",
+      "explanation": "Without a URI the path passes through untouched; with one, the location prefix is replaced.",
+      "why": "This single character is the most common proxy bug. Use the trailing slash on purpose when you want to strip a prefix, for instance when the app serves /users and you publish it under /api/. Get it wrong and every route returns 404 from the application, not from nginx, which sends people looking in the wrong place."
+    },
+    {
+      "prompt": "Look at the upstream definition: show the upstream line and the 6 lines after it in the effective configuration.",
+      "expected_commands": ["sudo nginx -T | grep -A6 upstream", "nginx -T | grep -A6 upstream", "sudo nginx -T | grep -A 6 upstream", "nginx -T | grep -A 6 upstream", "sudo nginx -T 2>/dev/null | grep -A6 upstream"],
+      "fake_output": "upstream backend {\n    least_conn;\n    server 10.0.1.11:8080 max_fails=3 fail_timeout=10s;\n    server 10.0.1.12:8080 max_fails=3 fail_timeout=10s;\n    keepalive 32;\n}",
+      "explanation": "Two servers, least-connections balancing, passive failure detection, and a pool of kept-alive connections.",
+      "why": "Open-source nginx only has passive health checks: after 3 failed attempts within 10 seconds a server is skipped for 10 seconds, so real requests discover the failure. 'keepalive 32' reuses connections to the app, avoiding a TCP handshake per request, but only works together with 'proxy_http_version 1.1' and an empty Connection header in the location."
+    },
+    {
+      "prompt": "Check the proxy timeouts in the effective configuration.",
+      "expected_commands": ["sudo nginx -T | grep timeout", "nginx -T | grep timeout", "sudo nginx -T | grep proxy_.*timeout", "sudo nginx -T 2>/dev/null | grep timeout"],
+      "fake_output": "    keepalive_timeout 65;\n        proxy_connect_timeout 5s;\n        proxy_read_timeout 60s;\n        proxy_send_timeout 60s;",
+      "explanation": "5 seconds to connect to the app, and 60 seconds between reads of its response.",
+      "why": "A short connect timeout matters: a dead server should be given up on quickly so the request can try the next one. proxy_read_timeout isn't a limit on the whole response; it's the longest silence allowed between two reads. When it's exceeded the client gets a 504. Timeouts should shrink as you go inward: the client's longest, then the proxy's, then the app's own, so each layer gives up before the one in front of it."
+    },
+    {
+      "prompt": "Call the debug endpoint again to confirm what the app sees now.",
+      "expected_commands": ["curl -s -H \"Host: shop.example.com\" http://127.0.0.1/api/debug/request", "curl -s -H 'Host: shop.example.com' http://127.0.0.1/api/debug/request", "curl -H \"Host: shop.example.com\" http://127.0.0.1/api/debug/request"],
+      "fake_output": "{\n  \"path\": \"/api/debug/request\",\n  \"remote_addr\": \"10.0.1.5\",\n  \"headers\": {\n    \"Host\": \"shop.example.com\",\n    \"X-Real-IP\": \"127.0.0.1\",\n    \"X-Forwarded-For\": \"127.0.0.1\",\n    \"X-Forwarded-Proto\": \"http\"\n  }\n}",
+      "explanation": "The real host and client address now reach the app in headers. (The client is 127.0.0.1 because you called it locally.)",
+      "why": "The TCP peer is still nginx; the app has to be configured to trust these headers, and only from the proxy's address. X-Forwarded-For is just a header: a client can send its own, so an app that trusts it from anywhere lets users forge their IP address to dodge rate limits or audit logs. Trust it only when the connection comes from a proxy you run."
+    }
+  ]
+}

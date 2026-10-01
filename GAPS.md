@@ -10,10 +10,10 @@ scenario" for "ready."
 **Structure:** the first half of this file is the original, deepest
 assessment — **Kubernetes / CKA**. Each other category (Docker, Linux,
 Terraform, Networking, CI/CD, Monitoring, MLOps, the three clouds,
-Security, Server Fleet Ops, SRE, Git, System Design, and Databases) gets its
-own section
+Security, Server Fleet Ops, SRE, Git, System Design, Databases, and Web
+Servers) gets its own section
 further down, written the same way: what's covered, what a real job
-expects, what's still missing. Part 18 is the backlog: every topic that
+expects, what's still missing. Part 19 is the backlog: every topic that
 isn't in the game yet, in tiers. The final section is a cross-category
 summary: what "proficient in DevOps" actually requires beyond any single
 tool, and how far this game gets you toward it.
@@ -1220,9 +1220,101 @@ count.
 
 ---
 
-# Part 18 — The backlog: everything that isn't in the game yet
+# Part 18 — Web Servers and Proxies
 
-Parts 1 to 17 each list what's missing *inside* a category. This part
+**Content:** 11 tutorials, 6 incidents, 2 Writing Labs (nginx
+configuration).
+
+Almost every request to a production system passes through a reverse
+proxy, and "the site is down" is a fault there more often than people
+expect. nginx is the main example, HAProxy the second, with one tutorial
+for recognising Envoy, Caddy, Traefik, and Apache. Load-balancing
+algorithms as a design choice are in System Design (Part 16); TLS and
+HTTP themselves (openssl, curl) are in Networking (Part 5).
+
+## Covered
+
+Every section of `commands/webservers.md`:
+- **Running nginx:** `nginx -t` before every reload, `nginx -T` for the
+  effective configuration, reload vs restart, and the master and worker
+  processes.
+- **Server blocks and locations:** testing a virtual host with a Host
+  header, the default server, the location matching order, `try_files`,
+  and `root` vs `alias`.
+- **Reverse proxying:** upstreams, the four standard forwarded headers,
+  the `proxy_pass` trailing slash, passive health checks, keepalive, and
+  timeouts.
+- **TLS:** certbot certificates, renewal rehearsals with `--dry-run`,
+  the served certificate vs the one on disk, and HTTP-to-HTTPS
+  redirects.
+- **Access logs:** status counts, failing paths, busiest clients, and
+  slowest requests with awk, sort, and uniq.
+- **Gateway errors:** reading the error log to tell 502, 503, 504, and
+  499 apart, and bypassing the proxy to split the problem.
+- **Limits:** `limit_req` and `limit_conn`, 429 vs 503, body size and
+  413, and allow/deny order.
+- **Caching and compression:** `X-Cache-Status`, serving stale on
+  errors, cache locking, what must never be cached, and `gzip_types`.
+- **Capacity:** worker connections, `stub_status`, and file-descriptor
+  limits read from `/proc/<pid>/limits`.
+- **HAProxy:** config checks, the runtime socket, draining a server, and
+  seamless reloads.
+- **Other proxies:** Envoy's admin interface, Caddy, Traefik's router
+  API, and Apache's virtual-host listing.
+
+Incidents:
+- 502 on every page after a deploy changed the app's port;
+- an expired certificate that certbot had renewed a month earlier
+  (nginx was never reloaded);
+- exports failing at exactly 60 seconds while abandoned requests used up
+  the app's workers;
+- a new site showing the admin login (a file never enabled, and no
+  explicit default server);
+- dropped connections at 20% CPU (file-descriptor limit set by systemd);
+- a per-client rate limit blocking everyone (the load balancer's address
+  counted as the client).
+
+Writing Labs yaml-033 (a reverse proxy with HTTPS from scratch) and
+yaml-034 (harden a config: TLS versions, rate limit, admin allow-list,
+directory listing) use a new `nginx` lab format. Career path 14 walks
+the chain from curl and openssl through the proxy to these incidents.
+
+## Still missing
+
+- **A real nginx.** The lab checker confirms structure (balanced braces,
+  semicolons, the right directives in the right blocks). It doesn't know
+  which directives exist, so a misspelled one passes. Run `nginx -t` on
+  real files; a container makes that a one-line command.
+- nginx depth: `map` and variables, rewrites, the `stream` module for
+  TCP and UDP, WebSocket and gRPC proxying, HTTP/3, njs and Lua
+  (OpenResty), and nginx as a Kubernetes ingress controller's engine.
+- HAProxy depth: ACLs and routing rules, stick tables, TCP mode for
+  databases, and the Data Plane API.
+- Writing Envoy, Traefik, or Caddy configuration: only inspection is
+  covered.
+- Cloud load balancers as a product (target groups, listener rules,
+  connection draining settings), beyond the health checks in the cloud
+  parts.
+- Web application firewalls (ModSecurity, cloud WAF rules), bot
+  management, and DDoS protection services.
+- DNS-01 challenges and wildcard certificates, OCSP stapling, and mTLS
+  between the proxy and the application.
+
+## Readiness verdict
+
+Enough to run and debug the proxy in front of a typical service: you can
+test and reload safely, read its logs, tell which layer a gateway error
+points at, keep certificates renewing, and avoid the classic
+misconfigurations. That covers most of what on-call asks of this layer.
+It isn't a specialist's knowledge of any one proxy. Put nginx in front
+of a small app yourself, with a real certificate, and break each thing
+on purpose.
+
+---
+
+# Part 19 — The backlog: everything that isn't in the game yet
+
+Parts 1 to 18 each list what's missing *inside* a category. This part
 lists whole topics with no category at all, in three tiers. Nobody needs
 all of it. Tier A is worth learning for almost any DevOps, platform, or
 SRE role; tier B depends on the job; tier C is for when a specific
@@ -1239,9 +1331,10 @@ employer uses it.
 2. **Messaging systems.** Kafka operations beyond consumer lag (brokers,
    in-sync replicas, retention, rebalancing), RabbitMQ, and the cloud
    queues (SQS/SNS, Pub/Sub, Service Bus).
-3. **Web servers and proxies.** nginx (server blocks, reverse proxying,
-   TLS, rate limits, `nginx -t`, access-log analysis), HAProxy, Envoy,
-   Traefik, and certificates from ACME (certbot).
+3. ~~**Web servers and proxies**~~: **now a category** (Part 18): nginx
+   operations, TLS with certbot, log analysis, gateway errors, limits,
+   caching, capacity, and HAProxy. Depth topics (rewrites, the stream
+   module, HAProxy ACLs, WAFs) are under Part 18's "Still missing".
 4. **A scripting language.** Python for automation (argparse,
    subprocess, requests, boto3, virtual environments, pytest), Go basics
    for reading and building tooling, `jq` and `yq` in depth, regular
@@ -1333,7 +1426,7 @@ employer uses it.
 
 If content is added in the order that helps most people soonest:
 1. ~~a Databases category~~ (done, Part 17);
-2. web servers and proxies (nginx, HAProxy);
+2. ~~web servers and proxies~~ (done, Part 18);
 3. identity and secrets (Vault, OIDC, mTLS, cert-manager);
 4. Kubernetes ecosystem (Kustomize, Helm authoring, Gateway API,
    autoscalers);
@@ -1345,7 +1438,7 @@ If content is added in the order that helps most people soonest:
 
 ---
 
-# Part 19 — Overall: will this make you proficient in DevOps?
+# Part 20 — Overall: will this make you proficient in DevOps?
 
 ## By the numbers
 
@@ -1368,7 +1461,8 @@ If content is added in the order that helps most people soonest:
 | Git | 11 | 6 | |
 | System Design | 11 | 6 | 2 Writing Labs (design documents) |
 | Databases | 12 | 6 | |
-| **Total** | **220** | **113** | 32 Writing Labs, 13 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
+| Web Servers & Proxies | 11 | 6 | 2 Writing Labs (nginx configuration) |
+| **Total** | **231** | **119** | 34 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -1380,19 +1474,19 @@ command beats the alternatives — not just what it does.
 will know the commands, the failure modes, and — most importantly — the
 debugging method** (check the layer before guessing the fix; refused vs
 timeout; verify after every change; revoke before cleaning up; revert
-don't force-push). The 113 incidents are modeled on the kinds of problems
+don't force-push). The 119 incidents are modeled on the kinds of problems
 that genuinely trip up working engineers, and working through them
 builds judgment that command references alone never will.
 
 **It will not, on its own, make you fully proficient**, for four reasons
 that no amount of additional scenario content can fully close:
 
-1. **Authoring vs. operating.** Largely addressed: 32 Writing Labs now
+1. **Authoring vs. operating.** Largely addressed: 34 Writing Labs now
    have you write real Kubernetes manifests, GitHub Actions workflows,
    Prometheus alert rules, Compose files, Dockerfiles, Terraform (AWS
    VPCs and security groups, GCP firewalls), IAM policies, Ansible
    playbooks, bash scripts, a Terraform module, a blameless postmortem,
-   and two system design documents, in your own editor. What remains is **depth and
+   two system design documents, and nginx configuration, in your own editor. What remains is **depth and
    realism**: the checkers are structural, not the real tools
    (`docker build`, `terraform validate`, shellcheck), so they confirm
    you wrote the right shape, not that it would actually run. Building
@@ -1434,7 +1528,7 @@ that no amount of additional scenario content can fully close:
    Stats screen shows which categories you've passed, your best score
    in each, and what to do next.
 4. Complete the Writing Labs for each category.
-5. Play all thirteen Career Paths to practice switching layers mid-problem —
+5. Play all fourteen Career Paths to practice switching layers mid-problem —
    especially "The Worst On-Call Night".
 6. Play every Mystery Incident, then replay it to aim for 100. Scoring
    near the expert's command count means you went straight to the right
@@ -1448,7 +1542,7 @@ that no amount of additional scenario content can fully close:
 9. For certification goals, see Part 1 (CKA); similar exam-specific gap
    passes haven't been done for other certs (e.g. Terraform Associate,
    AWS) yet.
-10. Then widen. Part 18 lists everything this game doesn't teach yet,
-    in three tiers. Start with tier A (proxies, identity and secrets,
-    a scripting language, messaging): those come up in almost every
+10. Then widen. Part 19 lists everything this game doesn't teach yet,
+    in three tiers. Start with tier A (identity and secrets, a
+    scripting language, messaging): those come up in almost every
     role.

@@ -1,0 +1,55 @@
+{
+  "id": "webservers-incident-002",
+  "type": "incident",
+  "category": "webservers",
+  "title": "The certificate expired, and certbot says it renewed a month ago",
+  "difficulty": "intermediate",
+  "tags": ["nginx", "tls", "certbot", "certificates", "reload"],
+  "intro": "At 08:13 UTC browsers started showing 'Your connection is not private' for shop.example.com, and the mobile app can't connect at all. The certificate has expired. The on-call engineer is baffled: renewal is automated with certbot, the timer runs twice a day, and nobody has had to think about certificates for a year. You're on web-1.",
+  "steps": [
+    {
+      "prompt": "Confirm what clients are being served: fetch the certificate from shop.example.com port 443 and print its dates.",
+      "expected_commands": ["openssl s_client -connect shop.example.com:443 -servername shop.example.com </dev/null | openssl x509 -noout -dates", "openssl s_client -connect shop.example.com:443 -servername shop.example.com < /dev/null | openssl x509 -noout -dates", "echo | openssl s_client -connect shop.example.com:443 -servername shop.example.com | openssl x509 -noout -dates", "openssl s_client -connect shop.example.com:443 -servername shop.example.com </dev/null 2>/dev/null | openssl x509 -noout -dates"],
+      "fake_output": "notBefore=Jun 30 08:12:45 2026 GMT\nnotAfter=Sep 28 08:12:44 2026 GMT",
+      "hint": "openssl s_client -connect shop.example.com:443 -servername shop.example.com </dev/null | openssl x509 -noout -dates"
+    },
+    {
+      "prompt": "The served certificate expired this morning at 08:12:44. Now check what certbot has on disk.",
+      "expected_commands": ["sudo certbot certificates", "certbot certificates"],
+      "fake_output": "Found the following certs:\n  Certificate Name: shop.example.com\n    Domains: shop.example.com www.shop.example.com\n    Expiry Date: 2026-11-27 03:10:22+00:00 (VALID: 59 days)\n    Certificate Path: /etc/letsencrypt/live/shop.example.com/fullchain.pem",
+      "hint": "certbot certificates"
+    },
+    {
+      "prompt": "The file on disk is valid for 59 more days: renewal worked, a month ago. nginx is serving something older than the file. A certificate is read when nginx loads its configuration. Check when the nginx master process started: print its start time and command.",
+      "expected_commands": ["ps -o lstart,cmd -C nginx", "ps -C nginx -o lstart,cmd", "ps -o lstart,cmd -C nginx | head -2", "ps -eo lstart,cmd | grep nginx", "systemctl status nginx"],
+      "fake_output": "                 STARTED CMD\nThu Jun  4 10:41:07 2026 nginx: master process /usr/sbin/nginx -g daemon on; master_process on;\nMon Jul  6 09:15:30 2026 nginx: worker process\nMon Jul  6 09:15:30 2026 nginx: worker process",
+      "hint": "ps -o lstart,cmd -C nginx"
+    },
+    {
+      "prompt": "The workers were last replaced on 6 July, which was the last reload. The certificate was renewed on 29 August, and nginx was never told. Check the new files are usable, then reload: test the configuration and reload only if it passes.",
+      "expected_commands": ["sudo nginx -t && sudo systemctl reload nginx", "sudo nginx -t && sudo nginx -s reload", "nginx -t && systemctl reload nginx", "nginx -t && nginx -s reload"],
+      "fake_output": "nginx: the configuration file /etc/nginx/nginx.conf syntax is ok\nnginx: configuration file /etc/nginx/nginx.conf test is successful",
+      "hint": "sudo nginx -t && sudo systemctl reload nginx"
+    },
+    {
+      "prompt": "Verify what's served now.",
+      "expected_commands": ["openssl s_client -connect shop.example.com:443 -servername shop.example.com </dev/null | openssl x509 -noout -dates", "openssl s_client -connect shop.example.com:443 -servername shop.example.com < /dev/null | openssl x509 -noout -dates", "echo | openssl s_client -connect shop.example.com:443 -servername shop.example.com | openssl x509 -noout -dates", "openssl s_client -connect shop.example.com:443 -servername shop.example.com </dev/null 2>/dev/null | openssl x509 -noout -dates"],
+      "fake_output": "notBefore=Aug 29 03:10:23 2026 GMT\nnotAfter=Nov 27 03:10:22 2026 GMT",
+      "hint": "The same command as the first step."
+    },
+    {
+      "prompt": "The site is back. Now make certbot reload nginx itself after every successful renewal. Scripts in /etc/letsencrypt/renewal-hooks/deploy/ run after each renewal; a script reload-nginx.sh containing 'systemctl reload nginx' has been written there. Make it executable.",
+      "expected_commands": ["sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh", "chmod +x /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh", "sudo chmod 755 /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh", "sudo chmod a+x /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh"],
+      "fake_output": "(no output)",
+      "hint": "sudo chmod +x <path>"
+    },
+    {
+      "prompt": "Prove the hook is wired in: rehearse a renewal and check the hook is reported.",
+      "expected_commands": ["sudo certbot renew --dry-run", "certbot renew --dry-run"],
+      "fake_output": "Simulating renewal of an existing certificate for shop.example.com and www.shop.example.com\n\nCongratulations, all simulated renewals succeeded:\n  /etc/letsencrypt/live/shop.example.com/fullchain.pem (success)\nDry run: skipping deploy hook command: /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh",
+      "hint": "certbot renew --dry-run"
+    }
+  ],
+  "resolution": "Renewal never failed. certbot renewed the certificate on 29 August, 30 days before expiry, exactly as designed, and wrote the new files to disk. But nginx reads certificates when it loads its configuration and keeps them in memory; it doesn't watch the files. Nothing reloaded nginx after the renewal, so it kept serving the June certificate until that expired this morning. It had worked for a year by luck: someone reloaded nginx for an unrelated reason within each 30-day window, and this time the last reload was 6 July. The diagnosis is the comparison between two things that people assume are the same: the certificate being served (openssl s_client, from outside) and the certificate on disk (certbot certificates). When they differ, the process holding the old one needs a reload. The fix took seconds; the outage was the hours before anyone looked. Three changes prevent a repeat. A deploy hook, so every renewal reloads nginx: certbot's nginx plugin does this for you, but 'certonly' and webroot setups, like this one, don't. Monitoring of the served certificate's expiry from outside, alerting at around 20 days: with 30-day renewal, that alert only fires when something like this has gone wrong, and it would have given three weeks' notice. And the same question asked of every other consumer of that certificate: HAProxy, a mail server, an application with the certificate baked into a container image or a Kubernetes Secret all have the same failure.",
+  "real_commands_used": ["openssl s_client | openssl x509 -noout -dates", "certbot certificates", "ps -o lstart,cmd -C nginx", "nginx -t && systemctl reload nginx", "chmod +x on a deploy hook", "certbot renew --dry-run"]
+}

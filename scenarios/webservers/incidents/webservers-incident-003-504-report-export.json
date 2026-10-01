@@ -1,0 +1,100 @@
+{
+  "id": "webservers-incident-003",
+  "type": "incident",
+  "category": "webservers",
+  "title": "Exports fail at exactly 60 seconds, and the server keeps working on them",
+  "difficulty": "intermediate",
+  "tags": [
+    "nginx",
+    "504",
+    "timeouts",
+    "proxy"
+  ],
+  "intro": "Finance reports that the monthly export at /api/reports/export fails with '504 Gateway Time-out'. It worked last month. They've retried it a dozen times this morning, and now the whole site feels slow. The export runs a large query and returns a file. You're on web-1; the app listens on 127.0.0.1:8000.",
+  "steps": [
+    {
+      "prompt": "Look at how long the failing requests took. In /var/log/nginx/access.log the status is field 9 and the request time is the last field. Print the status and request time of requests whose path (field 7) is /api/reports/export, last 5.",
+      "expected_commands": [
+        "awk '$7 == \"/api/reports/export\" {print $9, $NF}' /var/log/nginx/access.log | tail -5",
+        "awk '$7 == \"/api/reports/export\" {print $9, $NF}' /var/log/nginx/access.log | tail -n 5",
+        "grep /api/reports/export /var/log/nginx/access.log | awk '{print $9, $NF}' | tail -5",
+        "grep \"/api/reports/export\" /var/log/nginx/access.log | awk '{print $9, $NF}' | tail -5"
+      ],
+      "fake_output": "504 60.001\n504 60.000\n504 60.001\n504 60.001\n504 60.000",
+      "hint": "grep /api/reports/export /var/log/nginx/access.log | awk '{print $9, $NF}' | tail -5"
+    },
+    {
+      "prompt": "Every one fails at 60.00 seconds exactly: that's a limit, not a coincidence. Confirm what nginx recorded: search /var/log/nginx/error.log for 'timed out' and show the last match.",
+      "expected_commands": [
+        "grep \"timed out\" /var/log/nginx/error.log | tail -1",
+        "grep 'timed out' /var/log/nginx/error.log | tail -1",
+        "sudo grep \"timed out\" /var/log/nginx/error.log | tail -1",
+        "grep \"timed out\" /var/log/nginx/error.log | tail -n 1"
+      ],
+      "fake_output": "2026/09/28 09:41:02 [error] *81204 upstream timed out (110: Connection timed out) while reading response header from upstream, request: \"GET /api/reports/export HTTP/1.1\", upstream: \"http://127.0.0.1:8000/api/reports/export\"",
+      "hint": "grep \"timed out\" /var/log/nginx/error.log | tail -1"
+    },
+    {
+      "prompt": "nginx gave up waiting for the app's first byte. Find out how long the export really takes: call the app directly on 127.0.0.1:8000, discarding the body and printing the status and total time.",
+      "expected_commands": [
+        "curl -s -o /dev/null -w \"%{http_code} %{time_total}\\n\" http://127.0.0.1:8000/api/reports/export",
+        "curl -s -o /dev/null -w '%{http_code} %{time_total}\\n' http://127.0.0.1:8000/api/reports/export",
+        "curl -o /dev/null -s -w \"%{http_code} %{time_total}\\n\" http://127.0.0.1:8000/api/reports/export",
+        "curl -s -o /dev/null -w \"%{http_code} %{time_total}\\n\" 127.0.0.1:8000/api/reports/export"
+      ],
+      "fake_output": "200 94.210",
+      "hint": "curl -s -o /dev/null -w \"%{http_code} %{time_total}\\n\" http://127.0.0.1:8000/api/reports/export"
+    },
+    {
+      "prompt": "The app succeeds, in 94 seconds. Last month's data was smaller and it finished in under 60. But why is the whole site slow? Each retry that timed out at the proxy is still running in the app, and each one is running the export's query. Count the active queries in the database whose text contains monthly_export: count rows in pg_stat_activity where state = 'active' and query LIKE '%monthly_export%'.",
+      "expected_commands": [
+        "psql -c \"SELECT count(*) FROM pg_stat_activity WHERE state = 'active' AND query LIKE '%monthly_export%';\"",
+        "psql -c \"SELECT count(*) FROM pg_stat_activity WHERE state = 'active' AND query LIKE '%monthly_export%'\"",
+        "psql -At -c \"SELECT count(*) FROM pg_stat_activity WHERE state = 'active' AND query LIKE '%monthly_export%';\""
+      ],
+      "fake_output": " count\n-------\n     7",
+      "hint": "psql -c \"SELECT count(*) FROM pg_stat_activity WHERE state = 'active' AND query LIKE '%monthly_export%';\""
+    },
+    {
+      "prompt": "Seven exports are running at once, each holding one of the app's eight workers, for requests nobody is waiting on any more. That leaves one worker for all other traffic. Free them: restart the app service, shop.",
+      "expected_commands": [
+        "sudo systemctl restart shop",
+        "systemctl restart shop",
+        "sudo systemctl restart shop.service"
+      ],
+      "fake_output": "(no output)",
+      "hint": "sudo systemctl restart shop"
+    },
+    {
+      "prompt": "Now let the export finish. A location block for /api/reports/ with 'proxy_read_timeout 180s;' has been added to /etc/nginx/conf.d/shop.conf, leaving the 60-second default everywhere else. Test and reload, reloading only if the test passes.",
+      "expected_commands": [
+        "sudo nginx -t && sudo systemctl reload nginx",
+        "sudo nginx -t && sudo nginx -s reload",
+        "nginx -t && systemctl reload nginx",
+        "nginx -t && nginx -s reload"
+      ],
+      "fake_output": "nginx: the configuration file /etc/nginx/nginx.conf syntax is ok\nnginx: configuration file /etc/nginx/nginx.conf test is successful",
+      "hint": "sudo nginx -t && sudo systemctl reload nginx"
+    },
+    {
+      "prompt": "Verify through the proxy: request the export from https://shop.example.com, discarding the body and printing the status and total time.",
+      "expected_commands": [
+        "curl -s -o /dev/null -w \"%{http_code} %{time_total}\\n\" https://shop.example.com/api/reports/export",
+        "curl -s -o /dev/null -w '%{http_code} %{time_total}\\n' https://shop.example.com/api/reports/export",
+        "curl -o /dev/null -s -w \"%{http_code} %{time_total}\\n\" https://shop.example.com/api/reports/export"
+      ],
+      "fake_output": "200 93.870",
+      "hint": "curl -s -o /dev/null -w \"%{http_code} %{time_total}\\n\" https://shop.example.com/api/reports/export"
+    }
+  ],
+  "resolution": "A 504 is the proxy's patience running out, and it tells you about the proxy's limit as much as the application. The export had been getting slower as the data grew; this month it crossed 60 seconds, the default proxy_read_timeout, and went from always working to always failing. Times of exactly 60.00 seconds in the access log gave it away: real work takes varying time, and limits take round numbers. Calling the app directly showed a clean 200 after 94 seconds. The second problem was caused by the first. When nginx times out, it closes its connection to the app, but the app's worker doesn't notice and carries on running the query to completion. Each of finance's retries started another 94-second export, until seven of eight workers were doing work whose result nobody would ever receive, and ordinary traffic queued for the last one. That's why a failure in one rarely used endpoint slowed the whole site. Restarting the app cleared the workers; a longer timeout on that one location let the export through. Keeping the 60-second default elsewhere matters: a global increase would let any slow endpoint hold workers for three minutes. But the timeout change is a patch on the wrong design. A request that takes minutes shouldn't be a synchronous HTTP request at all: accept it, return 202 with a job id, run it on a queue, and let the client poll or be notified (the queue pattern from System Design). Until then: give exports their own small worker pool so they can't starve the site, set the app's own timeout just below the proxy's so abandoned work is cancelled, and alert on request times approaching the proxy timeout, which would have shown this coming months ago.",
+  "real_commands_used": [
+    "awk on the access log (status and request time for one path)",
+    "grep 'timed out' in the nginx error log",
+    "curl -w '%{http_code} %{time_total}' directly to the app",
+    "psql pg_stat_activity (count the abandoned export queries)",
+    "systemctl restart <app>",
+    "nginx -t && systemctl reload nginx",
+    "curl -w through the proxy"
+  ]
+}

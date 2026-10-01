@@ -361,7 +361,134 @@ def parse_ansible(content: str):
             "text": content}, []
 
 
+# ---------------------------------------------------------------- nginx
+
+class NginxError(Exception):
+    pass
+
+
+# Directives that are legitimately written across several lines. Anything
+# else spanning lines is almost always a forgotten ';'.
+_NGINX_MULTILINE = {"log_format", "map", "geo", "types"}
+
+
+def _nginx_tokens(content: str) -> list:
+    """[(token, line, quoted)] — words, quoted strings, and the three
+    structural characters { } ;. Comments run from an unquoted # to the
+    end of the line. ${var} stays inside its word."""
+    out, i, line, n = [], 0, 1, len(content)
+    while i < n:
+        c = content[i]
+        if c == "\n":
+            line += 1
+            i += 1
+        elif c.isspace():
+            i += 1
+        elif c == "#":
+            while i < n and content[i] != "\n":
+                i += 1
+        elif c in "{};":
+            out.append((c, line, False))
+            i += 1
+        elif c in "'\"":
+            start_line, quote, buf = line, c, []
+            i += 1
+            while i < n and content[i] != quote:
+                if content[i] == "\\" and i + 1 < n:
+                    buf.append(content[i + 1])
+                    i += 2
+                    continue
+                if content[i] == "\n":
+                    line += 1
+                buf.append(content[i])
+                i += 1
+            if i >= n:
+                raise NginxError(f"unterminated quote starting on line {start_line}")
+            i += 1
+            out.append(("".join(buf), start_line, True))
+        else:
+            start = i
+            while i < n and not content[i].isspace() and content[i] not in ";{}":
+                if content.startswith("${", i):
+                    end = content.find("}", i)
+                    i = end if end != -1 else n - 1
+                i += 1
+            out.append((content[start:i], line, False))
+    return out
+
+
+def _nginx_insert(body: dict, key: str, value):
+    """A repeated directive or block becomes a list, like HCL blocks."""
+    if key in body:
+        existing = body[key]
+        body[key] = existing + [value] if isinstance(existing, list) else [existing, value]
+    else:
+        body[key] = value
+
+
+def _nginx_block(tokens: list, pos: int, top: bool):
+    body = {}
+    while True:
+        if pos >= len(tokens):
+            if not top:
+                raise NginxError("unbalanced braces: a '{' is never closed")
+            return body, pos
+        tok, line, quoted = tokens[pos]
+        if tok == "}" and not quoted:
+            if top:
+                raise NginxError(f"unexpected '}}' on line {line}")
+            return body, pos + 1
+        if tok in ("{", ";") and not quoted:
+            raise NginxError(f"unexpected '{tok}' on line {line}")
+        name, first_line, words = tok, line, []
+        pos += 1
+        while True:
+            if pos >= len(tokens):
+                raise NginxError(f"missing ';' after '{name}' on line {first_line}")
+            tok, line, quoted = tokens[pos]
+            if not quoted and tok in (";", "{", "}"):
+                break
+            if line != first_line and name not in _NGINX_MULTILINE and not quoted:
+                shown = " ".join([name] + words)
+                raise NginxError(f"missing ';' at the end of line {first_line} ('{shown}')")
+            words.append(tok)
+            pos += 1
+        if tok == "}":
+            raise NginxError(f"missing ';' after '{name}' on line {first_line}")
+        if tok == ";":
+            _nginx_insert(body, name, " ".join(words))
+            pos += 1
+            continue
+        inner, pos = _nginx_block(tokens, pos + 1, top=False)
+        if words:
+            # 'location /api/ { }' -> {"location": {"/api/": {...}}}
+            _nginx_insert(body.setdefault(name, {}), " ".join(words), inner)
+        else:
+            _nginx_insert(body, name, inner)
+
+
+def parse_nginx(content: str):
+    """nginx configuration -> nested dict. A simple directive maps its name
+    to its arguments as one string ('listen': '443 ssl'); a block maps its
+    name to a dict, keyed by its arguments when it has any ('upstream':
+    {'backend': {...}}, 'location': {'/api/': {...}}). Anything repeated at
+    the same level (two 'server' blocks, several 'proxy_set_header' lines)
+    becomes a list. Structural only: it catches unbalanced braces and
+    missing semicolons, not unknown directives — that's what `nginx -t`
+    is for."""
+    try:
+        parsed, _ = _nginx_block(_nginx_tokens(content), 0, top=True)
+    except NginxError as e:
+        return None, [f"nginx syntax error: {e}"]
+    if not parsed:
+        return None, ["File is empty."]
+    parsed["lines"] = [l.strip() for l in content.splitlines() if l.strip() and not l.strip().startswith("#")]
+    parsed["text"] = content
+    return parsed, []
+
+
 PARSERS = {
+    "nginx": parse_nginx,
     "yaml": parse_yaml,
     "dockerfile": parse_dockerfile,
     "hcl": parse_hcl,

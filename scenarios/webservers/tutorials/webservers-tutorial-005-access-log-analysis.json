@@ -1,0 +1,55 @@
+{
+  "id": "webservers-tutorial-005",
+  "type": "tutorial",
+  "category": "webservers",
+  "title": "Answering Questions from the Access Log",
+  "difficulty": "intermediate",
+  "tags": ["nginx", "logs", "awk", "troubleshooting"],
+  "intro": "The access log has one line per request: who asked, for what, what they got, and how long it took. With awk, sort, and uniq it answers most incident questions in seconds, before any dashboard loads. You're in /var/log/nginx on web-1. In the default 'combined' format, field 1 is the client address, field 7 the path, and field 9 the status code. This server's format adds the request time as the last field.",
+  "steps": [
+    {
+      "prompt": "Errors are being reported. Count the requests in access.log by status code, most frequent first.",
+      "expected_commands": ["awk '{print $9}' access.log | sort | uniq -c | sort -rn", "awk '{print $9}' access.log | sort | uniq -c | sort -nr", "awk '{ print $9 }' access.log | sort | uniq -c | sort -rn"],
+      "fake_output": " 184220 200\n  21044 502\n   9120 304\n   3104 404\n    880 499\n    212 301",
+      "explanation": "21,044 responses were 502, about 10% of traffic.",
+      "why": "This is the first cut in almost any web incident: how bad, and what kind. 'sort | uniq -c | sort -rn' is the counting idiom to know by heart; uniq only merges adjacent lines, which is why the first sort is needed. 502 points at the upstream application. 499 isn't a server error at all: it's nginx recording that the client hung up before the answer was ready, usually because the answer was slow."
+    },
+    {
+      "prompt": "Which paths are returning those errors? Show the top paths among responses with a status of 500 or above.",
+      "expected_commands": ["awk '$9 >= 500 {print $7}' access.log | sort | uniq -c | sort -rn | head", "awk '$9 >= 500 {print $7}' access.log | sort | uniq -c | sort -nr | head", "awk '$9 >= 500 { print $7 }' access.log | sort | uniq -c | sort -rn | head", "awk '$9 >= 500 {print $7}' access.log | sort | uniq -c | sort -rn | head -10"],
+      "fake_output": "  20811 /api/checkout\n    140 /api/cart\n     93 /api/search",
+      "hint": "awk '$9 >= 500 {print $7}' access.log | sort | uniq -c | sort -rn | head",
+      "explanation": "Nearly all of them are one endpoint: /api/checkout.",
+      "why": "A condition before the braces makes awk print only matching lines, so this is a filter and a projection in one step. Knowing it's one endpoint, not the whole site, changes the diagnosis: not 'the app is down' but 'something checkout depends on is failing'."
+    },
+    {
+      "prompt": "Is one client responsible for a lot of the traffic? Show the 5 busiest client addresses.",
+      "expected_commands": ["awk '{print $1}' access.log | sort | uniq -c | sort -rn | head -5", "awk '{print $1}' access.log | sort | uniq -c | sort -nr | head -5", "awk '{print $1}' access.log | sort | uniq -c | sort -rn | head -n 5", "awk '{ print $1 }' access.log | sort | uniq -c | sort -rn | head -5"],
+      "fake_output": "  61204 203.0.113.77\n   1204 198.51.100.14\n   1180 198.51.100.201\n   1102 192.0.2.61\n    990 192.0.2.140",
+      "explanation": "One address made 61,204 requests, fifty times more than anyone else.",
+      "why": "A single address far above the rest is a scraper, a broken client retrying in a loop, or an attack. Check before blocking: it could be a partner's server, a corporate network behind one address, or your own load balancer if the real client address isn't being restored (webservers-incident-006)."
+    },
+    {
+      "prompt": "See what that client is asking for: show the top paths requested by 203.0.113.77.",
+      "expected_commands": ["grep '^203.0.113.77 ' access.log | awk '{print $7}' | sort | uniq -c | sort -rn | head", "grep \"^203.0.113.77 \" access.log | awk '{print $7}' | sort | uniq -c | sort -rn | head", "grep 203.0.113.77 access.log | awk '{print $7}' | sort | uniq -c | sort -rn | head", "awk '$1 == \"203.0.113.77\" {print $7}' access.log | sort | uniq -c | sort -rn | head"],
+      "fake_output": "  60911 /api/checkout\n    293 /api/cart",
+      "explanation": "It's hammering /api/checkout: the same endpoint that's failing.",
+      "why": "Two findings just joined up: one client is flooding checkout, and checkout is where the 502s are. Whether it's a cause or a symptom (a client retrying because checkout fails) needs the timeline, which is why you look at when each started. Either way the next tutorials' tools apply: a rate limit to contain it, and the error log to see why the upstream fails."
+    },
+    {
+      "prompt": "Find the slowest requests. The request time in seconds is the last field: print it with the path, sorted so the slowest come first, top 5.",
+      "expected_commands": ["awk '{print $NF, $7}' access.log | sort -rn | head -5", "awk '{print $NF, $7}' access.log | sort -nr | head -5", "awk '{print $NF, $7}' access.log | sort -rn | head -n 5", "awk '{ print $NF, $7 }' access.log | sort -rn | head -5"],
+      "fake_output": "60.001 /api/reports/export\n60.000 /api/reports/export\n12.440 /api/search\n9.812 /api/checkout\n9.790 /api/checkout",
+      "hint": "awk '{print $NF, $7}' access.log | sort -rn | head -5",
+      "explanation": "Report exports take exactly 60 seconds, which is a timeout, not a duration.",
+      "why": "$NF is awk's last field. A cluster of times at a round number is a limit being hit: 60.00 is proxy_read_timeout's default. The default log format doesn't record timing at all, so add $request_time and $upstream_response_time to log_format on every server. The first is the total as the client saw it; the second is the app's share. A large gap between them is a slow client or a slow network, not a slow app."
+    },
+    {
+      "prompt": "Watch the errors as they happen: follow error.log.",
+      "expected_commands": ["tail -f error.log", "sudo tail -f error.log", "tail -f /var/log/nginx/error.log", "sudo tail -f /var/log/nginx/error.log"],
+      "fake_output": "2026/09/28 11:40:07 [error] 88120#88120: *914402 connect() failed (111: Connection refused) while connecting to upstream, client: 203.0.113.77, server: shop.example.com, request: \"POST /api/checkout HTTP/1.1\", upstream: \"http://10.0.1.12:8080/api/checkout\", host: \"shop.example.com\"",
+      "explanation": "The reason behind a 502: nginx tried 10.0.1.12:8080 and the connection was refused.",
+      "why": "The access log says what happened; the error log says why. Every 502, 503, and 504 that nginx generates has a line here naming the upstream it tried and the system error it got. The next tutorial is about reading those lines."
+    }
+  ]
+}

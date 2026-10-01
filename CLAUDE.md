@@ -7,9 +7,10 @@ what's built, why it's shaped this way, and what's next.
 
 `kube-sim` — a terminal game for learning real DevOps command-line skills
 by typing them, not memorizing them. Originally Kubernetes-only; now a
-multi-category simulator spanning 17 categories (**Kubernetes, Docker,
+multi-category simulator spanning 18 categories (**Kubernetes, Docker,
 Linux, Terraform, Networking, CI/CD, Monitoring, MLOps, AWS, Azure, GCP,
-Security, Servers, SRE, Git, System Design, and Databases**), plus two modes that cut across
+Security, Servers, SRE, Git, System Design, Databases, and Web Servers
+& Proxies**), plus two modes that cut across
 categories: **YAML Labs** (real manifest-editing practice) and **Career
 Paths** (chaining scenarios across categories into one realistic
 workflow, e.g. provision → containerize → deploy → automate → observe).
@@ -28,8 +29,8 @@ The source-of-truth docs, all already in the repo, are:
   the game always teaches syntax that matches the real tool.
 - **GAPS.md** — an honest, periodically-updated self-assessment of what
   kube-sim does and doesn't prepare someone for. Part 1 is the deepest
-  (Kubernetes / CKA); Parts 2-17 give each other category its own
-  covered / still-missing / readiness-verdict section; Part 18 is the
+  (Kubernetes / CKA); Parts 2-18 give each other category its own
+  covered / still-missing / readiness-verdict section; Part 19 is the
   tiered backlog of whole topics not in the game yet (commonly used,
   role-dependent, niche); the final part is the overall verdict on
   DevOps proficiency, with totals and a recommended path. Read the relevant part before adding content so new scenarios
@@ -118,7 +119,7 @@ Don't duplicate content from these files elsewhere — link to them.
   `yaml_lab` — renamed only in the menu, to avoid churning ids and
   progress keys). A lab step's `format` field picks the parser: `yaml`
   (default; also used for JSON such as IAM policies), `dockerfile`,
-  `hcl`, `bash`, `ansible`, or `markdown`. Each returns a plain nested
+  `hcl`, `bash`, `ansible`, `markdown`, or `nginx`. Each returns a plain nested
   dict so the same dotted-path / `[*]` / `contains` checks work on every
   format: Dockerfile → `{"lines": [...], "FROM": [args...], "RUN": [...]}`,
   HCL → `{"resource": {"aws_s3_bucket": {"logs": {...}}}, "variable": ...}`,
@@ -421,7 +422,17 @@ Current per-category content depth (tutorials / incidents):
   command (exact token set), so each prompt names the exact columns
   and the expected list carries with- and without-semicolon variants.
   Design topics stay in systemdesign and migrations in cicd.
-- **total: 220 tutorials, 113 incidents, 32 Writing Labs, 13 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
+- webservers: 11 / 6 (+2 Writing Labs in the `nginx` format): nginx
+  operations, TLS with certbot, access-log analysis, gateway errors,
+  limits, caching, capacity, HAProxy, and recognising Envoy, Caddy,
+  Traefik, and Apache. `parse_nginx` maps a directive to its arguments
+  as one string and a block to a dict keyed by its arguments
+  (`location./api/.proxy_pass`); anything repeated becomes a list, so
+  labs with two `server` blocks use `server[*]...` paths. It reports a
+  missing `;` with the line number. Under a `[*]` path, a failed
+  `contains` check now names only the substrings the closest candidate
+  lacks.
+- **total: 231 tutorials, 119 incidents, 34 Writing Labs, 14 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with
@@ -443,7 +454,7 @@ existing tutorial/incident ids by id — no new scenario authoring, purely
 composition of what already exists. `test_career_path_content.py` enforces
 every step id resolves to a real scenario (self-consistency, same pattern
 as the other content tests) and that a path spans at least 2 categories
-(the whole point is combining categories, not padding one). Currently 13 paths: `path-001`
+(the whole point is combining categories, not padding one). Currently 14 paths: `path-001`
 build→ship (terraform → docker → kubernetes → cicd → monitoring),
 `path-002` incident chain (linux → networking → kubernetes → monitoring),
 `path-003` ML model laptop→production (mlops + docker), `path-004`
@@ -457,8 +468,9 @@ LLM incident → SLOs, built from the step-5 new-topic content). Then
 response (security → aws → sre), `path-010` Patch Tuesday (security →
 servers → sre), `path-011` SRE at scale (sre → monitoring →
 kubernetes), `path-012` whiteboard to production (systemdesign →
-git → terraform → cicd → security), and `path-013` own the database
-(databases → systemdesign → cicd → aws). More paths need
+git → terraform → cicd → security), `path-013` own the database
+(databases → systemdesign → cicd → aws), and `path-014` the front door
+(networking → webservers → systemdesign). More paths need
 no new scenario content — just new orderings of existing ids.
 
 ## Build status vs. SPEC.md's v1–v6 order
@@ -573,8 +585,8 @@ python -m pytest
   actually parses and passes its own `validate` spec — and the converse:
   a pre-filled (broken) `starter_content` must NOT already pass, or the
   "fix this file" lab teaches nothing
-- `test_lab_formats.py` — the Dockerfile, HCL, bash, markdown, and
-  ansible parsers (line
+- `test_lab_formats.py` — the Dockerfile, HCL, bash, markdown,
+  ansible, and nginx parsers (line
   continuations, labels, nested maps, repeated blocks, comments, syntax
   errors, unbalanced blocks/quotes) and the `order`/`absent` checks
 - `test_exam.py` — question drawing (context, truncation, seeding),
@@ -672,12 +684,14 @@ See GAPS.md's final 'Overall' part for the reasoning. In priority order:
    Route 53, Kyverno and Falco, writing Terraform modules and dynamic
    blocks, plus Writing Labs yaml-031 (getopts, `while read`) and
    yaml-032 (a Terraform module).
-6b. **The topic backlog is GAPS.md Part 18**, in three tiers, with a
-   suggested build order. ✓ Its first item, the `databases` category,
-   is done (12 tutorials, 6 incidents, path-013). Next up from it: web
-   servers and proxies (nginx, HAProxy), identity and secrets (Vault,
-   OIDC, mTLS), and the Kubernetes ecosystem (Kustomize, Helm
-   authoring, Gateway API). A **database sandbox** driving an
+6b. **The topic backlog is GAPS.md Part 19**, in three tiers, with a
+   suggested build order. ✓ Its first two items are done: the
+   `databases` category (12 tutorials, 6 incidents, path-013) and the
+   `webservers` category (11 tutorials, 6 incidents, 2 nginx Writing
+   Labs, path-014). Next up from it: identity and secrets (Vault,
+   OIDC, JWTs, mTLS, cert-manager), then the Kubernetes ecosystem
+   (Kustomize, Helm authoring, Gateway API), then Jenkins and GitLab
+   CI. A **database sandbox** driving an
    in-memory SQLite database (standard library, no install) would let
    players run real SQL instead of matching pre-written statements.
    Authoring gaps that would each be one Writing Lab: a Kyverno

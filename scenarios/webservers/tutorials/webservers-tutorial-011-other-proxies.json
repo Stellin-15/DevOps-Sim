@@ -1,0 +1,53 @@
+{
+  "id": "webservers-tutorial-011",
+  "type": "tutorial",
+  "category": "webservers",
+  "title": "The Other Proxies: Envoy, Caddy, Traefik, and Apache",
+  "difficulty": "intermediate",
+  "tags": ["envoy", "caddy", "traefik", "apache", "proxies"],
+  "intro": "You'll inherit whatever proxy the last team chose. The questions are always the same four: is the config valid, what does it route where, are the upstreams healthy, and where are the logs? This tutorial asks them of four other proxies, so each is recognisable when you meet it.",
+  "steps": [
+    {
+      "prompt": "Envoy is the proxy inside most service meshes (Istio's sidecars are Envoy) and many API gateways. Validate the configuration file envoy.yaml without starting a proxy.",
+      "expected_commands": ["envoy --mode validate -c envoy.yaml", "envoy -c envoy.yaml --mode validate", "envoy --mode validate --config-path envoy.yaml"],
+      "fake_output": "configuration 'envoy.yaml' OK",
+      "explanation": "The static configuration is valid.",
+      "why": "Envoy's static file is often tiny, because Envoy is designed to be configured over an API by a control plane (Istio, Consul, a gateway controller). So the file passing tells you little about live behaviour; the admin interface, in the next step, shows what Envoy is actually running with."
+    },
+    {
+      "prompt": "Envoy's admin interface listens on localhost port 9901. Ask it for the health of its upstream hosts, and show only the lines containing health_flags.",
+      "expected_commands": ["curl -s localhost:9901/clusters | grep health_flags", "curl -s http://localhost:9901/clusters | grep health_flags", "curl -s 127.0.0.1:9901/clusters | grep health_flags", "curl localhost:9901/clusters | grep health_flags"],
+      "fake_output": "checkout::10.1.4.21:8080::health_flags::healthy\ncheckout::10.1.4.22:8080::health_flags::/failed_active_hc\npayments::10.1.7.10:8443::health_flags::/failed_outlier_check",
+      "explanation": "One checkout host is failing its active health check, and a payments host has been ejected by outlier detection.",
+      "why": "'Cluster' is Envoy's word for an upstream group. failed_active_hc is a failed health probe; failed_outlier_check means the host returned too many errors to real traffic and was ejected for a while, which is passive detection. In a mesh you reach the same data with 'istioctl proxy-config'. /config_dump shows the full live configuration and /stats the counters."
+    },
+    {
+      "prompt": "Caddy is a web server known for obtaining and renewing HTTPS certificates automatically with no extra tooling. Validate its configuration file, Caddyfile.",
+      "expected_commands": ["caddy validate --config Caddyfile", "caddy validate --config Caddyfile --adapter caddyfile", "caddy validate"],
+      "fake_output": "Valid configuration",
+      "explanation": "The Caddyfile is valid.",
+      "why": "A complete HTTPS reverse proxy in Caddy is two lines: the site name, and 'reverse_proxy localhost:8080'. It requests the certificate itself and renews it. That removes the whole certbot failure mode from webservers-tutorial-004, and it's a good fit for small services. 'caddy reload' applies changes without downtime."
+    },
+    {
+      "prompt": "Traefik configures itself from its surroundings: container labels in Docker, or Ingress and IngressRoute objects in Kubernetes. Its API lists the routers it has built. Query it on localhost port 8080 at /api/http/routers.",
+      "expected_commands": ["curl -s localhost:8080/api/http/routers", "curl -s http://localhost:8080/api/http/routers", "curl -s 127.0.0.1:8080/api/http/routers", "curl localhost:8080/api/http/routers"],
+      "fake_output": "[\n  {\"name\":\"shop@docker\",\"rule\":\"Host(`shop.example.com`)\",\"service\":\"shop\",\"status\":\"enabled\"},\n  {\"name\":\"api@docker\",\"rule\":\"Host(`api.example.com`) && PathPrefix(`/v1`)\",\"service\":\"api\",\"status\":\"enabled\"},\n  {\"name\":\"admin@docker\",\"rule\":\"Host(`admin.example.com`)\",\"service\":\"admin\",\"status\":\"disabled\",\"error\":[\"the service \\\"admin\\\" does not exist\"]}\n]",
+      "explanation": "Three routers. The admin one is disabled because its service doesn't exist.",
+      "why": "With Traefik there's often no config file to read: the routing is assembled from labels on containers, so a typo in a label produces a route that silently doesn't work. The API and the dashboard are where you see what it built and why a router is disabled. '@docker' shows which provider each router came from."
+    },
+    {
+      "prompt": "Apache httpd still runs a large share of older sites. Test its configuration.",
+      "expected_commands": ["sudo apachectl configtest", "apachectl configtest", "sudo apache2ctl configtest", "sudo apachectl -t", "apachectl -t"],
+      "fake_output": "Syntax OK",
+      "explanation": "The configuration is valid.",
+      "why": "The same rule again: test, then 'apachectl graceful' (the equivalent of a reload). Apache's distinguishing feature is .htaccess files, per-directory config read on every request, which is why a site's behaviour can change with no change to the main configuration. Look for them when the config doesn't explain what you see."
+    },
+    {
+      "prompt": "List Apache's virtual hosts and which file defines each.",
+      "expected_commands": ["sudo apachectl -S", "apachectl -S", "sudo apache2ctl -S", "sudo httpd -S"],
+      "fake_output": "VirtualHost configuration:\n*:80    is a NameVirtualHost\n     default server legacy.example.com (/etc/apache2/sites-enabled/000-default.conf:1)\n     port 80 namevhost legacy.example.com (/etc/apache2/sites-enabled/000-default.conf:1)\n     port 80 namevhost billing.example.com (/etc/apache2/sites-enabled/billing.conf:1)",
+      "explanation": "Two virtual hosts on port 80, with legacy.example.com as the default.",
+      "why": "This is Apache's answer to 'nginx -T | grep server_name', with the file and line of each. The same default-server rule applies: the first one loaded catches unknown hostnames. Whatever the proxy, the routine is identical: validate, list what it routes, check upstream health, and read its error log."
+    }
+  ]
+}

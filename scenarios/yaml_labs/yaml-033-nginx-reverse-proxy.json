@@ -1,0 +1,39 @@
+{
+  "id": "yaml-033",
+  "type": "yaml_lab",
+  "category": "webservers",
+  "title": "Write an nginx Reverse Proxy with HTTPS from Scratch",
+  "difficulty": "intermediate",
+  "tags": ["nginx", "reverse-proxy", "tls", "upstream"],
+  "intro": "The tutorials read nginx configuration; now write one. This is the file most small production services sit behind: two app servers, HTTP redirected to HTTPS, the standard proxy headers, and static files served directly. Every nginx directive ends with a semicolon, and blocks use braces.",
+  "steps": [
+    {
+      "file": "shop.conf",
+      "format": "nginx",
+      "starter_content": "",
+      "prompt": "Write shop.conf with three top-level blocks:\n\n(1) upstream backend: least_conn, and two servers, 10.0.1.11:8080 and 10.0.1.12:8080.\n\n(2) A server for plain HTTP: listen 80, server_name shop.example.com, and\n    return 301 https://$host$request_uri;\n\n(3) A server for HTTPS: listen 443 ssl, server_name shop.example.com,\n    ssl_certificate /etc/letsencrypt/live/shop.example.com/fullchain.pem\n    ssl_certificate_key /etc/letsencrypt/live/shop.example.com/privkey.pem\n    and two locations:\n    - location / : proxy_pass http://backend; plus four proxy_set_header lines:\n        Host $host\n        X-Real-IP $remote_addr\n        X-Forwarded-For $proxy_add_x_forwarded_for\n        X-Forwarded-Proto $scheme\n    - location /static/ : root /var/www/shop; and expires 7d;",
+      "apply_commands": ["nginx -t", "sudo nginx -t", "check"],
+      "validate": {
+        "fields": {
+          "upstream.backend.least_conn": "ANY",
+          "upstream.backend.server[*]": [{"contains": "10.0.1.11:8080"}, {"contains": "10.0.1.12:8080"}],
+          "server[*].listen": ["80", {"contains": ["443", "ssl"]}],
+          "server[*].server_name": {"contains": "shop.example.com"},
+          "server[*].return": {"contains": ["301", "https://$host$request_uri"]},
+          "server[*].ssl_certificate": {"contains": "/etc/letsencrypt/live/shop.example.com/fullchain.pem"},
+          "server[*].ssl_certificate_key": {"contains": "/etc/letsencrypt/live/shop.example.com/privkey.pem"},
+          "server[*].location./.proxy_pass": "http://backend",
+          "server[*].location./.proxy_set_header": {"contains": ["Host $host", "X-Real-IP $remote_addr", "X-Forwarded-For $proxy_add_x_forwarded_for", "X-Forwarded-Proto $scheme"]},
+          "server[*].location./static/.root": "/var/www/shop",
+          "server[*].location./static/.expires": "7d"
+        },
+        "absent": ["proxy_pass http://backend/", "/cert.pem"]
+      },
+      "hint": "Shape:\n  upstream backend {\n      least_conn;\n      server 10.0.1.11:8080;\n      server 10.0.1.12:8080;\n  }\n  server {\n      listen 80;\n      server_name shop.example.com;\n      return 301 https://$host$request_uri;\n  }\n  server {\n      listen 443 ssl;\n      ...\n      location / {\n          proxy_pass http://backend;\n          proxy_set_header Host $host;\n          ...\n      }\n      location /static/ { root /var/www/shop; expires 7d; }\n  }\nA 'missing ;' error names the line. No slash after http://backend.",
+      "solution": "upstream backend {\n    least_conn;\n    server 10.0.1.11:8080;\n    server 10.0.1.12:8080;\n}\n\nserver {\n    listen 80;\n    server_name shop.example.com;\n    return 301 https://$host$request_uri;\n}\n\nserver {\n    listen 443 ssl;\n    server_name shop.example.com;\n\n    ssl_certificate     /etc/letsencrypt/live/shop.example.com/fullchain.pem;\n    ssl_certificate_key /etc/letsencrypt/live/shop.example.com/privkey.pem;\n\n    location / {\n        proxy_pass http://backend;\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n    }\n\n    location /static/ {\n        root /var/www/shop;\n        expires 7d;\n    }\n}\n",
+      "fake_output": "nginx: the configuration file /etc/nginx/nginx.conf syntax is ok\nnginx: configuration file /etc/nginx/nginx.conf test is successful",
+      "explanation": "A complete front door: two balanced app servers, HTTPS with a redirect from HTTP, the headers the app needs to know its real client, and static files that never touch the app.",
+      "why": "Each line prevents a problem from the tutorials. 'return 301 https://$host$request_uri' keeps the path and query string, where a hand-written rewrite often drops them. fullchain.pem, not cert.pem, includes the intermediate certificate that command-line clients and mobile apps need. 'proxy_pass http://backend' has no trailing slash, so /api/users reaches the app unchanged (webservers-tutorial-003). Without the Host and X-Forwarded headers the app sees every request as coming from nginx over plain HTTP, and builds wrong links and redirect loops. Serving /static/ from disk with a 7-day expiry takes that load off the app entirely. With 'root', /static/app.css is read from /var/www/shop/static/app.css. For production you'd add: an explicit default server that drops unknown hostnames (webservers-incident-004), ssl_protocols TLSv1.2 TLSv1.3, HSTS, upstream keepalive, and timeouts. The next lab hardens a config like this one."
+    }
+  ]
+}

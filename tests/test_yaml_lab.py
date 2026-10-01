@@ -82,6 +82,13 @@ class TestWildcardsAndYamlQuirks:
         assert yaml_lab.validate_manifest(parsed, {"fields": {"expr": {"contains": ["5..", "[5m]"]}}}) == []
         assert yaml_lab.validate_manifest(parsed, {"fields": {"expr": {"contains": "by (le)"}}}) != []
 
+    def test_wildcard_contains_names_only_what_the_closest_match_lacks(self):
+        parsed = {"servers": [{"headers": ["Host $host", "X-Real-IP $remote_addr"]}, {"headers": ["Host $host"]}]}
+        spec = {"fields": {"servers[*].headers": {"contains": ["Host $host", "X-Real-IP", "X-Forwarded-Proto"]}}}
+        assert yaml_lab.validate_manifest(parsed, spec) == ["servers[*].headers is missing: 'X-Forwarded-Proto'"]
+        spec = {"fields": {"servers[*].headers": {"contains": ["Host $host", "X-Real-IP"]}}}
+        assert yaml_lab.validate_manifest(parsed, spec) == []
+
     def test_number_matches_its_string_form(self):
         assert yaml_lab.validate_manifest({"v": 20}, {"fields": {"v": "20"}}) == []
         assert yaml_lab.validate_manifest({"v": "20"}, {"fields": {"v": 20}}) == []

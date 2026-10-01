@@ -176,3 +176,99 @@ class TestAnsible:
     def test_yaml_errors_pass_through(self):
         parsed, problems = lab_formats.parse("ansible", "- name: [unclosed\n")
         assert parsed is None and "YAML syntax error" in problems[0]
+
+
+class TestNginx:
+    CONF = (
+        "# reverse proxy\n"
+        "upstream backend {\n"
+        "    least_conn;\n"
+        "    server 10.0.1.11:8080 max_fails=3;  # first\n"
+        "    server 10.0.1.12:8080;\n"
+        "}\n"
+        "\n"
+        "server {\n"
+        "    listen 443 ssl;\n"
+        "    server_name shop.example.com;\n"
+        "\n"
+        "    location / {\n"
+        "        proxy_pass http://backend;\n"
+        "        proxy_set_header Host $host;\n"
+        "        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n"
+        "    }\n"
+        "    location /static/ {\n"
+        "        root /var/www;\n"
+        "        add_header Cache-Control \"public, max-age=3600\";\n"
+        "    }\n"
+        "}\n"
+    )
+
+    def test_directives_blocks_and_labels(self):
+        parsed, problems = lab_formats.parse("nginx", self.CONF)
+        assert problems == []
+        assert parsed["server"]["listen"] == "443 ssl"
+        assert parsed["upstream"]["backend"]["least_conn"] == ""
+        assert yaml_lab.get_values(parsed, "server.location./.proxy_pass") == ["http://backend"]
+        assert yaml_lab.get_values(parsed, "server.location./static/.root") == ["/var/www"]
+
+    def test_repeated_directives_become_a_list(self):
+        parsed, _ = lab_formats.parse("nginx", self.CONF)
+        assert parsed["upstream"]["backend"]["server"] == ["10.0.1.11:8080 max_fails=3", "10.0.1.12:8080"]
+        assert yaml_lab.get_values(parsed, "upstream.backend.server[*]") == ["10.0.1.11:8080 max_fails=3", "10.0.1.12:8080"]
+        headers = parsed["server"]["location"]["/"]["proxy_set_header"]
+        assert headers == ["Host $host", "X-Forwarded-For $proxy_add_x_forwarded_for"]
+
+    def test_repeated_blocks_become_a_list(self):
+        parsed, problems = lab_formats.parse("nginx", "server { listen 80; }\nserver { listen 443 ssl; }\n")
+        assert problems == []
+        assert [s["listen"] for s in parsed["server"]] == ["80", "443 ssl"]
+
+    def test_quoted_values_keep_semicolons_braces_and_hashes(self):
+        parsed, problems = lab_formats.parse("nginx", "server {\n  return 200 'a; b { # c }';\n}\n")
+        assert problems == []
+        assert parsed["server"]["return"] == "200 a; b { # c }"
+
+    def test_comments_are_ignored_but_stay_in_text(self):
+        parsed, _ = lab_formats.parse("nginx", self.CONF)
+        assert "# reverse proxy" not in parsed["lines"]
+        assert "# reverse proxy" in parsed["text"]
+        assert "first" not in parsed["upstream"]["backend"]["server"][0]
+
+    def test_variable_braces_stay_in_the_word(self):
+        parsed, problems = lab_formats.parse("nginx", "server {\n  return 301 https://${host}${request_uri};\n}\n")
+        assert problems == []
+        assert parsed["server"]["return"] == "301 https://${host}${request_uri}"
+
+    def test_missing_semicolon_names_the_line(self):
+        parsed, problems = lab_formats.parse("nginx", "server {\n  listen 80\n  server_name x;\n}\n")
+        assert parsed is None
+        assert "missing ';'" in problems[0] and "line 2" in problems[0] and "listen 80" in problems[0]
+
+    def test_missing_semicolon_before_closing_brace(self):
+        parsed, problems = lab_formats.parse("nginx", "server {\n  listen 80\n}\n")
+        assert parsed is None and "missing ';'" in problems[0]
+
+    def test_unbalanced_braces(self):
+        assert "never closed" in lab_formats.parse("nginx", "server {\n  listen 80;\n")[1][0]
+        assert "unexpected '}'" in lab_formats.parse("nginx", "server {\n  listen 80;\n}\n}\n")[1][0]
+
+    def test_multiline_log_format_is_allowed(self):
+        conf = "http {\n  log_format main '$remote_addr $status'\n                  '$request_time';\n}\n"
+        parsed, problems = lab_formats.parse("nginx", conf)
+        assert problems == []
+        assert parsed["http"]["log_format"] == "main $remote_addr $status $request_time"
+
+    def test_empty_file(self):
+        assert lab_formats.parse("nginx", "# nothing here\n") == (None, ["File is empty."])
+
+    def test_validation_with_contains_and_order(self):
+        parsed, _ = lab_formats.parse("nginx", self.CONF)
+        spec = {
+            "fields": {
+                "server.location./.proxy_set_header": {"contains": ["Host $host", "X-Forwarded-For"]},
+                "upstream.backend.server[*]": {"contains": "10.0.1.12"},
+            },
+            "order": ["upstream backend", "server {", "location /"],
+            "absent": ["proxy_pass http://10."],
+        }
+        assert yaml_lab.validate_manifest(parsed, spec) == []

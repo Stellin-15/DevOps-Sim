@@ -4,8 +4,8 @@ A terminal-based game for learning real DevOps command-line skills by
 typing them, not memorizing them. Started as Kubernetes-only; now spans
 **Kubernetes, Docker, Linux, Terraform, Networking, CI/CD, Monitoring,
 MLOps, AWS, Azure, Google Cloud, Security, Server Fleet Ops, SRE**
-(how large companies run production), **Git, System Design, and
-Databases**. Runs entirely locally — no real infrastructure, no network calls,
+(how large companies run production), **Git, System Design, Databases,
+and Web Servers & Proxies**. Runs entirely locally — no real infrastructure, no network calls,
 no backend. Every command output you see is a pre-written simulated
 string.
 
@@ -34,12 +34,12 @@ string.
   The game writes a real file to `workspace/`, tells you what to build or
   fix, and you edit it in your actual editor (vim, nano, VS Code —
   whatever you'd really use). Typing the apply command reads your real
-  file and checks it field by field. 32 labs across eleven formats:
+  file and checks it field by field. 34 labs across twelve formats:
   Kubernetes manifests, GitHub Actions workflows, Prometheus alert rules,
   Docker Compose files, Dockerfiles, Terraform (AWS VPCs, security
   groups, GCP firewalls, a reusable module), AWS IAM policies, Ansible
-  playbooks, bash scripts, a blameless postmortem, and system design
-  documents in Markdown.
+  playbooks, bash scripts, nginx configuration, a blameless postmortem,
+  and system design documents in Markdown.
   Half are "write from scratch", half are "fix this broken or dangerous
   file". This is the skill a command-matcher can't fake.
 - **Exam Mode** — pick a category and a number of questions; they're drawn
@@ -368,14 +368,15 @@ the engine, loader, sandboxes, yaml_lab, career_path, mystery, or scenario conte
 | Git | 11 | 6 | objects/refs/HEAD, precise staging, branches, merge conflicts, rebase (autosquash, --onto), the undo matrix and reflog, searching history, remotes and forks, stash/worktrees, config/attributes/hooks, shallow and partial clones, submodules, LFS, signing |
 | System Design | 11 | 6 | estimation, load balancing, caching, indexes and query plans, replication, sharding, queues, consistency and quorums, rate limiting and idempotency, CDNs, a worked URL shortener; real commands plus multiple-choice trade-off questions; plus 2 design-document Writing Labs |
 | Databases | 12 | 6 | psql, on-call SQL (joins, GROUP BY, window functions), transactions and isolation, roles and privileges, pg_stat_activity and lock chains, slow queries (pg_stat_statements, EXPLAIN), vacuum and wraparound, pg_dump/pg_restore, point-in-time recovery (pgBackRest), Patroni failover, MySQL, Redis operations |
-| **Total** | **220** | **113** | + 32 Writing Labs |
+| Web Servers & Proxies | 11 | 6 | nginx (test and reload, server blocks and locations, reverse proxying, TLS with certbot, access-log analysis, reading 502/503/504, rate and body limits, caching and gzip, connection and file-descriptor capacity), HAProxy draining, and recognising Envoy, Caddy, Traefik, and Apache; plus 2 nginx Writing Labs |
+| **Total** | **231** | **119** | + 34 Writing Labs |
 
 The three clouds use different names for the same ideas (security group
 vs NSG vs firewall rule; CloudTrail vs Activity Log vs Audit Logs). The
 cross-cloud map at the end of GAPS.md Part 11 lines them up side by
 side.
 
-Plus **13 Career Paths** chaining scenarios across categories:
+Plus **14 Career Paths** chaining scenarios across categories:
 - ship a feature end to end;
 - a production incident chain;
 - an ML model from laptop to production;
@@ -390,7 +391,9 @@ Plus **13 Career Paths** chaining scenarios across categories:
 - whiteboard to production (estimate → design → clean history → Terraform
   module → zero-downtime migration → provenance → admission policy);
 - own the database (live activity → slow queries → migrations and the
-  lock queue → backups → a WAL-filled disk → recovering a deleted table).
+  lock queue → backups → a WAL-filled disk → recovering a deleted table);
+- the front door (HTTP and TLS → nginx → load balancing → certificates →
+  gateway errors → three proxy incidents).
 
 Plus **23 Mystery Incidents**, symptom only:
 - Kubernetes: 503s while every pod is Running, a deploy that never
@@ -421,7 +424,7 @@ root cause and how to prevent it.
 
 Honest answer — see **GAPS.md**, which assesses every category
 individually (covered / still missing / readiness verdict) plus an
-overall verdict in its final part. **GAPS.md Part 18 is the full list of
+overall verdict in its final part. **GAPS.md Part 19 is the full list of
 topics this game doesn't teach yet**, in three tiers (commonly used,
 role-dependent, and niche), so you can see what's left to learn. In short: completing everything here makes
 you a strong DevOps *operator* — you'll know the commands, the failure
@@ -451,11 +454,13 @@ steps and design-document labs) → a gap-closing batch (admission
 webhooks, Multi-Attach, SELinux, IPv6, database migrations, SLSA
 provenance, OpenTelemetry instrumentation, distributed training, Airflow,
 RDS, Route 53, Kyverno/Falco, Terraform modules, getopts) → Databases
-category (PostgreSQL operations, SQL, recovery, MySQL, Redis).
+category (PostgreSQL operations, SQL, recovery, MySQL, Redis) → Web
+Servers & Proxies category (nginx, HAProxy, and an nginx lab format).
 
 Next, in priority order (details in CLAUDE.md and GAPS.md):
-- The topic backlog in GAPS.md Part 18: web servers and proxies next,
-  then identity and secrets, and the Kubernetes ecosystem
+- The topic backlog in GAPS.md Part 19: identity and secrets next
+  (Vault, OIDC, mTLS), then the Kubernetes ecosystem, then Jenkins and
+  GitLab CI
 - Exam-specific gap passes for other certifications (CKAD, Terraform
   Associate, AWS/Azure/GCP associate exams)
 - More sandboxes (Kubernetes, Docker, Linux, and AWS exist; Terraform
