@@ -1,0 +1,39 @@
+{
+  "id": "mystery-kube-004",
+  "type": "mystery",
+  "category": "kubernetes",
+  "sandbox": "kube",
+  "title": "After the Node Maintenance",
+  "difficulty": "intermediate",
+  "tags": ["kubernetes", "scheduling", "nodes", "cordon"],
+  "setup": {"seed": 54, "problems": ["nodes_drained"]},
+  "symptom": "Kernel patching finished at 03:00 and the ticket was closed: 'all nodes back up and Ready'. Since then the API is at half capacity and no background jobs run at all. The website still loads. Nothing was deployed.",
+  "goals": [
+    {"check": "deployment_available", "deployment": "api", "description": "The api deployment has all its replicas available"},
+    {"check": "deployment_available", "deployment": "worker", "description": "The worker deployment has all its replicas available"}
+  ],
+  "evidence": [
+    {"description": "why some pods aren't running anywhere", "seen_any": ["FailedScheduling", "were unschedulable"]},
+    {"description": "the state the nodes were really left in", "seen_any": ["SchedulingDisabled"]}
+  ],
+  "question": {
+    "prompt": "The nodes are Ready. Why can't the pods run?",
+    "options": [
+      "The pods' images can't be pulled on the patched kernel",
+      "Two nodes were cordoned and drained for patching and never uncordoned. They're Ready but unschedulable, and the one remaining node has no CPU left for the evicted pods",
+      "A PodDisruptionBudget is blocking the pods",
+      "The pods are crash-looping"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 6,
+  "solution_commands": [
+    "kubectl get pods -o wide",
+    "kubectl describe pod {pending_pod}",
+    "kubectl get nodes",
+    "kubectl uncordon node-2",
+    "kubectl uncordon node-3",
+    "kubectl get pods -o wide"
+  ],
+  "debrief": "'Ready' and 'schedulable' are different things. Draining a node cordons it (marks it unschedulable) and evicts its pods; when the node comes back from patching it is Ready again, but it stays cordoned until someone runs 'kubectl uncordon'. That last step was skipped on two of three nodes. The evicted pods were recreated but had only one node to go to, and it filled up: 4 pods fit, 3 stayed Pending. The scheduler said so exactly: '1 Insufficient cpu, 2 node(s) were unschedulable'. The site kept working because the web pods happened to get the remaining capacity, which is why this looked like a partial, confusing outage rather than a clear one. Read 'kubectl get nodes' closely: 'Ready,SchedulingDisabled' is easy to skim past. Prevention: make uncordon part of the maintenance automation (not a manual last step), alert on nodes that stay SchedulingDisabled for more than an hour, and alert on pods Pending for more than a few minutes."
+}

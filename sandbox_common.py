@@ -14,7 +14,7 @@ from engine import normalize, read_input
 
 BASE_DIR = Path(__file__).parent
 SANDBOX_ROOT = BASE_DIR / "sandbox_data"
-SANDBOX_TITLES = {"aws": "AWS", "gcp": "Google Cloud"}  # kinds whose .title() would read wrong
+SANDBOX_TITLES = {"aws": "AWS", "gcp": "Google Cloud", "kube": "Kubernetes (fixable)"}  # kinds whose .title() would read wrong
 
 
 def render_table(headers: list, rows: list, prefix: str = "") -> str:

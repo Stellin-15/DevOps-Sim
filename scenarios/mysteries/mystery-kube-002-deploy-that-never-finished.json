@@ -1,0 +1,38 @@
+{
+  "id": "mystery-kube-002",
+  "type": "mystery",
+  "category": "kubernetes",
+  "sandbox": "kube",
+  "title": "The Deploy That Never Finished",
+  "difficulty": "beginner",
+  "tags": ["kubernetes", "images", "rollout", "rollback"],
+  "setup": {"seed": 52, "problems": ["bad_image"]},
+  "symptom": "The release pipeline for the web app has shown 'deploying...' for 25 minutes and the shop is down. The developer says the build was green and 'it's the same code that passed staging'. The release manager wants to know whether to wait or act.",
+  "goals": [
+    {"check": "deployment_available", "deployment": "web", "description": "The web deployment has all its replicas available"},
+    {"check": "service_has_endpoints", "service": "web", "description": "The site is serving again"}
+  ],
+  "evidence": [
+    {"description": "what state the web pods are stuck in", "seen_any": ["ImagePullBackOff"]},
+    {"description": "why the image can't be pulled", "seen_any": ["manifest unknown"]}
+  ],
+  "question": {
+    "prompt": "Why did the rollout never finish?",
+    "options": [
+      "The new code crashes on startup",
+      "The deployment references an image tag that doesn't exist in the registry, so the pods can never pull it. No amount of waiting will fix that",
+      "The cluster ran out of nodes",
+      "The readiness probe is too strict"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 5,
+  "solution_commands": [
+    "kubectl get pods",
+    "kubectl describe pod {web_pod}",
+    "kubectl rollout history deployment/web",
+    "kubectl rollout undo deployment/web",
+    "kubectl rollout status deployment/web"
+  ],
+  "debrief": "ImagePullBackOff means the kubelet can't fetch the image, and 'manifest unknown' in the events says precisely why: the tag doesn't exist in the registry. Here the pipeline deployed 2.4.2-rc, a tag that CI never pushed (a typo, a build that pushed under a different tag, or a push that failed quietly). Kubernetes retries forever with a growing back-off, so waiting was never going to work. The code being fine is irrelevant: the code never ran. The right call during an outage is 'kubectl rollout undo': return to the last revision that worked, then find out what happened to the tag. Prevention: have the pipeline verify the image exists (or deploy by digest, which can't point at nothing) before it touches the cluster, and give the deploy step a timeout with automatic rollback, so 'deploying...' can't hang for 25 minutes."
+}

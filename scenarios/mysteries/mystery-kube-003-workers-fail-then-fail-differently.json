@@ -1,0 +1,41 @@
+{
+  "id": "mystery-kube-003",
+  "type": "mystery",
+  "category": "kubernetes",
+  "sandbox": "kube",
+  "title": "The Workers Fail, Then Fail Differently",
+  "difficulty": "advanced",
+  "tags": ["kubernetes", "configmap", "oom", "layered-failure"],
+  "setup": {"seed": 53, "problems": ["missing_configmap_key", "oom_limit"]},
+  "symptom": "Orders are being accepted but never processed: the background workers aren't running. Yesterday's worker release bundled two 'small' changes: a tidy-up of the configuration key names, and a lower memory limit to save money. The queue broker itself is healthy.",
+  "goals": [
+    {"check": "deployment_available", "deployment": "worker", "description": "The worker deployment has all its replicas available"}
+  ],
+  "evidence": [
+    {"description": "why the worker containers can't even be created", "seen_any": ["couldn't find key"]},
+    {"description": "what the configuration actually contains", "seen_any": ["QUEUE_ADDR"]},
+    {"description": "how the workers die once they do start", "seen_any": ["OOMKilled", "Killed"]}
+  ],
+  "question": {
+    "prompt": "What was wrong with the workers?",
+    "options": [
+      "The queue broker was refusing connections",
+      "Two separate faults, one hidden behind the other: the pod template asks for a ConfigMap key that was renamed away, and once that's fixed the container is OOM-killed because its memory limit is far below what it needs",
+      "The worker image tag doesn't exist",
+      "The nodes were drained and never uncordoned"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 8,
+  "solution_commands": [
+    "kubectl get pods",
+    "kubectl describe pod {worker_pod}",
+    "kubectl get cm worker-config -o yaml",
+    "kubectl patch configmap worker-config -p '{{\"data\":{{\"QUEUE_URL\":\"amqp://rabbitmq.shop.svc:5672\"}}}}'",
+    "kubectl get pods -l app=worker",
+    "kubectl logs {worker_pod} --previous",
+    "kubectl set resources deployment worker --limits=memory=512Mi",
+    "kubectl rollout status deployment/worker"
+  ],
+  "debrief": "The second failure was invisible until the first was fixed. CreateContainerConfigError means the container was never created: the pod template reads QUEUE_URL from the ConfigMap, but the 'tidy-up' renamed the key to QUEUE_ADDR. Add the key back and the pods finally start, only to be killed: the 'cost saving' set the memory limit to 64Mi for a process that needs about 200Mi, so the kernel OOM-kills it (exit code 137, Last State: OOMKilled) and the kubelet backs off into CrashLoopBackOff. After every fix, look again, because a status changing from one error to another is progress, not failure. Note what wouldn't have worked: deleting the pods (the replacements come from the same template), and scaling to zero, which only hides the problem. 'rollout undo' would also have fixed the memory limit, but not the ConfigMap, because ConfigMaps aren't part of a deployment's revision history. Prevention: one change per release, ConfigMap keys treated as an interface that code review checks, and memory limits set from measured usage with headroom."
+}

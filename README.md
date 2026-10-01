@@ -70,10 +70,17 @@ string.
   mystery average, and the scenarios that took you the most attempts,
   and suggests up to three concrete next steps.
 - **Sandbox** — no scoring, no steps: a randomly generated broken
-  environment to explore with real commands. Six to pick from:
+  environment to explore with real commands. Seven to pick from:
   - **Kubernetes** — a cluster of Deployments, Services, and pods (some
     `CrashLoopBackOff`/`OOMKilled`/`Pending`/`Error`), plus nodes, a
     ConfigMap, a Secret, and an event log, all consistent with each other.
+    Read-only: for practising how to look around.
+  - **Kubernetes, fixable** — a cluster where every failing pod has a
+    cause: an image tag that doesn't exist, a missing ConfigMap key, a
+    memory limit that's too low, a readiness probe on the wrong path,
+    drained nodes, or a Service selector that matches nothing. `kubectl
+    rollout undo`, `set image|env|resources|selector`, `patch`, and
+    `uncordon` really fix it, and deleting a broken pod really doesn't.
   - **Docker** — a host where one or two app containers were OOM-killed,
     crashed on startup, are stuck in a restart loop, or are failing their
     healthcheck, plus dangling images and volumes wasting disk.
@@ -226,7 +233,8 @@ career_path.py       chains existing scenarios across categories into
 progress.py         reads/writes progress.json (completion + attempt
                      counts, flat across all categories — ids are
                      globally unique)
-sandbox.py          Kubernetes sandbox (random cluster)
+sandbox.py          Kubernetes sandbox (random cluster, read-only)
+kube_sandbox.py     Kubernetes sandbox (fixable: status derived from cause)
 docker_sandbox.py   Docker sandbox (random broken host)
 linux_sandbox.py    Linux sandbox (random broken server; reacts to fixes)
 aws_sandbox.py      AWS sandbox (a VPC with real layer-by-layer reachability)
@@ -375,7 +383,10 @@ Plus **11 Career Paths** chaining scenarios across categories:
 - Patch Tuesday for a fleet;
 - SRE at scale, from readiness review to postmortem.
 
-Plus **18 Mystery Incidents**, symptom only:
+Plus **23 Mystery Incidents**, symptom only:
+- Kubernetes: 503s while every pod is Running, a deploy that never
+  finishes, workers that fail and then fail differently, the morning
+  after node maintenance, and pods that are Running but not Ready.
 - Linux: an API down after a deploy, a disk alert that won't clear, a
   database that keeps dying, and a slow server with two unrelated
   problems.
@@ -423,13 +434,11 @@ sandbox, and AWS mysteries → Azure and Google Cloud categories → Security
 category and hacked-server mysteries → Server Fleet Ops category → SRE
 category → cloud, Ansible, and postmortem Writing Labs, plus four more
 career paths → Stats screen → Azure and Google Cloud sandboxes with
-mysteries.
+mysteries → a fixable Kubernetes sandbox with five Kubernetes mysteries.
 
 Next, in priority order (details in CLAUDE.md and GAPS.md):
 - Exam-specific gap passes for other certifications (CKAD, Terraform
   Associate, AWS/Azure/GCP associate exams)
-- More mysteries, including Kubernetes ones (these need a reactive
-  Kubernetes sandbox)
 - More sandboxes (Kubernetes, Docker, Linux, and AWS exist; Terraform
   state would be next)
 - A CLI scaffold for authoring new scenario JSON

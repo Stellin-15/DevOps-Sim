@@ -14,6 +14,7 @@ import aws_sandbox
 import azure_sandbox
 import docker_sandbox
 import gcp_sandbox
+import kube_sandbox
 import linux_sandbox
 from engine import normalize, read_input
 from sandbox_common import run_command
@@ -28,6 +29,7 @@ SANDBOXES = {
     "aws": aws_sandbox,
     "azure": azure_sandbox,
     "gcp": gcp_sandbox,
+    "kube": kube_sandbox,
 }
 
 MAX_ANSWER_ATTEMPTS = 2

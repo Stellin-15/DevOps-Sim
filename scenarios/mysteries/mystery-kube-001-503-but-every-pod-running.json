@@ -1,0 +1,38 @@
+{
+  "id": "mystery-kube-001",
+  "type": "mystery",
+  "category": "kubernetes",
+  "sandbox": "kube",
+  "title": "503 Everywhere, but Every Pod Is Running",
+  "difficulty": "intermediate",
+  "tags": ["kubernetes", "services", "selectors", "endpoints"],
+  "setup": {"seed": 51, "problems": ["selector_mismatch"]},
+  "symptom": "https://shop.example.com returns 503 for every request. The on-call dashboard is green: all pods Running and Ready, no restarts, no recent deploys of the web app. Someone 'standardised the labels in the Service manifests' this morning.",
+  "goals": [
+    {"check": "service_has_endpoints", "service": "web", "description": "The web Service has endpoints again (the site loads)"}
+  ],
+  "evidence": [
+    {"description": "what the web Service is actually sending traffic to", "seen_any": ["<none>"]},
+    {"description": "which pods the web Service is looking for", "seen_any": ["app=webapp"]}
+  ],
+  "question": {
+    "prompt": "Every pod is healthy. Why is the site down?",
+    "options": [
+      "The web pods are failing their readiness probes",
+      "The web Service's selector doesn't match the labels on the web pods, so the Service has no endpoints and the ingress has nowhere to send requests",
+      "The ingress controller crashed",
+      "The nodes are out of CPU"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 5,
+  "solution_commands": [
+    "curl https://shop.example.com",
+    "kubectl get pods",
+    "kubectl get endpoints",
+    "kubectl describe svc web",
+    "kubectl set selector service web app=web",
+    "curl https://shop.example.com"
+  ],
+  "debrief": "A Service doesn't know about Deployments. It finds its pods purely by label selector, and its endpoints are whichever Ready pods match right now. The label 'standardisation' changed the Service's selector to app=webapp while the pods still carry app=web, so the Service matched nothing. Nothing crashed and nothing restarted, which is why pod dashboards stayed green: the failure was in the wiring between two healthy things. 'kubectl get endpoints' is the check that exposes it in one line, and <none> next to a Service whose pods are all Running is the signature. A 503 from the ingress (rather than a timeout) fits too: the ingress is up, it just has no backend. Fixing the selector is instant and needs no restart. Prevention: change labels and selectors together in one reviewed commit, and alert on Services with zero endpoints (kube-state-metrics exposes kube_endpoint_address_available)."
+}

@@ -186,6 +186,25 @@ Don't duplicate content from these files elsewhere — link to them.
   its widest cell (header or row) instead of a fixed width — required
   because service/pod names vary a lot in length and a fixed width let
   long names collide with the next column.
+- **kube_sandbox.py** — the fixable Kubernetes sandbox (sandbox kind
+  `kube`), separate from the random read-only `sandbox.py`. Pod status
+  is **derived** on every read by `pods(state)` from the deployment
+  template, ConfigMaps, nodes, and Services. The checks run in kubelet
+  order: unschedulable → bad image tag → missing ConfigMap key →
+  memory limit below `needs_mem` (CrashLoopBackOff, last state
+  OOMKilled) → readiness path the app doesn't serve (Running 0/1).
+  - Service endpoints are the Ready pods the selector matches.
+  - Pod names hash the template, so a template change renames the pods
+    like a new ReplicaSet. `delete pod` only bumps a generation counter.
+  - Fixes: `rollout undo` (per-deployment `history`), `set
+    image|env|resources|selector`, `patch configmap`, `uncordon`,
+    and `scale`.
+  - Input is parsed with `shlex`, case-sensitively, **not** through
+    `engine.normalize`, because env keys and JSON patches are
+    case-sensitive.
+  - Goals: `deployment_available` and `service_has_endpoints`.
+  - JSON in a mystery's `solution_commands` needs doubled braces,
+    because the commands go through `str.format`.
 - **exam.py** — Exam Mode. `build_questions()` flattens a category's
   tutorials+incidents into single-step questions and draws N at random;
   each carries the previous step's prompt and (truncated) output as
@@ -245,7 +264,7 @@ Don't duplicate content from these files elsewhere — link to them.
   - 6 problems, 2 per project.
 - **mystery.py** — Mystery Incidents: a symptom and a seeded sandbox
   state (`scenarios/mysteries/*.json`). `sandbox` picks linux, docker,
-  aws, azure or gcp, and `mystery.build_state` calls that module's
+  aws, azure, gcp or kube, and `mystery.build_state` calls that module's
   `generate_state(**setup)`.
 
   Mysteries are **sandbox-agnostic**: each sandbox module supplies three
@@ -372,7 +391,7 @@ unique). The Kubernetes-only `kubernetes.md` command reference is
 identical to (and replaces) the old root `COMMANDS.md`.
 
 Current per-category content depth (tutorials / incidents):
-- kubernetes: 29 / 13 (also has 9 Writing Labs and Sandbox) — CKA-gap-filled
+- kubernetes: 29 / 13 (also has 9 Writing Labs, 2 sandboxes, 5 mysteries) — CKA-gap-filled
 - docker: 11 / 5 (+3 Writing Labs: 2 Dockerfile, 1 Compose)
 - linux: 14 / 6 (+3 Writing Labs: bash)
 - terraform: 11 / 6 (+2 Writing Labs: HCL)
@@ -386,7 +405,7 @@ Current per-category content depth (tutorials / incidents):
 - security: 10 / 6 (+ 2 hacked-server mysteries on the Linux sandbox)
 - servers: 11 / 6 (fleet ops: Ansible, patching, time, LVM, backups)
 - sre: 10 / 6 (big-tech practices, via public tools)
-- **total: 175 tutorials, 93 incidents, 28 Writing Labs, 11 career paths, 18 Mystery Incidents (4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
+- **total: 175 tutorials, 93 incidents, 28 Writing Labs, 11 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with
@@ -509,7 +528,7 @@ final `resolution` debrief instead).
 python -m pytest
 ```
 
-(`pytest.ini` points it at `tests/`.) Twenty files:
+(`pytest.ini` points it at `tests/`.) Twenty-one files:
 - `test_engine.py` — matching/normalization logic, proven kubectl-agnostic
 - `test_scenario_loader.py` — category-aware JSON loading (`list_categories`,
   category-filtered vs. aggregated `load_tutorials`/`load_incidents`,
@@ -551,6 +570,9 @@ python -m pytest
 - `test_docker_sandbox.py` — invariants over 200 seeds (1-2 problems,
   only app containers break, every problem type occurs) and the
   evidence each problem leaves in real commands
+- `test_kube_sandbox.py` — each cause shows its status, each real fix
+  clears it, layered failures appear one at a time, deleting a pod
+  fixes nothing, and case is preserved
 - `test_azure_sandbox.py` and `test_gcp_sandbox.py` — the same shape as
   the AWS tests, plus each cloud's own rules: NSG priority order and
   NIC-level NSGs; target tags, deny-beats-allow, regional NAT, and IAP
@@ -613,10 +635,9 @@ See GAPS.md's final 'Overall' part for the reasoning. In priority order:
 1b. ✓ **Azure and GCP sandboxes**, each with 3 mysteries.
 2. Per-category exam gap passes (like Part 1 did for the CKA): e.g.
    Terraform Associate, CKAD, AWS certs.
-3. More mysteries. A Kubernetes one needs the Kubernetes sandbox to
-   become reactive first, since it's read-only today. More Linux and
-   Docker ones need only JSON: a seed, problems, goals, evidence, a
-   question, and a stored solution.
+3. ✓ Kubernetes mysteries (5), on the new fixable `kube_sandbox.py`.
+   More mysteries on any sandbox need only JSON: a seed, problems,
+   goals, evidence, a question, and a stored solution.
 4. More sandboxes (Terraform state explorer, networking) — Kubernetes,
    Docker, and Linux exist; new ones only need generate_state() and
    handle_command() plus a SANDBOXES entry in game.py.

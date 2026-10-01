@@ -12,6 +12,7 @@ import aws_sandbox
 import azure_sandbox
 import docker_sandbox
 import gcp_sandbox
+import kube_sandbox
 import linux_sandbox
 import sandbox
 import stats
@@ -179,7 +180,8 @@ def mystery_menu(progress: dict) -> None:
 
 
 SANDBOXES = [
-    ("Kubernetes — a random cluster with broken pods", sandbox.run_sandbox),
+    ("Kubernetes — a random cluster with broken pods (look around; read-only)", sandbox.run_sandbox),
+    ("Kubernetes, fixable — a cluster where each failure has a cause kubectl can fix", kube_sandbox.run_sandbox),
     ("Docker — a host with crashed, OOM-killed, or unhealthy containers", docker_sandbox.run_sandbox),
     ("Linux — a server with two real problems to find AND fix", linux_sandbox.run_sandbox),
     ("AWS — a VPC where two network layers are broken (routes, NACLs, security groups...)", aws_sandbox.run_sandbox),

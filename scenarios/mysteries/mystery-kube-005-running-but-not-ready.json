@@ -1,0 +1,39 @@
+{
+  "id": "mystery-kube-005",
+  "type": "mystery",
+  "category": "kubernetes",
+  "sandbox": "kube",
+  "title": "Running, but Not Ready",
+  "difficulty": "intermediate",
+  "tags": ["kubernetes", "probes", "readiness", "rollback"],
+  "setup": {"seed": 55, "problems": ["bad_readiness_probe"]},
+  "symptom": "Since this afternoon's API release, the web app shows 'could not load your account' on every page that calls the API. The API pods are all Running with zero restarts, and their logs show the server started normally. The release notes mention only 'minor manifest cleanup'.",
+  "goals": [
+    {"check": "service_has_endpoints", "service": "api", "description": "The api Service has endpoints again"},
+    {"check": "deployment_available", "deployment": "api", "description": "The api deployment has all its replicas available"}
+  ],
+  "evidence": [
+    {"description": "what Kubernetes thinks of the API pods' health", "seen_any": ["Readiness probe failed"]},
+    {"description": "what the app is being asked, and what it answers", "seen_any": ["404"]}
+  ],
+  "question": {
+    "prompt": "The API pods are Running and the server started. Why can't anything reach the API?",
+    "options": [
+      "The api Service's selector is wrong",
+      "The release changed the readiness probe to a path the app doesn't serve. The probe gets 404, so the pods are never marked Ready and the Service sends them no traffic",
+      "The API is OOM-killed under load",
+      "A NetworkPolicy blocks the web pods"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 6,
+  "solution_commands": [
+    "kubectl get pods",
+    "kubectl describe pod {api_pod}",
+    "kubectl logs {api_pod}",
+    "kubectl rollout history deployment/api",
+    "kubectl rollout undo deployment/api",
+    "kubectl get endpoints api"
+  ],
+  "debrief": "Running means the process started. Ready means Kubernetes will send it traffic. The READY column said 0/1 the whole time, and it's the column people skip. The 'manifest cleanup' changed the readiness probe path from /healthz to /ready, an endpoint the app doesn't have, so every probe got a 404, no pod ever became Ready, and the Service had no endpoints. The app's own logs gave it away: they show the probe requests and the 404s, and name the health endpoint it really serves. No restarts happened because a failing readiness probe only removes a pod from Services; it's a failing liveness probe that restarts it. Rolling back was the right mitigation: the previous revision's probe matched the app. Prevention: treat the health endpoint as part of the app's contract (a test that fails if it moves), and let the rollout gate itself: with a proper rolling update the old pods would have kept serving while the new ones failed readiness, and the deploy would have stalled visibly instead of taking the API down."
+}

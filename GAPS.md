@@ -103,9 +103,12 @@ all, so they're easy to skip even after CKA-level prep:
 - **Scripted incidents lead you by the hand.** Every incident here is a
   sequence of prompts, and each prompt hints at what to check next. Real
   on-call starts with only a symptom and a blank terminal. Mystery
-  Incidents (see the final Overall part) practice exactly that, but so far only on the
-  Linux and Docker sandboxes. **A Kubernetes mystery doesn't exist
-  yet**: the Kubernetes sandbox is read-only, so there's nothing to fix.
+  Incidents (see the final Overall part) practice exactly that, and five of
+  them are Kubernetes: a Service whose selector matches nothing, an
+  image tag that doesn't exist, a renamed ConfigMap key hiding an OOM
+  kill, nodes left cordoned after maintenance, and a readiness probe
+  on the wrong path. They run on a second, fixable Kubernetes sandbox
+  where pod status is derived from its cause.
 - **Escalation and communication**: now **partly covered** by the SRE
   category (Part 14): incident roles, mitigate-first, and the postmortem
   timeline. Actually running an incident with other people (paging,
@@ -957,7 +960,7 @@ hands-on companion.
 
 | Category | Tutorials | Incidents | Extra |
 |---|---|---|---|
-| Kubernetes | 29 | 13 | 9 Writing Labs, Sandbox |
+| Kubernetes | 29 | 13 | 9 Writing Labs, 2 Sandboxes (explore, and fixable), 5 Mysteries |
 | Docker | 11 | 5 | 3 Writing Labs (Dockerfile, Compose), Sandbox, 2 Mysteries |
 | Linux | 14 | 6 | 3 Writing Labs (bash), interactive Sandbox, 4 Mysteries |
 | Terraform | 11 | 6 | 2 Writing Labs (HCL) |
@@ -971,7 +974,7 @@ hands-on companion.
 | Security | 10 | 6 | 2 hacked-server Mysteries (Linux sandbox) |
 | Server Fleet Ops | 11 | 6 | |
 | SRE | 10 | 6 | |
-| **Total** | **175** | **93** | 28 Writing Labs, 11 career paths, 6 sandboxes, 18 Mystery Incidents, Exam Mode, Stats |
+| **Total** | **175** | **93** | 28 Writing Labs, 11 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -1006,11 +1009,11 @@ that no amount of additional scenario content can fully close:
    Mystery Incidents give you only a symptom and a live sandbox. There is
    no prompt telling you what to check next, you can take any path, your
    fixes change the state, and careless fixes cost points (killing sshd
-   or init counts as collateral damage). You can't win by guessing: you
-   must have actually seen the evidence before you're allowed to answer.
-   The outputs are still simulated, though, and of the 18 mysteries
-   (Linux, Docker, AWS, Azure, Google Cloud, and hacked servers) none is
-   Kubernetes. Pair this game with a homelab
+   or init counts as collateral damage). You have to fix it for real and
+   then name the root cause; where there's nothing to fix, you must have
+   seen the evidence, so you can't win by guessing. The outputs are still
+   simulated, though: 23 mysteries (Kubernetes, Linux, Docker, AWS, Azure,
+   Google Cloud, and hacked servers) are a start, not real on-call. Pair this game with a homelab
    (kind/minikube, a free-tier cloud account) where things break for real.
 3. **Cloud-provider fundamentals** (IAM, VPCs, managed services).
    **Partly addressed.** The AWS category (Part 9) and its VPC sandbox
