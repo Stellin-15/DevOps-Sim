@@ -1,0 +1,55 @@
+{
+  "id": "identity-tutorial-008",
+  "type": "tutorial",
+  "category": "identity",
+  "title": "PKI and Mutual TLS: Certificates as Identity",
+  "difficulty": "advanced",
+  "tags": ["pki", "mtls", "openssl", "certificates"],
+  "intro": "Ordinary TLS proves the server to the client. Mutual TLS (mTLS) also proves the client to the server, with a certificate instead of a password or token. It's how service meshes authenticate every call and how many internal APIs are locked down. You have a private certificate authority (ca.crt and ca.key) and need a client certificate for the service checkout to call https://payments.internal.",
+  "steps": [
+    {
+      "prompt": "Generate a 2048-bit RSA private key for the client, in client.key.",
+      "expected_commands": ["openssl genrsa -out client.key 2048", "openssl genpkey -algorithm RSA -out client.key -pkeyopt rsa_keygen_bits:2048"],
+      "fake_output": "(no output: client.key written)",
+      "explanation": "A private key, which never leaves this machine.",
+      "why": "The private key is the identity; the certificate only vouches for it. Generate it where it will be used, so it never travels. Restrict the file (chmod 600) straight away. EC keys ('openssl ecparam -genkey -name prime256v1') are smaller and faster and are the usual choice for new systems."
+    },
+    {
+      "prompt": "Create a certificate signing request from that key, with the subject common name checkout, in client.csr.",
+      "expected_commands": ["openssl req -new -key client.key -subj \"/CN=checkout\" -out client.csr", "openssl req -new -key client.key -subj /CN=checkout -out client.csr", "openssl req -new -key client.key -subj '/CN=checkout' -out client.csr", "openssl req -new -key client.key -out client.csr -subj \"/CN=checkout\""],
+      "fake_output": "(no output: client.csr written)",
+      "explanation": "A request containing the public key and the name you're asking the authority to certify.",
+      "why": "The CSR carries the public key and the requested identity, signed by the private key to prove you hold it. The private key isn't in it, so a CSR is safe to send to the authority. This split is the whole design of PKI: the authority certifies keys it never sees."
+    },
+    {
+      "prompt": "Sign the request with the CA to produce client.crt, valid for 30 days.",
+      "expected_commands": ["openssl x509 -req -in client.csr -CA ca.crt -CAkey ca.key -CAcreateserial -days 30 -out client.crt", "openssl x509 -req -in client.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out client.crt -days 30", "openssl x509 -req -days 30 -in client.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out client.crt"],
+      "fake_output": "Certificate request self-signature ok\nsubject=CN = checkout",
+      "hint": "openssl x509 -req -in client.csr -CA ca.crt -CAkey ca.key -CAcreateserial -days 30 -out client.crt",
+      "explanation": "The CA signed a certificate saying this key belongs to checkout, for 30 days.",
+      "why": "Short lifetimes are the modern answer to revocation, which works badly in practice: a 30-day (or 24-hour) certificate that's stolen simply runs out. That only works if issuing is automated, which is what cert-manager, Vault's PKI engine, SPIFFE/SPIRE, and service meshes do. The CA's own private key is the crown jewel; in production it sits in an HSM or a managed service, never in a file on a laptop."
+    },
+    {
+      "prompt": "Check the new certificate chains to the CA.",
+      "expected_commands": ["openssl verify -CAfile ca.crt client.crt"],
+      "fake_output": "client.crt: OK",
+      "explanation": "The certificate was signed by this CA and is within its validity period.",
+      "why": "This is the same check the server will make. If it says 'unable to get local issuer certificate', the CA file doesn't contain the certificate's issuer: a different CA, or a missing intermediate. Run it before deploying a certificate, not after the handshake fails in production."
+    },
+    {
+      "prompt": "Call https://payments.internal/health presenting the client certificate and key, and trusting the private CA.",
+      "expected_commands": ["curl --cacert ca.crt --cert client.crt --key client.key https://payments.internal/health", "curl -s --cacert ca.crt --cert client.crt --key client.key https://payments.internal/health", "curl --cert client.crt --key client.key --cacert ca.crt https://payments.internal/health"],
+      "fake_output": "{\"status\":\"ok\",\"client\":\"CN=checkout\"}",
+      "explanation": "Both sides authenticated: you verified the server with the CA, and the server identified you as checkout.",
+      "why": "--cacert is who you trust; --cert and --key are who you are. Without the client certificate the server ends the handshake ('certificate required'), or a proxy returns 400 'No required SSL certificate was sent'. mTLS authenticates; it doesn't authorize. The server still needs a rule saying checkout may call this endpoint, which is what a mesh's authorization policies add."
+    },
+    {
+      "prompt": "A handshake fails with 'certificate is not valid for the name payments.internal'. Which part of a certificate must contain the hostname?\n  a) The common name (CN) alone\n  b) The Subject Alternative Name (SAN) extension\n  c) The issuer field\n  d) The serial number\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "$ openssl x509 -in server.crt -noout -ext subjectAltName\nX509v3 Subject Alternative Name:\n    DNS:payments.internal, DNS:payments.shop.svc.cluster.local",
+      "hint": "Modern clients ignore the common name for hostname checks.",
+      "explanation": "The SAN list. Clients no longer fall back to the common name.",
+      "why": "Go, browsers, and current curl all require the name in the SAN. A certificate with only CN=payments.internal fails even though it looks right. List every name clients use, including the Kubernetes service names. 'openssl x509 -noout -ext subjectAltName' shows what a certificate really covers."
+    }
+  ]
+}

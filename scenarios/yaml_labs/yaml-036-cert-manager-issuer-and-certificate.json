@@ -1,0 +1,57 @@
+{
+  "id": "yaml-036",
+  "type": "yaml_lab",
+  "category": "identity",
+  "title": "Write a cert-manager ClusterIssuer and Certificate",
+  "difficulty": "intermediate",
+  "tags": ["cert-manager", "kubernetes", "tls", "acme"],
+  "intro": "identity-tutorial-009 debugged cert-manager objects that already existed. Now write the two a new service needs: an issuer that knows how to get certificates from Let's Encrypt, and a Certificate asking for one.",
+  "steps": [
+    {
+      "file": "clusterissuer.yaml",
+      "starter_content": "",
+      "prompt": "Write clusterissuer.yaml:\n- apiVersion cert-manager.io/v1, kind ClusterIssuer, named letsencrypt-prod\n- spec.acme.server: https://acme-v02.api.letsencrypt.org/directory\n- spec.acme.email: platform@example.com\n- spec.acme.privateKeySecretRef.name: letsencrypt-prod-account-key\n- spec.acme.solvers: one entry, an http01 solver whose ingress has ingressClassName: nginx",
+      "apply_commands": ["kubectl apply -f clusterissuer.yaml", "kubectl apply --dry-run=server -f clusterissuer.yaml", "check"],
+      "validate": {
+        "kind": "ClusterIssuer",
+        "fields": {
+          "apiVersion": "cert-manager.io/v1",
+          "metadata.name": "letsencrypt-prod",
+          "spec.acme.server": "https://acme-v02.api.letsencrypt.org/directory",
+          "spec.acme.email": "platform@example.com",
+          "spec.acme.privateKeySecretRef.name": "letsencrypt-prod-account-key",
+          "spec.acme.solvers[0].http01.ingress.ingressClassName": "nginx"
+        }
+      },
+      "hint": "spec:\n  acme:\n    server: https://acme-v02.api.letsencrypt.org/directory\n    email: platform@example.com\n    privateKeySecretRef:\n      name: letsencrypt-prod-account-key\n    solvers:\n      - http01:\n          ingress:\n            ingressClassName: nginx\nA ClusterIssuer has no namespace.",
+      "solution": "apiVersion: cert-manager.io/v1\nkind: ClusterIssuer\nmetadata:\n  name: letsencrypt-prod\nspec:\n  acme:\n    server: https://acme-v02.api.letsencrypt.org/directory\n    email: platform@example.com\n    privateKeySecretRef:\n      name: letsencrypt-prod-account-key\n    solvers:\n      - http01:\n          ingress:\n            ingressClassName: nginx\n",
+      "fake_output": "clusterissuer.cert-manager.io/letsencrypt-prod created",
+      "explanation": "An issuer any namespace can use, which proves domain ownership over HTTP through the nginx ingress controller.",
+      "why": "The email receives expiry warnings, which is your last line of defence if renewal breaks. privateKeySecretRef is where cert-manager stores its ACME account key; it creates that Secret itself. The solver's ingress class must be the controller that really receives traffic for your hostnames, or challenges return 404 (the tutorial's failure). Write a second issuer pointing at the staging server (acme-staging-v02) and use it for anything that requests certificates repeatedly, so a loop can't use up production's rate limit (identity-incident-005). For wildcard certificates, or services not reachable from the internet, use a dns01 solver instead."
+    },
+    {
+      "file": "certificate.yaml",
+      "starter_content": "",
+      "prompt": "Write certificate.yaml:\n- apiVersion cert-manager.io/v1, kind Certificate, named shop-tls, in namespace shop\n- spec.secretName: shop-tls\n- spec.dnsNames: shop.example.com and www.shop.example.com\n- spec.issuerRef: name letsencrypt-prod, kind ClusterIssuer\n- spec.privateKey.rotationPolicy: Always",
+      "apply_commands": ["kubectl apply -f certificate.yaml", "kubectl apply --dry-run=server -f certificate.yaml", "check"],
+      "validate": {
+        "kind": "Certificate",
+        "fields": {
+          "apiVersion": "cert-manager.io/v1",
+          "metadata.name": "shop-tls",
+          "metadata.namespace": "shop",
+          "spec.secretName": "shop-tls",
+          "spec.dnsNames[*]": ["shop.example.com", "www.shop.example.com"],
+          "spec.issuerRef.name": "letsencrypt-prod",
+          "spec.issuerRef.kind": "ClusterIssuer",
+          "spec.privateKey.rotationPolicy": "Always"
+        }
+      },
+      "hint": "spec:\n  secretName: shop-tls\n  dnsNames:\n    - shop.example.com\n    - www.shop.example.com\n  issuerRef:\n    name: letsencrypt-prod\n    kind: ClusterIssuer\n  privateKey:\n    rotationPolicy: Always",
+      "solution": "apiVersion: cert-manager.io/v1\nkind: Certificate\nmetadata:\n  name: shop-tls\n  namespace: shop\nspec:\n  secretName: shop-tls\n  dnsNames:\n    - shop.example.com\n    - www.shop.example.com\n  issuerRef:\n    name: letsencrypt-prod\n    kind: ClusterIssuer\n  privateKey:\n    rotationPolicy: Always\n",
+      "fake_output": "certificate.cert-manager.io/shop-tls created",
+      "explanation": "A request for one certificate covering both names, stored in the Secret shop-tls and renewed automatically.",
+      "why": "issuerRef.kind matters: it defaults to Issuer (namespaced), so leaving it out makes cert-manager look for an Issuer called letsencrypt-prod in namespace shop, find nothing, and wait for ever. Every name clients use must be in dnsNames, because that list becomes the certificate's SAN (identity-tutorial-008). rotationPolicy Always generates a new private key at each renewal, so a key that leaked stops being useful. The Ingress then refers to the Secret in its tls section. An annotation on the Ingress (cert-manager.io/cluster-issuer) can create this Certificate for you; writing it explicitly keeps it visible in Git and independent of the Ingress."
+    }
+  ]
+}

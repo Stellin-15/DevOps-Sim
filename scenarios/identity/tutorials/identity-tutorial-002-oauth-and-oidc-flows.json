@@ -1,0 +1,48 @@
+{
+  "id": "identity-tutorial-002",
+  "type": "tutorial",
+  "category": "identity",
+  "title": "OAuth 2.0 and OIDC: Getting a Token, and Which Flow to Use",
+  "difficulty": "intermediate",
+  "tags": ["oauth", "oidc", "tokens", "sso"],
+  "intro": "OAuth 2.0 is how a caller gets a token to use an API; OpenID Connect (OIDC) adds a standard way to say who the user is. Between them they're behind every 'Sign in with...' button and most service-to-service calls. The identity provider here is https://auth.example.com. Your service's client id is checkout, and its secret is in the variable CLIENT_SECRET.",
+  "steps": [
+    {
+      "prompt": "Every OIDC provider publishes its endpoints at a well-known URL. Fetch the discovery document for https://auth.example.com and pretty-print it.",
+      "expected_commands": ["curl -s https://auth.example.com/.well-known/openid-configuration | jq", "curl -s https://auth.example.com/.well-known/openid-configuration | jq .", "curl https://auth.example.com/.well-known/openid-configuration | jq"],
+      "fake_output": "{\n  \"issuer\": \"https://auth.example.com/\",\n  \"authorization_endpoint\": \"https://auth.example.com/authorize\",\n  \"token_endpoint\": \"https://auth.example.com/oauth/token\",\n  \"userinfo_endpoint\": \"https://auth.example.com/userinfo\",\n  \"jwks_uri\": \"https://auth.example.com/.well-known/jwks.json\",\n  \"grant_types_supported\": [\"authorization_code\", \"client_credentials\", \"refresh_token\", \"urn:ietf:params:oauth:grant-type:device_code\"]\n}",
+      "explanation": "The issuer's name, where to get tokens, where its public keys are, and which flows it supports.",
+      "why": "Discovery is why configuring OIDC usually needs only the issuer URL: Kubernetes, Vault, AWS, and Grafana all read this document to find the rest. When an integration fails, fetch it yourself: a wrong issuer URL, or one whose 'issuer' field doesn't exactly match what you configured (a trailing slash counts), is a frequent cause."
+    },
+    {
+      "prompt": "Your service calls another API with no user involved. Get a token with the client credentials grant: POST to the token endpoint with grant_type=client_credentials, client_id=checkout, client_secret=$CLIENT_SECRET, and audience=https://api.example.com/payments.",
+      "expected_commands": ["curl -s -X POST https://auth.example.com/oauth/token -d grant_type=client_credentials -d client_id=checkout -d client_secret=$CLIENT_SECRET -d audience=https://api.example.com/payments", "curl -s -X POST https://auth.example.com/oauth/token -d grant_type=client_credentials -d client_id=checkout -d \"client_secret=$CLIENT_SECRET\" -d audience=https://api.example.com/payments", "curl -X POST https://auth.example.com/oauth/token -d grant_type=client_credentials -d client_id=checkout -d client_secret=$CLIENT_SECRET -d audience=https://api.example.com/payments"],
+      "fake_output": "{\n  \"access_token\": \"eyJhbGciOiJSUzI1NiIsImtpZCI6ImtleS0yMDI2LTA5In0...\",\n  \"token_type\": \"Bearer\",\n  \"expires_in\": 3600,\n  \"scope\": \"payments:read\"\n}",
+      "hint": "curl -s -X POST https://auth.example.com/oauth/token -d grant_type=client_credentials -d client_id=checkout -d client_secret=$CLIENT_SECRET -d audience=https://api.example.com/payments",
+      "explanation": "An access token valid for an hour, for the payments API, with the scope this client is allowed.",
+      "why": "Client credentials is the machine-to-machine flow: the service proves its own identity and gets a token for itself. The client secret is a long-lived password, so it belongs in a secret store, and wherever the platform offers it, replace it with workload identity (a cloud role, a Kubernetes service account token) so there's no secret to leak. Cache the token until it's nearly expired; requesting one per call hammers the identity provider."
+    },
+    {
+      "prompt": "Use it. The token is now in the variable TOKEN. Call https://api.example.com/payments/health with it.",
+      "expected_commands": ["curl -s -H \"Authorization: Bearer $TOKEN\" https://api.example.com/payments/health", "curl -H \"Authorization: Bearer $TOKEN\" https://api.example.com/payments/health", "curl -s https://api.example.com/payments/health -H \"Authorization: Bearer $TOKEN\""],
+      "fake_output": "{\"status\":\"ok\",\"caller\":\"checkout\"}",
+      "explanation": "The API accepted the token and identified the caller as checkout.",
+      "why": "'Bearer' means whoever bears the token is trusted, with no further proof. That's why tokens must only travel over TLS, must never be logged, and should be short-lived. 401 means the token itself was rejected (expired, wrong audience, bad signature); 403 means the token is fine and the caller isn't allowed to do this, a scope or permission problem. They send you to different places."
+    },
+    {
+      "prompt": "A web application needs users to sign in through the identity provider. Which flow should it use?\n  a) The password grant: the app collects the username and password and sends them to the provider\n  b) The implicit flow: the provider returns the token in the browser's URL\n  c) Authorization code with PKCE: the user signs in at the provider, the app receives a one-time code and exchanges it for tokens\n  d) Client credentials\nType the letter.",
+      "expected_commands": ["c"],
+      "fake_output": "1. app redirects the browser to /authorize with a code_challenge\n2. user signs in at the provider (the app never sees the password)\n3. provider redirects back with a one-time code\n4. app exchanges code + code_verifier at the token endpoint for tokens",
+      "hint": "The app should never handle the user's password, and tokens shouldn't appear in a URL.",
+      "explanation": "Authorization code with PKCE, for every kind of user-facing app.",
+      "why": "The password grant teaches users to type their password into apps and defeats multi-factor sign-in. The implicit flow leaks tokens through browser history and referrer headers. Both are removed in OAuth 2.1. PKCE ties the code to the app that asked for it, so an intercepted code is useless. Command-line tools use the device code flow instead: 'open this URL and enter this code'."
+    },
+    {
+      "prompt": "A user's token is in TOKEN. Ask the provider who it belongs to, using the userinfo endpoint.",
+      "expected_commands": ["curl -s -H \"Authorization: Bearer $TOKEN\" https://auth.example.com/userinfo", "curl -H \"Authorization: Bearer $TOKEN\" https://auth.example.com/userinfo", "curl -s https://auth.example.com/userinfo -H \"Authorization: Bearer $TOKEN\""],
+      "fake_output": "{\n  \"sub\": \"auth0|8812\",\n  \"email\": \"dana@example.com\",\n  \"email_verified\": true,\n  \"groups\": [\"platform\", \"oncall\"]\n}",
+      "explanation": "The user's stable id, email, and group memberships.",
+      "why": "This is the OIDC part: identity, on top of OAuth's authorization. 'sub' is the stable identifier to key on, because emails change. The groups claim is what most tools map to permissions: Kubernetes RBAC, Vault policies, Argo CD, and Grafana roles can all be driven from it, so access is granted in one place and removed in one place when someone leaves."
+    }
+  ]
+}

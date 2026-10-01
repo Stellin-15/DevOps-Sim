@@ -1312,7 +1312,78 @@ on purpose.
 
 ---
 
-# Part 19 — The backlog: everything that isn't in the game yet
+# Part 19 — Identity and Secrets
+
+**Content:** 9 tutorials, 5 incidents, 2 Writing Labs (a Vault policy;
+a cert-manager issuer and certificate).
+
+Two questions: who is this caller, and where do credentials live? Cloud
+IAM stays in the cloud parts, Kubernetes RBAC in Part 1, and finding
+leaked secrets in Security (Part 12).
+
+## Covered
+
+Every section of `commands/identity.md`:
+- **JWTs:** decoding claims and headers, expiry, audience, signing
+  algorithms, and the issuer's published keys (JWKS).
+- **OAuth 2.0 and OIDC:** discovery, the client credentials grant,
+  bearer tokens, 401 vs 403, authorization code with PKCE, and userinfo.
+- **Workload identity:** `kubectl auth whoami`, projected service
+  account tokens, the cluster as an OIDC issuer, and short-lived tokens
+  instead of stored cloud keys.
+- **Vault:** seal status, OIDC login, the key-value engine and its
+  versions, capabilities, and policies.
+- **Dynamic secrets:** database credentials created on request, leases,
+  and revoking by lease or by prefix.
+- **Secrets into Kubernetes:** External Secrets Operator stores and
+  sync errors, what a Secret does and doesn't protect, and restarts.
+- **Secrets in Git:** SOPS (encrypt, decrypt, update recipients) and
+  Sealed Secrets, with what each needs backed up.
+- **PKI and mTLS:** keys, signing requests, signing with a private CA,
+  verifying a chain, client certificates with curl, and SANs.
+- **cert-manager:** issuers, the Certificate to Challenge chain,
+  `cmctl status`, and forced renewal.
+
+Incidents:
+- 401s everywhere after the identity provider rotated its signing key
+  (a verifier that cached the key list for ever);
+- Vault sealed on every node after fleet patching;
+- a rotated password that the application never picked up;
+- a CA rotation that broke mTLS for clients with the old trust bundle;
+- Let's Encrypt rate-limiting a pipeline that deleted its certificate
+  on every deploy.
+
+## Still missing
+
+- **A real identity provider or Vault.** Outputs are pre-written. Run
+  Vault in dev mode (`vault server -dev`) and Keycloak or Dex locally to
+  practise for real; both start in one command.
+- SAML, SCIM provisioning, and configuring SSO in a provider's console
+  (Okta, Entra ID, Google Workspace).
+- Running Vault: Raft snapshots and restore, upgrades, namespaces,
+  performance replication, and the PKI, transit, and SSH engines.
+- Vault Agent and the Secrets Store CSI driver in practice (mentioned).
+- SPIFFE/SPIRE, and mesh mTLS policy (the SRE part touches Istio).
+- Authorization models and policy engines: RBAC vs ABAC, OPA/Rego,
+  OpenFGA.
+- Privileged access management, just-in-time access, and break-glass
+  procedures.
+- Cloud secret managers' own rotation features (AWS Secrets Manager
+  rotation Lambdas, Key Vault rotation policies).
+
+## Readiness verdict
+
+Enough to debug the authentication failures that reach on-call: read a
+token and say why it was rejected, follow a secret from its source to
+the process that uses it, and find where a certificate chain or a
+rotation broke. You'll also know the modern defaults: short-lived
+credentials, workload identity over stored keys, and rotation with two
+valid credentials. Designing an organisation's identity architecture is
+a specialism beyond this.
+
+---
+
+# Part 20 — The backlog: everything that isn't in the game yet
 
 The parts above each list what's missing *inside* a category. This part
 lists whole topics with no category at all, in three tiers. Nobody needs
@@ -1339,10 +1410,11 @@ employer uses it.
    subprocess, requests, boto3, virtual environments, pytest), Go basics
    for reading and building tooling, `jq` and `yq` in depth, regular
    expressions, and Makefiles.
-5. **Identity and secrets.** OAuth 2.0 and OIDC flows, JWTs, SAML and
-   SSO; HashiCorp Vault (KV, dynamic secrets, auth methods); External
-   Secrets Operator, Sealed Secrets, and SOPS; PKI, mTLS, and
-   cert-manager.
+5. ~~**Identity and secrets**~~: **now a category** (Identity and
+   Secrets): JWTs, OAuth 2.0 and OIDC, workload identity, Vault,
+   External Secrets, SOPS and Sealed Secrets, mTLS, and cert-manager.
+   SAML, SPIFFE, and operating Vault itself are under that part's
+   "Still missing".
 6. **Other CI systems and release tooling.** Jenkins (Jenkinsfiles,
    agents), GitLab CI, Azure DevOps Pipelines, Tekton. Artifact
    repositories (Artifactory, Nexus, Harbor). Semantic versioning,
@@ -1427,7 +1499,7 @@ employer uses it.
 If content is added in the order that helps most people soonest:
 1. ~~a Databases category~~ (done, Part 17);
 2. ~~web servers and proxies~~ (done, Part 18);
-3. identity and secrets (Vault, OIDC, mTLS, cert-manager);
+3. ~~identity and secrets~~ (done);
 4. Kubernetes ecosystem (Kustomize, Helm authoring, Gateway API,
    autoscalers);
 5. Jenkins and GitLab CI;
@@ -1438,7 +1510,7 @@ If content is added in the order that helps most people soonest:
 
 ---
 
-# Part 20 — Overall: will this make you proficient in DevOps?
+# Part 21 — Overall: will this make you proficient in DevOps?
 
 ## By the numbers
 
@@ -1462,7 +1534,8 @@ If content is added in the order that helps most people soonest:
 | System Design | 11 | 6 | 2 Writing Labs (design documents) |
 | Databases | 12 | 6 | |
 | Web Servers & Proxies | 11 | 6 | 2 Writing Labs (nginx configuration) |
-| **Total** | **231** | **119** | 34 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
+| Identity & Secrets | 9 | 5 | 2 Writing Labs (Vault policy, cert-manager) |
+| **Total** | **240** | **124** | 36 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -1474,14 +1547,14 @@ command beats the alternatives — not just what it does.
 will know the commands, the failure modes, and — most importantly — the
 debugging method** (check the layer before guessing the fix; refused vs
 timeout; verify after every change; revoke before cleaning up; revert
-don't force-push). The 119 incidents are modeled on the kinds of problems
+don't force-push). The 124 incidents are modeled on the kinds of problems
 that genuinely trip up working engineers, and working through them
 builds judgment that command references alone never will.
 
 **It will not, on its own, make you fully proficient**, for four reasons
 that no amount of additional scenario content can fully close:
 
-1. **Authoring vs. operating.** Largely addressed: 34 Writing Labs now
+1. **Authoring vs. operating.** Largely addressed: 36 Writing Labs now
    have you write real Kubernetes manifests, GitHub Actions workflows,
    Prometheus alert rules, Compose files, Dockerfiles, Terraform (AWS
    VPCs and security groups, GCP firewalls), IAM policies, Ansible

@@ -1,0 +1,48 @@
+{
+  "id": "identity-tutorial-003",
+  "type": "tutorial",
+  "category": "identity",
+  "title": "Workload Identity: How a Pod Proves Who It Is",
+  "difficulty": "intermediate",
+  "tags": ["kubernetes", "service-accounts", "oidc", "workload-identity"],
+  "intro": "A service needs an identity too, and the best kind is one nobody has to hand it. Kubernetes gives every pod a signed token for its service account, and because the cluster is itself an OIDC issuer, clouds and Vault can trust that token directly. That removes stored cloud keys from pods altogether. You're working with the pod checkout-7d9f in namespace shop, which runs as the service account checkout.",
+  "steps": [
+    {
+      "prompt": "First check your own identity as the cluster sees it.",
+      "expected_commands": ["kubectl auth whoami"],
+      "fake_output": "ATTRIBUTE   VALUE\nUsername    dana@example.com\nGroups      [platform oncall system:authenticated]",
+      "explanation": "You're dana@example.com, in the platform and oncall groups.",
+      "why": "Kubernetes has no user database. It trusts an outside identity provider (here through OIDC) and takes your name and groups from the token. RBAC then grants permissions to those names. 'whoami' is the first check for any 'Forbidden' error: people are often authenticated as a different identity, or without a group, than they assume."
+    },
+    {
+      "prompt": "Look at the token the pod was given. Print the file /var/run/secrets/kubernetes.io/serviceaccount/token from pod checkout-7d9f in namespace shop, and decode its claims.",
+      "expected_commands": ["kubectl exec -n shop checkout-7d9f -- cat /var/run/secrets/kubernetes.io/serviceaccount/token | cut -d. -f2 | base64 -d | jq", "kubectl exec checkout-7d9f -n shop -- cat /var/run/secrets/kubernetes.io/serviceaccount/token | cut -d. -f2 | base64 -d | jq", "kubectl exec -n shop checkout-7d9f -- cat /var/run/secrets/kubernetes.io/serviceaccount/token | cut -d. -f2 | base64 -d | jq ."],
+      "fake_output": "{\n  \"iss\": \"https://oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B716D3041E\",\n  \"sub\": \"system:serviceaccount:shop:checkout\",\n  \"aud\": [\"https://kubernetes.default.svc\"],\n  \"exp\": 1790598000,\n  \"kubernetes.io\": {\"namespace\": \"shop\", \"pod\": {\"name\": \"checkout-7d9f\"}}\n}",
+      "hint": "kubectl exec -n shop checkout-7d9f -- cat /var/run/secrets/kubernetes.io/serviceaccount/token | cut -d. -f2 | base64 -d | jq",
+      "explanation": "A JWT issued by the cluster, naming the service account, with an expiry, bound to this exact pod.",
+      "why": "The subject 'system:serviceaccount:shop:checkout' is the pod's identity. These projected tokens expire (the kubelet refreshes the file before they do) and die with the pod, unlike the old never-expiring Secret-based tokens. So an application must re-read the file rather than load it once at start."
+    },
+    {
+      "prompt": "The cluster publishes the keys that sign those tokens, like any OIDC issuer. Fetch its discovery document through the API server.",
+      "expected_commands": ["kubectl get --raw /.well-known/openid-configuration", "kubectl get --raw /.well-known/openid-configuration | jq", "kubectl get --raw /.well-known/openid-configuration | jq ."],
+      "fake_output": "{\"issuer\":\"https://oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B716D3041E\",\"jwks_uri\":\"https://oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B716D3041E/keys\",\"id_token_signing_alg_values_supported\":[\"RS256\"]}",
+      "explanation": "The cluster's issuer URL and where its public keys are.",
+      "why": "This is what makes workload identity work. AWS (IRSA and Pod Identity), Google Cloud (Workload Identity), Azure, and Vault can each be told 'trust tokens from this issuer whose subject is system:serviceaccount:shop:checkout'. The pod swaps its Kubernetes token for short-lived cloud credentials, and there's no access key stored anywhere."
+    },
+    {
+      "prompt": "You need to test an API as the service account checkout in namespace shop. Ask the cluster for a token for it that lasts 10 minutes.",
+      "expected_commands": ["kubectl create token checkout -n shop --duration=10m", "kubectl create token checkout --namespace shop --duration=10m", "kubectl -n shop create token checkout --duration=10m", "kubectl create token checkout -n shop --duration 10m"],
+      "fake_output": "eyJhbGciOiJSUzI1NiIsImtpZCI6IjJhN2Y...",
+      "explanation": "A short-lived token for that service account, printed once and stored nowhere.",
+      "why": "This replaces creating a long-lived token Secret, which is what people used to do for CI and never cleaned up. Ten minutes is enough to test with and useless to steal afterwards. Add '--audience' when the token is for something other than the API server, so it can't be replayed against the cluster."
+    },
+    {
+      "prompt": "Why is workload identity better than putting a cloud access key in a Kubernetes Secret for the pod?\n  a) It's faster\n  b) There's no long-lived credential to leak, rotate, or forget: the pod exchanges a short-lived, pod-bound token for temporary cloud credentials\n  c) Secrets can't hold access keys\n  d) It removes the need for IAM permissions\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "static key in a Secret : valid for years, readable by anyone who can read Secrets, copied into CI, never rotated\nworkload identity      : minutes-long credentials, tied to one service account, nothing to store",
+      "hint": "Think about what an attacker gets, and for how long, in each case.",
+      "explanation": "No stored secret, and what does exist expires in minutes.",
+      "why": "A Kubernetes Secret is only base64-encoded, and a static cloud key in one is the most common way cluster compromises become account compromises. Workload identity still needs IAM: you grant a role to the service account, and should scope the trust to one namespace and name. A wildcard in that trust condition gives every pod in the cluster the role."
+    }
+  ]
+}

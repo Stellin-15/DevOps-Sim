@@ -1,0 +1,46 @@
+{
+  "id": "identity-tutorial-009",
+  "type": "tutorial",
+  "category": "identity",
+  "title": "cert-manager: Certificates as Kubernetes Objects",
+  "difficulty": "intermediate",
+  "tags": ["cert-manager", "kubernetes", "tls", "acme"],
+  "intro": "cert-manager does in a cluster what certbot does on a server: it requests certificates, stores them in Secrets, and renews them before they expire. You describe the certificate you want and it works through a chain of objects to get it. When one is stuck, you follow that chain. You're in namespace shop, where the Certificate shop-tls should cover shop.example.com.",
+  "steps": [
+    {
+      "prompt": "List the issuers available cluster-wide.",
+      "expected_commands": ["kubectl get clusterissuer", "kubectl get clusterissuers"],
+      "fake_output": "NAME                  READY   AGE\nletsencrypt-prod      True    200d\nletsencrypt-staging   True    200d\ninternal-ca           True    200d",
+      "explanation": "Two Let's Encrypt issuers (production and staging) and a private CA.",
+      "why": "An issuer is where certificates come from. Keep a staging issuer and use it while testing: Let's Encrypt's production service has strict rate limits, and a misconfigured deployment in a retry loop can lock a domain out for a week (identity-incident-005). Staging certificates aren't trusted by browsers, which is fine for testing the flow."
+    },
+    {
+      "prompt": "List the certificates in namespace shop.",
+      "expected_commands": ["kubectl get certificate -n shop", "kubectl get certificates -n shop", "kubectl get cert -n shop"],
+      "fake_output": "NAME       READY   SECRET     AGE\nshop-tls   False   shop-tls   14m\napi-tls    True    api-tls    90d",
+      "explanation": "api-tls is fine. shop-tls has been not ready for 14 minutes.",
+      "why": "READY False for more than a couple of minutes means issuance is stuck. The Ingress using this Secret will serve a temporary self-signed certificate or none, so users see warnings. The Certificate object is the top of a chain: Certificate, CertificateRequest, Order, Challenge. The cause is always at the bottom."
+    },
+    {
+      "prompt": "Get a summary of where shop-tls is stuck, using cert-manager's own CLI.",
+      "expected_commands": ["cmctl status certificate shop-tls -n shop", "cmctl status certificate shop-tls --namespace shop", "cmctl -n shop status certificate shop-tls"],
+      "fake_output": "Name: shop-tls\nNamespace: shop\nConditions:\n  Ready: False, Reason: DoesNotExist, Message: Issuing certificate as Secret does not exist\nDNS Names:\n- shop.example.com\nIssuer:\n  Name: letsencrypt-prod\n  Kind: ClusterIssuer\nOrder:\n  Name: shop-tls-1-2204410\n  State: pending\nChallenges:\n- Name: shop-tls-1-2204410-778120, Type: HTTP-01, State: pending, Reason: Waiting for HTTP-01 challenge propagation: wrong status code '404', expected '200'",
+      "explanation": "The order is pending because the HTTP-01 challenge URL returns 404.",
+      "why": "cmctl walks the whole chain for you. Without it, you'd describe the Certificate, then the CertificateRequest, the Order, and the Challenge in turn. The reason here is the same as with certbot: Let's Encrypt fetches a file under /.well-known/acme-challenge/ on port 80 of the hostname, and something between the internet and cert-manager's temporary solver pod isn't routing it."
+    },
+    {
+      "prompt": "Look at the challenge itself for detail: describe the challenges in namespace shop.",
+      "expected_commands": ["kubectl describe challenge -n shop", "kubectl describe challenges -n shop", "kubectl describe challenge shop-tls-1-2204410-778120 -n shop"],
+      "fake_output": "Spec:\n  Dns Name:  shop.example.com\n  Solver:\n    http01:\n      Ingress:\n        Class:  nginx\n  Type:      HTTP-01\nStatus:\n  Presented:   true\n  Processing:  true\n  Reason:      Waiting for HTTP-01 challenge propagation: wrong status code '404', expected '200'\n  State:       pending",
+      "explanation": "The solver creates its temporary Ingress with class nginx.",
+      "why": "The solver's ingress class must be the class of the controller that actually receives traffic for this hostname. This cluster was moved to a controller whose class is 'traefik', and the issuer still says 'nginx', so no controller picks up the solver's Ingress and the challenge path returns 404. Other common causes: DNS not pointing at the cluster yet, and a redirect or auth layer in front of the challenge path."
+    },
+    {
+      "prompt": "The issuer's solver class has been corrected and the certificate issued. Later, you want to force a renewal now instead of waiting. Renew shop-tls in namespace shop.",
+      "expected_commands": ["cmctl renew shop-tls -n shop", "cmctl renew shop-tls --namespace shop", "cmctl -n shop renew shop-tls"],
+      "fake_output": "Manually triggered issuance of Certificate shop/shop-tls",
+      "explanation": "cert-manager starts a new issuance and replaces the Secret when it succeeds.",
+      "why": "Renewal normally happens automatically at two thirds of the certificate's lifetime. Forcing one is how you test that renewal still works after changing ingress or DNS, without waiting 60 days to find out. Ingress controllers reload the Secret themselves; an application that mounts the Secret directly has to re-read the files, which is the cluster version of 'nginx was never reloaded'."
+    }
+  ]
+}

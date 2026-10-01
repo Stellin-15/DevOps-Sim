@@ -1,0 +1,49 @@
+{
+  "id": "identity-incident-001",
+  "type": "incident",
+  "category": "identity",
+  "title": "Every API call returns 401 since 09:00, and nothing was deployed",
+  "difficulty": "advanced",
+  "tags": ["jwt", "jwks", "key-rotation", "authentication"],
+  "intro": "At 09:00 the orders API began rejecting every request with 401 'invalid token'. Users can sign in and get tokens; the payments API accepts those same tokens. Nothing was deployed to orders in two weeks. The identity provider is https://auth.example.com. A fresh, failing token is in the variable TOKEN. The orders API runs as deployment orders in namespace shop.",
+  "steps": [
+    {
+      "prompt": "Rule out the obvious first. Decode the token's claims and check its issuer, audience, and expiry.",
+      "expected_commands": ["echo \"$TOKEN\" | cut -d. -f2 | base64 -d | jq", "echo $TOKEN | cut -d. -f2 | base64 -d | jq", "echo \"$TOKEN\" | cut -d. -f2 | base64 -d | jq .", "echo $TOKEN | cut -d. -f2 | base64 -d | jq ."],
+      "fake_output": "{\n  \"iss\": \"https://auth.example.com/\",\n  \"sub\": \"auth0|8812\",\n  \"aud\": \"https://api.example.com/orders\",\n  \"iat\": 1790589000,\n  \"exp\": 1790592600\n}",
+      "hint": "echo \"$TOKEN\" | cut -d. -f2 | base64 -d | jq"
+    },
+    {
+      "prompt": "Right issuer, right audience, issued minutes ago. The claims are fine, so look at how it was signed: decode the header.",
+      "expected_commands": ["echo \"$TOKEN\" | cut -d. -f1 | base64 -d | jq", "echo $TOKEN | cut -d. -f1 | base64 -d | jq", "echo \"$TOKEN\" | cut -d. -f1 | base64 -d | jq .", "echo $TOKEN | cut -d. -f1 | base64 -d | jq ."],
+      "fake_output": "{\n  \"alg\": \"RS256\",\n  \"typ\": \"JWT\",\n  \"kid\": \"key-2026-09\"\n}",
+      "hint": "The header is the first dot-separated part."
+    },
+    {
+      "prompt": "The token is signed with the key key-2026-09. Check that the issuer publishes that key: list the key ids at https://auth.example.com/.well-known/jwks.json.",
+      "expected_commands": ["curl -s https://auth.example.com/.well-known/jwks.json | jq '.keys[].kid'", "curl -s https://auth.example.com/.well-known/jwks.json | jq \".keys[].kid\"", "curl -s https://auth.example.com/.well-known/jwks.json | jq -r '.keys[].kid'", "curl https://auth.example.com/.well-known/jwks.json | jq '.keys[].kid'"],
+      "fake_output": "\"key-2026-09\"\n\"key-2026-06\"",
+      "hint": "curl -s https://auth.example.com/.well-known/jwks.json | jq '.keys[].kid'"
+    },
+    {
+      "prompt": "The key is published, alongside the previous one. The token is valid. So the orders API is the one that's wrong. See what it says: search the last 200 log lines of deployment orders in namespace shop for 'kid'.",
+      "expected_commands": ["kubectl logs deployment/orders -n shop --tail=200 | grep kid", "kubectl logs deploy/orders -n shop --tail=200 | grep kid", "kubectl logs -n shop deployment/orders --tail=200 | grep kid", "kubectl logs deployment/orders -n shop --tail=200 | grep -i kid"],
+      "fake_output": "09:00:04 WARN  auth: token rejected: no key found for kid \"key-2026-09\" (known keys: key-2026-06, key-2026-03)\n09:00:04 WARN  auth: token rejected: no key found for kid \"key-2026-09\" (known keys: key-2026-06, key-2026-03)\n09:14:31 WARN  auth: token rejected: no key found for kid \"key-2026-09\" (known keys: key-2026-06, key-2026-03)",
+      "hint": "kubectl logs deployment/orders -n shop --tail=200 | grep kid"
+    },
+    {
+      "prompt": "The orders API knows the June and March keys, and not September's. It loaded the key list when it started, two weeks ago, and never refreshed it. At 09:00 the provider began signing with the new key. Restore service: restart the deployment so it fetches the current keys.",
+      "expected_commands": ["kubectl rollout restart deployment/orders -n shop", "kubectl rollout restart deployment orders -n shop", "kubectl rollout restart deploy/orders -n shop", "kubectl rollout restart deploy orders -n shop"],
+      "fake_output": "deployment.apps/orders restarted",
+      "hint": "kubectl rollout restart deployment/orders -n shop"
+    },
+    {
+      "prompt": "Wait for the rollout, then verify with the same token: call https://api.example.com/orders/health and print only the status code.",
+      "expected_commands": ["curl -s -o /dev/null -w \"%{http_code}\\n\" -H \"Authorization: Bearer $TOKEN\" https://api.example.com/orders/health", "curl -s -o /dev/null -w '%{http_code}\\n' -H \"Authorization: Bearer $TOKEN\" https://api.example.com/orders/health", "curl -s -o /dev/null -H \"Authorization: Bearer $TOKEN\" -w \"%{http_code}\\n\" https://api.example.com/orders/health"],
+      "fake_output": "200",
+      "hint": "curl -s -o /dev/null -w \"%{http_code}\\n\" -H \"Authorization: Bearer $TOKEN\" https://api.example.com/orders/health"
+    }
+  ],
+  "resolution": "The identity provider rotated its signing key, as it does every quarter, and did it correctly: the new public key had been published next to the old one for weeks before it was first used at 09:00. The payments API coped because its library re-fetches the key list when it meets a key id it doesn't know. The orders API used a hand-rolled check that downloaded the list once at start-up and kept it for ever. It had been running for two weeks, so its copy predated the September key, and from 09:00 it rejected every token as unsigned by anyone it knew. Nothing was deployed, which is exactly why it happened: a restart at any point in those weeks would have hidden the bug for another quarter. The diagnosis was a matter of proving the token innocent step by step: the claims were right, the header named a key, and the issuer published that key. After that the fault had to be in the verifier, and its log said so, listing the stale keys it knew. Restarting fixed the symptom. The real fix is in the code: on an unknown kid, re-fetch the JWKS (with a rate limit, so that garbage tokens can't be used to hammer the provider), and refresh it periodically anyway. Use the standard library for your framework rather than writing this by hand. Then prove it: rotation should be rehearsed in staging, and an alert on a rising 401 rate would have reported this in the first minute instead of after the first complaint.",
+  "real_commands_used": ["decode JWT claims and header with cut, base64 -d, jq", "curl <issuer>/.well-known/jwks.json | jq '.keys[].kid'", "kubectl logs deployment/<name> | grep kid", "kubectl rollout restart deployment/<name>", "curl -w '%{http_code}' with the Bearer token"]
+}

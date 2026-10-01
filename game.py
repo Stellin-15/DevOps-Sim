@@ -47,6 +47,7 @@ CATEGORY_LABELS = {
     "systemdesign": "System Design",
     "databases": "Databases",
     "webservers": "Web Servers & Proxies",
+    "identity": "Identity & Secrets",
 }
 
 

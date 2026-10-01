@@ -1,0 +1,49 @@
+{
+  "id": "identity-incident-005",
+  "type": "incident",
+  "category": "identity",
+  "title": "Let's Encrypt has stopped issuing certificates for the shop",
+  "difficulty": "intermediate",
+  "tags": ["cert-manager", "acme", "rate-limits", "kubernetes"],
+  "intro": "After this morning's deploy, https://shop.example.com shows a certificate warning: it's serving the ingress controller's self-signed default. The Certificate shop-tls in namespace shop isn't Ready. The same pipeline has deployed to production several times a day for months without trouble. This week it was changed to 'start clean' by deleting and recreating the namespace's resources on each deploy.",
+  "steps": [
+    {
+      "prompt": "Check the certificate's state.",
+      "expected_commands": ["kubectl get certificate shop-tls -n shop", "kubectl get certificate -n shop", "kubectl get cert shop-tls -n shop", "kubectl get certificates -n shop"],
+      "fake_output": "NAME       READY   SECRET     AGE\nshop-tls   False   shop-tls   38m",
+      "hint": "kubectl get certificate shop-tls -n shop"
+    },
+    {
+      "prompt": "Not ready for 38 minutes. Follow the chain down: look at the orders in namespace shop.",
+      "expected_commands": ["kubectl get order -n shop", "kubectl get orders -n shop", "kubectl get orders.acme.cert-manager.io -n shop"],
+      "fake_output": "NAME                 STATE     AGE\nshop-tls-1-9120044   errored   38m",
+      "hint": "kubectl get order -n shop"
+    },
+    {
+      "prompt": "The order errored. Find out why.",
+      "expected_commands": ["kubectl describe order shop-tls-1-9120044 -n shop", "kubectl describe order -n shop", "kubectl describe orders -n shop", "kubectl describe orders shop-tls-1-9120044 -n shop"],
+      "fake_output": "Status:\n  State:   errored\n  Reason:  Failed to create Order: 429 urn:ietf:params:acme:error:rateLimited: Error creating new order :: too many certificates (5) already issued for this exact set of domains in the last 168 hours: shop.example.com, retry after 2026-09-30T06:14:00Z",
+      "hint": "kubectl describe order -n shop"
+    },
+    {
+      "prompt": "Rate limited: five certificates for exactly this name in the past week, and no more until 30 September. A certificate lasts 90 days, so something asked for five in a week. See what happened to the Secret that should hold it: list recent events in namespace shop mentioning shop-tls.",
+      "expected_commands": ["kubectl get events -n shop | grep shop-tls", "kubectl get events -n shop --sort-by=.lastTimestamp | grep shop-tls", "kubectl events -n shop | grep shop-tls"],
+      "fake_output": "38m   Normal   Issuing     certificate/shop-tls   Issuing certificate as Secret does not exist\n38m   Normal   Generated   certificate/shop-tls   Stored new private key in temporary Secret resource \"shop-tls-7kq2m\"\n38m   Warning  Failed      certificate/shop-tls   The certificate request has failed to complete and will be retried",
+      "hint": "kubectl get events -n shop | grep shop-tls"
+    },
+    {
+      "prompt": "'Issuing certificate as Secret does not exist.' The new 'start clean' deploy deletes the Secret every time, so every deploy requests a brand-new certificate. Five deploys used up the week's allowance. You can't get a real certificate from Let's Encrypt until the 30th, but the company's internal-ca issuer isn't rate limited and the load balancer in front trusts it. Point the Certificate at it: patch shop-tls so spec.issuerRef.name is internal-ca.",
+      "expected_commands": ["kubectl patch certificate shop-tls -n shop --type=merge -p '{\"spec\":{\"issuerRef\":{\"name\":\"internal-ca\"}}}'", "kubectl patch certificate shop-tls -n shop --type merge -p '{\"spec\":{\"issuerRef\":{\"name\":\"internal-ca\"}}}'", "kubectl patch certificate shop-tls -n shop -p '{\"spec\":{\"issuerRef\":{\"name\":\"internal-ca\"}}}' --type=merge"],
+      "fake_output": "certificate.cert-manager.io/shop-tls patched",
+      "hint": "kubectl patch certificate shop-tls -n shop --type=merge -p '{\"spec\":{\"issuerRef\":{\"name\":\"internal-ca\"}}}'"
+    },
+    {
+      "prompt": "Confirm it issued.",
+      "expected_commands": ["kubectl get certificate shop-tls -n shop", "kubectl get certificate -n shop", "kubectl get cert shop-tls -n shop", "kubectl get certificates -n shop"],
+      "fake_output": "NAME       READY   SECRET     AGE\nshop-tls   True    shop-tls   41m",
+      "hint": "kubectl get certificate shop-tls -n shop"
+    }
+  ],
+  "resolution": "Let's Encrypt allows five certificates per week for an identical set of names. A healthy setup uses one every sixty days, so the limit is normally invisible. This week's pipeline change made each deploy delete the namespace's resources, including the Secret holding the certificate and its private key. cert-manager, seeing a Certificate with no Secret, did its job and requested a new one. Five deploys later the allowance was gone, the sixth deploy deleted the last good certificate, and the request to replace it was refused until two days from now. The site was left on the ingress controller's self-signed default. Rate limits like this can't be lifted on request, which is what makes them dangerous: the fix has to come from elsewhere. Here the internal CA could stand in, because the load balancer in front of the cluster trusts it. Without that, the options are worse: a certificate for a different set of names (adding www counts as a different set), or another authority. The causes to remove are two. A deploy must never delete a certificate's Secret: treat it as state, like a database, not as something to recreate. Exclude it from 'clean' steps, or keep certificates in a namespace the pipeline doesn't touch. And anything that requests certificates in a loop should use the staging issuer, whose limits are generous and whose certificates are untrusted: pipelines, test environments, and preview deployments should never talk to production Let's Encrypt. Finally, alert on Certificate objects that aren't Ready and on days-to-expiry of what's actually served; either would have caught this at the first failed order instead of at a customer's browser warning.",
+  "real_commands_used": ["kubectl get certificate", "kubectl get order", "kubectl describe order (the ACME error)", "kubectl get events | grep <certificate>", "kubectl patch certificate --type=merge (change issuerRef)"]
+}

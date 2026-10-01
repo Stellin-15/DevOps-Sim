@@ -1,0 +1,31 @@
+{
+  "id": "yaml-035",
+  "type": "yaml_lab",
+  "category": "identity",
+  "title": "Rewrite a Vault Policy to Least Privilege",
+  "difficulty": "intermediate",
+  "tags": ["vault", "policy", "least-privilege", "hcl"],
+  "intro": "The shop application's Vault policy was written in a hurry: it grants everything on every path, including sudo. With it, a bug in one app can read every team's secrets, rewrite policies, and disable audit logging. Replace it with what the app actually needs: read its own secrets, and get its database credentials.",
+  "steps": [
+    {
+      "file": "shop-app.hcl",
+      "format": "hcl",
+      "starter_content": "# Policy for the shop application\npath \"*\" {\n  capabilities = [\"create\", \"read\", \"update\", \"delete\", \"list\", \"sudo\"]\n}\n",
+      "prompt": "Rewrite shop-app.hcl so it contains exactly three path blocks and no wildcard-everything rule:\n\n(1) path \"secret/data/shop/*\"       capabilities = [\"read\"]\n(2) path \"secret/metadata/shop/*\"   capabilities = [\"list\", \"read\"]\n(3) path \"database/creds/shop-readonly\"   capabilities = [\"read\"]\n\nThe app must not be able to write, delete, or use sudo anywhere.",
+      "apply_commands": ["vault policy fmt shop-app.hcl", "vault policy write shop-app shop-app.hcl", "check"],
+      "validate": {
+        "fields": {
+          "path.secret/data/shop/*.capabilities": ["read"],
+          "path.secret/metadata/shop/*.capabilities": {"contains": ["list", "read"]},
+          "path.database/creds/shop-readonly.capabilities": ["read"]
+        },
+        "absent": ["path \"*\"", "sudo", "update", "delete", "create", "path \"secret/*\""]
+      },
+      "hint": "Each rule is:\n  path \"secret/data/shop/*\" {\n    capabilities = [\"read\"]\n  }\nThe key-value engine (version 2) keeps values under secret/data/... and names under secret/metadata/..., so the app needs both paths. Remove the path \"*\" block completely.",
+      "solution": "# Policy for the shop application\npath \"secret/data/shop/*\" {\n  capabilities = [\"read\"]\n}\n\npath \"secret/metadata/shop/*\" {\n  capabilities = [\"list\", \"read\"]\n}\n\npath \"database/creds/shop-readonly\" {\n  capabilities = [\"read\"]\n}\n",
+      "fake_output": "Success! Uploaded policy: shop-app",
+      "explanation": "The app can read its own secrets, list their names, and request read-only database credentials. Everything else is denied by default.",
+      "why": "Vault denies whatever no policy grants, so least privilege means listing only what's needed. The original gave 'sudo' on '*', which allows root-protected operations such as changing audit devices and policies: an attacker who took over the app could have covered their tracks. Three details matter. The 'data/' and 'metadata/' segments: policies are matched against the real API path, and leaving them out is the usual reason a correct-looking policy returns 'permission denied'. Reading database/creds/shop-readonly is a 'read' even though it creates a database user, because that's how the API models it. And the glob only matches at the end of a path: 'secret/data/shop/*' covers everything below shop/, and nothing in another team's subtree. Check a policy with 'vault token capabilities <path>' using a token that carries it, for both a path that should work and one that shouldn't."
+    }
+  ]
+}

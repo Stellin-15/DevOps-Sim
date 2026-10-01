@@ -1,0 +1,47 @@
+{
+  "id": "identity-tutorial-001",
+  "type": "tutorial",
+  "category": "identity",
+  "title": "Reading a JWT: What a Token Says and Who Vouches for It",
+  "difficulty": "beginner",
+  "tags": ["jwt", "tokens", "oidc", "authentication"],
+  "intro": "Most APIs you operate are called with a JSON Web Token: three base64 pieces separated by dots (header, claims, signature). When a call fails with 401, the answer is usually written inside the token. You have one in the shell variable TOKEN, issued by https://auth.example.com for the orders API.",
+  "steps": [
+    {
+      "prompt": "Decode the token's second part, the claims, and pretty-print it.",
+      "expected_commands": ["echo \"$TOKEN\" | cut -d. -f2 | base64 -d | jq", "echo $TOKEN | cut -d. -f2 | base64 -d | jq", "echo \"$TOKEN\" | cut -d. -f2 | base64 -d | jq .", "echo $TOKEN | cut -d. -f2 | base64 -d | jq ."],
+      "fake_output": "{\n  \"iss\": \"https://auth.example.com/\",\n  \"sub\": \"svc-checkout\",\n  \"aud\": \"https://api.example.com/payments\",\n  \"scope\": \"payments:read\",\n  \"iat\": 1790592000,\n  \"exp\": 1790595600\n}",
+      "explanation": "Issued by auth.example.com, to the service svc-checkout, for the payments API, with read scope.",
+      "why": "A JWT is signed, not encrypted: anyone who holds it can read it, so never put secrets in claims and never paste a production token into a website to decode it. The claims that matter for a 401 are iss (who issued it), aud (which API it's meant for), exp (when it stops working), and scope (what it allows). base64 may complain about padding on some tokens; the decoded text is still readable."
+    },
+    {
+      "prompt": "The claims say exp is 1790595600. Convert that to a readable date.",
+      "expected_commands": ["date -d @1790595600", "date -u -d @1790595600", "date --date=@1790595600", "date -ud @1790595600"],
+      "fake_output": "Mon Sep 28 11:40:00 UTC 2026",
+      "explanation": "The token expires at 11:40 UTC, one hour after it was issued.",
+      "why": "exp, iat, and nbf are seconds since 1970. An hour is a typical lifetime for an access token: short enough that a stolen one is soon useless, since a JWT normally can't be revoked before it expires. A service whose clock is wrong will reject valid tokens as expired or 'not yet valid', which is why time sync is an authentication dependency."
+    },
+    {
+      "prompt": "You called the orders API with this token and got 401. Look at the claims again. Why?\n  a) The token has expired\n  b) The aud claim is for the payments API, so the orders API must reject it\n  c) The signature is wrong\n  d) The scope is missing\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "token aud:        https://api.example.com/payments\norders API wants: https://api.example.com/orders\n-> 401 invalid audience",
+      "hint": "Compare who the token says it's for with who you sent it to.",
+      "explanation": "The audience doesn't match. This token is only valid at the payments API.",
+      "why": "The audience check is what stops a token issued for one service being replayed against another. If the orders API accepted it, any service that receives your token could turn round and call other APIs as you. A wrong audience is the most common cause of a 401 with a perfectly valid, unexpired token."
+    },
+    {
+      "prompt": "Decode the token's first part, the header.",
+      "expected_commands": ["echo \"$TOKEN\" | cut -d. -f1 | base64 -d | jq", "echo $TOKEN | cut -d. -f1 | base64 -d | jq", "echo \"$TOKEN\" | cut -d. -f1 | base64 -d | jq .", "echo $TOKEN | cut -d. -f1 | base64 -d | jq ."],
+      "fake_output": "{\n  \"alg\": \"RS256\",\n  \"typ\": \"JWT\",\n  \"kid\": \"key-2026-09\"\n}",
+      "explanation": "Signed with RS256 (an RSA private key), using the issuer's key named key-2026-09.",
+      "why": "RS256 is asymmetric: the issuer signs with a private key and everyone verifies with the public one, so APIs never hold anything that could mint tokens. HS256 uses one shared secret for both, which means every verifier can also forge. A verifier must also insist on the algorithm it expects: accepting whatever the header says, including 'none', is a classic vulnerability."
+    },
+    {
+      "prompt": "The API verifies the signature with the issuer's public keys. List the key ids the issuer currently publishes at https://auth.example.com/.well-known/jwks.json.",
+      "expected_commands": ["curl -s https://auth.example.com/.well-known/jwks.json | jq '.keys[].kid'", "curl -s https://auth.example.com/.well-known/jwks.json | jq \".keys[].kid\"", "curl -s https://auth.example.com/.well-known/jwks.json | jq -r '.keys[].kid'", "curl https://auth.example.com/.well-known/jwks.json | jq '.keys[].kid'"],
+      "fake_output": "\"key-2026-09\"\n\"key-2026-06\"",
+      "explanation": "Two keys are published, and the token's kid, key-2026-09, is one of them.",
+      "why": "This endpoint (JWKS) is how verifiers get the public keys. The kid in the token's header says which one to use. Issuers rotate keys and publish the new one alongside the old for a while, so a verifier must fetch the list again when it sees an unknown kid. One that caches the keys for ever breaks at the next rotation, which is identity-incident-001."
+    }
+  ]
+}

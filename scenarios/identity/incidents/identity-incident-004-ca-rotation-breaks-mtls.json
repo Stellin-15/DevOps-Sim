@@ -1,0 +1,49 @@
+{
+  "id": "identity-incident-004",
+  "type": "incident",
+  "category": "identity",
+  "title": "Half the services can't talk to payments after the CA was renewed",
+  "difficulty": "advanced",
+  "tags": ["pki", "mtls", "ca-rotation", "certificates"],
+  "intro": "The internal certificate authority was due to expire next month, so last night a new CA was created and the payments service was given a new certificate signed by it. Since then, calls from checkout to https://payments.internal fail with 'x509: certificate signed by unknown authority'. Calls from the newly redeployed cart service work. You're on a checkout host; its trust bundle is /etc/ssl/internal/ca-bundle.crt.",
+  "steps": [
+    {
+      "prompt": "Reproduce it from this host using the same trust bundle the service uses: call https://payments.internal/health with --cacert pointing at the bundle.",
+      "expected_commands": ["curl --cacert /etc/ssl/internal/ca-bundle.crt https://payments.internal/health", "curl -s --cacert /etc/ssl/internal/ca-bundle.crt https://payments.internal/health", "curl -v --cacert /etc/ssl/internal/ca-bundle.crt https://payments.internal/health"],
+      "fake_output": "curl: (60) SSL certificate problem: unable to get local issuer certificate",
+      "hint": "curl --cacert /etc/ssl/internal/ca-bundle.crt https://payments.internal/health"
+    },
+    {
+      "prompt": "This host doesn't trust whoever signed the payments certificate. See who that is: fetch the certificate payments is serving and print its issuer and dates.",
+      "expected_commands": ["openssl s_client -connect payments.internal:443 -servername payments.internal </dev/null | openssl x509 -noout -issuer -dates", "openssl s_client -connect payments.internal:443 -servername payments.internal < /dev/null | openssl x509 -noout -issuer -dates", "echo | openssl s_client -connect payments.internal:443 -servername payments.internal | openssl x509 -noout -issuer -dates", "openssl s_client -connect payments.internal:443 -servername payments.internal </dev/null 2>/dev/null | openssl x509 -noout -issuer -dates"],
+      "fake_output": "issuer=CN = Example Internal CA 2026\nnotBefore=Sep 27 22:10:00 2026 GMT\nnotAfter=Oct 27 22:10:00 2026 GMT",
+      "hint": "openssl s_client -connect payments.internal:443 -servername payments.internal </dev/null | openssl x509 -noout -issuer -dates"
+    },
+    {
+      "prompt": "Issued last night by 'Example Internal CA 2026'. Now see which CA this host trusts: print the subject and dates of the certificate in the bundle.",
+      "expected_commands": ["openssl x509 -in /etc/ssl/internal/ca-bundle.crt -noout -subject -dates", "openssl x509 -noout -subject -dates -in /etc/ssl/internal/ca-bundle.crt", "openssl x509 -in /etc/ssl/internal/ca-bundle.crt -noout -subject -enddate"],
+      "fake_output": "subject=CN = Example Internal CA 2023\nnotBefore=Oct 20 09:00:00 2023 GMT\nnotAfter=Oct 20 09:00:00 2026 GMT",
+      "hint": "openssl x509 -in /etc/ssl/internal/ca-bundle.crt -noout -subject -dates"
+    },
+    {
+      "prompt": "The bundle holds only the 2023 CA. The server now presents a certificate from the 2026 CA, which this host has never heard of. The new CA's certificate is at /tmp/ca-2026.crt. Add it to the bundle, keeping the old one.",
+      "expected_commands": ["sudo sh -c 'cat /tmp/ca-2026.crt >> /etc/ssl/internal/ca-bundle.crt'", "cat /tmp/ca-2026.crt | sudo tee -a /etc/ssl/internal/ca-bundle.crt", "sudo tee -a /etc/ssl/internal/ca-bundle.crt < /tmp/ca-2026.crt", "cat /tmp/ca-2026.crt >> /etc/ssl/internal/ca-bundle.crt"],
+      "fake_output": "(no output)",
+      "hint": "cat /tmp/ca-2026.crt | sudo tee -a /etc/ssl/internal/ca-bundle.crt"
+    },
+    {
+      "prompt": "Check the bundle now holds both: count the certificates in it.",
+      "expected_commands": ["grep -c \"BEGIN CERTIFICATE\" /etc/ssl/internal/ca-bundle.crt", "grep -c 'BEGIN CERTIFICATE' /etc/ssl/internal/ca-bundle.crt", "grep -c BEGIN /etc/ssl/internal/ca-bundle.crt"],
+      "fake_output": "2",
+      "hint": "grep -c \"BEGIN CERTIFICATE\" /etc/ssl/internal/ca-bundle.crt"
+    },
+    {
+      "prompt": "Test again with the updated bundle.",
+      "expected_commands": ["curl --cacert /etc/ssl/internal/ca-bundle.crt https://payments.internal/health", "curl -s --cacert /etc/ssl/internal/ca-bundle.crt https://payments.internal/health", "curl -v --cacert /etc/ssl/internal/ca-bundle.crt https://payments.internal/health"],
+      "fake_output": "{\"status\":\"ok\"}",
+      "hint": "The same command as the first step."
+    }
+  ],
+  "resolution": "A certificate is only as good as the list of authorities its verifier trusts, and that list lives on every client. The rotation replaced the CA and re-issued the payments certificate from it in one night. Clients that had been redeployed since (cart) had been built with the new CA in their bundle and worked. Clients that hadn't (checkout) still trusted only the 2023 CA and rejected a certificate from an issuer they didn't know. Nothing was wrong with either certificate. The order of operations was wrong. Rotating a CA is a three-phase change, and the phases can't be merged. First, distribute trust: add the new CA to every client's bundle alongside the old one, and wait until that has reached everything. Clients now accept certificates from either. Second, re-issue: move servers and clients to certificates signed by the new CA, at whatever pace suits. Third, and only when nothing presents an old-CA certificate any more, remove the old CA from the bundles. Skipping phase one is what happened here. The order matters in mTLS even more, because both sides verify: every service is both a client and a server. Adding the new CA to this host's bundle fixed checkout, but the same fix is needed everywhere, which is the real work: trust bundles copied into images and onto hosts by hand are how a rotation becomes an outage. Distribute them from one place (configuration management, or trust-manager in Kubernetes), keep an inventory of what trusts what, and rehearse the rotation before the old CA's expiry forces it. A service mesh or SPIFFE handles all three phases for you, which is a large part of why people adopt them.",
+  "real_commands_used": ["curl --cacert <bundle>", "openssl s_client | openssl x509 -noout -issuer -dates", "openssl x509 -in <bundle> -noout -subject -dates", "append the new CA to the bundle", "grep -c 'BEGIN CERTIFICATE'"]
+}

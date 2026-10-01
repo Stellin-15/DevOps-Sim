@@ -1,0 +1,49 @@
+{
+  "id": "identity-incident-002",
+  "type": "incident",
+  "category": "identity",
+  "title": "After last night's patching, nothing can read a secret",
+  "difficulty": "intermediate",
+  "tags": ["vault", "seal", "unseal", "availability"],
+  "intro": "The Vault servers were patched and rebooted overnight by the fleet's automated patching. This morning new pods are stuck starting, the External Secrets Operator reports errors on every secret, and deploys fail. Applications that were already running are fine. Vault is a three-node cluster (vault-0, vault-1, vault-2) using the default Shamir seal: five key shares exist, held by five people, and any three unseal it.",
+  "steps": [
+    {
+      "prompt": "Ask Vault for its state.",
+      "expected_commands": ["vault status"],
+      "fake_output": "Key                Value\n---                -----\nSeal Type          shamir\nInitialized        true\nSealed             true\nTotal Shares       5\nThreshold          3\nUnseal Progress    0/3\nVersion            1.17.2\nStorage Type       raft\nHA Enabled         true",
+      "hint": "vault status"
+    },
+    {
+      "prompt": "Sealed: true. Vault is running and can't read its own data. Confirm what a client sees: call the health endpoint at https://vault.internal:8200/v1/sys/health and print only the status code.",
+      "expected_commands": ["curl -s -o /dev/null -w \"%{http_code}\\n\" https://vault.internal:8200/v1/sys/health", "curl -s -o /dev/null -w '%{http_code}\\n' https://vault.internal:8200/v1/sys/health", "curl -o /dev/null -s -w \"%{http_code}\\n\" https://vault.internal:8200/v1/sys/health"],
+      "fake_output": "503",
+      "hint": "curl -s -o /dev/null -w \"%{http_code}\\n\" https://vault.internal:8200/v1/sys/health"
+    },
+    {
+      "prompt": "503 from the health endpoint means sealed. Three key holders have been paged and are ready. The first holder enters their share. Run the unseal command (it prompts for the key, so the share never appears in shell history).",
+      "expected_commands": ["vault operator unseal"],
+      "fake_output": "Unseal Key (will be hidden):\nKey                Value\n---                -----\nSealed             true\nUnseal Progress    1/3",
+      "hint": "vault operator unseal"
+    },
+    {
+      "prompt": "The second holder enters their share.",
+      "expected_commands": ["vault operator unseal"],
+      "fake_output": "Unseal Key (will be hidden):\nKey                Value\n---                -----\nSealed             true\nUnseal Progress    2/3",
+      "hint": "vault operator unseal"
+    },
+    {
+      "prompt": "The third holder enters their share.",
+      "expected_commands": ["vault operator unseal"],
+      "fake_output": "Unseal Key (will be hidden):\nKey             Value\n---             -----\nSealed          false\nHA Mode         active\nRaft Committed Index    4410218",
+      "hint": "vault operator unseal"
+    },
+    {
+      "prompt": "This node is unsealed and active. Each node must be unsealed separately, and the holders repeat this on vault-1 and vault-2. Afterwards, confirm all three are in the cluster.",
+      "expected_commands": ["vault operator raft list-peers"],
+      "fake_output": "Node       Address               State       Voter\n----       -------               -----       -----\nvault-0    vault-0.internal:8201 leader      true\nvault-1    vault-1.internal:8201 follower    true\nvault-2    vault-2.internal:8201 follower    true",
+      "hint": "vault operator raft list-peers"
+    }
+  ],
+  "resolution": "Vault did exactly what it's designed to do. Its data is encrypted with a key that is itself protected by the unseal key, and that unseal key exists only in memory. A restart discards it, so Vault comes back sealed and useless until three of five people each supply their share. That's a security feature: stealing the disks, or a backup, gets an attacker nothing. Nobody had told the patching automation, which rebooted all three nodes in one night. With one node rebooted at a time and unsealed before the next, the cluster would have stayed available throughout. Rebooting all three left zero unsealed nodes and no way to recover until humans woke up. Existing applications kept working because they already held their secrets; everything that needed to fetch one (new pods, deploys, secret sync) failed. The fix for the morning was the unseal ceremony on each node. The lasting fixes are choices. Auto-unseal: let Vault unwrap its key with a cloud KMS key or an HSM at start-up, so a restart needs nobody. The trust moves to the KMS key's access policy, and the key shares become recovery keys for rare operations. Almost every production Vault runs this way. Whichever seal you use: exclude Vault from blanket patch automation and patch it one node at a time, confirming each is unsealed and back in the Raft cluster before the next; alert on 'sealed' from the health endpoint, which returns 503; and make sure applications cache what they've read and keep running when Vault is down, because a secrets store is a dependency of everything.",
+  "real_commands_used": ["vault status", "curl /v1/sys/health (503 when sealed)", "vault operator unseal (three times, three holders, per node)", "vault operator raft list-peers"]
+}

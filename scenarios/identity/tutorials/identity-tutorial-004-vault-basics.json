@@ -1,0 +1,53 @@
+{
+  "id": "identity-tutorial-004",
+  "type": "tutorial",
+  "category": "identity",
+  "title": "HashiCorp Vault: Secrets, Versions, and Policies",
+  "difficulty": "intermediate",
+  "tags": ["vault", "secrets", "policies"],
+  "intro": "Vault is a secrets store with three things a config file lacks: every read is authenticated and logged, access is granted by policy per path, and secrets have versions. You're on a workstation with the vault CLI pointed at the company Vault (VAULT_ADDR is set). The shop application's secrets live under secret/shop.",
+  "steps": [
+    {
+      "prompt": "Check the Vault server's state before anything else.",
+      "expected_commands": ["vault status"],
+      "fake_output": "Key             Value\n---             -----\nSeal Type       awskms\nInitialized     true\nSealed          false\nVersion         1.17.2\nStorage Type    raft\nHA Enabled      true\nHA Mode         active",
+      "explanation": "Initialised, unsealed, and this node is the active one in an HA cluster.",
+      "why": "'Sealed' is the state that matters. Vault's data is encrypted on disk, and a sealed Vault holds no key to read it, so it serves nothing. It starts sealed after every restart. Here the seal type is awskms, meaning it unseals itself using a cloud key; with the default Shamir seal, several people must each enter a key share (identity-incident-002)."
+    },
+    {
+      "prompt": "Log in through the company identity provider.",
+      "expected_commands": ["vault login -method=oidc", "vault login -method oidc"],
+      "fake_output": "Complete the login via your OIDC provider. Launching browser to:\n    https://auth.example.com/authorize?...\n\nSuccess! You are now authenticated.\ntoken_duration       8h\ntoken_policies       [\"default\" \"shop-dev\"]",
+      "explanation": "You have a Vault token for 8 hours, carrying the policies default and shop-dev.",
+      "why": "Vault doesn't keep its own passwords for people: it trusts an identity provider and maps your groups to policies. Everything you do next is checked against those policies. The root token, created at initialisation, bypasses all of them; it should be revoked after setup and regenerated only for emergencies."
+    },
+    {
+      "prompt": "Read the secret at secret/shop/database.",
+      "expected_commands": ["vault kv get secret/shop/database", "vault kv get -mount=secret shop/database"],
+      "fake_output": "====== Secret Path ======\nsecret/data/shop/database\n\n======= Metadata =======\nKey                Value\n---                -----\ncreated_time       2026-09-21T09:14:02Z\nversion            4\n\n====== Data ======\nKey         Value\n---         -----\nhost        db.internal\npassword    s3cr3t-v4-example\nusername    shop_app",
+      "explanation": "Version 4 of the secret, created a week ago.",
+      "why": "Notice the real path is secret/data/shop/database. The key-value engine version 2 inserts 'data/' (and 'metadata/'), and policies must be written against those real paths, which is the usual reason a policy that looks right gives 'permission denied'. For scripts, 'vault kv get -field=password ...' prints just one value."
+    },
+    {
+      "prompt": "Someone updated that secret last week and the app has had login failures since. Read the previous version, version 3.",
+      "expected_commands": ["vault kv get -version=3 secret/shop/database", "vault kv get -version 3 secret/shop/database"],
+      "fake_output": "======= Metadata =======\nKey                Value\n---                -----\ncreated_time       2026-06-02T14:40:11Z\nversion            3\n\n====== Data ======\nKey         Value\n---         -----\nhost        db.internal\npassword    s3cr3t-v3-example\nusername    shop",
+      "explanation": "In version 3 the username was shop; version 4 changed it to shop_app.",
+      "why": "Versioning turns 'who changed the secret and what was it before?' into a lookup. 'vault kv rollback -version=3 secret/shop/database' would restore it as a new version. A secret in an environment file or a Kubernetes Secret has no history at all: an overwrite is final."
+    },
+    {
+      "prompt": "Check what your token is allowed to do on the path secret/data/shop/database.",
+      "expected_commands": ["vault token capabilities secret/data/shop/database"],
+      "fake_output": "read",
+      "explanation": "Read only: you can't change or delete it.",
+      "why": "This answers 'why was I denied?' without guessing: it evaluates your token's policies for one path. Capabilities are create, read, update, delete, list, plus sudo and deny. Vault denies by default, so a path nobody granted is simply unreachable."
+    },
+    {
+      "prompt": "The policy that grants that access is called shop-dev. Print it.",
+      "expected_commands": ["vault policy read shop-dev"],
+      "fake_output": "path \"secret/data/shop/*\" {\n  capabilities = [\"read\"]\n}\n\npath \"secret/metadata/shop/*\" {\n  capabilities = [\"list\", \"read\"]\n}",
+      "explanation": "Read on the shop secrets' data, and list on their metadata so you can browse the names.",
+      "why": "A policy is a list of paths and capabilities, in HCL. Least privilege here means one application gets read on its own subtree and nothing else, so a compromised app can't read another team's secrets. Policies are attached to identities (groups, Kubernetes service accounts), never to people one by one. Writing one is a Writing Lab (yaml-035)."
+    }
+  ]
+}
