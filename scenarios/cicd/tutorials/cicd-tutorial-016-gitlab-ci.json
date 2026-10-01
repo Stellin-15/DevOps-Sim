@@ -1,0 +1,54 @@
+{
+  "id": "cicd-tutorial-016",
+  "type": "tutorial",
+  "category": "cicd",
+  "title": "GitLab CI: Pipelines, Jobs, and Runners",
+  "difficulty": "intermediate",
+  "tags": ["gitlab", "ci", "runners", "pipelines"],
+  "intro": "The earlier CI/CD tutorials used GitHub Actions. GitLab CI is the other system you're most likely to meet, especially where code is self-hosted. The ideas map across: a .gitlab-ci.yml file, stages that run in order, jobs within a stage that run in parallel, and runners that execute them. You're in a repository with the glab CLI authenticated.",
+  "steps": [
+    {
+      "prompt": "Validate the repository's .gitlab-ci.yml before pushing.",
+      "expected_commands": ["glab ci lint", "glab ci lint .gitlab-ci.yml"],
+      "fake_output": "Validating...\n.gitlab-ci.yml is invalid\n\njobs:deploy config contains unknown keys: enviroment",
+      "explanation": "The deploy job has a misspelled key: 'enviroment'.",
+      "why": "The lint runs on GitLab's server with the real parser, so it also resolves 'include:' files and templates, which a local YAML check can't. A typo in a key is the common failure, and without linting you find out from a pipeline that fails to start, after the push."
+    },
+    {
+      "prompt": "The typo is fixed and pushed. Check the status of the pipeline for the current branch.",
+      "expected_commands": ["glab ci status", "glab ci status --live"],
+      "fake_output": "(success) • 01m 12s\ttest\t\tunit\n(success) • 00m 41s\ttest\t\tlint\n(failed)  • 02m 03s\tbuild\t\timage\n(skipped)\t\tdeploy\t\tproduction\n\nhttps://gitlab.example.com/shop/api/-/pipelines/88120\nSHA: a1f9c3e2\nPipeline state: failed",
+      "explanation": "Both test jobs passed in parallel; the build job failed, so deploy was skipped.",
+      "why": "Stages run in order and a failed stage stops the ones after it. Jobs in the same stage run together. So 'skipped' on deploy isn't a second problem, just a consequence. 'needs:' lets a job start as soon as its named dependencies finish, ignoring stage order, which is how large pipelines are made faster."
+    },
+    {
+      "prompt": "Read the log of the failed job, named image.",
+      "expected_commands": ["glab ci trace image"],
+      "fake_output": "$ docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA .\nERROR: Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?\nCleaning up project directory and file based variables\nERROR: Job failed: exit code 1",
+      "explanation": "The job can't reach a Docker daemon: it's running inside a container that has none.",
+      "why": "Jobs on a Docker-executor runner run inside a plain container. To build images you either add a 'docker:dind' service to the job, or, better, use a daemonless builder such as Kaniko or BuildKit's rootless mode. Docker-in-Docker needs a privileged runner, which gives every job on it root on the host; avoid that on shared runners."
+    },
+    {
+      "prompt": "The job now uses a daemonless builder. Re-run just that job without a new commit.",
+      "expected_commands": ["glab ci retry image"],
+      "fake_output": "Retried job (id: 4410218) image → running",
+      "explanation": "Only the failed job runs again; the test results are reused.",
+      "why": "Retry is for transient failures and for fixes outside the repository, such as a runner or a variable. If a retry passes with no change, the job is flaky and that deserves a ticket, not a habit: teams that retry by reflex stop noticing real failures."
+    },
+    {
+      "prompt": "On the runner host, list the runners registered in its configuration.",
+      "expected_commands": ["sudo gitlab-runner list", "gitlab-runner list"],
+      "fake_output": "Runtime platform  arch=amd64 os=linux version=17.4.0\nListing configured runners  ConfigFile=/etc/gitlab-runner/config.toml\ndocker-large  Executor=docker Token=glrt-t1_examp URL=https://gitlab.example.com\ndocker-small  Executor=docker Token=glrt-t1_exam2 URL=https://gitlab.example.com",
+      "explanation": "Two runners on this host, both using the Docker executor.",
+      "why": "A runner is an agent that polls GitLab for jobs; nothing connects inward to it, which makes runners easy to place inside private networks. Jobs choose runners by tags. A job whose tags match no online runner waits as 'pending' for ever, which is the most common GitLab CI support question (cicd-incident-007). 'gitlab-runner verify' checks each runner can still authenticate."
+    },
+    {
+      "prompt": "A deploy job should run only on the main branch and wait for a person to press a button. In .gitlab-ci.yml, which is the right way to express that?\n  a) only: [main] together with a sleep command\n  b) rules with a condition on $CI_COMMIT_BRANCH == \"main\" and when: manual, plus an environment name\n  c) A separate repository for deploys\n  d) Comment the job out until needed\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "deploy:\n  stage: deploy\n  environment: production\n  rules:\n    - if: $CI_COMMIT_BRANCH == \"main\"\n      when: manual\n  script:\n    - ./deploy.sh",
+      "hint": "'rules' replaced 'only/except', and 'when: manual' adds the button.",
+      "explanation": "rules decide whether the job exists in a pipeline; when: manual makes it wait.",
+      "why": "'environment: production' is more than a label: GitLab records each deployment against it, can restrict who may run jobs for it (protected environments), and offers rollback to a previous deployment. Combined with protected branches and protected variables, it's what stops a job on someone's feature branch reading the production credentials."
+    }
+  ]
+}

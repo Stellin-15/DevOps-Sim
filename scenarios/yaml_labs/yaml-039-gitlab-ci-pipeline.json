@@ -1,0 +1,43 @@
+{
+  "id": "yaml-039",
+  "type": "yaml_lab",
+  "category": "cicd",
+  "title": "Write a GitLab CI Pipeline: Test, Build, and a Gated Deploy",
+  "difficulty": "intermediate",
+  "tags": ["gitlab", "ci", "pipelines", "yaml"],
+  "intro": "The GitHub Actions labs have their GitLab counterpart here. Write the .gitlab-ci.yml for a Python service: tests on every push, an image build on main only, and a production deploy that waits for a person.",
+  "steps": [
+    {
+      "file": ".gitlab-ci.yml",
+      "starter_content": "",
+      "prompt": "Write .gitlab-ci.yml:\n\n- stages: test, build, deploy (in that order)\n\n- job 'unit' in stage test: image python:3.12; script runs 'pip install -r requirements.txt' then 'pytest';\n  a cache whose key.files lists requirements.txt and whose paths list .cache/pip\n\n- job 'image' in stage build: image gcr.io/kaniko-project/executor:debug;\n  script contains a line starting with '/kaniko/executor' that uses --destination $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA;\n  rules: one rule, if: $CI_COMMIT_BRANCH == \"main\"\n\n- job 'production' in stage deploy: script runs './deploy.sh $CI_COMMIT_SHORT_SHA';\n  environment name production; needs the job image;\n  rules: one rule, if: $CI_COMMIT_BRANCH == \"main\" with when: manual",
+      "apply_commands": ["glab ci lint", "check"],
+      "validate": {
+        "fields": {
+          "stages": ["test", "build", "deploy"],
+          "unit.stage": "test",
+          "unit.image": "python:3.12",
+          "unit.script[*]": ["pip install -r requirements.txt", "pytest"],
+          "unit.cache.key.files[*]": "requirements.txt",
+          "unit.cache.paths[*]": ".cache/pip",
+          "image.stage": "build",
+          "image.image": {"contains": "kaniko"},
+          "image.script[*]": {"contains": ["/kaniko/executor", "--destination", "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"]},
+          "image.rules[0].if": {"contains": ["$CI_COMMIT_BRANCH", "main"]},
+          "production.stage": "deploy",
+          "production.script[*]": {"contains": ["./deploy.sh", "$CI_COMMIT_SHORT_SHA"]},
+          "production.environment": {"contains": "production"},
+          "production.needs[*]": "image",
+          "production.rules[0].if": {"contains": ["$CI_COMMIT_BRANCH", "main"]},
+          "production.rules[0].when": "manual"
+        },
+        "absent": [":latest", "docker:dind", "only:"]
+      },
+      "hint": "Top level: 'stages:' as a list, then one mapping per job. A job:\n  unit:\n    stage: test\n    image: python:3.12\n    cache:\n      key:\n        files:\n          - requirements.txt\n      paths:\n        - .cache/pip\n    script:\n      - pip install -r requirements.txt\n      - pytest\nRules:\n    rules:\n      - if: $CI_COMMIT_BRANCH == \"main\"\n        when: manual\nThe environment can be written 'environment: production' or with a name: key.",
+      "solution": "stages:\n  - test\n  - build\n  - deploy\n\nunit:\n  stage: test\n  image: python:3.12\n  cache:\n    key:\n      files:\n        - requirements.txt\n    paths:\n      - .cache/pip\n  script:\n    - pip install -r requirements.txt\n    - pytest\n\nimage:\n  stage: build\n  image: gcr.io/kaniko-project/executor:debug\n  script:\n    - /kaniko/executor --context $CI_PROJECT_DIR --destination $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA\n  rules:\n    - if: $CI_COMMIT_BRANCH == \"main\"\n\nproduction:\n  stage: deploy\n  script:\n    - ./deploy.sh $CI_COMMIT_SHORT_SHA\n  environment:\n    name: production\n  needs:\n    - image\n  rules:\n    - if: $CI_COMMIT_BRANCH == \"main\"\n      when: manual\n",
+      "fake_output": "Validating...\n✓ CI/CD YAML is valid!",
+      "explanation": "Tests on every push; an image tagged with the commit, built on main; and a production deploy of that same commit that waits for a click.",
+      "why": "The choices that matter. The cache key is the hash of requirements.txt, so the cache is reused until dependencies change and never serves stale packages afterwards. The image is built with Kaniko, which needs no Docker daemon and no privileged runner, unlike docker:dind (cicd-tutorial-016). It's tagged with the commit SHA, never 'latest', so the deploy job installs exactly the image that was built in this pipeline (cicd-incident-005). 'rules' replace the older only/except and decide whether a job exists in a pipeline at all: on a feature branch, this pipeline contains only the test job. 'needs' ties the deploy to the build job explicitly. 'when: manual' puts a person in front of production, and the environment name lets GitLab record deployments, restrict who may run them, and offer rollback. Protect the main branch and scope the deploy credentials to the production environment, or a job on any branch could read them."
+    }
+  ]
+}

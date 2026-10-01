@@ -1,0 +1,50 @@
+{
+  "id": "cicd-tutorial-017",
+  "type": "tutorial",
+  "category": "cicd",
+  "title": "Jenkins: Operating the CI Server You Inherited",
+  "difficulty": "intermediate",
+  "tags": ["jenkins", "ci", "agents", "pipelines"],
+  "intro": "Jenkins is older than the hosted CI services and still runs a great many companies' builds. It's a server you operate yourself: a controller that schedules, agents that build, and plugins for everything. Its REST API lets you do from a terminal what people usually click through. JENKINS_URL is set, and your API token is in JENKINS_TOKEN for the user ci. The pipeline job is named shop-api.",
+  "steps": [
+    {
+      "prompt": "Get the result and duration of the last build of shop-api from the API.",
+      "expected_commands": ["curl -s -u ci:$JENKINS_TOKEN $JENKINS_URL/job/shop-api/lastBuild/api/json | jq '.result, .duration'", "curl -s -u ci:$JENKINS_TOKEN $JENKINS_URL/job/shop-api/lastBuild/api/json | jq \".result, .duration\"", "curl -s -u \"ci:$JENKINS_TOKEN\" $JENKINS_URL/job/shop-api/lastBuild/api/json | jq '.result, .duration'", "curl -s -u ci:$JENKINS_TOKEN $JENKINS_URL/job/shop-api/lastBuild/api/json | jq '.result,.duration'"],
+      "fake_output": "\"FAILURE\"\n184220",
+      "hint": "curl -s -u ci:$JENKINS_TOKEN $JENKINS_URL/job/shop-api/lastBuild/api/json | jq '.result, .duration'",
+      "explanation": "The last build failed after 184 seconds.",
+      "why": "Add /api/json to almost any Jenkins page URL and you get its data. That makes Jenkins scriptable for dashboards and chat bots. Use an API token, never your password, and a dedicated service user with only the permissions it needs: Jenkins credentials are a favourite target because the server can reach everything."
+    },
+    {
+      "prompt": "Read the end of that build's console log: the last 30 lines.",
+      "expected_commands": ["curl -s -u ci:$JENKINS_TOKEN $JENKINS_URL/job/shop-api/lastBuild/consoleText | tail -30", "curl -s -u ci:$JENKINS_TOKEN $JENKINS_URL/job/shop-api/lastBuild/consoleText | tail -n 30", "curl -s -u \"ci:$JENKINS_TOKEN\" $JENKINS_URL/job/shop-api/lastBuild/consoleText | tail -30"],
+      "fake_output": "[Pipeline] stage\n[Pipeline] { (Test)\n[Pipeline] sh\n+ ./gradlew test\n> Task :test FAILED\nOrderServiceTest > refundIsIdempotent FAILED\n    java.lang.AssertionError at OrderServiceTest.java:88\n[Pipeline] }\n[Pipeline] // stage\n[Pipeline] stage\n[Pipeline] { (Deploy)\nStage \"Deploy\" skipped due to earlier failure(s)\nFinished: FAILURE",
+      "explanation": "A test failed in the Test stage, and Deploy was skipped.",
+      "why": "A declarative pipeline is a list of stages; a failure stops the later ones unless a 'post' block handles it. The log is the same text as the web console. For long logs, the Stage View or Blue Ocean shows which stage failed, but the plain text is what you can grep."
+    },
+    {
+      "prompt": "You've edited the Jenkinsfile. Validate it on the server before committing.",
+      "expected_commands": ["curl -s -u ci:$JENKINS_TOKEN -X POST -F \"jenkinsfile=<Jenkinsfile\" $JENKINS_URL/pipeline-model-converter/validate", "curl -s -u ci:$JENKINS_TOKEN -X POST -F 'jenkinsfile=<Jenkinsfile' $JENKINS_URL/pipeline-model-converter/validate", "curl -s -X POST -u ci:$JENKINS_TOKEN -F \"jenkinsfile=<Jenkinsfile\" $JENKINS_URL/pipeline-model-converter/validate"],
+      "fake_output": "Errors encountered validating Jenkinsfile:\nWorkflowScript: 14: Expected a step @ line 14, column 9.\n           sh ./deploy.sh",
+      "hint": "curl -s -u ci:$JENKINS_TOKEN -X POST -F \"jenkinsfile=<Jenkinsfile\" $JENKINS_URL/pipeline-model-converter/validate",
+      "explanation": "Line 14 isn't a valid step: the shell command needs quotes, sh './deploy.sh'.",
+      "why": "A Jenkinsfile is Groovy, and syntax errors only show up when the pipeline starts, which means after a commit and a wait. This endpoint is Jenkins's linter. It checks declarative syntax, not that your steps and plugins exist, so a first run on a branch is still the real test."
+    },
+    {
+      "prompt": "Builds are queuing. Check the agents: list each node's name, whether it's offline, and why.",
+      "expected_commands": ["curl -s -u ci:$JENKINS_TOKEN $JENKINS_URL/computer/api/json | jq '.computer[] | {displayName, offline, offlineCauseReason}'", "curl -s -u ci:$JENKINS_TOKEN $JENKINS_URL/computer/api/json | jq \".computer[] | {displayName, offline, offlineCauseReason}\"", "curl -s -u \"ci:$JENKINS_TOKEN\" $JENKINS_URL/computer/api/json | jq '.computer[] | {displayName, offline, offlineCauseReason}'"],
+      "fake_output": "{\"displayName\": \"Built-In Node\", \"offline\": false, \"offlineCauseReason\": \"\"}\n{\"displayName\": \"agent-1\", \"offline\": true, \"offlineCauseReason\": \"Disk space is too low. Only 0.412GB left on /var/lib/jenkins/workspace.\"}\n{\"displayName\": \"agent-2\", \"offline\": false, \"offlineCauseReason\": \"\"}",
+      "hint": "curl -s -u ci:$JENKINS_TOKEN $JENKINS_URL/computer/api/json | jq '.computer[] | {displayName, offline, offlineCauseReason}'",
+      "explanation": "agent-1 took itself offline because its workspace disk is nearly full.",
+      "why": "Jenkins monitors its agents and removes one from service when disk or temp space runs low, which silently halves your capacity. Long-lived agents accumulate workspaces, Docker layers, and dependency caches. The lasting answer is ephemeral agents (a fresh container or VM per build, from the Kubernetes or cloud plugins), which can't fill up and can't carry state between builds."
+    },
+    {
+      "prompt": "Where should the pipeline's logic live?\n  a) In a job configured by hand in the Jenkins web UI\n  b) In a Jenkinsfile in the repository, with steps that many teams share kept in a versioned shared library\n  c) In a script on the Jenkins controller's disk\n  d) In a wiki page\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "repo/Jenkinsfile        reviewed, versioned, changes with the code it builds\nshared library          @Library('ci@v3') _ : one place to fix a step used by 200 repos\ncontroller              config as code (JCasC) and a pinned plugin list, rebuildable from Git",
+      "hint": "The answer is the same as for infrastructure: in version control.",
+      "explanation": "Pipeline as code, with the shared parts in a library pinned by version.",
+      "why": "Jobs configured by clicking can't be reviewed, diffed, or rebuilt after the controller's disk dies. The same applies to the server itself: Configuration as Code and a pinned plugin list make Jenkins reproducible. Plugins are its main risk: each is third-party code running with the server's privileges, so keep them few and updated, and never run builds on the controller itself."
+    }
+  ]
+}

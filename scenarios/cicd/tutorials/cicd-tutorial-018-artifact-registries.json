@@ -1,0 +1,47 @@
+{
+  "id": "cicd-tutorial-018",
+  "type": "tutorial",
+  "category": "cicd",
+  "title": "Artifact Registries: Build Once, Promote the Same Bytes",
+  "difficulty": "intermediate",
+  "tags": ["registries", "artifacts", "oci", "promotion"],
+  "intro": "A pipeline's output has to live somewhere: container images, Helm charts, packages. That's an artifact registry (Harbor, Artifactory, Nexus, or a cloud registry). How you use it decides whether production runs the thing you tested. The registry is registry.example.com, with separate repositories for staging and prod.",
+  "steps": [
+    {
+      "prompt": "List the tags in the repository registry.example.com/staging/shop.",
+      "expected_commands": ["crane ls registry.example.com/staging/shop"],
+      "fake_output": "1.8.1\n1.8.2\n1.8.3\nsha-a1f9c3e\nlatest",
+      "explanation": "Three version tags, a commit-based tag, and latest.",
+      "why": "crane talks to any OCI registry without a Docker daemon, which makes it the right tool inside CI jobs. Tags are just movable names. 'latest' in particular means 'whatever was pushed last' and tells you nothing, which is why cicd-incident-005 exists. Tag every build with something unique and unchanging, such as the commit SHA."
+    },
+    {
+      "prompt": "Staging has tested 1.8.3. Promote it to production: copy the image from the staging repository to registry.example.com/prod/shop with the same tag, without rebuilding.",
+      "expected_commands": ["crane copy registry.example.com/staging/shop:1.8.3 registry.example.com/prod/shop:1.8.3", "crane cp registry.example.com/staging/shop:1.8.3 registry.example.com/prod/shop:1.8.3"],
+      "fake_output": "2026/09/28 12:02:14 Copying from registry.example.com/staging/shop:1.8.3 to registry.example.com/prod/shop:1.8.3\n2026/09/28 12:02:16 pushed blob: sha256:9f86d081...\n2026/09/28 12:02:16 registry.example.com/prod/shop:1.8.3: digest: sha256:4f5a6b7c8d9e size: 1574",
+      "explanation": "The same image, with the same digest, now exists in the prod repository.",
+      "why": "This is 'build once, promote'. Rebuilding for production gives you a different artifact from the one you tested: a base image or dependency may have changed in between. Copying moves the exact bytes, and the digest proves it. Give the pipeline's staging stage no write access to the prod repository, so that promotion is the only way in."
+    },
+    {
+      "prompt": "Confirm the two are identical: print the digest of registry.example.com/prod/shop:1.8.3.",
+      "expected_commands": ["crane digest registry.example.com/prod/shop:1.8.3"],
+      "fake_output": "sha256:4f5a6b7c8d9e0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293",
+      "explanation": "The digest matches the one printed by the copy.",
+      "why": "A digest is the hash of the image's content, so it can't be moved to point at something else. Deploy by digest (image@sha256:...) and sign the digest, and what runs is exactly what was approved. Tags are for people; digests are for machines."
+    },
+    {
+      "prompt": "Someone could push a different image as prod/shop:1.8.3 tomorrow. Which registry setting prevents that?\n  a) A longer tag name\n  b) Tag immutability on the prod repository: once a tag exists it can't be overwritten\n  c) Making the repository public\n  d) Deleting old tags\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "$ docker push registry.example.com/prod/shop:1.8.3\ndenied: tag 1.8.3 is immutable and cannot be overwritten",
+      "hint": "The problem is that a tag can be re-pointed.",
+      "explanation": "Immutable tags: a version, once published, always means the same bytes.",
+      "why": "Harbor, ECR, Artifact Registry, and Artifactory all support it. Without it, a rollback to '1.8.2' may fetch something other than the 1.8.2 you ran last week. Pair it with a retention policy that deletes untagged and old development images, or the registry's storage bill grows for ever, and with vulnerability scanning on push."
+    },
+    {
+      "prompt": "Registries hold more than images. Push the packaged Helm chart shop-0.9.4.tgz to the registry under oci://registry.example.com/charts.",
+      "expected_commands": ["helm push shop-0.9.4.tgz oci://registry.example.com/charts"],
+      "fake_output": "Pushed: registry.example.com/charts/shop:0.9.4\nDigest: sha256:c1d2e3f4a5b6c7d8",
+      "explanation": "The chart is stored as an OCI artifact, versioned and addressable by digest like an image.",
+      "why": "OCI registries now store charts, SBOMs, signatures, and arbitrary files ('oras push'), so one system with one set of permissions and one audit log holds everything a release needs. It also means the chart and the image it deploys can be promoted together. Install with 'helm install shop oci://registry.example.com/charts/shop --version 0.9.4'."
+    }
+  ]
+}

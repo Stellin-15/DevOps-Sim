@@ -1,0 +1,49 @@
+{
+  "id": "cicd-incident-007",
+  "type": "incident",
+  "category": "cicd",
+  "title": "Every GitLab pipeline has been 'pending' for an hour",
+  "difficulty": "intermediate",
+  "tags": ["gitlab", "runners", "ci", "tokens"],
+  "intro": "Since about 10:00 no pipeline in the shop group has started a job. They sit in 'pending'. Nobody changed any .gitlab-ci.yml. The group's jobs run on a self-hosted runner host, ci-runner-1. This morning the security team rotated 'some old CI tokens' as part of a clean-up.",
+  "steps": [
+    {
+      "prompt": "Start with what the pipeline says. Check the status of the current branch's pipeline.",
+      "expected_commands": ["glab ci status", "glab ci view", "glab ci status --live"],
+      "fake_output": "(pending)\ttest\t\tunit\n(pending)\ttest\t\tlint\n\nPipeline state: pending\nThis job is stuck because the project doesn't have any runners online assigned to it.",
+      "hint": "glab ci status"
+    },
+    {
+      "prompt": "'No runners online.' The jobs are fine; nothing is picking them up. On ci-runner-1, check whether the runner service is running.",
+      "expected_commands": ["systemctl status gitlab-runner", "sudo systemctl status gitlab-runner", "systemctl is-active gitlab-runner"],
+      "fake_output": "● gitlab-runner.service - GitLab Runner\n     Active: active (running) since Mon 2026-09-14 08:00:11 UTC; 2 weeks 0 days ago\n   Main PID: 1204 (gitlab-runner)",
+      "hint": "systemctl status gitlab-runner"
+    },
+    {
+      "prompt": "The service is up and has been for two weeks. So it's running and GitLab thinks it's offline. Ask each configured runner to check its registration with GitLab.",
+      "expected_commands": ["sudo gitlab-runner verify", "gitlab-runner verify"],
+      "fake_output": "Runtime platform  arch=amd64 os=linux version=17.4.0\nVerifying runner... is removed  runner=glrt-t1_examp\nVerifying runner... is removed  runner=glrt-t1_exam2\nERROR: Failed to verify runners",
+      "hint": "sudo gitlab-runner verify"
+    },
+    {
+      "prompt": "'is removed': GitLab no longer recognises these runners' tokens. Confirm from the runner's own log: show the last 5 lines of the gitlab-runner unit's journal.",
+      "expected_commands": ["sudo journalctl -u gitlab-runner -n 5", "journalctl -u gitlab-runner -n 5", "sudo journalctl -u gitlab-runner -n 5 --no-pager", "sudo journalctl -u gitlab-runner --lines=5"],
+      "fake_output": "Sep 28 10:02:41 ci-runner-1 gitlab-runner[1204]: ERROR: Checking for jobs... forbidden  runner=glrt-t1_examp status=POST https://gitlab.example.com/api/v4/jobs/request: 403 Forbidden\nSep 28 10:02:44 ci-runner-1 gitlab-runner[1204]: ERROR: Checking for jobs... forbidden  runner=glrt-t1_exam2 status=403 Forbidden\nSep 28 10:02:44 ci-runner-1 gitlab-runner[1204]: ERROR: Runner https://gitlab.example.com is not healthy and will be disabled!",
+      "hint": "sudo journalctl -u gitlab-runner -n 5"
+    },
+    {
+      "prompt": "403 since 10:02: the morning's clean-up deleted these runners in GitLab. A new runner has been created in the group's settings, and its authentication token is in the variable RUNNER_TOKEN. Register it on this host: non-interactive, URL https://gitlab.example.com, the Docker executor, default image alpine:3.20.",
+      "expected_commands": ["sudo gitlab-runner register --non-interactive --url https://gitlab.example.com --token $RUNNER_TOKEN --executor docker --docker-image alpine:3.20", "sudo gitlab-runner register --non-interactive --url https://gitlab.example.com --token \"$RUNNER_TOKEN\" --executor docker --docker-image alpine:3.20", "gitlab-runner register --non-interactive --url https://gitlab.example.com --token $RUNNER_TOKEN --executor docker --docker-image alpine:3.20"],
+      "fake_output": "Verifying runner... is valid  runner=glrt-t3_newex\nRunner registered successfully. Feel free to start it, but if it's running already the config should be automatically reloaded!\nConfiguration (with the authentication token) was saved in \"/etc/gitlab-runner/config.toml\"",
+      "hint": "sudo gitlab-runner register --non-interactive --url https://gitlab.example.com --token $RUNNER_TOKEN --executor docker --docker-image alpine:3.20"
+    },
+    {
+      "prompt": "Check the pipeline again.",
+      "expected_commands": ["glab ci status", "glab ci view", "glab ci status --live"],
+      "fake_output": "(running) • 00m 14s\ttest\t\tunit\n(running) • 00m 14s\ttest\t\tlint\n\nPipeline state: running",
+      "hint": "glab ci status"
+    }
+  ],
+  "resolution": "A GitLab runner is a client: it polls the server for work, authenticating with a token it received at registration. The security clean-up removed 'old' runner registrations from the group. That invalidated the tokens in /etc/gitlab-runner/config.toml on ci-runner-1, and from that moment every poll returned 403. The runner process stayed up and looked healthy to systemd, logged errors nobody was watching, and GitLab simply had no runner for the group. Jobs don't fail in that situation; they wait, which is why this showed up as silence instead of an alert. The pipeline UI said the important thing ('no runners online'), and 'gitlab-runner verify' named the cause in one line. Registering a new runner restored service; the dead entries should also be removed from config.toml ('gitlab-runner verify --delete'). What to change afterwards. Rotations need an inventory: a token should be rotated by the team that knows where it's used, or with them, and the runner should be re-registered in the same change. Runners should be created from code (Terraform, or the Kubernetes runner chart) so that replacing one is routine and its token never lives only on a host. Monitoring should watch the queue, not the process: pending-job age and the number of online runners, both available from GitLab's API and its Prometheus metrics. And a second runner in another place means one mistake removes half the capacity instead of all of it.",
+  "real_commands_used": ["glab ci status", "systemctl status gitlab-runner", "gitlab-runner verify", "journalctl -u gitlab-runner", "gitlab-runner register --non-interactive"]
+}

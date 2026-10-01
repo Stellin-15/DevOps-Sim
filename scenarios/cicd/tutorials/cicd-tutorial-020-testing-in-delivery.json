@@ -1,0 +1,49 @@
+{
+  "id": "cicd-tutorial-020",
+  "type": "tutorial",
+  "category": "cicd",
+  "title": "Tests You Can Trust: Flaky Tests, Contract Tests, and Preview Environments",
+  "difficulty": "intermediate",
+  "tags": ["testing", "flaky-tests", "contract-testing", "preview-environments"],
+  "intro": "A pipeline is only as useful as the trust people have in its red and green. A test that fails one run in ten teaches everyone to press retry, and then real failures are retried too. This tutorial deals with that, and with two ways to catch integration problems before production. The suite uses pytest; the flaky test is tests/test_orders.py::test_refund.",
+  "steps": [
+    {
+      "prompt": "Reproduce the flake instead of guessing. Run that one test 20 times, stopping at the first failure. (The pytest-repeat plugin provides --count.)",
+      "expected_commands": ["pytest --count=20 -x tests/test_orders.py::test_refund", "pytest tests/test_orders.py::test_refund --count=20 -x", "pytest -x --count=20 tests/test_orders.py::test_refund", "pytest --count 20 -x tests/test_orders.py::test_refund"],
+      "fake_output": "tests/test_orders.py::test_refund[1-20] PASSED\ntests/test_orders.py::test_refund[2-20] PASSED\n...\ntests/test_orders.py::test_refund[7-20] FAILED\n\n>       assert order.refunded_at <= now\nE       AssertionError: assert datetime(2026, 9, 28, 12, 0, 0, 2011) <= datetime(2026, 9, 28, 12, 0, 0, 1998)\n1 failed, 6 passed",
+      "explanation": "It failed on the seventh run: two timestamps taken microseconds apart, compared in the wrong order.",
+      "why": "A flaky test is a real bug, in the test or in the code, and the first step is making it fail on demand. Repeating it is the cheapest way. The usual causes are time, ordering, shared state between tests, and real network calls. This one reads the clock twice; the fix is to control time in the test (a frozen clock), not to add a sleep or a tolerance."
+    },
+    {
+      "prompt": "Another failure only appears when tests run in a particular order. The suite uses pytest-randomly, and the failing CI run printed its seed: 918273. Re-run the suite locally with that seed.",
+      "expected_commands": ["pytest -p randomly --randomly-seed=918273", "pytest --randomly-seed=918273", "pytest -p randomly --randomly-seed 918273", "pytest -p randomly -p no:cacheprovider --randomly-seed=918273"],
+      "fake_output": "Using --randomly-seed=918273\ntests/test_cart.py::test_empty_cart PASSED\ntests/test_orders.py::test_bulk_import PASSED\ntests/test_cart.py::test_cart_total FAILED\n\nE       assert 3 == 0   (cart had 3 items left by test_bulk_import)",
+      "explanation": "With the same seed the same order runs, and test_cart_total fails because an earlier test left data behind.",
+      "why": "Random ordering finds tests that depend on each other, and the seed makes any run repeatable, which turns 'it failed once in CI' into something you can debug. The fix is isolation: each test creates and removes its own data. Tests that only pass in one order are hiding a shared-state bug that will reach production as a race."
+    },
+    {
+      "prompt": "A test is known to be flaky and the fix will take days. What's the right thing to do with it meanwhile?\n  a) Leave it and tell everyone to retry\n  b) Delete it\n  c) Quarantine it: mark it so it still runs and is reported but doesn't block merges, with a ticket and an owner\n  d) Add retries to the whole pipeline\nType the letter.",
+      "expected_commands": ["c"],
+      "fake_output": "@pytest.mark.flaky_quarantine(ticket=\"SHOP-4410\", owner=\"payments-team\")\ndef test_refund(): ...\n\nquarantined tests: run on every build, results tracked, excluded from the merge gate, reviewed weekly",
+      "hint": "Keep the signal, remove the noise, and make someone responsible.",
+      "explanation": "Quarantine with an owner and a deadline.",
+      "why": "Leaving it trains people to ignore red. Deleting it loses coverage. Blanket retries hide every other flake as well, and slow the pipeline. Quarantine keeps the main gate trustworthy and the problem visible. Track the flake rate per test from CI results; a quarantine list that only grows is the same problem with a nicer name."
+    },
+    {
+      "prompt": "Checkout calls the payments API. Unit tests on each side pass while the two can still disagree about a field. Contract testing checks that. Ask the Pact Broker whether checkout at version $GIT_SHA is safe to deploy to production.",
+      "expected_commands": ["pact-broker can-i-deploy --pacticipant checkout --version $GIT_SHA --to-environment production", "pact-broker can-i-deploy --pacticipant checkout --version \"$GIT_SHA\" --to-environment production", "pact-broker can-i-deploy --pacticipant=checkout --version=$GIT_SHA --to-environment=production"],
+      "fake_output": "Computer says no ¯\\_(ツ)_/¯\n\nCONSUMER   | C.VERSION | PROVIDER | P.VERSION | SUCCESS? | RESULT#\n-----------|-----------|----------|-----------|----------|--------\ncheckout   | a1f9c3e   | payments | 7c2b0d1   | false    | 1\n\nVERIFICATION RESULTS\n1. checkout expects response field 'amount_cents' (integer); payments 7c2b0d1 returns 'amount' (decimal)",
+      "hint": "pact-broker can-i-deploy --pacticipant checkout --version $GIT_SHA --to-environment production",
+      "explanation": "Not safe: this checkout expects a field that the payments version in production doesn't return.",
+      "why": "The consumer's tests record what it expects of the provider (a contract); the provider's pipeline verifies it can satisfy every consumer's contract. The broker then answers 'can this version go out next to what's deployed now?' without running a full end-to-end environment. It catches the field rename that passes both teams' unit tests and breaks production."
+    },
+    {
+      "prompt": "A preview environment deploys each pull request to its own temporary copy of the app. What is its main cost to manage?\n  a) None\n  b) They accumulate: each needs resources, data, and a URL, so they must be created and destroyed automatically, with a time limit\n  c) They replace all other testing\n  d) They only work for front ends\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "PR opened   -> namespace pr-412, image sha-a1f9c3e, https://pr-412.preview.example.com\nPR updated  -> redeploy\nPR closed   -> namespace deleted\nstale > 7d  -> deleted by a nightly job",
+      "hint": "Think about what happens to the fortieth one nobody closed.",
+      "explanation": "Automate the whole lifecycle, including deletion.",
+      "why": "Previews let reviewers and product people click through a change before merge, which finds things no automated test does. But forgotten previews are a classic source of cloud bills and of leaked data. Give them seeded test data, never a copy of production; keep them off the public internet or behind login; and use a staging certificate issuer, since each one requests a certificate (identity-incident-005)."
+    }
+  ]
+}

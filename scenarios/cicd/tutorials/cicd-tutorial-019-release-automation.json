@@ -1,0 +1,47 @@
+{
+  "id": "cicd-tutorial-019",
+  "type": "tutorial",
+  "category": "cicd",
+  "title": "Release Automation: Versions, Changelogs, and Dependency Updates",
+  "difficulty": "intermediate",
+  "tags": ["releases", "semver", "changelog", "renovate"],
+  "intro": "Deciding the next version number, writing the changelog, and keeping dependencies current are chores people do badly and tools do well. This tutorial covers the conventions those tools rely on. You're in the shop-api repository; the last release was v1.8.3.",
+  "steps": [
+    {
+      "prompt": "See where the current commit stands relative to the last tag.",
+      "expected_commands": ["git describe --tags", "git describe --tags --long", "git describe"],
+      "fake_output": "v1.8.3-7-ga1f9c3e",
+      "explanation": "Seven commits after v1.8.3, at commit a1f9c3e.",
+      "why": "'git describe' gives a unique, ordered, human-readable name for any commit, which makes a good version for development builds. It only sees tags that have been fetched: CI checkouts are often shallow and tagless, so a pipeline that derives versions needs 'fetch-depth: 0' or an explicit 'git fetch --tags'."
+    },
+    {
+      "prompt": "List what's changed since that release, one line per commit.",
+      "expected_commands": ["git log v1.8.3..HEAD --oneline", "git log --oneline v1.8.3..HEAD", "git log v1.8.3.. --oneline"],
+      "fake_output": "a1f9c3e feat(cart): add saved-for-later list\n7c2b0d1 fix(checkout): round tax per line, not per order\n4e8a9f2 chore(deps): bump express to 4.21.0\n9d3c1b7 fix(api): return 404 for unknown order ids\n2f6e8a0 docs: update runbook\nb5a4c93 feat(api)!: remove deprecated /v1/orders endpoint\ne1d0f76 test: cover refund idempotency",
+      "explanation": "Seven commits in the Conventional Commits format: a type, an optional scope, and a description.",
+      "why": "The prefix is machine-readable: 'fix' is a bug fix, 'feat' a new feature, and '!' (or a BREAKING CHANGE footer) marks an incompatible change. With that convention a tool can compute the next version and write the changelog from history alone. It only works if it's enforced, by a commit-message check in CI (commitlint)."
+    },
+    {
+      "prompt": "Those commits include fixes, new features, and one marked with '!'. Under semantic versioning, what is the next version after 1.8.3?\n  a) 1.8.4\n  b) 1.9.0\n  c) 2.0.0\n  d) 1.8.3.1\nType the letter.",
+      "expected_commands": ["c"],
+      "fake_output": "MAJOR.MINOR.PATCH\nfix            -> PATCH   1.8.3 -> 1.8.4\nfeat           -> MINOR   1.8.3 -> 1.9.0\nbreaking (!)   -> MAJOR   1.8.3 -> 2.0.0     (the largest change wins)",
+      "hint": "One commit removes an endpoint that existing clients may call.",
+      "explanation": "A breaking change means a new major version: 2.0.0.",
+      "why": "A version number is a promise to whoever depends on you: a patch or minor upgrade is safe to take automatically, a major one needs reading. That promise is what lets dependency tools auto-merge. Removing an endpoint in a 'minor' release breaks every consumer who trusted it."
+    },
+    {
+      "prompt": "Let the tool work it out. Run semantic-release in dry-run mode to see what it would publish, without publishing.",
+      "expected_commands": ["npx semantic-release --dry-run", "npx semantic-release -d", "semantic-release --dry-run"],
+      "fake_output": "[semantic-release] › ℹ  Found git tag v1.8.3 associated with version 1.8.3 on branch main\n[semantic-release] › ℹ  Found 7 commits since last release\n[semantic-release] › ✔  Analysis of 7 commits complete: major release\n[semantic-release] › ℹ  The next release version is 2.0.0\n[semantic-release] › ⚠  Skip v2.0.0 tag creation in dry-run mode\n\n# 2.0.0\n### ⚠ BREAKING CHANGES\n* **api:** remove deprecated /v1/orders endpoint\n### Features\n* **cart:** add saved-for-later list\n### Bug Fixes\n* **checkout:** round tax per line, not per order\n* **api:** return 404 for unknown order ids",
+      "explanation": "It analysed the commits, chose 2.0.0, and drafted the release notes.",
+      "why": "Run on main in CI, it would create the tag, publish the package, and post the notes, with no human choosing a number. release-please does the same job by maintaining a 'release PR' you merge when ready, which keeps a person in the loop. 'gh release create v2.0.0 --generate-notes' is the manual equivalent."
+    },
+    {
+      "prompt": "Dependencies go stale unless something proposes updates. This repository uses Renovate. List its open pull requests.",
+      "expected_commands": ["gh pr list --author \"app/renovate\"", "gh pr list --author app/renovate", "gh pr list --author 'app/renovate'"],
+      "fake_output": "#412  chore(deps): update dependency express to v4.21.1                renovate/express-4.x\n#409  chore(deps): update node.js to v20.17.0                          renovate/node-20.x\n#401  fix(deps): update dependency pg to v8.13.0 [SECURITY]            renovate/npm-pg-vulnerability\n#388  chore(deps): update dependency typescript to v6 (major)          renovate/typescript-6.x",
+      "explanation": "Four update PRs: two routine, one security fix, one major upgrade.",
+      "why": "Small frequent updates are cheap; a two-year gap is a project. Renovate and Dependabot open a PR per update, and the test suite decides. Common policy: auto-merge patch and minor updates when CI passes, review majors by hand, and merge security fixes first. That only works with tests you trust, and it's also why the lock file must be committed: it's what the bot updates."
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "id": "cicd-incident-008",
+  "type": "incident",
+  "category": "cicd",
+  "title": "Jenkins builds wait for an executor that never comes",
+  "difficulty": "intermediate",
+  "tags": ["jenkins", "agents", "disk", "docker"],
+  "intro": "It's release day and the Jenkins queue has 31 builds, each showing 'Waiting for next available executor'. The controller is up. There are three build agents, agent-1 to agent-3, long-lived virtual machines that run every job in Docker. JENKINS_URL is set and your token is in JENKINS_TOKEN for the user ci.",
+  "steps": [
+    {
+      "prompt": "Ask Jenkins about its agents: each node's name, whether it's offline, and the reason.",
+      "expected_commands": ["curl -s -u ci:$JENKINS_TOKEN $JENKINS_URL/computer/api/json | jq '.computer[] | {displayName, offline, offlineCauseReason}'", "curl -s -u ci:$JENKINS_TOKEN $JENKINS_URL/computer/api/json | jq \".computer[] | {displayName, offline, offlineCauseReason}\"", "curl -s -u \"ci:$JENKINS_TOKEN\" $JENKINS_URL/computer/api/json | jq '.computer[] | {displayName, offline, offlineCauseReason}'"],
+      "fake_output": "{\"displayName\": \"agent-1\", \"offline\": true, \"offlineCauseReason\": \"Disk space is too low. Only 0.812GB left on /var/lib/jenkins.\"}\n{\"displayName\": \"agent-2\", \"offline\": true, \"offlineCauseReason\": \"Disk space is too low. Only 0.240GB left on /var/lib/jenkins.\"}\n{\"displayName\": \"agent-3\", \"offline\": true, \"offlineCauseReason\": \"Disk space is too low. Only 0.951GB left on /var/lib/jenkins.\"}",
+      "hint": "curl -s -u ci:$JENKINS_TOKEN $JENKINS_URL/computer/api/json | jq '.computer[] | {displayName, offline, offlineCauseReason}'"
+    },
+    {
+      "prompt": "All three took themselves offline for low disk space. SSH to agent-2 is open. See how full its disks are.",
+      "expected_commands": ["df -h", "df -h /var/lib/jenkins /var/lib/docker", "df -h /var/lib/jenkins"],
+      "fake_output": "Filesystem      Size  Used Avail Use% Mounted on\n/dev/nvme0n1p1  200G  200G  240M 100% /\ntmpfs           7.8G     0  7.8G   0% /dev/shm",
+      "hint": "df -h"
+    },
+    {
+      "prompt": "200 GB, full. Find what's using it: show the size of /var/lib/docker and of /var/lib/jenkins/workspace.",
+      "expected_commands": ["sudo du -sh /var/lib/docker /var/lib/jenkins/workspace", "du -sh /var/lib/docker /var/lib/jenkins/workspace", "sudo du -sh /var/lib/jenkins/workspace /var/lib/docker"],
+      "fake_output": "162G\t/var/lib/docker\n21G\t/var/lib/jenkins/workspace",
+      "hint": "sudo du -sh /var/lib/docker /var/lib/jenkins/workspace"
+    },
+    {
+      "prompt": "Docker holds 162 GB. See how that breaks down and how much of it is reclaimable.",
+      "expected_commands": ["docker system df", "sudo docker system df"],
+      "fake_output": "TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE\nImages          1904      3         118.2GB   117.6GB (99%)\nContainers      41        0         2.1GB     2.1GB (100%)\nLocal Volumes   310       0         14.8GB    14.8GB (100%)\nBuild Cache     8812      0         26.9GB    26.9GB",
+      "hint": "docker system df"
+    },
+    {
+      "prompt": "1,904 images, 3 in use: every build of every branch for months. Nothing is running on this agent, so reclaim it all: remove unused images, containers, networks, build cache, and volumes, without a confirmation prompt.",
+      "expected_commands": ["docker system prune -a --volumes -f", "sudo docker system prune -a --volumes -f", "docker system prune --all --volumes --force", "docker system prune -af --volumes"],
+      "fake_output": "Deleted Images: ...\nDeleted build cache objects: ...\nTotal reclaimed space: 161.4GB",
+      "hint": "docker system prune -a --volumes -f"
+    },
+    {
+      "prompt": "Check the disk again.",
+      "expected_commands": ["df -h", "df -h /", "df -h /var/lib/jenkins"],
+      "fake_output": "Filesystem      Size  Used Avail Use% Mounted on\n/dev/nvme0n1p1  200G   39G  161G  20% /",
+      "hint": "df -h"
+    },
+    {
+      "prompt": "Jenkins re-checks agents on a timer and brings them back when they pass. The same clean-up has been run on the other two agents. Confirm the agents are online again.",
+      "expected_commands": ["curl -s -u ci:$JENKINS_TOKEN $JENKINS_URL/computer/api/json | jq '.computer[] | {displayName, offline, offlineCauseReason}'", "curl -s -u ci:$JENKINS_TOKEN $JENKINS_URL/computer/api/json | jq \".computer[] | {displayName, offline, offlineCauseReason}\"", "curl -s -u \"ci:$JENKINS_TOKEN\" $JENKINS_URL/computer/api/json | jq '.computer[] | {displayName, offline, offlineCauseReason}'"],
+      "fake_output": "{\"displayName\": \"agent-1\", \"offline\": false, \"offlineCauseReason\": \"\"}\n{\"displayName\": \"agent-2\", \"offline\": false, \"offlineCauseReason\": \"\"}\n{\"displayName\": \"agent-3\", \"offline\": false, \"offlineCauseReason\": \"\"}",
+      "hint": "The same command as the first step."
+    }
+  ],
+  "resolution": "Jenkins was protecting itself. Each agent monitors its own disk, and when free space drops below a threshold the agent is marked offline so that builds don't fail half-way with 'no space left on device'. All three agents had been filling at the same rate for months, since they do the same work, so all three crossed the line within the same day, on release day because that's when the most builds ran. With no executors, builds queue silently: nothing fails, so nothing alerts. The space had gone to Docker: every pipeline built an image tagged with its commit, and nothing ever deleted one. 1,904 images, of which three were in use. A prune recovered 161 GB in seconds. Pruning everything is safe on a build agent with no jobs running; on a host running real services it would delete stopped containers and unused volumes you might want, so there it needs more care. The fix that lasts is to stop having this kind of agent. Long-lived build machines accumulate images, workspaces, caches, and stray processes, and their state leaks from one build into the next ('works on agent-2'). Ephemeral agents, a fresh container or VM for each build and thrown away afterwards, can't fill up and give every build a clean start. If you must keep static agents: a scheduled prune with a filter (docker system prune --filter 'until=72h'), workspace clean-up in each pipeline's post step, and monitoring of agent disk and of queue length and wait time. Queue wait time is the CI system's own golden signal, and it would have shown this building for weeks.",
+  "real_commands_used": ["curl $JENKINS_URL/computer/api/json | jq", "df -h", "du -sh /var/lib/docker /var/lib/jenkins/workspace", "docker system df", "docker system prune -a --volumes -f"]
+}

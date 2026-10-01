@@ -415,7 +415,7 @@ peering) is the next thing to learn, on real infrastructure.
 
 # Part 6 — CI/CD
 
-**Content:** 15 tutorials, 6 incidents, 3 Writing Labs.
+**Content:** 20 tutorials, 8 incidents, 3 Writing Labs.
 
 ## Covered
 
@@ -443,8 +443,21 @@ and recovering commits lost to a bad rebase.
   (yaml-007), and add a version matrix plus dependency caching
   (yaml-008). Still unpracticed: reusable workflows, composite actions,
   and OIDC-based cloud deploys written by hand.
-- GitLab CI and Jenkins are recognized in commands/cicd.md but not
-  practiced — GitHub Actions is used throughout as the representative.
+- ~~GitLab CI and Jenkins~~: **closed** by cicd-tutorial-016 (GitLab
+  pipelines, jobs, runners, rules) and cicd-tutorial-017 (Jenkins
+  through its API: build results, console logs, Jenkinsfile linting,
+  agents), incidents cicd-incident-007 (runners removed by a token
+  clean-up) and cicd-incident-008 (agents offline with full disks), and
+  Writing Lab yaml-039 (a .gitlab-ci.yml). Writing a Jenkinsfile isn't
+  practiced (no checker for Groovy). Azure DevOps Pipelines, CircleCI,
+  and Tekton aren't covered.
+- ~~Artifact registries and release automation~~: **closed** by
+  cicd-tutorial-018 (promote by copying, digests, immutable tags, OCI
+  charts) and cicd-tutorial-019 (Conventional Commits, semantic
+  versioning, semantic-release, Renovate).
+- ~~Testing in delivery~~: **closed** by cicd-tutorial-020 (reproducing
+  flaky tests, random ordering and seeds, quarantine, contract tests
+  with Pact, and preview environments).
 - ~~GitOps~~: **closed** for Argo CD by cicd-tutorial-011 (sync vs
   health, diff before sync, `app wait --health`, and why a git revert
   beats `argocd app rollback`). Flux isn't covered; the concepts are
@@ -1423,10 +1436,11 @@ employer uses it.
    External Secrets, SOPS and Sealed Secrets, mTLS, and cert-manager.
    SAML, SPIFFE, and operating Vault itself are under that part's
    "Still missing".
-6. **Other CI systems and release tooling.** Jenkins (Jenkinsfiles,
-   agents), GitLab CI, Azure DevOps Pipelines, Tekton. Artifact
-   repositories (Artifactory, Nexus, Harbor). Semantic versioning,
-   release automation, and Dependabot or Renovate.
+6. ~~**Other CI systems and release tooling**~~: **done** inside CI/CD
+   (cicd-tutorial-016 to 020, two incidents, one lab): GitLab CI,
+   Jenkins, artifact registries, release automation, and Renovate.
+   Still open: Azure DevOps Pipelines, CircleCI, Tekton, and writing a
+   Jenkinsfile.
 7. ~~**The Kubernetes ecosystem**~~: **done** inside the Kubernetes
    category (tutorial-030 to 035, two incidents, two labs): Kustomize,
    Helm chart authoring, Gateway API, VPA/KEDA/Karpenter, Flux, and
@@ -1471,8 +1485,7 @@ employer uses it.
   retrieval and vector databases, guardrails, quantization, and GPU cost
   control.
 - **System design depth:** the list under Part 16.
-- **Testing in delivery:** contract tests, preview environments, flaky
-  test management.
+- ~~**Testing in delivery**~~: **done** in cicd-tutorial-020.
 - **Authoring gaps named in earlier parts:** Kyverno policies and Falco
   rules, an Airflow DAG, manual OpenTelemetry spans, Grafana dashboards,
   and a burn-rate alert rule file. Each would be one Writing Lab.
@@ -1510,7 +1523,7 @@ If content is added in the order that helps most people soonest:
 2. ~~web servers and proxies~~ (done, Part 18);
 3. ~~identity and secrets~~ (done);
 4. ~~Kubernetes ecosystem~~ (done);
-5. Jenkins and GitLab CI;
+5. ~~Jenkins and GitLab CI~~ (done);
 6. Python for automation, as Writing Labs;
 7. Kafka operations;
 8. serverless;
@@ -1529,7 +1542,7 @@ If content is added in the order that helps most people soonest:
 | Linux | 15 | 6 | 4 Writing Labs (bash), interactive Sandbox, 4 Mysteries |
 | Terraform | 12 | 6 | 5 Writing Labs (HCL, including a module) |
 | Networking | 12 | 7 | |
-| CI/CD | 15 | 6 | 3 Writing Labs (Actions) |
+| CI/CD | 20 | 8 | 4 Writing Labs (Actions, GitLab CI) |
 | Monitoring | 13 | 6 | 2 Writing Labs (alert rules) |
 | MLOps | 14 | 7 | |
 | AWS | 13 | 7 | 1 Writing Lab (IAM policy), Sandbox (VPC), 4 Mysteries |
@@ -1543,7 +1556,7 @@ If content is added in the order that helps most people soonest:
 | Databases | 12 | 6 | |
 | Web Servers & Proxies | 11 | 6 | 2 Writing Labs (nginx configuration) |
 | Identity & Secrets | 9 | 5 | 2 Writing Labs (Vault policy, cert-manager) |
-| **Total** | **246** | **126** | 38 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
+| **Total** | **251** | **128** | 39 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -1555,14 +1568,14 @@ command beats the alternatives — not just what it does.
 will know the commands, the failure modes, and — most importantly — the
 debugging method** (check the layer before guessing the fix; refused vs
 timeout; verify after every change; revoke before cleaning up; revert
-don't force-push). The 126 incidents are modeled on the kinds of problems
+don't force-push). The 128 incidents are modeled on the kinds of problems
 that genuinely trip up working engineers, and working through them
 builds judgment that command references alone never will.
 
 **It will not, on its own, make you fully proficient**, for four reasons
 that no amount of additional scenario content can fully close:
 
-1. **Authoring vs. operating.** Largely addressed: 38 Writing Labs now
+1. **Authoring vs. operating.** Largely addressed: 39 Writing Labs now
    have you write real Kubernetes manifests, GitHub Actions workflows,
    Prometheus alert rules, Compose files, Dockerfiles, Terraform (AWS
    VPCs and security groups, GCP firewalls), IAM policies, Ansible

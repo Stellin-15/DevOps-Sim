@@ -145,3 +145,36 @@ git describe --tags
 git tag -d v1.0.0
 git push origin --delete v1.0.0
 ```
+
+## Other CI Systems, Registries, and Release Tooling
+
+```
+glab ci status                       glab ci view
+glab ci lint                         # validate .gitlab-ci.yml
+glab ci trace <job>                  glab ci retry <job>
+glab ci run -b <branch>
+sudo gitlab-runner list              sudo gitlab-runner verify
+sudo gitlab-runner register --non-interactive --url <url> --token <token> --executor docker --docker-image alpine:3.20
+
+curl -s -u ci:$JENKINS_TOKEN $JENKINS_URL/job/<job>/lastBuild/api/json | jq '.result, .duration'
+curl -s -u ci:$JENKINS_TOKEN $JENKINS_URL/job/<job>/lastBuild/consoleText | tail -30
+curl -s -u ci:$JENKINS_TOKEN $JENKINS_URL/computer/api/json | jq '.computer[] | {displayName, offline, offlineCauseReason}'
+curl -s -u ci:$JENKINS_TOKEN -X POST -F "jenkinsfile=<Jenkinsfile" $JENKINS_URL/pipeline-model-converter/validate
+curl -s -u ci:$JENKINS_TOKEN -X POST $JENKINS_URL/job/<job>/build
+
+crane ls <repo>                      crane manifest <image>
+crane copy <src> <dst>               # promote an image without rebuilding
+helm push <chart>.tgz oci://<registry>/charts
+oras push <ref> <file>               oras pull <ref>
+
+git describe --tags
+git log <tag>..HEAD --oneline
+npx semantic-release --dry-run
+gh release create <tag> --generate-notes
+gh pr list --author "app/renovate"
+
+pytest --count=20 -x <test>          # pytest-repeat: reproduce a flaky test
+pytest -p randomly --randomly-seed=<n>
+pytest --lf                          # only the tests that failed last time
+pact-broker can-i-deploy --pacticipant <name> --version <sha> --to-environment production
+```

@@ -403,7 +403,7 @@ Current per-category content depth (tutorials / incidents):
 - linux: 15 / 6 (+4 Writing Labs: bash)
 - terraform: 12 / 6 (+5 Writing Labs: HCL, including a three-file module)
 - networking: 12 / 7
-- cicd: 15 / 6 (+3 Writing Labs: GitHub Actions)
+- cicd: 20 / 8 (+4 Writing Labs: GitHub Actions, GitLab CI)
 - monitoring: 13 / 6 (+2 Writing Labs: alert rules)
 - mlops: 14 / 7
 - aws: 13 / 7 (+1 Writing Lab, AWS VPC sandbox, 4 mysteries)
@@ -433,7 +433,7 @@ Current per-category content depth (tutorials / incidents):
   `contains` check now names only the substrings the closest candidate
   lacks.
 - identity: 9 / 5 (+2 Writing Labs): JWTs, OAuth/OIDC, workload identity, Vault, External Secrets, SOPS, mTLS, cert-manager
-- **total: 246 tutorials, 126 incidents, 38 Writing Labs, 14 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
+- **total: 251 tutorials, 128 incidents, 39 Writing Labs, 14 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with
