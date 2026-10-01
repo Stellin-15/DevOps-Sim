@@ -1,0 +1,47 @@
+{
+  "id": "performance-tutorial-005",
+  "type": "tutorial",
+  "category": "performance",
+  "title": "eBPF Tools: Asking the Kernel What's Really Happening",
+  "difficulty": "advanced",
+  "tags": ["ebpf", "bcc", "bpftrace", "tracing"],
+  "intro": "eBPF lets small, safe programs run inside the kernel and report on events as they happen: every process started, every file opened, every disk request. The bcc collection packages dozens of ready-made tools, and they answer questions that sampling can't, such as 'what keeps starting?' and 'how slow is the disk, really?'. On Ubuntu the tools end in -bpfcc. You're on a host that's slower than it should be, with no single process to blame.",
+  "steps": [
+    {
+      "prompt": "CPU load is high and top shows nothing using much. Short-lived processes can hide between top's refreshes. Trace every new process as it starts.",
+      "expected_commands": ["sudo execsnoop-bpfcc", "sudo execsnoop", "execsnoop-bpfcc"],
+      "fake_output": "PCOMM            PID     PPID    RET ARGS\nsh               41204   1204      0 /bin/sh -c /usr/local/bin/check-disk.sh\ncheck-disk.sh    41204   1204      0 /usr/local/bin/check-disk.sh\ndf               41205   41204     0 /usr/bin/df -h\nawk              41206   41204     0 /usr/bin/awk {print $5}\nsh               41207   1204      0 /bin/sh -c /usr/local/bin/check-disk.sh\ncheck-disk.sh    41207   1204      0 /usr/local/bin/check-disk.sh",
+      "explanation": "A script, check-disk.sh, is being launched over and over by pid 1204, each time spawning df and awk.",
+      "why": "Processes that live for a few milliseconds never show in top, yet starting thousands of them a minute costs real CPU. execsnoop catches each one at the moment it starts, with its parent and arguments. Here a monitoring agent is running a check in a tight loop, probably a misconfigured interval."
+    },
+    {
+      "prompt": "An application fails to start with an unhelpful 'configuration error'. See which files it tries to open: trace opens for pid 5120.",
+      "expected_commands": ["sudo opensnoop-bpfcc -p 5120", "sudo opensnoop -p 5120", "opensnoop-bpfcc -p 5120"],
+      "fake_output": "PID    COMM       FD ERR PATH\n5120   shop-api    3   0 /etc/ld.so.cache\n5120   shop-api    3   0 /app/config/default.yaml\n5120   shop-api   -1   2 /app/config/production.yaml\n5120   shop-api   -1   2 /etc/shop/production.yaml",
+      "explanation": "It opened default.yaml, then failed to find production.yaml in two places (ERR 2 is 'no such file').",
+      "why": "This answers 'which file is it actually looking for?' without reading the source or attaching a debugger. ERR 2 is ENOENT and 13 is EACCES (permission denied). strace can do the same and slows the process badly; eBPF tools trace with very little overhead, which is why they can be used on production hosts."
+    },
+    {
+      "prompt": "Storage is suspected. Measure how long disk requests actually take: print a latency histogram covering 10 seconds, once.",
+      "expected_commands": ["sudo biolatency-bpfcc 10 1", "sudo biolatency 10 1", "biolatency-bpfcc 10 1"],
+      "fake_output": "     usecs               : count     distribution\n       128 -> 255        : 1204     |********                                |\n       256 -> 511        : 5904     |****************************************|\n       512 -> 1023       : 2210     |**************                          |\n      1024 -> 2047       : 310      |**                                      |\n    131072 -> 262143     : 412      |**                                      |\n    262144 -> 524287     : 188      |*                                       |",
+      "explanation": "Most requests take under a millisecond, and a second group of about 600 takes 130 to 520 milliseconds.",
+      "why": "An average would have said 'about 20 ms' and hidden both facts. The histogram shows two populations: a healthy device, and occasional requests that are hundreds of times slower. That second hump is what users feel as random stalls. Two-humped latency usually means two causes: here, fast reads, and writes stuck behind something flushing. iostat's 'await' can't show this."
+    },
+    {
+      "prompt": "Check whether processes are waiting for a turn on the CPU: print a run-queue latency histogram for 10 seconds, once.",
+      "expected_commands": ["sudo runqlat-bpfcc 10 1", "sudo runqlat 10 1", "runqlat-bpfcc 10 1"],
+      "fake_output": "     usecs               : count     distribution\n         0 -> 1          : 41204    |****************************************|\n         2 -> 3          : 18204    |*****************                       |\n         4 -> 7          : 5120     |****                                    |\n         8 -> 15         : 880      |                                        |\n        16 -> 31         : 44       |                                        |",
+      "explanation": "Nearly everything gets a CPU within a few microseconds.",
+      "why": "Run-queue latency is how long a ready thread waits before it's given a CPU. This is healthy. Tens of milliseconds here would mean CPU saturation, even when average utilisation looks moderate, and inside a container it's also how CPU throttling from a low limit shows up. It's a direct measurement of what 'load average' only hints at."
+    },
+    {
+      "prompt": "The ready-made tools are bpftrace programs underneath, and you can write one-liners. Count 'openat' system calls by process name until you press Ctrl+C.",
+      "expected_commands": ["sudo bpftrace -e 'tracepoint:syscalls:sys_enter_openat { @[comm] = count(); }'", "bpftrace -e 'tracepoint:syscalls:sys_enter_openat { @[comm] = count(); }'", "sudo bpftrace -e 'tracepoint:syscalls:sys_enter_openat {@[comm] = count();}'"],
+      "fake_output": "Attaching 1 probe...\n^C\n\n@[sshd]: 4\n@[nginx]: 212\n@[shop-api]: 1204\n@[check-disk.sh]: 18204\n@[df]: 91020",
+      "hint": "sudo bpftrace -e 'tracepoint:syscalls:sys_enter_openat { @[comm] = count(); }'",
+      "explanation": "df and the check script open files far more than anything else, confirming the runaway check.",
+      "why": "The program reads: on each openat system call, add one to a map keyed by the process name; print the map at the end. That pattern, a probe, an optional filter, and an aggregation, covers a huge range of questions. Aggregating in the kernel and printing a summary is what keeps the cost low, compared with printing every event."
+    }
+  ]
+}

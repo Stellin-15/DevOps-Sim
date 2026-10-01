@@ -1,0 +1,48 @@
+{
+  "id": "performance-tutorial-003",
+  "type": "tutorial",
+  "category": "performance",
+  "title": "Profiling a Running Python Process with py-spy",
+  "difficulty": "intermediate",
+  "tags": ["python", "py-spy", "profiling", "production"],
+  "intro": "perf sees a Python program as one function: the interpreter. To see your Python functions you need a profiler that reads the interpreter's own state. py-spy does that from outside the process, without restarting it or changing its code, which makes it usable on a live production service. A worker process, pid 7120, is using 100% CPU.",
+  "steps": [
+    {
+      "prompt": "See live which Python functions pid 7120 is spending time in.",
+      "expected_commands": ["sudo py-spy top --pid 7120", "py-spy top --pid 7120", "sudo py-spy top -p 7120"],
+      "fake_output": "Total Samples 3000\nGIL: 99.00%, Active: 100.00%, Threads: 4\n\n  %Own   %Total  OwnTime  TotalTime  Function (filename)\n 72.00%  72.00%   21.6s     21.6s    _serialize (reports/export.py:88)\n 18.00%  94.00%    5.4s     28.2s    build_rows (reports/export.py:61)\n  4.00%   4.00%    1.2s      1.2s    __deepcopy__ (copy.py:140)\n  0.00% 100.00%    0.0s     30.0s    run (worker.py:22)",
+      "explanation": "72% of the time is in one function at reports/export.py line 88, and the GIL is held 99% of the time.",
+      "why": "'Own' is time in the function itself, 'Total' includes what it calls, and py-spy gives the file and line. 'GIL: 99%' explains something else: Python runs one thread's bytecode at a time, so this process's four threads share a single CPU. Adding threads to CPU-bound Python work adds nothing; it needs more processes, or less work."
+    },
+    {
+      "prompt": "Record a 30-second profile of pid 7120 as a flame graph in profile.svg.",
+      "expected_commands": ["sudo py-spy record -o profile.svg --pid 7120 --duration 30", "py-spy record -o profile.svg --pid 7120 --duration 30", "sudo py-spy record --pid 7120 -o profile.svg --duration 30", "sudo py-spy record -o profile.svg --duration 30 --pid 7120"],
+      "fake_output": "py-spy> Sampling process 100 times a second for 30 seconds. Press Control-C to exit.\npy-spy> Wrote flamegraph data to 'profile.svg'. Samples: 3000 Errors: 0",
+      "explanation": "A flame graph of Python functions, ready to open in a browser.",
+      "why": "The same picture as the perf flame graph, with your Python functions as the frames. py-spy reads the process's memory from outside, so it adds nearly no overhead and can't crash the target. In a container it needs the SYS_PTRACE capability, and in Kubernetes an ephemeral debug container sharing the pod's process namespace, which is a setting to arrange before the incident."
+    },
+    {
+      "prompt": "A different worker, pid 7133, is using 0% CPU and has stopped processing: it's hung. Print the current stack of every thread, once.",
+      "expected_commands": ["sudo py-spy dump --pid 7133", "py-spy dump --pid 7133", "sudo py-spy dump -p 7133"],
+      "fake_output": "Process 7133: python worker.py\nThread 7133 (idle): \"MainThread\"\n    recv (ssl.py:1104)\n    read (http/client.py:466)\n    getresponse (http/client.py:1395)\n    request (requests/sessions.py:589)\n    fetch_rates (pricing/rates.py:31)\n    run (worker.py:22)",
+      "explanation": "The thread is blocked reading from a network socket, called from fetch_rates at pricing/rates.py line 31.",
+      "why": "For a hung process the question isn't 'where is the time going' but 'where is it stuck', and a single stack dump answers it. This one is waiting for an HTTP response that never comes, because the request was made with no timeout (the fault fixed in the scripting lab). A dump shows one instant; take two a few seconds apart, and if they're identical, it really is stuck there."
+    },
+    {
+      "prompt": "A profiler can work by sampling (looking at the stack periodically) or by instrumenting (recording every function call, like cProfile). Why is sampling the choice for production?\n  a) It's more precise\n  b) Its overhead is small and roughly constant, where instrumenting adds cost to every call and can slow a program several times over\n  c) It needs no permissions\n  d) It only works on Python\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "sampling      : ~1% overhead, statistical, safe on live traffic\ninstrumenting : exact call counts, but 2-10x slower and distorts what it measures",
+      "hint": "Think about a function called ten million times.",
+      "explanation": "Sampling costs little and doesn't distort the program.",
+      "why": "An instrumenting profiler makes cheap, frequently called functions look expensive, because the measuring costs more than the function. It's useful on a laptop for exact call counts. Sampling gives a statistically accurate picture of real behaviour under real traffic, which is the only place some performance problems appear at all."
+    },
+    {
+      "prompt": "A service takes 9 seconds to start, which slows every deploy and every scale-out. Find which imports are slow: run app.py with Python's import timing, showing the 5 slowest (the cumulative time is the second column of numbers; sort on it).",
+      "expected_commands": ["python -X importtime app.py 2>&1 | sort -t'|' -k2 -n | tail -5", "python3 -X importtime app.py 2>&1 | sort -t'|' -k2 -n | tail -5", "python -X importtime app.py 2>&1 | sort -t '|' -k 2 -n | tail -5", "python -X importtime app.py 2>&1 | sort -t'|' -k2 -rn | head -5"],
+      "fake_output": "import time:       412 |     880120 | pandas\nimport time:      1204 |    1904410 | sklearn\nimport time:       310 |    2204100 | reports.export\nimport time:        88 |    6120044 | torch\nimport time:       204 |    8812440 | app",
+      "hint": "python -X importtime app.py 2>&1 | sort -t'|' -k2 -n | tail -5",
+      "explanation": "Importing torch alone takes 6.1 seconds of the 8.8.",
+      "why": "Times are microseconds: own time, then cumulative. Start-up cost is mostly imports, and one heavy library pulled in at module level, used by one rarely called function, taxes every start. Importing it inside that function moves the cost to the one request that needs it. For serverless functions this is the cold start (serverless-tutorial-002)."
+    }
+  ]
+}

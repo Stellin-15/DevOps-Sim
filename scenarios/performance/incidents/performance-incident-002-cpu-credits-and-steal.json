@@ -1,0 +1,49 @@
+{
+  "id": "performance-incident-002",
+  "type": "incident",
+  "category": "performance",
+  "title": "The server gets slow every afternoon, and its own CPU graph says it's idle",
+  "difficulty": "intermediate",
+  "tags": ["cpu", "steal", "burstable", "aws", "ec2"],
+  "intro": "The reporting server slows to a crawl every day from about 14:00 until evening. Commands take seconds to respond. The team's dashboard shows the application using only 20 to 30% CPU at those times, so they've ruled CPU out and spent two days looking at the database. The server is an EC2 instance, i-0a1b2c3d4e5f67890, of type t3.medium. It's 15:00 and it's slow now.",
+  "steps": [
+    {
+      "prompt": "Look at the CPU from the operating system's side, per processor, three one-second samples.",
+      "expected_commands": ["mpstat -P ALL 1 3", "mpstat 1 3", "mpstat -P ALL 1 3 | tail -4"],
+      "fake_output": "Average:  CPU   %usr  %nice   %sys  %iowait   %irq  %soft  %steal  %idle\nAverage:  all  18.20   0.00   4.10     0.20   0.00   0.10   74.40   3.00\nAverage:    0  17.90   0.00   4.00     0.20   0.00   0.10   74.80   3.00\nAverage:    1  18.50   0.00   4.20     0.20   0.00   0.10   74.00   3.00",
+      "hint": "mpstat -P ALL 1 3"
+    },
+    {
+      "prompt": "%steal is 74%. The application gets 18% and wants far more: only 3% is idle. Steal is time the virtual machine was ready to run and the hypervisor gave the physical CPU to something else. On a t3 instance that points one way. Check the instance's CPU credit balance over the last hour (a saved query is in credits.json).",
+      "expected_commands": ["aws cloudwatch get-metric-statistics --cli-input-json file://credits.json", "aws cloudwatch get-metric-statistics --cli-input-json file://credits.json --output table"],
+      "fake_output": "{\n  \"Label\": \"CPUCreditBalance\",\n  \"Datapoints\": [\n    {\"Timestamp\": \"2026-09-28T14:00:00Z\", \"Average\": 0.0},\n    {\"Timestamp\": \"2026-09-28T14:30:00Z\", \"Average\": 0.0},\n    {\"Timestamp\": \"2026-09-28T15:00:00Z\", \"Average\": 0.0}\n  ]\n}",
+      "hint": "aws cloudwatch get-metric-statistics --cli-input-json file://credits.json"
+    },
+    {
+      "prompt": "Zero credits. Confirm how the instance is set to behave when it runs out: show its credit specification.",
+      "expected_commands": ["aws ec2 describe-instance-credit-specifications --instance-ids i-0a1b2c3d4e5f67890", "aws ec2 describe-instance-credit-specifications --instance-id i-0a1b2c3d4e5f67890"],
+      "fake_output": "{\n  \"InstanceCreditSpecifications\": [\n    {\"InstanceId\": \"i-0a1b2c3d4e5f67890\", \"CpuCredits\": \"standard\"}\n  ]\n}",
+      "hint": "aws ec2 describe-instance-credit-specifications --instance-ids i-0a1b2c3d4e5f67890"
+    },
+    {
+      "prompt": "'standard': with no credits left, the instance is throttled to its baseline, 20% of each CPU for a t3.medium. That's the wall it hits at 14:00 each day once the morning's reports have spent the credits. To stop the throttling right now, switch the instance to unlimited mode.",
+      "expected_commands": ["aws ec2 modify-instance-credit-specification --instance-credit-specifications InstanceId=i-0a1b2c3d4e5f67890,CpuCredits=unlimited", "aws ec2 modify-instance-credit-specification --instance-credit-specification InstanceId=i-0a1b2c3d4e5f67890,CpuCredits=unlimited", "aws ec2 modify-instance-credit-specification --instance-credit-specifications \"InstanceId=i-0a1b2c3d4e5f67890,CpuCredits=unlimited\""],
+      "fake_output": "{\n  \"SuccessfulInstanceCreditSpecifications\": [{\"InstanceId\": \"i-0a1b2c3d4e5f67890\"}]\n}",
+      "hint": "aws ec2 modify-instance-credit-specification --instance-credit-specifications InstanceId=i-0a1b2c3d4e5f67890,CpuCredits=unlimited"
+    },
+    {
+      "prompt": "Check the CPU again.",
+      "expected_commands": ["mpstat -P ALL 1 3", "mpstat 1 3", "mpstat -P ALL 1 3 | tail -4"],
+      "fake_output": "Average:  CPU   %usr  %nice   %sys  %iowait   %irq  %soft  %steal  %idle\nAverage:  all  84.10   0.00   9.20     0.30   0.00   0.10    0.20   6.10\nAverage:    0  83.80   0.00   9.40     0.30   0.00   0.10    0.20   6.20\nAverage:    1  84.40   0.00   9.00     0.30   0.00   0.10    0.20   6.00",
+      "hint": "mpstat -P ALL 1 3"
+    },
+    {
+      "prompt": "Steal is gone and the application is using 84% of both CPUs: that's its real demand. What does that tell you about the instance type?\n  a) Nothing\n  b) A workload that needs most of the CPU for hours each day is the wrong fit for a burstable instance: it should run on a fixed-performance type (m or c family), which will also cost less than paying for unlimited credits daily\n  c) It needs a t3.micro\n  d) The application has a bug\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "t3.medium   : baseline 20% per vCPU, earns credits when idle, spends them above baseline\nthis job    : ~85% for 6 hours a day -> spends far more than it earns\nunlimited   : keeps running, billed for the surplus credits\nm7g / c7g   : 100% of each vCPU, all the time, at a flat price",
+      "hint": "Burstable instances are priced for workloads that are idle most of the time."
+    }
+  ],
+  "resolution": "The dashboard wasn't lying; it was answering a different question. It showed the application using 20 to 30% of the CPU, which was true, because 20% is all the instance was being allowed. A t3 instance is burstable: it's entitled to a baseline (20% per vCPU for a t3.medium), earns credits while it runs below that, and spends them to run above it. The reporting jobs start in the morning and run flat out; by early afternoon the credits are gone, and in 'standard' mode the hypervisor then holds the instance to its baseline. From inside the machine that appears as steal time: the virtual CPU was ready to work and wasn't given the physical one. %steal at 74% is the unmistakable sign, and it's a column most dashboards don't show, which is how two days went into investigating a healthy database. The same number rises on any virtualised host when a noisy neighbour, or an overcommitted hypervisor, takes your time. Unlimited mode removed the throttle at once, and the next reading showed the truth: the workload wants about 85% of two CPUs for hours. That's not a bursty workload, so the real fix is a fixed-performance instance type, which will be both faster and cheaper than buying surplus credits every afternoon. Lessons: graph steal alongside user and system time, always; for burstable instances, alert on CPUCreditBalance approaching zero; and when a machine is slow while 'not using much CPU', ask what limit could be holding it there. Container CPU limits do the same thing through throttling, visible in the cgroup's nr_throttled counter rather than in steal.",
+  "real_commands_used": ["mpstat -P ALL 1 3 (%steal)", "aws cloudwatch get-metric-statistics (CPUCreditBalance)", "aws ec2 describe-instance-credit-specifications", "aws ec2 modify-instance-credit-specification ... CpuCredits=unlimited"]
+}

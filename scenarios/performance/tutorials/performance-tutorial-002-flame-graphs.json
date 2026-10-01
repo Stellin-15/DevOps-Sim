@@ -1,0 +1,50 @@
+{
+  "id": "performance-tutorial-002",
+  "type": "tutorial",
+  "category": "performance",
+  "title": "Flame Graphs: Reading a Profile at a Glance",
+  "difficulty": "intermediate",
+  "tags": ["flame-graphs", "perf", "profiling", "visualisation"],
+  "intro": "A text profile of a real service is thousands of lines. A flame graph draws the same data as one picture, and once you can read it you can find a hot code path in seconds. You have a perf.data file recorded from the pricing service, and Brendan Gregg's FlameGraph scripts on the PATH.",
+  "steps": [
+    {
+      "prompt": "Turn the recording into a flame graph: dump the samples with perf script, fold the stacks with stackcollapse-perf.pl, and render them with flamegraph.pl into flame.svg.",
+      "expected_commands": ["sudo perf script | stackcollapse-perf.pl | flamegraph.pl > flame.svg", "perf script | stackcollapse-perf.pl | flamegraph.pl > flame.svg"],
+      "fake_output": "(no output: flame.svg written)",
+      "hint": "sudo perf script | stackcollapse-perf.pl | flamegraph.pl > flame.svg",
+      "explanation": "An interactive SVG you open in a browser.",
+      "why": "Three stages: 'perf script' prints each sample's stack, the collapse script merges identical stacks into one line with a count, and flamegraph.pl draws them. The folded format in the middle is a standard, so the same last step works for profiles from py-spy, Java, Go, and eBPF tools."
+    },
+    {
+      "prompt": "In a CPU flame graph, what does the WIDTH of a box mean?\n  a) How long ago the function ran\n  b) The share of samples in which that function was on the stack: wider means more CPU time\n  c) The size of the function's code\n  d) How many times it was called\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "|-------------------------- main (98%) --------------------------|\n|------------------- handle_request (97%) ----------------------|\n|------------- apply_discount (88%) ------------|  log (6%)  |\n|-------- parse_rule (76%) --------|\n|--- regex_match_backtrack (61%) --|",
+      "hint": "The profile is made of samples; the picture counts them.",
+      "explanation": "Width is the proportion of samples, which is time on CPU.",
+      "why": "Each box is a function; the box below it is its caller. Width is how often it appeared in samples. It is not a call count: one slow call and a million fast ones can be the same width. And nothing in the picture is ordered by time."
+    },
+    {
+      "prompt": "What does the left-to-right ORDER of boxes mean?\n  a) The order the functions ran in\n  b) Nothing about time: siblings are sorted alphabetically so that identical stacks merge\n  c) Fastest to slowest\n  d) Most to least important\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "x-axis: alphabetical, NOT time    (a 'flame chart' is the time-ordered relative)\ny-axis: stack depth               (top edge = the function actually on the CPU)",
+      "hint": "People assume the x-axis is time. It isn't.",
+      "explanation": "The x-axis has no time meaning; sorting merges equal frames into one wide box.",
+      "why": "This is the most common misreading. Merging is the whole point: a function called from a thousand moments in the run appears as one box whose width is its total cost. If you need 'what happened when', you want a trace or a flame chart, which are different tools."
+    },
+    {
+      "prompt": "Where do you look first for the code that's burning CPU?\n  a) The widest boxes at the bottom\n  b) The widest flat plateaus along the TOP edge: functions that were themselves running, with nothing above them\n  c) The tallest towers\n  d) The brightest colour\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "bottom boxes (main, handle_request): always wide, they're on every stack. Not informative.\ntop edge, wide and flat (regex_match_backtrack): this function's own instructions are the cost.",
+      "hint": "The bottom is wide in every program. Where is the actual work?",
+      "explanation": "Wide plateaus on the top edge are where the CPU is really spent.",
+      "why": "The top edge is 'self' time. A tall narrow tower is deep recursion or many layers of framework, which looks dramatic and costs little. Colours in the default palette are random warm tones and mean nothing. So: scan the top edge for width, then read downward to learn which path calls it, which tells you what to change."
+    },
+    {
+      "prompt": "After a fix you want to see what changed. You have two folded profiles, before.folded and after.folded. Produce a differential flame graph, diff.svg.",
+      "expected_commands": ["difffolded.pl before.folded after.folded | flamegraph.pl > diff.svg"],
+      "fake_output": "(no output: diff.svg written; red = more time than before, blue = less)",
+      "explanation": "A flame graph of the 'after' profile, coloured by what grew and what shrank.",
+      "why": "Comparing two profiles is how you prove an optimisation worked, and how you find a regression between two releases: the function that turned red is the one that got slower. Continuous profilers (Pyroscope, Parca, the cloud vendors' profilers) keep profiles for every release all the time, so this comparison is available for any two moments without having planned for it."
+    }
+  ]
+}

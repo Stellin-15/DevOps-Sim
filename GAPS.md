@@ -1610,7 +1610,65 @@ cost profile, takes building one.
 
 ---
 
-# Part 23 — The backlog: everything that isn't in the game yet
+# Part 23 — Performance
+
+**Content:** 7 tutorials, 3 incidents.
+
+Linux (Part 3) covers the first look at a slow host. This part is about
+finding which code, or which wait, the time goes to.
+
+## Covered
+
+Every section of `commands/performance.md`:
+- **perf:** live and recorded CPU sampling, self vs children time,
+  `perf stat`, and what a CPU profile can't show.
+- **Flame graphs:** generating one, what width and order mean, where to
+  look, and differential graphs.
+- **Python:** py-spy top, record, and dump on a live process, the GIL,
+  sampling vs instrumenting, and import-time cost.
+- **The JVM:** jcmd, heap use, `jstat -gcutil`, class histograms, and
+  thread dumps showing lock contention.
+- **eBPF tools:** execsnoop, opensnoop, biolatency, runqlat, and a
+  bpftrace one-liner.
+- **Go:** pprof CPU and heap profiles, goroutine leaks, exposing the
+  endpoint safely, and benchmarks.
+- **Measuring:** hyperfine and noise, percentiles vs averages,
+  coordinated omission, load-test validity, and continuous profiling.
+
+Incidents:
+- a Java pod OOMKilled while its heap had room (non-heap memory against
+  a container limit);
+- a server throttled every afternoon by CPU credits, visible only as
+  steal time;
+- database stalls caused by a backup job saturating the disk.
+
+## Still missing
+
+- **Real profiles.** Reading a real flame graph of your own service is
+  the skill; outputs here are pre-written and the flame-graph steps are
+  questions about a described picture.
+- Memory profiling in depth: heap dump analysis, tracemalloc and memray,
+  native leaks, and fragmentation.
+- Off-CPU and wall-clock profiling in practice; lock profiling.
+- Network performance: TCP tuning, retransmits, connection reuse, and
+  kernel bypass.
+- Database query tuning beyond Databases (Part 17).
+- Kernel and NUMA tuning, huge pages, CPU pinning, and cgroup v2
+  pressure (PSI) metrics.
+- Node.js, .NET, and Rust profilers.
+- Capacity modelling and queueing theory beyond SRE's capacity planning.
+
+## Readiness verdict
+
+Enough to go from 'it's slow' to a named function or a named wait on the
+common runtimes, and to distrust a measurement that hasn't earned trust.
+The incidents cover three causes that dashboards routinely hide. Real
+skill here comes from profiling real services, repeatedly: profile
+something healthy first, so you know what normal looks like.
+
+---
+
+# Part 24 — The backlog: everything that isn't in the game yet
 
 The parts above each list what's missing *inside* a category. This part
 lists whole topics with no category at all, in three tiers. Nobody needs
@@ -1660,9 +1718,10 @@ employer uses it.
 9. ~~**Logging pipelines**~~: **done** inside Monitoring
    (monitoring-tutorial-014 to 016, two incidents). Logstash and
    OpenSearch operations are still open.
-10. **Performance engineering.** Flame graphs (perf, py-spy,
-    async-profiler), eBPF tools (bcc, bpftrace), continuous profiling,
-    and JVM garbage-collection basics.
+10. ~~**Performance engineering**~~: **now a category** (Performance):
+    perf, flame graphs, py-spy, the JVM, eBPF tools, Go pprof, and
+    measurement. Memory profiling and network tuning are under that
+    part's "Still missing".
 11. **FinOps.** Cost allocation by tag, rightsizing, commitments (Savings
     Plans, committed use), spot and preemptible capacity, Kubecost or
     OpenCost, and data-transfer costs.
@@ -1744,7 +1803,7 @@ If content is added in the order that helps most people soonest:
 
 ---
 
-# Part 24 — Overall: will this make you proficient in DevOps?
+# Part 25 — Overall: will this make you proficient in DevOps?
 
 ## By the numbers
 
@@ -1772,7 +1831,8 @@ If content is added in the order that helps most people soonest:
 | Scripting | 8 | 4 | 2 Writing Labs (Python) |
 | Messaging | 7 | 4 | |
 | Serverless | 7 | 4 | |
-| **Total** | **277** | **142** | 44 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
+| Performance | 7 | 3 | |
+| **Total** | **284** | **145** | 44 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -1784,7 +1844,7 @@ command beats the alternatives — not just what it does.
 will know the commands, the failure modes, and — most importantly — the
 debugging method** (check the layer before guessing the fix; refused vs
 timeout; verify after every change; revoke before cleaning up; revert
-don't force-push). The 142 incidents are modeled on the kinds of problems
+don't force-push). The 145 incidents are modeled on the kinds of problems
 that genuinely trip up working engineers, and working through them
 builds judgment that command references alone never will.
 

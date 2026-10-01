@@ -373,7 +373,8 @@ the engine, loader, sandboxes, yaml_lab, career_path, mystery, or scenario conte
 | Scripting | 8 | 4 | Python environments and pinned dependencies, running and debugging scripts, pytest/ruff/mypy, jq in depth, yq, regular expressions, Makefiles, building and testing Go tools; plus 2 Python Writing Labs |
 | Messaging | 7 | 4 | Kafka (topics and replication, reading a topic by hand, consumer groups and lag, retention and compaction, broker operations), RabbitMQ alarms and queue limits, SQS visibility timeouts and dead-letter queues |
 | Serverless | 7 | 4 | Lambda (invoke and logs, cold starts and concurrency, versions/aliases/canaries, event retries and failure destinations), API Gateway limits, ECS on Fargate, Cloud Run revisions and traffic, Azure Functions |
-| **Total** | **277** | **142** | + 44 Writing Labs |
+| Performance | 7 | 3 | perf CPU profiling, flame graphs, py-spy, JVM heap/GC/thread dumps, eBPF tools (execsnoop, biolatency, bpftrace), Go pprof, honest benchmarking and percentiles |
+| **Total** | **284** | **145** | + 44 Writing Labs |
 
 The three clouds use different names for the same ideas (security group
 vs NSG vs firewall rule; CloudTrail vs Activity Log vs Audit Logs). The

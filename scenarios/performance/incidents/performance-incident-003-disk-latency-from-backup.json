@@ -1,0 +1,49 @@
+{
+  "id": "performance-incident-003",
+  "type": "incident",
+  "category": "performance",
+  "title": "The database stalls for a second at a time, with CPU to spare",
+  "difficulty": "intermediate",
+  "tags": ["disk", "io", "latency", "iostat", "ionice"],
+  "intro": "Since 13:00 the application's p99 latency has gone from 40 ms to 1.8 seconds. Median latency is unchanged. The database host, db-1, shows 15% CPU use and plenty of free memory. Nothing was deployed. It's 13:20.",
+  "steps": [
+    {
+      "prompt": "Idle CPU and a slow tail suggest waiting. Check the disks: extended device statistics, three one-second samples.",
+      "expected_commands": ["iostat -x 1 3", "iostat -xz 1 3", "iostat -x 1 3 | tail -5"],
+      "fake_output": "Device   r/s     w/s    rkB/s     wkB/s  r_await  w_await  aqu-sz  %util\nnvme0n1  12.0   41.0    192.0     880.0     0.31     0.44    0.02    2.10\nnvme1n1  4120.0 310.0  412044.0  18204.0   41.20   188.40   61.40  100.00",
+      "hint": "iostat -x 1 3"
+    },
+    {
+      "prompt": "nvme1n1, the data volume, is at 100% utilisation with writes waiting 188 ms and a queue of 61. Something is reading 412 MB a second from it. Find out which process: show only the processes doing I/O right now.",
+      "expected_commands": ["sudo iotop -o", "sudo iotop -o -b -n 1", "sudo iotop -oPa", "iotop -o", "sudo iotop -ob -n1"],
+      "fake_output": "Total DISK READ: 412.20 M/s | Total DISK WRITE: 18.40 M/s\n    PID  PRIO  USER     DISK READ  DISK WRITE  COMMAND\n  71204  be/4  root     401.10 M/s    0.00 B/s  tar -czf /mnt/backup/pgdata-0928.tar.gz /var/lib/postgresql\n   8812  be/4  postgres   9.80 M/s   17.90 M/s  postgres: checkpointer\n   8820  be/4  postgres   1.30 M/s    0.50 M/s  postgres: shop app 10.0.1.21 SELECT",
+      "hint": "sudo iotop -o"
+    },
+    {
+      "prompt": "A tar job, pid 71204, is reading the whole database directory at 400 MB/s and starving PostgreSQL. See who started it and when.",
+      "expected_commands": ["ps -o pid,ppid,lstart,cmd -p 71204", "ps -o pid,ppid,lstart,cmd 71204", "ps -fp 71204", "ps -p 71204 -o pid,ppid,lstart,cmd"],
+      "fake_output": "    PID    PPID                  STARTED CMD\n  71204   71190 Mon Sep 28 13:00:01 2026 tar -czf /mnt/backup/pgdata-0928.tar.gz /var/lib/postgresql",
+      "hint": "ps -o pid,ppid,lstart,cmd -p 71204"
+    },
+    {
+      "prompt": "Started at 13:00:01 exactly: a cron job, added last night as a 'quick extra backup'. Killing it loses 20 minutes of work and it will just run again tomorrow. Instead, take it out of the database's way now: move pid 71204 to the idle I/O scheduling class.",
+      "expected_commands": ["sudo ionice -c3 -p 71204", "sudo ionice -c 3 -p 71204", "ionice -c3 -p 71204", "sudo ionice -p 71204 -c3"],
+      "fake_output": "(no output)",
+      "hint": "sudo ionice -c3 -p 71204"
+    },
+    {
+      "prompt": "Check the device again.",
+      "expected_commands": ["iostat -x 1 3", "iostat -xz 1 3", "iostat -x 1 3 | tail -5"],
+      "fake_output": "Device   r/s     w/s    rkB/s     wkB/s  r_await  w_await  aqu-sz  %util\nnvme0n1  11.0   40.0    180.0     860.0     0.30     0.42    0.02    2.00\nnvme1n1  1204.0 318.0  88120.0   18410.0     0.88     1.20    0.90   61.00",
+      "hint": "iostat -x 1 3"
+    },
+    {
+      "prompt": "Write latency is back to about a millisecond. Is a tar of the data directory of a running database a usable backup anyway?\n  a) Yes, it copies every file\n  b) No: the files change while they're being read, so the copy is inconsistent and may not start. A database needs its own backup tool (pg_basebackup, pgBackRest) or a filesystem snapshot\n  c) Only on Sundays\n  d) Yes, if it's compressed\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "tar of a live data directory : files copied at different moments -> torn pages, missing WAL -> may not recover\npg_basebackup / pgBackRest   : coordinates with the database, includes the WAL needed to make it consistent\nvolume snapshot              : atomic at the storage layer; recoverable like a crash",
+      "hint": "The database is writing to those files during the twenty minutes tar spends reading them."
+    }
+  ],
+  "resolution": "Median latency was fine and the tail was terrible, with CPU idle: the signature of requests occasionally waiting for something. The disk statistics showed what: the data volume at 100% utilisation, with a queue of 61 requests and writes waiting 188 ms each. A database commit has to reach the disk before it returns, so every transaction that happened to queue behind a burst of reads took hundreds of milliseconds, while most reads, served from memory, stayed fast. iotop named the cause in one line: a tar job reading the entire data directory as fast as the device would go. It had been added to cron the night before and started at 13:00. Moving it to the idle I/O class with ionice let it continue using only what the database left free, and latency recovered within seconds, without throwing away the work. (ionice classes are honoured by the BFQ scheduler; with the 'none' scheduler common on NVMe they're ignored, and the tools then are cgroup I/O limits, which systemd exposes as IOWeight and IOReadBandwidthMax, or simply rate-limiting the job.) The second finding matters more than the first: the backup was worthless. Archiving the files of a running database gives a copy in which different files are from different moments; it may not start at all. So this job endangered production to produce a backup that couldn't be restored. Use the database's own tooling, run heavy maintenance on a replica, and schedule it for a quiet hour with an I/O limit. Two general lessons: when CPU is idle and the tail is slow, look at what the process waits for, disk first; and anything added to cron on a production database host deserves a review, however quick it looks.",
+  "real_commands_used": ["iostat -x 1 3 (await, aqu-sz, %util)", "iotop -o", "ps -o pid,ppid,lstart,cmd -p <pid>", "ionice -c3 -p <pid>"]
+}

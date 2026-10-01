@@ -1,0 +1,49 @@
+{
+  "id": "performance-tutorial-007",
+  "type": "tutorial",
+  "category": "performance",
+  "title": "Measuring Honestly: Benchmarks, Percentiles, and Continuous Profiling",
+  "difficulty": "intermediate",
+  "tags": ["benchmarking", "latency", "percentiles", "load-testing"],
+  "intro": "Performance work is full of confident wrong conclusions: a number measured once, an average that hides the slow requests, a test that didn't load the system the way users do. This tutorial is about measuring in ways you can trust. SRE covered load-test scenarios with k6; here the focus is on reading results. The service under test is https://staging.shop.example.com.",
+  "steps": [
+    {
+      "prompt": "Two versions of a data-processing command are claimed to differ in speed. Compare 'python convert_v1.py data.json' and 'python convert_v2.py data.json' properly, with repeated runs.",
+      "expected_commands": ["hyperfine 'python convert_v1.py data.json' 'python convert_v2.py data.json'", "hyperfine \"python convert_v1.py data.json\" \"python convert_v2.py data.json\"", "hyperfine --warmup 3 'python convert_v1.py data.json' 'python convert_v2.py data.json'"],
+      "fake_output": "Benchmark 1: python convert_v1.py data.json\n  Time (mean ± σ):      2.412 s ±  0.180 s    [User: 2.204 s, System: 0.188 s]\n  Range (min … max):    2.210 s …  2.801 s    10 runs\n\nBenchmark 2: python convert_v2.py data.json\n  Time (mean ± σ):      2.290 s ±  0.210 s    [User: 2.080 s, System: 0.190 s]\n  Range (min … max):    2.044 s …  2.790 s    10 runs\n\nSummary\n  python convert_v2.py data.json ran\n    1.05 ± 0.12 times faster than python convert_v1.py data.json",
+      "explanation": "Version 2 is 1.05 times faster, give or take 0.12: the difference is inside the noise.",
+      "why": "A single 'time' run would have shown one being faster and you'd have believed it. hyperfine runs each command many times and reports the spread. When the uncertainty (±0.12) is larger than the difference (0.05), you've measured nothing, and the honest result is 'no detectable change'. Use --warmup so that a cold disk cache doesn't penalise whichever runs first."
+    },
+    {
+      "prompt": "Load the staging API's /products endpoint for 30 seconds with 4 threads and 100 connections, printing the latency distribution.",
+      "expected_commands": ["wrk -t4 -c100 -d30s --latency https://staging.shop.example.com/products", "wrk -t4 -c100 -d30s --latency https://staging.shop.example.com/products/", "wrk --latency -t4 -c100 -d30s https://staging.shop.example.com/products", "wrk -t 4 -c 100 -d 30s --latency https://staging.shop.example.com/products"],
+      "fake_output": "Running 30s test @ https://staging.shop.example.com/products\n  4 threads and 100 connections\n  Thread Stats   Avg      Stdev     Max   +/- Stdev\n    Latency    41.20ms   88.40ms   1.90s    94.10%\n  Latency Distribution\n     50%   18.20ms\n     75%   31.00ms\n     90%   64.10ms\n     99%  480.20ms\n  72,120 requests in 30.01s\nRequests/sec:   2403.20",
+      "explanation": "Half of requests finish in 18 ms; one in a hundred takes nearly half a second; the worst took 1.9 seconds.",
+      "why": "The average, 41 ms, describes almost nobody: it's more than double the typical request and a tenth of the slow ones. Latency is never evenly spread, so report percentiles. p50 is the typical experience, p99 is what your unluckiest users get, and since one page view makes many requests, most users meet your p99 regularly. Averaging percentiles from several servers is also wrong; compute them from the combined histogram."
+    },
+    {
+      "prompt": "A load generator sends a request, waits for the answer, then sends the next. During a 5-second stall of the server, what does that tool record?\n  a) Five seconds of slow requests, correctly\n  b) Almost nothing: it sent very few requests during the stall, so the stall is represented by a handful of samples and the percentiles look fine. This is 'coordinated omission'\n  c) An error\n  d) Twice the real latency\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "intended rate : 2,000 requests/s  ->  10,000 requests should have been sent during a 5s stall\nactually sent : ~100 (each connection was stuck waiting)\nrecorded      : 100 slow samples among 60,000 fast ones  ->  p99 still looks good",
+      "hint": "The tool slowed down exactly when the server did.",
+      "explanation": "The tool's pacing is tied to the server's, so the worst moments are under-sampled.",
+      "why": "Real users don't wait politely: they keep arriving at their own rate while the server stalls, and all of them experience the delay. A closed-loop tool like plain wrk understates tail latency for this reason. Use an open-loop tool that sends at a fixed rate regardless of responses (wrk2, k6 with a constant-arrival-rate executor, vegeta). The difference in reported p99 can be a hundredfold."
+    },
+    {
+      "prompt": "You ran the load test from your laptop over the office Wi-Fi against one staging pod. Which conclusion is safe to draw about production capacity?\n  a) Production can handle exactly this rate\n  b) Very little: the client and network may have been the bottleneck, staging differs in size and data, and one pod isn't a system\n  c) Production is slower\n  d) The code needs rewriting\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "check the load generator : its CPU and network, before blaming the target\nmatch the environment    : same instance sizes, realistic data volume, warm caches\ntest the system          : load balancer, database, and dependencies, not one process",
+      "hint": "What was actually measured?",
+      "explanation": "A load test measures the whole setup, including the tester.",
+      "why": "The first thing to check in any load test is whether the generator was saturated: if the client is at 100% CPU, you measured the client. Then: an empty staging database answers faster than a full production one, a cold cache behaves unlike a warm one, and the limit you'll actually hit is usually a dependency. State what was tested with every number."
+    },
+    {
+      "prompt": "A performance regression appeared 'some time in the last two weeks', and nobody took a profile before. What would have made this easy?\n  a) More dashboards\n  b) Continuous profiling: always-on, low-overhead sampling stored over time, so profiles from any two dates or releases can be compared\n  c) A bigger server\n  d) Logging every function call\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "Pyroscope / Parca / Grafana Profiles / cloud profilers:\n  compare  service=checkout version=1.8.1  vs  version=1.8.3   ->  diff flame graph\n  +38% CPU in json.Marshal called from audit.Log (added in 1.8.2)",
+      "hint": "The comparison you need requires a profile from before the problem.",
+      "explanation": "Keep profiles the way you keep metrics, and the before-and-after comparison is always available.",
+      "why": "Profiling on demand only shows the present. Continuous profiling adds a fourth signal alongside metrics, logs, and traces: which code used the resources, at any past moment, tagged by version. With it, a regression is answered by a differential flame graph between two releases. The overhead is a per cent or two, since it's the same sampling as before."
+    }
+  ]
+}

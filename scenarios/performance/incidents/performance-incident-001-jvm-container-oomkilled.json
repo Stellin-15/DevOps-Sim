@@ -1,0 +1,49 @@
+{
+  "id": "performance-incident-001",
+  "type": "incident",
+  "category": "performance",
+  "title": "The Java pod is OOMKilled, and its heap never fills",
+  "difficulty": "advanced",
+  "tags": ["java", "jvm", "kubernetes", "memory", "oomkilled"],
+  "intro": "The orders-service pods in namespace shop restart every few hours with OOMKilled. The team is puzzled: the JVM's heap dashboards show plenty of free heap right up to each kill, and there is never a Java OutOfMemoryError in the logs. The container has a 2Gi memory limit, and the service is started with -Xmx2g 'to use all of it'.",
+  "steps": [
+    {
+      "prompt": "Confirm what killed it: look at the last state of the pods in the deployment orders-service, namespace shop.",
+      "expected_commands": ["kubectl describe pod -l app=orders-service -n shop", "kubectl describe pods -l app=orders-service -n shop", "kubectl describe pod -n shop -l app=orders-service"],
+      "fake_output": "    Last State:     Terminated\n      Reason:       OOMKilled\n      Exit Code:    137\n    Restart Count:  9\n    Limits:\n      memory:  2Gi\n    Requests:\n      memory:  2Gi",
+      "hint": "kubectl describe pod -l app=orders-service -n shop"
+    },
+    {
+      "prompt": "Killed by the kernel for exceeding 2Gi, not by Java. See how much memory the container is really using: show per-container usage for those pods.",
+      "expected_commands": ["kubectl top pod -l app=orders-service -n shop --containers", "kubectl top pods -l app=orders-service -n shop --containers", "kubectl top pod -n shop -l app=orders-service --containers", "kubectl top pod -l app=orders-service -n shop"],
+      "fake_output": "POD                              NAME             CPU(cores)   MEMORY(bytes)\norders-service-6c9d7f5b8-2xkq4   orders-service   412m         1988Mi\norders-service-6c9d7f5b8-7hm2n   orders-service   388m         1944Mi",
+      "hint": "kubectl top pod -l app=orders-service -n shop --containers"
+    },
+    {
+      "prompt": "1,988Mi of a 2,048Mi limit: on the edge. Now see how much of that is heap. Ask the JVM inside the deployment's pod (it's process 1 in the container).",
+      "expected_commands": ["kubectl exec -n shop deployment/orders-service -- jcmd 1 GC.heap_info", "kubectl exec deployment/orders-service -n shop -- jcmd 1 GC.heap_info", "kubectl exec -n shop deploy/orders-service -- jcmd 1 GC.heap_info"],
+      "fake_output": "1:\n garbage-first heap   total 2097152K, used 1204410K\n Metaspace       used 141204K, committed 142080K",
+      "hint": "kubectl exec -n shop deployment/orders-service -- jcmd 1 GC.heap_info"
+    },
+    {
+      "prompt": "The heap may grow to 2,097,152K, which is the whole 2Gi limit, and it's using 1.2 GB of it now. But the container is at 1.99 GB. A JVM uses memory outside the heap as well. Get its own accounting: the native memory summary. (Native memory tracking is enabled on this service.) Show the lines containing 'committed'.",
+      "expected_commands": ["kubectl exec -n shop deployment/orders-service -- jcmd 1 VM.native_memory summary | grep committed", "kubectl exec deployment/orders-service -n shop -- jcmd 1 VM.native_memory summary | grep committed", "kubectl exec -n shop deployment/orders-service -- jcmd 1 VM.native_memory summary"],
+      "fake_output": "Total: reserved=3904410KB, committed=2031204KB\n-                 Java Heap (reserved=2097152KB, committed=1408000KB)\n-                     Class (reserved=1114112KB, committed=142080KB)\n-                    Thread (reserved=310272KB, committed=310272KB)\n-                      Code (reserved=251904KB, committed=88120KB)\n-                        GC (reserved=120044KB, committed=71204KB)\n-                  Internal (reserved=11528KB, committed=11528KB)",
+      "hint": "kubectl exec -n shop deployment/orders-service -- jcmd 1 VM.native_memory summary | grep committed"
+    },
+    {
+      "prompt": "Heap 1.4 GB committed, plus about 620 MB of everything else: classes, 300 threads' stacks, compiled code, the collector's own structures. With -Xmx equal to the container limit, there's no room for any of it. Replace the fixed heap size with a share of the container's memory: set the environment variable JAVA_TOOL_OPTIONS to -XX:MaxRAMPercentage=70 on the deployment.",
+      "expected_commands": ["kubectl set env deployment/orders-service -n shop JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=70", "kubectl set env deployment/orders-service -n shop JAVA_TOOL_OPTIONS=\"-XX:MaxRAMPercentage=70\"", "kubectl set env deploy/orders-service -n shop JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=70", "kubectl set env deployment/orders-service JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=70 -n shop"],
+      "fake_output": "deployment.apps/orders-service env updated",
+      "hint": "kubectl set env deployment/orders-service -n shop JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=70"
+    },
+    {
+      "prompt": "After the rollout (the -Xmx2g flag was removed from the start command in the same change), confirm the heap's new maximum.",
+      "expected_commands": ["kubectl exec -n shop deployment/orders-service -- jcmd 1 GC.heap_info", "kubectl exec deployment/orders-service -n shop -- jcmd 1 GC.heap_info", "kubectl exec -n shop deploy/orders-service -- jcmd 1 GC.heap_info"],
+      "fake_output": "1:\n garbage-first heap   total 1467392K, used 612044K\n Metaspace       used 141180K, committed 142080K",
+      "hint": "The same command as before."
+    }
+  ],
+  "resolution": "Two different things can run out of memory in a Java container, and they fail in different ways. If the heap fills, the JVM throws OutOfMemoryError: a Java exception, visible in logs. If the whole process exceeds the container's limit, the kernel kills it with no warning: OOMKilled, exit 137, nothing in the application log. This was the second kind, which is why the heap dashboards looked innocent. A JVM's memory is the heap plus everything else: class metadata, a stack of up to 1 MB for every thread, the compiled-code cache, the garbage collector's bookkeeping, and direct buffers. Here that was about 620 MB. Setting -Xmx to 2g in a 2Gi container told the heap it could have the entire limit, leaving nothing for the rest; as the heap grew towards its maximum under load, the total crossed 2Gi and the kernel stepped in, hours after start, which is what made it look random. Native memory tracking showed the breakdown directly. The fix is to size the heap as a fraction of the container: -XX:MaxRAMPercentage=70 gives the heap 70% of whatever limit the container has, so it stays right if the limit changes, and leaves 30% for non-heap use. The right percentage depends on the service: one with hundreds of threads or large direct buffers needs more headroom. The general lesson isn't about Java: a container limit covers the whole process, and every runtime has memory beyond its main heap (Node's buffers, Python's native extensions, Go's runtime overhead). Measure the process's real footprint against the limit, and alert on container memory as a percentage of its limit, not on a runtime's internal view.",
+  "real_commands_used": ["kubectl describe pod (OOMKilled, exit 137)", "kubectl top pod --containers", "kubectl exec ... jcmd 1 GC.heap_info", "kubectl exec ... jcmd 1 VM.native_memory summary", "kubectl set env deployment JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=70"]
+}

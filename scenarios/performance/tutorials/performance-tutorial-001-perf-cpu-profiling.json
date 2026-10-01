@@ -1,0 +1,48 @@
+{
+  "id": "performance-tutorial-001",
+  "type": "tutorial",
+  "category": "performance",
+  "title": "Which Code Is Using the CPU? Sampling with perf",
+  "difficulty": "intermediate",
+  "tags": ["perf", "profiling", "cpu", "linux"],
+  "intro": "'top' tells you which process is busy. It can't tell you why. A profiler answers that by interrupting the program many times a second and noting which function it's in; the functions seen most often are where the time goes. perf is Linux's built-in profiler. On this host a process named pricing, pid 4410, is using a full CPU.",
+  "steps": [
+    {
+      "prompt": "Watch live which functions pid 4410 spends its CPU time in.",
+      "expected_commands": ["sudo perf top -p 4410", "perf top -p 4410", "sudo perf top --pid 4410", "sudo perf top --pid=4410"],
+      "fake_output": "Samples: 12K of event 'cpu-clock', 4000 Hz\n  61.20%  pricing        [.] regex_match_backtrack\n  14.10%  pricing        [.] parse_rule\n   9.80%  libc.so.6      [.] __memmove_avx_unaligned\n   4.40%  [kernel]       [k] copy_user_enhanced_fast_string\n   2.10%  pricing        [.] apply_discount",
+      "explanation": "61% of this process's CPU time is inside one function: regex_match_backtrack.",
+      "why": "This is the first useful answer in any CPU investigation: not 'the service is slow' but 'a regular expression is backtracking'. '[.]' marks user-space code and '[k]' the kernel. If functions show as hex addresses, the binary has no symbols: install its debug symbols, or for interpreted languages use a profiler that understands the runtime (the next tutorials)."
+    },
+    {
+      "prompt": "Record it properly for analysis: sample pid 4410's call stacks 99 times a second for 30 seconds.",
+      "expected_commands": ["sudo perf record -F 99 -g -p 4410 -- sleep 30", "perf record -F 99 -g -p 4410 -- sleep 30", "sudo perf record -F 99 -p 4410 -g -- sleep 30", "sudo perf record -g -F 99 -p 4410 -- sleep 30"],
+      "fake_output": "[ perf record: Woken up 4 times to write data ]\n[ perf record: Captured and wrote 1.204 MB perf.data (2970 samples) ]",
+      "hint": "sudo perf record -F 99 -g -p 4410 -- sleep 30",
+      "explanation": "About 2,970 stack samples saved in perf.data.",
+      "why": "-g records the whole call stack, not just the current function, which is what tells you who called the hot function. 99 Hz is deliberate: an odd number avoids sampling in step with timers that fire 100 times a second. Sampling at this rate costs well under 1% overhead, which is why it's safe on a production host, unlike instrumenting every function call."
+    },
+    {
+      "prompt": "Print the recorded profile as text, top 40 lines.",
+      "expected_commands": ["sudo perf report --stdio | head -40", "perf report --stdio | head -40", "sudo perf report --stdio | head -n 40"],
+      "fake_output": "# Children      Self  Command  Symbol\n    98.10%     0.00%  pricing  [.] main\n    97.40%     0.20%  pricing  [.] handle_request\n    88.30%     2.10%  pricing  [.] apply_discount\n    76.10%    14.10%  pricing  [.] parse_rule\n    61.20%    61.20%  pricing  [.] regex_match_backtrack",
+      "explanation": "The call chain: handle_request calls apply_discount, which calls parse_rule, which runs the regex.",
+      "why": "'Self' is time in the function itself; 'Children' includes everything it calls. main is 98% Children and 0% Self: it does nothing itself. The useful functions are those with high Self (where time is actually burned) and the path that leads to them. Here the cause is clear: discount rules are parsed with a regex on every request."
+    },
+    {
+      "prompt": "A profile shows where CPU time goes. Which of these problems would a CPU profile NOT show?\n  a) A tight loop\n  b) An expensive regular expression\n  c) A request that's slow because it waits 2 seconds for a database\n  d) Excessive JSON parsing\nType the letter.",
+      "expected_commands": ["c"],
+      "fake_output": "on-CPU  : running instructions          -> CPU profiler sees it\noff-CPU : waiting (I/O, locks, sleep)   -> invisible to a CPU profiler; use tracing or off-CPU analysis",
+      "hint": "While waiting, the process isn't on the CPU at all.",
+      "explanation": "Time spent waiting doesn't appear in a CPU profile.",
+      "why": "Choose the tool from the symptom. High CPU: a CPU profiler. Slow with low CPU: the time is spent waiting, so use distributed tracing, off-CPU profiling, or look at what it's waiting for (performance-tutorial-005). Profiling an idle-but-slow service and finding nothing is a common wasted hour."
+    },
+    {
+      "prompt": "Get a quick count of low-level events for pid 4410 over 10 seconds: CPU cycles, instructions, context switches.",
+      "expected_commands": ["sudo perf stat -p 4410 sleep 10", "perf stat -p 4410 sleep 10", "sudo perf stat -p 4410 -- sleep 10"],
+      "fake_output": " Performance counter stats for process id '4410':\n\n     10,001.20 msec task-clock            #    1.000 CPUs utilized\n            41      context-switches      #    4.100 /sec\n             0      cpu-migrations\n   31,204,410,220   cycles\n   88,120,441,020   instructions          #    2.82  insn per cycle\n       412,044      cache-misses\n\n      10.001 seconds time elapsed",
+      "explanation": "Exactly one CPU fully used, almost no context switches, and a healthy 2.8 instructions per cycle.",
+      "why": "This is a pure computation problem: the process never waits and is never interrupted. Compare a process with thousands of context switches a second (it keeps blocking, so the bottleneck is elsewhere) or with under 1 instruction per cycle (it's stalled on memory, and the fix is in data layout, not the algorithm). perf stat is the ten-second triage before a full profile."
+    }
+  ]
+}

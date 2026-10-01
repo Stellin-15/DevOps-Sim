@@ -1,0 +1,47 @@
+{
+  "id": "performance-tutorial-006",
+  "type": "tutorial",
+  "category": "performance",
+  "title": "Go Services: pprof for CPU, Memory, and Goroutines",
+  "difficulty": "intermediate",
+  "tags": ["go", "pprof", "profiling", "goroutines"],
+  "intro": "Go programs can expose their own profiler over HTTP, which makes them unusually easy to diagnose: no agent, no restart. Since so much infrastructure is written in Go, including controllers and operators you'll run, this comes up often. The service inventory exposes pprof on localhost port 6060.",
+  "steps": [
+    {
+      "prompt": "Take a 30-second CPU profile from the running service and print the top functions.",
+      "expected_commands": ["go tool pprof -top http://localhost:6060/debug/pprof/profile?seconds=30", "go tool pprof -top 'http://localhost:6060/debug/pprof/profile?seconds=30'", "go tool pprof -top \"http://localhost:6060/debug/pprof/profile?seconds=30\""],
+      "fake_output": "Fetching profile over HTTP from http://localhost:6060/debug/pprof/profile?seconds=30\nDuration: 30s, Total samples = 28.40s (94.67%)\n      flat  flat%   sum%        cum   cum%\n    11.20s 39.44% 39.44%     11.20s 39.44%  encoding/json.(*decodeState).object\n     6.10s 21.48% 60.92%      6.90s 24.30%  runtime.mallocgc\n     3.30s 11.62% 72.54%      3.30s 11.62%  runtime.scanobject\n     2.00s  7.04% 79.58%     24.10s 84.86%  example.com/inventory.(*Store).Reload",
+      "explanation": "JSON decoding is 39% of CPU; memory allocation and garbage collection add another 33%; all of it under Store.Reload.",
+      "why": "'flat' is time in the function itself and 'cum' includes its callees, the same idea as Self and Children in perf. runtime.mallocgc and scanobject are the memory allocator and the garbage collector: when they're high, the program is creating too much garbage. Here Reload re-parses a large JSON document far too often. '-http=:8081' opens the same profile as an interactive flame graph."
+    },
+    {
+      "prompt": "Memory keeps growing. Print the top of the heap profile: what's holding memory right now.",
+      "expected_commands": ["go tool pprof -top http://localhost:6060/debug/pprof/heap", "go tool pprof -top -inuse_space http://localhost:6060/debug/pprof/heap", "go tool pprof -top 'http://localhost:6060/debug/pprof/heap'"],
+      "fake_output": "Type: inuse_space\nShowing nodes accounting for 1.84GB, 96.33% of 1.91GB total\n      flat  flat%   sum%        cum   cum%\n    1.41GB 73.82% 73.82%     1.41GB 73.82%  example.com/inventory.(*Store).appendHistory\n    0.31GB 16.23% 90.05%     0.31GB 16.23%  encoding/json.(*decodeState).literalStore\n    0.12GB  6.28% 96.33%     1.84GB 96.34%  example.com/inventory.(*Store).Reload",
+      "explanation": "1.41 GB is held by memory allocated in appendHistory.",
+      "why": "The heap profile shows where live memory was allocated, which is nearly always where the leak is. 'inuse_space' is what's held now; 'alloc_space' is everything ever allocated, the view for finding garbage that causes GC work. Here a history slice is appended to on every reload and never trimmed. Comparing two heap profiles taken minutes apart ('-base') shows exactly what grew."
+    },
+    {
+      "prompt": "Check for leaked goroutines: fetch the goroutine summary and show the first 12 lines.",
+      "expected_commands": ["curl -s http://localhost:6060/debug/pprof/goroutine?debug=1 | head -12", "curl -s 'http://localhost:6060/debug/pprof/goroutine?debug=1' | head -12", "curl -s \"http://localhost:6060/debug/pprof/goroutine?debug=1\" | head -12", "curl -s http://localhost:6060/debug/pprof/goroutine?debug=1 | head -n 12"],
+      "fake_output": "goroutine profile: total 91204\n91180 @ 0x43a1f6 0x4064ad 0x406116 0x71c2e5 0x46e8a1\n#\t0x71c2e4\texample.com/inventory.(*Notifier).send+0x64\t/src/notifier.go:58\n\n12 @ 0x43a1f6 0x432b77 0x46a1e5 0x4d7c27\n#\t0x4d7c26\tnet/http.(*conn).serve+0x5c6\t/usr/local/go/src/net/http/server.go:2009",
+      "explanation": "91,204 goroutines, of which 91,180 are parked at the same line: notifier.go:58.",
+      "why": "Goroutines are cheap, so a program can leak a hundred thousand of them before anyone notices. They're grouped by identical stack here, which makes a leak obvious: tens of thousands all waiting at one line, usually a send on a channel nobody reads, or a call with no timeout. Each holds memory and whatever it references, so a goroutine leak is also a memory leak. A flat goroutine count is the thing to graph."
+    },
+    {
+      "prompt": "The pprof endpoint is very useful. What's the risk in how it's exposed?\n  a) None\n  b) If it's reachable from outside, anyone can read internals and trigger expensive profiles: it belongs on a separate internal port, never on the public listener\n  c) It slows the service by half\n  d) It only works in development\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "public listener  :8080   application routes only\nadmin listener   :6060   /debug/pprof, /metrics   bound to localhost or the internal network",
+      "hint": "Importing net/http/pprof registers the handlers on the default HTTP mux.",
+      "explanation": "Keep it on an internal-only listener.",
+      "why": "A blank import of net/http/pprof adds the handlers to the default mux, and if the application serves that mux publicly, the profiler is on the internet. Profiles reveal function names, file paths, and sometimes data; a 30-second CPU profile on demand is also a denial-of-service lever. The same goes for the JVM's JMX port and Python debug endpoints. Leaving the profiler available, internally, is right: its idle cost is close to nothing."
+    },
+    {
+      "prompt": "Before optimising, measure. Run the package's benchmarks with memory statistics.",
+      "expected_commands": ["go test -bench=. -benchmem ./...", "go test -bench . -benchmem ./...", "go test -bench=. -benchmem"],
+      "fake_output": "goos: linux\ngoarch: amd64\nBenchmarkReload-8          12    94120441 ns/op   41204410 B/op   880120 allocs/op\nBenchmarkLookup-8    18204410        64.20 ns/op          0 B/op        0 allocs/op\nPASS",
+      "explanation": "Reload takes 94 ms and makes 880,000 allocations each time; Lookup takes 64 ns and allocates nothing.",
+      "why": "A benchmark gives a number to beat and proves a change helped. allocs/op matters as much as time: each allocation is future garbage-collector work, which is what the CPU profile showed. Compare runs with benchstat, since single runs are noisy. Optimise what the production profile says is hot, and no more: a fast function that's never called is wasted effort."
+    }
+  ]
+}

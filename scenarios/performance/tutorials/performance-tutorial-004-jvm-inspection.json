@@ -1,0 +1,46 @@
+{
+  "id": "performance-tutorial-004",
+  "type": "tutorial",
+  "category": "performance",
+  "title": "Inside a JVM: Heap, Garbage Collection, and Thread Dumps",
+  "difficulty": "advanced",
+  "tags": ["java", "jvm", "garbage-collection", "threads"],
+  "intro": "A great deal of production software runs on the JVM: Kafka, Elasticsearch, Jenkins, and most enterprise services. It manages its own memory and threads, so the operating system's tools show a busy 'java' process and little else. The JDK ships its own diagnostic commands. The service is orders-service, a Java process on this host.",
+  "steps": [
+    {
+      "prompt": "List the Java processes on this host with their main class.",
+      "expected_commands": ["jcmd", "jcmd -l", "jps -l"],
+      "fake_output": "8812 com.example.orders.OrdersApplication\n9140 jdk.jcmd/sun.tools.jcmd.JCmd",
+      "explanation": "The service is pid 8812. (The second line is jcmd itself.)",
+      "why": "jcmd is the one tool to remember: it lists JVMs and sends them diagnostic commands. It must run as the same user as the target process, and inside the same container, since it talks to the JVM through a local socket. 'jcmd 8812 help' lists everything that JVM will answer."
+    },
+    {
+      "prompt": "Show how the heap of pid 8812 is being used.",
+      "expected_commands": ["jcmd 8812 GC.heap_info"],
+      "fake_output": "8812:\n garbage-first heap   total 2097152K, used 1998120K [0x0000000080000000, 0x0000000100000000)\n  region size 1024K, 12 young (12288K), 4 survivors (4096K)\n Metaspace       used 88120K, committed 89600K, reserved 1114112K",
+      "explanation": "A 2 GB heap with 1.9 GB in use: 95% full.",
+      "why": "The heap is where Java objects live, capped by -Xmx. A heap that's nearly full all the time means the garbage collector is working constantly to free a little space, which shows up as CPU use and pauses. 'garbage-first' is the collector (G1, the default). Metaspace holds class definitions and lives outside the heap."
+    },
+    {
+      "prompt": "Watch the garbage collector at work: print GC utilisation for pid 8812 every 1000 ms, 5 times.",
+      "expected_commands": ["jstat -gcutil 8812 1000 5"],
+      "fake_output": "  S0     S1     E      O      M     CCS    YGC     YGCT    FGC    FGCT     GCT\n  0.00 100.00  41.20  99.10  96.40  92.10  18204  412.200   310  1904.100  2316.300\n  0.00 100.00  88.00  99.20  96.40  92.10  18204  412.200   311  1911.400  2323.600\n  0.00 100.00  12.10  99.20  96.40  92.10  18205  412.230   312  1918.800  2331.030\n  0.00 100.00  64.40  99.30  96.40  92.10  18205  412.230   313  1926.100  2338.330\n  0.00 100.00  97.10  99.30  96.40  92.10  18205  412.230   314  1933.500  2345.730",
+      "explanation": "The old generation (O) is 99% full, and a full GC (FGC) happens every second, each taking about 7 seconds of accumulated pause time.",
+      "why": "Read O and FGC. Young collections (YGC) are frequent, cheap, and normal. Full collections should be rare; one per second that frees nothing is 'GC thrashing': the application spends nearly all its time paused, collecting, and making no progress. It ends in OutOfMemoryError. Either the heap is too small for the live data, or something is leaking."
+    },
+    {
+      "prompt": "Find what's filling the heap: show the top of the class histogram for pid 8812, first 8 lines.",
+      "expected_commands": ["jcmd 8812 GC.class_histogram | head -8", "jcmd 8812 GC.class_histogram | head -n 8"],
+      "fake_output": "8812:\n num     #instances         #bytes  class name\n-------------------------------------------------------\n   1:      18204410     1164282240  [B\n   2:       9120044      291841408  java.lang.String\n   3:       9118310      218839440  java.util.HashMap$Node\n   4:       9118302      145892832  com.example.orders.cache.PriceQuote",
+      "explanation": "Nine million PriceQuote objects, each held by a HashMap node, with their strings and byte arrays.",
+      "why": "The histogram counts live objects by class. Nine million of an application class held in a HashMap is a cache with no size limit and no expiry: every quote ever computed is still there. That's the commonest Java 'memory leak'. For the full picture, 'jcmd 8812 GC.heap_dump /tmp/heap.hprof' writes the heap to a file for a tool such as Eclipse MAT; it pauses the JVM and the file contains customer data, so treat it as sensitive."
+    },
+    {
+      "prompt": "Take a thread dump of pid 8812 to see what every thread is doing, showing the first 12 lines.",
+      "expected_commands": ["jcmd 8812 Thread.print | head -12", "jcmd 8812 Thread.print | head -n 12", "jstack 8812 | head -12"],
+      "fake_output": "8812:\nFull thread dump OpenJDK 64-Bit Server VM (21.0.4+7 mixed mode):\n\n\"http-nio-8080-exec-41\" #88 daemon prio=5 os_prio=0 cpu=4120.44ms elapsed=910.20s waiting for monitor entry\n   java.lang.Thread.State: BLOCKED (on object monitor)\n\tat com.example.orders.cache.PriceCache.get(PriceCache.java:44)\n\t- waiting to lock <0x00000000c0a1f9e8> (a java.util.HashMap)\n\tat com.example.orders.OrderService.price(OrderService.java:112)\n\n\"http-nio-8080-exec-40\" #87 daemon prio=5 cpu=3980.12ms elapsed=910.18s waiting for monitor entry\n   java.lang.Thread.State: BLOCKED (on object monitor)",
+      "explanation": "Request threads are BLOCKED, all waiting for the same lock on that HashMap.",
+      "why": "A thread dump is the JVM's answer to 'where is it stuck'. Many threads BLOCKED on one lock is contention: the cache is guarded by a single lock, so requests queue behind it, and CPU can look low while latency is terrible. The states to know: RUNNABLE (working, or in a system call), BLOCKED (waiting for a lock), WAITING and TIMED_WAITING (parked, often an idle pool thread, which is normal). Take three dumps a few seconds apart to tell stuck from slow."
+    }
+  ]
+}
