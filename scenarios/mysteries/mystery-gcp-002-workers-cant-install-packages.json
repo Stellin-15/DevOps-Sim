@@ -1,0 +1,37 @@
+{
+  "id": "mystery-gcp-002",
+  "type": "mystery",
+  "category": "gcp",
+  "sandbox": "gcp",
+  "title": "The Workers Can't Install Packages",
+  "difficulty": "intermediate",
+  "tags": ["gcp", "nat", "regions"],
+  "setup": {"seed": 32, "problems": ["no_nat"]},
+  "symptom": "The batch workers were moved to europe-west1 last week using the same instance template as the old region, with no external IPs 'for security'. Every job here now fails while installing its dependencies. The same template still works in the old region, and the VPC is global, so the network 'should be identical'.",
+  "goals": [
+    {"check": "reachable", "from": "worker-1", "to": "internet", "port": 443, "description": "worker-1 can reach package repositories on the internet (443)"}
+  ],
+  "evidence": [
+    {"description": "the failure, seen from the worker itself", "seen_any": ["connection timed out", "Timeout was reached"]},
+    {"description": "what exists in this region to give private VMs a way out", "seen_any": ["Listed 0 items."]}
+  ],
+  "question": {
+    "prompt": "The VPC is global and the template is the same. Why does it fail only in this region?",
+    "options": [
+      "A firewall rule blocks egress in europe-west1",
+      "The VPC is global, but Cloud NAT is regional. A VM with no external IP needs a Cloud Router with a NAT configuration in its own region, and nobody created one here",
+      "The instance template is corrupted",
+      "worker-1 is missing a network tag"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 5,
+  "solution_commands": [
+    "gcloud compute ssh worker-1 --zone {zone} --tunnel-through-iap --command 'sudo apt update'",
+    "gcloud compute routers list",
+    "gcloud compute routers create router-ew1 --network prod-vpc --region {region}",
+    "gcloud compute routers nats create nat-ew1 --router router-ew1 --region {region} --auto-allocate-nat-external-ips --nat-all-subnet-ip-ranges",
+    "gcloud compute ssh worker-1 --zone {zone} --tunnel-through-iap --command 'sudo apt update'"
+  ],
+  "debrief": "'Same template, different region, different result' points at something regional. The VPC network is global and so is its default route to the internet, but that route only carries traffic for VMs with an external IP. Private VMs need Cloud NAT, and Cloud NAT is configured per region on a Cloud Router. The old region had one; europe-west1 never got one. Notice you could still get a shell on a VM with no internet access: IAP tunnels in from Google's side and doesn't depend on the VM's own egress. The fix is a router and a NAT config in the right region; a NAT in another region does nothing. The tempting shortcut, an external IP on the worker, 'works' and quietly puts a private VM on the internet. Put router and NAT creation in the Terraform module that enables a region, so a region can't be half set up."
+}

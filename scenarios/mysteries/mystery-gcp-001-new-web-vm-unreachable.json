@@ -1,0 +1,39 @@
+{
+  "id": "mystery-gcp-001",
+  "type": "mystery",
+  "category": "gcp",
+  "sandbox": "gcp",
+  "title": "The Rebuilt Web VM Nobody Can Reach",
+  "difficulty": "beginner",
+  "tags": ["gcp", "firewall", "network-tags"],
+  "setup": {"seed": 31, "problems": ["wrong_tag"]},
+  "symptom": "web-1 was rebuilt this morning through the Cloud Console with the 'Allow HTTPS traffic' box ticked. nginx is running and the VM has an external IP, but the site times out. The few pages that did load before the rebuild now also complain they can't reach the database.",
+  "goals": [
+    {"check": "reachable", "from": "internet", "to": "web-1", "port": 443, "description": "The site on web-1 answers HTTPS from the internet"},
+    {"check": "reachable", "from": "web-1", "to": "db-1", "port": 5432, "description": "web-1 can reach the database on db-1:5432"}
+  ],
+  "evidence": [
+    {"description": "the symptom: the site times out", "seen_any": ["Timeout was reached", "timed out"]},
+    {"description": "which VMs the HTTPS rule applies to", "seen_any": ["TARGET_TAGS", "targetTags"]},
+    {"description": "what web-1 is actually labelled as", "seen_any": ["http-server"]}
+  ],
+  "question": {
+    "prompt": "Why did rebuilding the VM break both the site and its database access?",
+    "options": [
+      "The firewall rules were deleted during the rebuild",
+      "GCP firewall rules select VMs by network tag. The project's rules target and trust the tag 'web', but the rebuilt VM only carries the console's default tag, so no allow rule applies to it and it isn't recognised as a source for the database rule either",
+      "The VM needs Cloud NAT to receive traffic",
+      "The database's port changed"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 5,
+  "solution_commands": [
+    "curl -m 5 https://{web_ip}",
+    "gcloud compute firewall-rules list",
+    "gcloud compute instances describe web-1 --zone {zone}",
+    "gcloud compute instances add-tags web-1 --zone {zone} --tags web",
+    "curl -m 5 https://{web_ip}"
+  ],
+  "debrief": "In GCP a firewall rule isn't attached to a VM; it selects VMs by network tag (or service account). The console's 'Allow HTTPS traffic' checkbox just adds a tag that only matches a rule on the auto-created default network. On prod-vpc the real rule targets 'web', so nothing allowed 443 to the rebuilt VM, and the implied deny-all dropped it. The same missing tag broke the database: allow-db-from-web trusts traffic from VMs tagged 'web', and web-1 was no longer one. Tags here act as identity, in both directions. The fix was one tag. The tempting wrong fix is a new rule allowing 443 with no target tags, which opens 443 on every VM in the network, including the database. Build VMs from an instance template or Terraform, where tags are set once and reviewed, and for sensitive rules prefer service accounts over tags, since anyone who can edit a VM can change its tags."
+}

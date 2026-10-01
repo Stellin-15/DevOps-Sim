@@ -1,6 +1,6 @@
 """
 Mystery Incidents — free-form diagnosis. The player gets only a symptom
-and a live sandbox environment (Linux, Docker, or AWS) with a known, hidden
+and a live sandbox environment (Linux, Docker, AWS, Azure, or Google Cloud) with a known, hidden
 root cause. No steps, no prompts: any command, any order. Typing 'solve'
 checks the real outcome (goals evaluated against the sandbox state), then
 asks what the root cause was, so a lucky fix doesn't count.
@@ -11,7 +11,9 @@ efficiency (commands used vs an expert's count), and collateral damage
 """
 
 import aws_sandbox
+import azure_sandbox
 import docker_sandbox
+import gcp_sandbox
 import linux_sandbox
 from engine import normalize, read_input
 from sandbox_common import run_command
@@ -24,6 +26,8 @@ SANDBOXES = {
     "linux": linux_sandbox,
     "docker": docker_sandbox,
     "aws": aws_sandbox,
+    "azure": azure_sandbox,
+    "gcp": gcp_sandbox,
 }
 
 MAX_ANSWER_ATTEMPTS = 2
@@ -54,7 +58,9 @@ def missing_evidence(seen: list, mystery: dict) -> list:
     """Each evidence entry lists substrings (case-insensitive), any one of
     which must have appeared in the output of a command the player ran.
     Outputs only, not the typed commands, so 'echo batch.jar' can't fake
-    it. Stops the root-cause question from being answerable by guessing."""
+    it. In diagnosis-only mysteries it gates the root-cause question, so
+    the answer can't be guessed; where there are goals it is only reported
+    in the debrief (see run_mystery)."""
     transcript = "\n".join(seen).lower()
     return [e["description"] for e in mystery.get("evidence", [])
             if not any(s.lower() in transcript for s in e["seen_any"])]
@@ -139,8 +145,13 @@ def run_mystery(mystery: dict, input_fn=None) -> dict:
                 for r in remaining:
                     print(f"  - {r}")
                 continue
+            # Evidence only gates diagnosis-only mysteries (no goals), where
+            # nothing else stops a guess. With goals, the fix is the proof —
+            # and fixing first can make the evidence impossible to see (a
+            # timeout can't be observed once the route exists), so gating
+            # there would trap exactly the player who went straight to the cause.
             unproven = missing_evidence(seen, mystery)
-            if unproven:
+            if unproven and not mystery.get("goals"):
                 print("\nYou haven't found the evidence for this yet — keep investigating:")
                 for u in unproven:
                     print(f"  - {u}")
@@ -153,6 +164,10 @@ def run_mystery(mystery: dict, input_fn=None) -> dict:
                 print(f"Collateral damage: you {c}")
             if correct:
                 print(f"Score: {points}/100 — {rating(points)}")
+            if unproven:
+                print("\nYou fixed it without looking at (worth knowing how to check):")
+                for u in unproven:
+                    print(f"  - {u}")
             print(f"\n{mystery['debrief']}")
             path = [cmd.format(**placeholders(mystery, build_state(mystery))) for cmd in mystery["solution_commands"]]
             print("\nOne efficient path:\n  " + "\n  ".join(path))

@@ -1,0 +1,41 @@
+{
+  "id": "mystery-azure-003",
+  "type": "mystery",
+  "category": "azure",
+  "sandbox": "azure",
+  "title": "The Subnet NSG Looks Perfect",
+  "difficulty": "advanced",
+  "tags": ["azure", "nsg", "nic", "layers"],
+  "setup": {"seed": 23, "problems": ["nic_nsg_deny", "app_nsg_missing_allow"]},
+  "symptom": "The rebuilt shop won't load. Three engineers have read nsg-web line by line: HTTPS from the Internet is allowed, nothing denies it. And the release notes warn that once the site is reachable again, you should check it can actually reach its backend on vm-app-01 port 8080, because the app tier was 'hardened' in the same change.",
+  "goals": [
+    {"check": "reachable", "from": "internet", "to": "vm-web-01", "port": 443, "description": "The shop on vm-web-01 answers HTTPS from the internet"},
+    {"check": "reachable", "from": "vm-web-01", "to": "vm-app-01", "port": 8080, "description": "vm-web-01 can reach its backend on vm-app-01:8080"}
+  ],
+  "evidence": [
+    {"description": "what, other than the subnet NSG, filters traffic to the web VM", "seen_any": ["nsg-vm-web-01"]},
+    {"description": "the app tier's rules and their priorities", "seen_any": ["4000"]}
+  ],
+  "question": {
+    "prompt": "nsg-web was correct all along. What was blocking the site?",
+    "options": [
+      "A Deny rule with a lower priority number inside nsg-web",
+      "A second NSG attached directly to the VM's network interface, which denies all inbound traffic. Traffic must pass BOTH the subnet's NSG and the NIC's NSG",
+      "The public IP was dissociated",
+      "A user-defined route black-holed the replies"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 8,
+  "solution_commands": [
+    "curl -m 5 https://{web_ip}",
+    "az network watcher test-ip-flow -g rg-web-prod --vm vm-web-01 --direction Inbound --protocol TCP --local {web_private_ip}:443 --remote 203.0.113.50:50000",
+    "az network nic update -g rg-web-prod -n nic-vm-web-01 --network-security-group \"\"",
+    "curl -m 5 https://{web_ip}",
+    "az vm run-command invoke -g rg-web-prod -n vm-web-01 --command-id RunShellScript --scripts \"curl -m 5 http://{app_ip}:8080\"",
+    "az network nsg rule list -g rg-web-prod --nsg-name nsg-app",
+    "az network nsg rule create -g rg-web-prod --nsg-name nsg-app -n Allow-Web-To-App --priority 100 --access Allow --destination-port-ranges 8080 --source-address-prefixes 10.20.1.0/24",
+    "az vm run-command invoke -g rg-web-prod -n vm-web-01 --command-id RunShellScript --scripts \"curl -m 5 http://{app_ip}:8080\""
+  ],
+  "debrief": "Azure lets you attach an NSG to a subnet, to a network interface, or to both, and inbound traffic has to be allowed by every one of them. Everyone kept re-reading nsg-web because that's where the rules were expected to be, but a forgotten NSG on the NIC denied everything. 'list-effective-nsg' and IP flow verify show all associations at once, and flow verify names the rule that decided. The second problem was the 'hardening': nsg-app got a Deny-All at priority 4000, which overrides Azure's default AllowVnetInBound (65000), but nobody added the Allow for 8080 above it, so the web tier lost its backend. The fix needed a priority lower than 4000; an Allow at 4050 would have done nothing. Two lessons: prefer one NSG per subnet and avoid NIC-level NSGs unless there's a specific reason, and when a change adds a Deny-All, list what must still be allowed and test each path."
+}

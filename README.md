@@ -49,13 +49,16 @@ string.
   part that tells you whether it stuck.
 - **Mystery Incidents**: real on-call conditions. You get only a
   symptom ("postgres just dies, nothing in its logs") and a live Linux,
-  Docker, or AWS sandbox. There are no steps and no hints, and any command
+  Docker, AWS, Azure, or Google Cloud sandbox. There are no steps and no hints, and any command
   works in any order.
   - **Solving it.** When you think you've fixed it, type `solve`. The
     game checks three things:
     1. the system really is fixed;
-    2. you actually *saw* the evidence, so you can't win by guessing;
-    3. you can name the root cause.
+    2. you can name the root cause.
+
+    Where there's nothing to fix (the Docker mysteries are diagnosis
+    only), you must also have actually *seen* the evidence, so you can't
+    win by guessing.
   - **Scoring.** You're scored against an experienced engineer's command
     count. Careless fixes cost points: `kill -9` on sshd locks you out,
     and opening SSH to 0.0.0.0/0 on AWS gets flagged.
@@ -67,7 +70,7 @@ string.
   mystery average, and the scenarios that took you the most attempts,
   and suggests up to three concrete next steps.
 - **Sandbox** — no scoring, no steps: a randomly generated broken
-  environment to explore with real commands. Four to pick from:
+  environment to explore with real commands. Six to pick from:
   - **Kubernetes** — a cluster of Deployments, Services, and pods (some
     `CrashLoopBackOff`/`OOMKilled`/`Pending`/`Error`), plus nodes, a
     ConfigMap, a Secret, and an event log, all consistent with each other.
@@ -86,6 +89,13 @@ string.
     security group rules, NACL entries or Elastic IPs, then test with
     `curl`/`nc`/`ssh` from your laptop, or from inside an instance via
     `aws ssm start-session`.
+  - **Azure** — NSG rules evaluated by priority, an NSG that may also sit
+    on the VM's network card, and a route that sends traffic to a
+    firewall that may not be there. `az network watcher test-ip-flow`
+    names the rule that decided, as the real one does.
+  - **Google Cloud** — firewall rules that only apply to VMs with the
+    right network tag, SSH through IAP, and Cloud NAT that exists per
+    region.
   Pipes work everywhere (`ps aux | grep python`, `docker ps -a | grep
   Exited`). On exit you can keep the state for next time or throw it away.
 
@@ -220,6 +230,8 @@ sandbox.py          Kubernetes sandbox (random cluster)
 docker_sandbox.py   Docker sandbox (random broken host)
 linux_sandbox.py    Linux sandbox (random broken server; reacts to fixes)
 aws_sandbox.py      AWS sandbox (a VPC with real layer-by-layer reachability)
+azure_sandbox.py    Azure sandbox (NSG priorities, NIC NSGs, routes to a firewall)
+gcp_sandbox.py      Google Cloud sandbox (tag-based firewalls, IAP SSH, Cloud NAT)
 sandbox_common.py   shared sandbox loop, pipes, tables, save/discard
 yaml_lab.py         Writing Labs runner: real file editing + validation
 lab_formats.py      parsers for YAML/JSON, Dockerfile, HCL, bash, Ansible,
@@ -363,7 +375,7 @@ Plus **11 Career Paths** chaining scenarios across categories:
 - Patch Tuesday for a fleet;
 - SRE at scale, from readiness review to postmortem.
 
-Plus **12 Mystery Incidents**, symptom only:
+Plus **18 Mystery Incidents**, symptom only:
 - Linux: an API down after a deploy, a disk alert that won't clear, a
   database that keeps dying, and a slow server with two unrelated
   problems.
@@ -372,6 +384,10 @@ Plus **12 Mystery Incidents**, symptom only:
 - AWS: a new web server that times out, private workers that can't pull
   updates, SSH that works while the site doesn't, and a "network
   hardening" change that broke everything.
+- Azure: an allow rule that's "right there" but ignored, an app tier that
+  lost the internet, and a subnet firewall that looks perfect.
+- Google Cloud: a rebuilt web VM nobody can reach, workers that can't
+  install packages, and the morning after a firewall cleanup.
 - Security: a pegged CPU and a doubled cloud bill (a crypto-miner that
   comes back until you find its cron job), and a 3am login (a
   brute-forced root password, a hidden UID-0 account, and a planted SSH
@@ -406,11 +422,10 @@ Terraform modules, and RBAC/PDB/storage incidents) → AWS category, VPC
 sandbox, and AWS mysteries → Azure and Google Cloud categories → Security
 category and hacked-server mysteries → Server Fleet Ops category → SRE
 category → cloud, Ansible, and postmortem Writing Labs, plus four more
-career paths → Stats screen.
+career paths → Stats screen → Azure and Google Cloud sandboxes with
+mysteries.
 
 Next, in priority order (details in CLAUDE.md and GAPS.md):
-- **Azure and Google Cloud sandboxes**, like the AWS one, with mysteries
-  (next up)
 - Exam-specific gap passes for other certifications (CKAD, Terraform
   Associate, AWS/Azure/GCP associate exams)
 - More mysteries, including Kubernetes ones (these need a reactive

@@ -91,3 +91,31 @@ class TestSandboxStore:
         monkeypatch.setattr(sc, "read_input", lambda prompt="": "n")
         store.prompt_keep({"x": 1}, "server")
         assert not store.current_file.exists()
+
+
+class TestParseFlags:
+    ALIASES = {"-g": "resource-group", "-n": "name"}
+
+    def parse(self, raw, booleans=None):
+        from engine import normalize
+        return sc.parse_flags(normalize(raw).split(), self.ALIASES, booleans or set())
+
+    def test_long_flags_short_aliases_and_positionals(self):
+        flags, pos = self.parse("vm show -g rg-web -n vm-1 --output table")
+        assert flags == {"resource-group": "rg-web", "name": "vm-1", "output": "table"}
+        assert pos == ["vm", "show"]
+
+    def test_equals_form(self):
+        assert self.parse("ssh web-1 --zone=europe-west1-b")[0] == {"zone": "europe-west1-b"}
+
+    def test_quoted_value_with_spaces_is_one_value(self):
+        flags, _ = self.parse("ssh web-1 --command 'curl -s ifconfig.me' --zone z")
+        assert flags == {"command": "curl -s ifconfig.me", "zone": "z"}
+
+    def test_boolean_flag_does_not_swallow_the_next_positional(self):
+        flags, pos = self.parse("ssh --tunnel-through-iap web-1", booleans={"tunnel-through-iap"})
+        assert flags == {"tunnel-through-iap": True} and pos == ["ssh", "web-1"]
+
+    def test_bare_flag_at_the_end_and_empty_quoted_value(self):
+        assert self.parse("rule list --include-default")[0] == {"include-default": True}
+        assert self.parse('nic update --network-security-group ""')[0] == {"network-security-group": ""}

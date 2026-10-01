@@ -1,0 +1,38 @@
+{
+  "id": "mystery-azure-001",
+  "type": "mystery",
+  "category": "azure",
+  "sandbox": "azure",
+  "title": "The Allow Rule Is Right There",
+  "difficulty": "beginner",
+  "tags": ["azure", "nsg", "priority"],
+  "setup": {"seed": 21, "problems": ["nsg_deny_shadow"]},
+  "symptom": "At 09:41 the shop stopped loading for everyone, and SSH from the office stopped working too. The only change today: a colleague added a network rule 'to block one abusive scanner at 192.0.2.66'. They insist the HTTPS allow rule is untouched, and they're right, it is.",
+  "goals": [
+    {"check": "reachable", "from": "internet", "to": "vm-web-01", "port": 443, "description": "The shop on vm-web-01 answers HTTPS from the internet"},
+    {"check": "reachable", "from": "internet", "to": "vm-web-01", "port": 22, "description": "SSH from the office works again"}
+  ],
+  "evidence": [
+    {"description": "the symptom: connections time out", "seen_any": ["Timeout was reached", "timed out"]},
+    {"description": "which rule is actually deciding", "seen_any": ["Block-Scanner"]}
+  ],
+  "question": {
+    "prompt": "The allow rule exists. Why is everything blocked?",
+    "options": [
+      "The VM is deallocated",
+      "NSG rules are evaluated by priority, lowest number first. The new Deny rule sits at priority 90 with source '*', so it matches every packet before Allow-HTTPS (100) is ever reached",
+      "A second NSG on the network interface denies the traffic",
+      "The route table sends replies to a firewall"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 5,
+  "solution_commands": [
+    "curl -m 5 https://{web_ip}",
+    "az network watcher test-ip-flow -g rg-web-prod --vm vm-web-01 --direction Inbound --protocol TCP --local {web_private_ip}:443 --remote 203.0.113.50:50000",
+    "az network nsg rule list -g rg-web-prod --nsg-name nsg-web",
+    "az network nsg rule update -g rg-web-prod --nsg-name nsg-web -n Block-Scanner --source-address-prefixes 192.0.2.66",
+    "curl -m 5 https://{web_ip}"
+  ],
+  "debrief": "In an NSG, the first matching rule by priority wins, and lower numbers go first. The intent was fine: a Deny for one bad IP belongs above the Allow rules. But the rule's source was left at '*' (the portal's default), so priority 90 denied the whole internet, and the perfectly correct Allow-HTTPS at 100 was never evaluated. IP flow verify is the fastest way to see this: it names the rule that decided a specific packet, instead of leaving you to read rules and guess. Narrowing the source to the scanner's IP keeps the block and restores everything else; deleting the rule would also work but loses the protection. Manage NSGs as code (Terraform or Bicep), so 'source: *' on a Deny rule shows up in review, and test a firewall change both ways: allowed traffic still passes, blocked traffic is still blocked."
+}

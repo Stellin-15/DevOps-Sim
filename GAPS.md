@@ -631,7 +631,8 @@ Terraform, then break it on purpose.
 
 # Part 10 — Azure
 
-**Content:** 10 tutorials, 6 incidents.
+**Content:** 10 tutorials, 6 incidents, an interactive Azure Sandbox, and
+3 Mystery Incidents on it.
 
 ## Covered
 
@@ -658,8 +659,10 @@ Terraform, then break it on purpose.
 
 ## Still missing
 
-- An Azure sandbox. The AWS sandbox teaches the same layered-network
-  reasoning, but NSGs and UDRs aren't practiced hands-on.
+- ~~An Azure sandbox~~: **closed**. The Azure sandbox evaluates NSG
+  priorities (with Azure's default rules), subnet plus NIC-level NSGs,
+  and user-defined routes to a firewall, and `test-ip-flow` and
+  `show-next-hop` answer from the real state. Three mysteries run on it.
 - Bicep and ARM templates (Terraform is the IaC representative).
 - App Service, Functions, Azure SQL, Cosmos DB, and Front Door/Application
   Gateway operations.
@@ -670,14 +673,17 @@ Terraform, then break it on purpose.
 
 A solid operator's foundation for an Azure shop: you can find resources,
 debug network paths with Network Watcher, and avoid the classic cost and
-identity traps. Practise on a free account, above all the NSG and route
-debugging, which here is scripted rather than live.
+identity traps. The sandbox makes NSG and route debugging hands-on; a free
+account is still where you learn the parts the sandbox doesn't model
+(Application Gateway, private endpoints, real latency and propagation
+delays).
 
 ---
 
 # Part 11 — Google Cloud
 
-**Content:** 10 tutorials, 6 incidents.
+**Content:** 10 tutorials, 6 incidents, an interactive Google Cloud Sandbox,
+and 3 Mystery Incidents on it.
 
 ## Covered
 
@@ -706,7 +712,9 @@ debugging, which here is scripted rather than live.
 
 ## Still missing
 
-- A GCP sandbox (see Azure above).
+- ~~A GCP sandbox~~: **closed**. The Google Cloud sandbox evaluates
+  tag-targeted firewall rules (priority, deny beats allow, implied deny),
+  IAP SSH, and regional Cloud NAT. Three mysteries run on it.
 - Cloud Run, Cloud SQL, BigQuery, Pub/Sub, and Cloud Load Balancing internals.
 - Shared VPC and VPC Service Controls, and organisation policy authoring.
 - Professional Cloud Architect / DevOps Engineer exam breadth.
@@ -958,12 +966,12 @@ hands-on companion.
 | Monitoring | 12 | 6 | 2 Writing Labs (alert rules) |
 | MLOps | 12 | 7 | |
 | AWS | 11 | 7 | Sandbox (VPC), 4 Mysteries |
-| Azure | 10 | 6 | |
-| Google Cloud | 10 | 6 | |
+| Azure | 10 | 6 | Sandbox, 3 Mysteries |
+| Google Cloud | 10 | 6 | Sandbox, 3 Mysteries |
 | Security | 10 | 6 | 2 hacked-server Mysteries (Linux sandbox) |
 | Server Fleet Ops | 11 | 6 | |
 | SRE | 10 | 6 | |
-| **Total** | **175** | **93** | 28 Writing Labs, 11 career paths, 4 sandboxes, 12 Mystery Incidents, Exam Mode |
+| **Total** | **175** | **93** | 28 Writing Labs, 11 career paths, 6 sandboxes, 18 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -1000,8 +1008,9 @@ that no amount of additional scenario content can fully close:
    fixes change the state, and careless fixes cost points (killing sshd
    or init counts as collateral damage). You can't win by guessing: you
    must have actually seen the evidence before you're allowed to answer.
-   The outputs are still simulated, though, and there are only 12
-   mysteries (Linux, Docker, AWS, and hacked servers), none of them Kubernetes. Pair this game with a homelab
+   The outputs are still simulated, though, and of the 18 mysteries
+   (Linux, Docker, AWS, Azure, Google Cloud, and hacked servers) none is
+   Kubernetes. Pair this game with a homelab
    (kind/minikube, a free-tier cloud account) where things break for real.
 3. **Cloud-provider fundamentals** (IAM, VPCs, managed services).
    **Partly addressed.** The AWS category (Part 9) and its VPC sandbox

@@ -14,6 +14,7 @@ from engine import normalize, read_input
 
 BASE_DIR = Path(__file__).parent
 SANDBOX_ROOT = BASE_DIR / "sandbox_data"
+SANDBOX_TITLES = {"aws": "AWS", "gcp": "Google Cloud"}  # kinds whose .title() would read wrong
 
 
 def render_table(headers: list, rows: list, prefix: str = "") -> str:
@@ -130,6 +131,57 @@ def apply_pipe(output: str, segment: str) -> str:
     return f"(pipe to '{cmd}' isn't supported in the sandbox — try grep, head, tail, wc -l, or sort)"
 
 
+def parse_flags(tokens: list, aliases: dict | None = None, booleans: set | None = None):
+    """Split normalized tokens into (flags, positional).
+
+    Handles --key=value, --key value, short aliases (-g rg -> resource-group),
+    bare boolean flags, and quoted values containing spaces
+    (--command='curl -s x' arrives as several tokens). normalize() glues a
+    boolean flag to a following positional (--tunnel-through-iap=web-1);
+    names listed in `booleans` have that value handed back as a positional."""
+    aliases, booleans = aliases or {}, booleans or set()
+    flags, positional = {}, []
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        key = value = None
+        if tok.startswith("--"):
+            key, _, value = tok[2:].partition("=")
+            if "=" not in tok:
+                value = None
+        elif tok in aliases:
+            key = aliases[tok]
+        else:
+            positional.append(tok.strip("'\""))
+            i += 1
+            continue
+
+        if key in booleans:
+            flags[key] = True
+            if value:
+                positional.append(value.strip("'\""))
+            i += 1
+            continue
+        if value is None:
+            if i + 1 < len(tokens) and not tokens[i + 1].startswith("-"):
+                value = tokens[i + 1]
+                i += 1
+            else:
+                flags[key] = True
+                i += 1
+                continue
+        if value[:1] in ("'", '"') and not (len(value) > 1 and value.endswith(value[0])):
+            quote = value[0]
+            while i + 1 < len(tokens):
+                i += 1
+                value += " " + tokens[i]
+                if tokens[i].endswith(quote):
+                    break
+        flags[key] = value.strip("'\"")
+        i += 1
+    return flags, positional
+
+
 def run_command(handle_command, state: dict, raw: str):
     """Run the first segment through the sandbox, then apply any pipes.
     Returns None when the player wants to exit."""
@@ -192,7 +244,7 @@ def run_loop(kind: str, noun: str, generate_state, handle_command, describe_stat
     """The interactive loop every sandbox shares. describe_state(state)
     returns the intro lines shown once the state is loaded."""
     store = SandboxStore(kind)
-    print(f"\n=== {'AWS' if kind == 'aws' else kind.title()} Sandbox ===")
+    print(f"\n=== {SANDBOX_TITLES.get(kind, kind.title())} Sandbox ===")
     state = store.choose_or_generate(generate_state, noun)
     store.save_current(state)
 

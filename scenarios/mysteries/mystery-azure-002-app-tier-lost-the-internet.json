@@ -1,0 +1,38 @@
+{
+  "id": "mystery-azure-002",
+  "type": "mystery",
+  "category": "azure",
+  "sandbox": "azure",
+  "title": "The App Tier Lost the Internet",
+  "difficulty": "intermediate",
+  "tags": ["azure", "routing", "udr", "firewall"],
+  "setup": {"seed": 22, "problems": ["udr_blackhole"]},
+  "symptom": "Since last night's network maintenance, vm-app-01 can't call the payment provider or download packages: every outbound request hangs. The website itself loads fine. The firewall team says their hub firewall is healthy and its logs show nothing being denied.",
+  "goals": [
+    {"check": "reachable", "from": "vm-app-01", "to": "internet", "port": 443, "description": "vm-app-01 can make outbound HTTPS calls again"}
+  ],
+  "evidence": [
+    {"description": "the failure, seen from the app VM itself", "seen_any": ["Timeout was reached"]},
+    {"description": "where Azure actually sends the app VM's outbound traffic", "seen_any": ["10.0.0.5"]},
+    {"description": "where the firewall really is", "seen_any": ["\"privateIPAddress\": \"10.0.0.4\""]}
+  ],
+  "question": {
+    "prompt": "The firewall is healthy and denies nothing. So why is outbound traffic failing?",
+    "options": [
+      "The firewall's rules block the payment provider",
+      "The NSG on the app subnet denies outbound traffic",
+      "The app subnet's user-defined route sends 0.0.0.0/0 to 10.0.0.5, an address where nothing exists. The traffic never reaches the firewall at 10.0.0.4, which is why its logs are empty",
+      "vm-app-01 needs a public IP"
+    ],
+    "answer": 2
+  },
+  "expert_commands": 5,
+  "solution_commands": [
+    "az vm run-command invoke -g rg-web-prod -n vm-app-01 --command-id RunShellScript --scripts \"curl -m 5 https://api.payments.example\"",
+    "az network watcher show-next-hop -g rg-web-prod --vm vm-app-01 --source-ip {app_ip} --dest-ip 20.50.1.10",
+    "az network firewall show -g rg-network-hub -n fw-hub",
+    "az network route-table route update -g rg-web-prod --route-table-name rt-app -n to-firewall --next-hop-ip-address {firewall_ip}",
+    "az vm run-command invoke -g rg-web-prod -n vm-app-01 --command-id RunShellScript --scripts \"curl -m 5 https://api.payments.example\""
+  ],
+  "debrief": "A user-defined route to a 'VirtualAppliance' next hop is followed blindly: Azure doesn't check that anything lives at that IP. The maintenance pipeline wrote the route from an old template that still had 10.0.0.5, so every outbound packet from the app subnet went to an address with nothing behind it. The firewall team was right, and their empty logs were the clue: nothing was denied because nothing arrived. Only the app subnet was affected, because only it has that route table. 'show-next-hop' answers 'where does this packet go?' in one command; compare it with the firewall's real address and the mismatch is obvious. Two wrong fixes to resist: giving the app VM a public IP (it bypasses the firewall and exposes the VM), and deleting the route (it bypasses egress filtering). Reference the firewall's IP from its resource in Terraform or Bicep instead of hardcoding it, and add a post-change probe from each spoke."
+}

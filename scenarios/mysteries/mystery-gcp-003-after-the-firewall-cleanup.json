@@ -1,0 +1,39 @@
+{
+  "id": "mystery-gcp-003",
+  "type": "mystery",
+  "category": "gcp",
+  "sandbox": "gcp",
+  "title": "After the Firewall Cleanup",
+  "difficulty": "advanced",
+  "tags": ["gcp", "firewall", "iap", "security"],
+  "setup": {"seed": 33, "problems": ["iap_rule_missing", "db_rule_wrong_source"]},
+  "symptom": "A security review 'removed risky SSH rules and tidied up the firewall' yesterday evening. This morning nobody can open a shell on any VM, and the site loads but every page that needs data shows a database error. The review's summary says 'no functional changes'.",
+  "goals": [
+    {"check": "reachable", "from": "iap", "to": "worker-1", "port": 22, "description": "Engineers can SSH to VMs through IAP again"},
+    {"check": "reachable", "from": "web-1", "to": "db-1", "port": 5432, "description": "web-1 can reach the database on db-1:5432"}
+  ],
+  "evidence": [
+    {"description": "why shells won't open", "seen_any": ["failed to connect to backend", "No ingress firewall rule allows traffic from the IAP range"]},
+    {"description": "who the database rule really trusts", "seen_any": ["tags:app", "sourceTags: [app]"]}
+  ],
+  "question": {
+    "prompt": "What did the 'cleanup' actually break?",
+    "options": [
+      "It deleted the VMs' SSH keys and the database's password",
+      "It deleted the one SSH rule that was safe (tcp:22 from Google's IAP range only), and changed the database rule's source tag to one no VM carries, so web-1 is no longer trusted by the database",
+      "It removed Cloud NAT",
+      "It added a deny rule with a high priority"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 6,
+  "solution_commands": [
+    "gcloud compute ssh worker-1 --zone {zone} --tunnel-through-iap --troubleshoot",
+    "gcloud compute firewall-rules list",
+    "gcloud compute firewall-rules create allow-iap-ssh --network prod-vpc --allow tcp:22 --source-ranges 35.235.240.0/20",
+    "gcloud compute firewall-rules update allow-db-from-web --source-tags web",
+    "gcloud compute ssh web-1 --zone {zone} --tunnel-through-iap --command 'nc -zv {db_ip} 5432'",
+    "gcloud compute ssh worker-1 --zone {zone} --tunnel-through-iap --command 'hostname'"
+  ],
+  "debrief": "The review judged rules by their port instead of their source. Port 22 open to 0.0.0.0/0 is dangerous; port 22 open only to 35.235.240.0/20 is the opposite: it's the rule that lets Identity-Aware Proxy reach the VMs, so nobody needs SSH exposed to the internet at all. Deleting it locked everyone out. The second change, 'tidying' the database rule's source tag from 'web' to 'app', broke the site's data, because no VM carries the tag 'app'. Fixing the first problem badly is the trap here: recreating the SSH rule without the IAP source range opens port 22 on every VM to the whole internet, which costs points and is worse than what the review started with. Review firewall rules by source range, give the IAP rule a description saying why it must stay, keep rules in Terraform so a deletion shows up as drift, and test the paths that matter after every change. 'No functional changes' is a claim to verify, not to trust."
+}

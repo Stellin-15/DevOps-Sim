@@ -202,6 +202,30 @@ class TestRunMystery:
         out = mystery.run_mystery(m, input_fn=scripted([f"kill -9 {pid}", "solve", "exit"]))
         assert not out["solved"] and "Not fixed yet" in capsys.readouterr().out
 
+    def test_fixing_before_observing_the_symptom_is_not_a_dead_end(self, capsys):
+        """An expert who reads the route table and fixes it never sees the
+        timeout. That evidence can't be produced afterwards, so it must not
+        block — it's reported in the debrief instead."""
+        m = self.m("mystery-aws-001")
+        fix_only = [c for c in expert_path(m) if "curl" not in c]
+        out = mystery.run_mystery(m, input_fn=scripted(fix_only + ["solve", correct_letter(m)]))
+        assert out["solved"] and out["score"] == 100
+        assert "without looking at" in capsys.readouterr().out
+
+    def test_reopening_ssh_to_the_world_is_gcp_collateral(self):
+        m = self.m("mystery-gcp-003")
+        lazy = "gcloud compute firewall-rules create allow-ssh --network prod-vpc --allow tcp:22"
+        out = mystery.run_mystery(m, input_fn=scripted([lazy] + expert_path(m) + ["solve", correct_letter(m)]))
+        assert out["solved"] and out["score"] == 85
+        assert any("port 22" in c for c in out["collateral"])
+
+    def test_azure_mystery_with_two_layers_needs_both_fixed(self, capsys):
+        m = self.m("mystery-azure-003")
+        first_half = expert_path(m)[:4]   # fixes the NIC NSG only
+        out = mystery.run_mystery(m, input_fn=scripted(first_half + ["solve", "exit"]))
+        assert not out["solved"]
+        assert "can reach its backend" in capsys.readouterr().out
+
     def test_help_does_not_count_as_a_command(self):
         m = self.m()
         out = mystery.run_mystery(m, input_fn=scripted(["help"] + expert_path(m) + ["solve", correct_letter(m)]))

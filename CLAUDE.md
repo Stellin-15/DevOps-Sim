@@ -131,9 +131,11 @@ Don't duplicate content from these files elsewhere — link to them.
   Python, `bash` resolved to a launcher that hung indefinitely. The
   trade-off (documented in GAPS.md): checks confirm the right shape, not
   that `docker build`/`terraform validate`/shellcheck would pass.
-- **sandbox_common.py** — shared by all three sandboxes: `render_table`,
+- **sandbox_common.py** — shared by all six sandboxes: `render_table`,
   shell-style pipes (`split_pipes` respects quotes; `apply_pipe` supports
-  grep [-i -v -c], head/tail [-n N | -N], wc -l, sort [-r]),
+  grep [-i -v -c -A/-B/-C N], head/tail [-n N | -N], wc -l, sort [-r]),
+  `parse_flags` (long flags, short aliases such as `-g`, boolean flags,
+  and quoted values with spaces; used by the Azure and GCP sandboxes),
   `SandboxStore(kind)` for keep/discard persistence (Kubernetes keeps the
   original `sandbox_data/` root so previously saved sessions still load;
   others use `sandbox_data/<kind>/`), and `run_loop(kind, noun,
@@ -219,9 +221,31 @@ Don't duplicate content from these files elsewhere — link to them.
   - **Output:** `normalize()` lowercases input, so ids and args are parsed
     lowercase. Output is always a table (`--query`/`--output` are
     ignored).
+- **azure_sandbox.py** — a fake subscription: vm-web-01 (public) and
+  vm-app-01 (private) in vnet-web-prod, with a hub firewall.
+  - Inbound traffic must pass the subnet NSG and then the NIC NSG. Rules
+    are evaluated by priority with Azure's `DEFAULT_RULES` appended.
+  - Outbound follows the subnet's route table; a `VirtualAppliance` next
+    hop that isn't the firewall's IP black-holes traffic.
+  - `test-ip-flow` and `show-next-hop` answer from the real state.
+  - 5 problems, 2 per subscription. Reactive commands: nsg rule
+    create/update/delete, nic update, route update, vm start/deallocate.
+  - Commands inside a VM go through `az vm run-command invoke --scripts`.
+- **gcp_sandbox.py** — a fake project: web-1 (external IP), db-1, and
+  worker-1 on the global prod-vpc.
+  - A firewall rule applies only to VMs carrying one of its target tags
+    (or to all VMs if it has none). The lowest priority wins, deny beats
+    allow at equal priority, and an implied rule denies other ingress.
+  - Source tags make tags act as identity: web-1 without the `web` tag
+    also loses its database access.
+  - Private VMs need a Cloud Router plus NAT in their own region.
+  - `gcloud compute ssh --tunnel-through-iap` needs tcp:22 from
+    35.235.240.0/20; it opens a session like AWS SSM, or runs one
+    command with `--command`.
+  - 6 problems, 2 per project.
 - **mystery.py** — Mystery Incidents: a symptom and a seeded sandbox
-  state (`scenarios/mysteries/*.json`). `sandbox` picks linux, docker or
-  aws, and `mystery.build_state` calls that module's
+  state (`scenarios/mysteries/*.json`). `sandbox` picks linux, docker,
+  aws, azure or gcp, and `mystery.build_state` calls that module's
   `generate_state(**setup)`.
 
   Mysteries are **sandbox-agnostic**: each sandbox module supplies three
@@ -243,8 +267,12 @@ Don't duplicate content from these files elsewhere — link to them.
      because that sandbox is read-only.
   2. **evidence**: substrings that must have appeared in some command's
      *output*. Typed commands don't count, so `echo batch.jar` can't
-     fake it. This exists because a goal-less mystery was winnable with
-     zero commands by guessing the multiple-choice answer.
+     fake it. It **gates only mysteries with no goals** (the read-only
+     Docker ones), which were winnable with zero commands by guessing.
+     Where there are goals it is reported in the debrief instead ("You
+     fixed it without looking at..."). Gating there trapped players who
+     fixed the cause first, because a timeout can't be observed once the
+     route exists.
   3. **a root-cause question**: two tries allowed.
 
   Score is 100, minus 20 per wrong answer, minus 15 per collateral
@@ -353,12 +381,12 @@ Current per-category content depth (tutorials / incidents):
 - monitoring: 12 / 6 (+2 Writing Labs: alert rules)
 - mlops: 12 / 7
 - aws: 11 / 7 (+ AWS VPC sandbox, 4 mysteries)
-- azure: 10 / 6
-- gcp: 10 / 6
+- azure: 10 / 6 (+ Azure sandbox, 3 mysteries)
+- gcp: 10 / 6 (+ Google Cloud sandbox, 3 mysteries)
 - security: 10 / 6 (+ 2 hacked-server mysteries on the Linux sandbox)
 - servers: 11 / 6 (fleet ops: Ansible, patching, time, LVM, backups)
 - sre: 10 / 6 (big-tech practices, via public tools)
-- **total: 175 tutorials, 93 incidents, 28 Writing Labs, 11 career paths, 12 Mystery Incidents (4 linux, 2 docker, 4 aws, 2 security)**
+- **total: 175 tutorials, 93 incidents, 28 Writing Labs, 11 career paths, 18 Mystery Incidents (4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with
@@ -481,7 +509,7 @@ final `resolution` debrief instead).
 python -m pytest
 ```
 
-(`pytest.ini` points it at `tests/`.) Eighteen files:
+(`pytest.ini` points it at `tests/`.) Twenty files:
 - `test_engine.py` — matching/normalization logic, proven kubectl-agnostic
 - `test_scenario_loader.py` — category-aware JSON loading (`list_categories`,
   category-filtered vs. aggregated `load_tutorials`/`load_incidents`,
@@ -523,6 +551,10 @@ python -m pytest
 - `test_docker_sandbox.py` — invariants over 200 seeds (1-2 problems,
   only app containers break, every problem type occurs) and the
   evidence each problem leaves in real commands
+- `test_azure_sandbox.py` and `test_gcp_sandbox.py` — the same shape as
+  the AWS tests, plus each cloud's own rules: NSG priority order and
+  NIC-level NSGs; target tags, deny-beats-allow, regional NAT, and IAP
+  SSH sessions
 - `test_aws_sandbox.py` — each problem breaks exactly its paths; each
   real fix restores them; NACL statelessness; SSM session enter and exit;
   describe filters; AWS-style errors; collateral detection
@@ -578,8 +610,7 @@ See GAPS.md's final 'Overall' part for the reasoning. In priority order:
    mode that was planned with it is **not wanted**: the user asked to
    continue with everything except spaced repetition. Don't build it
    unless they ask.
-1b. **Azure and GCP sandboxes** (next), following the aws_sandbox
-   pattern, each with mysteries.
+1b. ✓ **Azure and GCP sandboxes**, each with 3 mysteries.
 2. Per-category exam gap passes (like Part 1 did for the CKA): e.g.
    Terraform Associate, CKAD, AWS certs.
 3. More mysteries. A Kubernetes one needs the Kubernetes sandbox to
