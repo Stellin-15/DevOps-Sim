@@ -1,0 +1,48 @@
+{
+  "id": "dataeng-tutorial-002",
+  "type": "tutorial",
+  "category": "dataeng",
+  "title": "dbt: Transformations as Tested, Versioned SQL",
+  "difficulty": "intermediate",
+  "tags": ["dbt", "sql", "transformations", "data-quality"],
+  "intro": "Raw tables go into a warehouse; the tables people actually query are built from them with SQL. dbt manages that layer: each table is a SELECT statement in a file (a model), dbt works out the order from the references between them, and tests check the results. It brought code review, CI, and tests to analytics. You're in a dbt project with models stg_orders, orders_daily, and revenue_by_country.",
+  "steps": [
+    {
+      "prompt": "Check that dbt can connect to the warehouse and that the project is valid.",
+      "expected_commands": ["dbt debug"],
+      "fake_output": "Configuration:\n  profiles.yml file [OK found and valid]\n  dbt_project.yml file [OK found and valid]\nRequired dependencies:\n  - git [OK found]\nConnection:\n  method: service-account\n  database: shop-analytics\n  schema: dbt_dana\n  Connection test: [OK connection ok]\n\nAll checks passed!",
+      "explanation": "The project and credentials are fine, and your work will be built in the schema dbt_dana.",
+      "why": "The schema is the important line: each developer builds into their own schema, so trying a change never touches the production tables. The target is chosen by a profile, and the same code runs against dev, CI, and production. Always check where you're pointed before a run that writes."
+    },
+    {
+      "prompt": "Build the model orders_daily and everything that depends on it.",
+      "expected_commands": ["dbt run --select orders_daily+", "dbt run -s orders_daily+", "dbt run --select \"orders_daily+\""],
+      "fake_output": "Found 3 models, 9 data tests, 1 source\n\n1 of 2 START sql table model dbt_dana.orders_daily ................ [RUN]\n1 of 2 OK created sql table model dbt_dana.orders_daily ........... [CREATE TABLE (41.2k rows) in 4.10s]\n2 of 2 START sql table model dbt_dana.revenue_by_country .......... [RUN]\n2 of 2 OK created sql table model dbt_dana.revenue_by_country ..... [CREATE TABLE (212 rows) in 2.20s]\n\nCompleted successfully. PASS=2 WARN=0 ERROR=0 SKIP=0 TOTAL=2",
+      "explanation": "orders_daily was rebuilt, then revenue_by_country, which reads from it.",
+      "why": "The '+' after a name means 'and everything downstream'; before a name it means everything upstream. dbt knows the order because models refer to each other with ref('orders_daily') instead of a hardcoded table name, which is also what lets the same SQL run in any schema. You never write the dependency order by hand."
+    },
+    {
+      "prompt": "Run the tests for orders_daily.",
+      "expected_commands": ["dbt test --select orders_daily", "dbt test -s orders_daily"],
+      "fake_output": "1 of 4 PASS not_null_orders_daily_order_id ............................ [PASS in 0.80s]\n2 of 4 FAIL 318 unique_orders_daily_order_id .......................... [FAIL 318 in 0.90s]\n3 of 4 PASS accepted_values_orders_daily_status__paid__pending__failed  [PASS in 0.70s]\n4 of 4 PASS relationships_orders_daily_customer_id__ref_customers_ .... [PASS in 1.10s]\n\nFailure in test unique_orders_daily_order_id\n  Got 318 results, configured to fail if != 0",
+      "explanation": "318 order ids appear more than once in a table where each should be unique.",
+      "why": "The four built-in tests cover most data bugs: unique, not_null, accepted_values, and relationships (every customer_id exists in customers). A duplicate key is the classic silent error: every query still runs, and revenue is overstated. Without the test, someone in finance finds it weeks later. Tests are declared in a YAML file next to the model."
+    },
+    {
+      "prompt": "In CI you don't want to rebuild the whole project for a small change. Build and test only the models that changed, and what depends on them, compared with production's artifacts in ./prod-artifacts.",
+      "expected_commands": ["dbt build --select state:modified+ --state ./prod-artifacts", "dbt build -s state:modified+ --state ./prod-artifacts", "dbt build --state ./prod-artifacts --select state:modified+"],
+      "fake_output": "Found 3 models, 9 data tests\n\n1 of 5 OK created sql table model ci_pr_412.orders_daily ......... [CREATE TABLE in 4.02s]\n2 of 5 PASS not_null_orders_daily_order_id ........................ [PASS in 0.71s]\n3 of 5 PASS unique_orders_daily_order_id .......................... [PASS in 0.80s]\n4 of 5 OK created sql table model ci_pr_412.revenue_by_country .... [CREATE TABLE in 2.11s]\n5 of 5 PASS not_null_revenue_by_country_country ................... [PASS in 0.66s]\n\nCompleted successfully. PASS=5 WARN=0 ERROR=0 SKIP=0 TOTAL=5",
+      "hint": "dbt build --select state:modified+ --state ./prod-artifacts",
+      "explanation": "Only the changed model and its dependants were built, in a schema for this pull request, and tested.",
+      "why": "'dbt build' runs models and their tests together in dependency order, stopping downstream models if an upstream test fails. 'state:modified' compares your code with the manifest from the last production run, so a pull request builds what it touches and nothing else. This is the dbt equivalent of running only the affected tests, and it's what makes a check on every pull request affordable."
+    },
+    {
+      "prompt": "Tests check the transformed data. What checks whether the raw data feeding it has stopped arriving?\n  a) Nothing can\n  b) Source freshness: a declared expectation of how recent each source table's newest row should be, checked with 'dbt source freshness'\n  c) Running the models more often\n  d) A larger warehouse\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "$ dbt source freshness\n1 of 1 ERROR STALE freshness of shop.raw_orders ... [ERROR STALE in 0.90s]\n  max_loaded_at: 2026-09-30 02:00:11   (61 hours ago; error_after: 24 hours)",
+      "hint": "A pipeline can succeed on stale data.",
+      "explanation": "A freshness check on the sources.",
+      "why": "The commonest data failure isn't a crash: the upstream load stops, the transformations keep running successfully on old data, and dashboards quietly stop changing. A freshness rule turns 'the numbers look odd' into an alert on the day it happens. Monitor data the way you monitor services: is it arriving, is it complete, is it correct."
+    }
+  ]
+}

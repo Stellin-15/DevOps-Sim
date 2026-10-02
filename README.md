@@ -34,7 +34,7 @@ string.
   The game writes a real file to `workspace/`, tells you what to build or
   fix, and you edit it in your actual editor (vim, nano, VS Code —
   whatever you'd really use). Typing the apply command reads your real
-  file and checks it field by field. 48 labs across thirteen formats:
+  file and checks it field by field. 49 labs across thirteen formats:
   Kubernetes manifests, GitHub Actions workflows, Prometheus alert rules,
   Docker Compose files, Dockerfiles, Terraform (AWS VPCs, security
   groups, GCP firewalls, a reusable module), AWS IAM policies, Ansible
@@ -375,7 +375,8 @@ the engine, loader, sandboxes, yaml_lab, career_path, mystery, or scenario conte
 | Serverless | 7 | 4 | Lambda (invoke and logs, cold starts and concurrency, versions/aliases/canaries, event retries and failure destinations), API Gateway limits, ECS on Fargate, Cloud Run revisions and traffic, Azure Functions |
 | Performance | 7 | 3 | perf CPU profiling, flame graphs, py-spy, JVM heap/GC/thread dumps, eBPF tools (execsnoop, biolatency, bpftrace), Go pprof, honest benchmarking and percentiles |
 | FinOps | 6 | 3 | reading the bill by service and team, tags/budgets/anomaly alerts, rightsizing, Savings Plans and spot, Kubernetes cost (OpenCost), storage classes, log retention, and data transfer |
-| **Total** | **313** | **153** | + 48 Writing Labs |
+| Data Engineering | 5 | 2 | writing and testing Airflow DAGs, dbt (models, tests, state-based builds, freshness), warehouse cost and partitions (BigQuery, Snowflake), Spark on Kubernetes, change data capture with Debezium; plus 1 Writing Lab |
+| **Total** | **318** | **155** | + 49 Writing Labs |
 
 The three clouds use different names for the same ideas (security group
 vs NSG vs firewall rule; CloudTrail vs Activity Log vs Audit Logs). The

@@ -1,0 +1,49 @@
+{
+  "id": "dataeng-tutorial-003",
+  "type": "tutorial",
+  "category": "dataeng",
+  "title": "Data Warehouses: Partitions, Dry Runs, and Paying per Query",
+  "difficulty": "intermediate",
+  "tags": ["bigquery", "snowflake", "warehouse", "cost", "partitioning"],
+  "intro": "Cloud data warehouses separate storage from compute and charge for what a query reads or for how long compute runs. That makes a careless query a billing event. BigQuery charges per byte scanned; Snowflake charges for the time a virtual warehouse is running. The dataset here is analytics, with a table events of several terabytes.",
+  "steps": [
+    {
+      "prompt": "Before running a query on a big table, ask what it would cost. Dry-run this query: SELECT COUNT(*) FROM analytics.events WHERE user_id = 8812",
+      "expected_commands": ["bq query --dry_run --use_legacy_sql=false 'SELECT COUNT(*) FROM analytics.events WHERE user_id = 8812'", "bq query --use_legacy_sql=false --dry_run 'SELECT COUNT(*) FROM analytics.events WHERE user_id = 8812'", "bq query --dry_run --use_legacy_sql=false \"SELECT COUNT(*) FROM analytics.events WHERE user_id = 8812\""],
+      "fake_output": "Query successfully validated. Assuming the tables are not modified, running this query will process 4120441020440 bytes of data.",
+      "hint": "bq query --dry_run --use_legacy_sql=false 'SELECT COUNT(*) FROM analytics.events WHERE user_id = 8812'",
+      "explanation": "4.1 terabytes would be scanned, to count one user's events.",
+      "why": "A dry run validates the SQL and reports the bytes it would read, free. At on-demand prices 4 TB is about $25, for one query; in a dashboard that refreshes hourly that's $18,000 a month. The filter on user_id doesn't help: without a matching partition or cluster, a columnar warehouse still reads that whole column for every row."
+    },
+    {
+      "prompt": "See how the table is organised: show its partitioning and clustering settings.",
+      "expected_commands": ["bq show --format=prettyjson analytics.events | jq '.timePartitioning, .clustering'", "bq show --format=prettyjson analytics.events | jq \".timePartitioning, .clustering\"", "bq show --format=prettyjson analytics.events"],
+      "fake_output": "{\n  \"type\": \"DAY\",\n  \"field\": \"event_date\"\n}\n{\n  \"fields\": [\"user_id\"]\n}",
+      "explanation": "Partitioned by day on event_date, and clustered by user_id within each partition.",
+      "why": "A partition is a physically separate slice of the table. A query that filters on the partition column reads only the matching slices; one that doesn't reads them all. Clustering sorts the data inside each partition so that filters on user_id can skip blocks. The table is well designed; the query just didn't use it."
+    },
+    {
+      "prompt": "Dry-run the query again with a partition filter added: AND event_date = '2026-10-01'",
+      "expected_commands": ["bq query --dry_run --use_legacy_sql=false \"SELECT COUNT(*) FROM analytics.events WHERE user_id = 8812 AND event_date = '2026-10-01'\"", "bq query --use_legacy_sql=false --dry_run \"SELECT COUNT(*) FROM analytics.events WHERE user_id = 8812 AND event_date = '2026-10-01'\""],
+      "fake_output": "Query successfully validated. Assuming the tables are not modified, running this query will process 9120044 bytes of data.",
+      "hint": "bq query --dry_run --use_legacy_sql=false \"SELECT COUNT(*) FROM analytics.events WHERE user_id = 8812 AND event_date = '2026-10-01'\"",
+      "explanation": "9 megabytes, down from 4.1 terabytes: about 450,000 times less.",
+      "why": "One extra predicate on the partition column, and the query touches a single day's slice, then clustering narrows it further. This is the most valuable habit in warehouse work: always filter on the partition column. Selecting only the columns you need matters for the same reason, since each column is stored and billed separately; SELECT * on a wide table is the other classic waste."
+    },
+    {
+      "prompt": "People forget the filter. Which table setting makes the warehouse refuse a query that doesn't have one?\n  a) A bigger quota\n  b) require_partition_filter: queries without a filter on the partition column are rejected\n  c) Deleting old data\n  d) A view\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "bq update --require_partition_filter analytics.events\n\nwithout a filter -> 'Cannot query over table analytics.events without a filter over column(s) event_date'\n\nper query        -> --maximum_bytes_billed=10000000000   (fail instead of scanning more than 10 GB)",
+      "hint": "Make the expensive mistake impossible, not merely discouraged.",
+      "explanation": "The table itself can require the filter.",
+      "why": "A guard rail beats a guideline. With the setting on, the 4 TB query fails with a clear message instead of running. Per-user and per-project quotas on bytes scanned, and a maximum-bytes limit on scheduled queries, cap the damage from everything else. Dashboards and scheduled jobs are where this matters most, because they run unattended and repeatedly (dataeng-incident-002)."
+    },
+    {
+      "prompt": "Snowflake charges for the time a virtual warehouse is running, whether queries are executing or not. List the warehouses to see their state and auto-suspend settings.",
+      "expected_commands": ["snowsql -q \"SHOW WAREHOUSES\"", "snowsql -q 'SHOW WAREHOUSES'", "snowsql -q \"SHOW WAREHOUSES;\""],
+      "fake_output": "name          state     size      auto_suspend  auto_resume  running  queued\nANALYTICS_WH  STARTED   LARGE     600           true         0        0\nETL_WH        SUSPENDED X-LARGE   60            true         0        0\nADHOC_WH      STARTED   X-LARGE   NULL          true         0        0",
+      "explanation": "ADHOC_WH is an extra-large warehouse, running, with no queries and no auto-suspend at all.",
+      "why": "The opposite pricing model, with the opposite mistake: here an idle warehouse costs the same as a busy one. auto_suspend NULL means it never stops; an X-Large left on is thousands of dollars a month for nothing. Set auto-suspend to a minute or so everywhere, keep auto-resume on, and size warehouses per workload: a bigger one finishes a heavy job sooner for roughly the same cost, and is pure waste for small queries."
+    }
+  ]
+}

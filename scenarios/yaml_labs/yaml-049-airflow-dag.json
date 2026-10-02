@@ -1,0 +1,33 @@
+{
+  "id": "yaml-049",
+  "type": "yaml_lab",
+  "category": "dataeng",
+  "title": "Write an Airflow DAG: Extract, Transform, Load, Safely Re-runnable",
+  "difficulty": "advanced",
+  "tags": ["airflow", "dag", "python", "pipelines"],
+  "intro": "The tutorials operated and tested DAGs. Now write one: a daily pipeline of three tasks, set up so that switching it on doesn't launch a year of history, a transient failure is retried, and the dependencies say what you mean.",
+  "steps": [
+    {
+      "file": "daily_orders.py",
+      "format": "python",
+      "starter_content": "\"\"\"Daily orders pipeline: extract, transform, load.\"\"\"\n",
+      "prompt": "Write daily_orders.py:\n\n(1) Imports: 'from datetime import datetime, timedelta', 'from airflow import DAG', and\n    'from airflow.operators.python import PythonOperator'.\n(2) Three functions, each taking **context: extract, transform, and load. Each should read the run's logical date\n    with context[\"ds\"] (a pass or a print is enough for the body).\n(3) A dict default_args with \"retries\": 2 and \"retry_delay\": timedelta(minutes=5).\n(4) The DAG, as a context manager:\n      with DAG(dag_id=\"daily_orders\", start_date=datetime(2026, 1, 1), schedule=\"@daily\",\n               catchup=False, default_args=default_args) as dag:\n(5) Inside it, three PythonOperator tasks with task_id \"extract\", \"transform\", and \"load\", each with its\n    python_callable.\n(6) The order:  extract_task >> transform_task >> load_task\n\nDon't compute start_date from the current time.",
+      "apply_commands": ["python daily_orders.py", "airflow dags test daily_orders 2026-10-01", "check"],
+      "validate": {
+        "fields": {
+          "imports[*]": ["datetime", "airflow", "airflow.operators.python"],
+          "functions[*]": ["extract", "transform", "load"],
+          "calls[*]": ["DAG", "PythonOperator", "timedelta", "datetime"],
+          "text": {"contains": ["dag_id=\"daily_orders\"", "schedule=\"@daily\"", "catchup=False", "\"retries\": 2", "retry_delay", "task_id=\"extract\"", "task_id=\"transform\"", "task_id=\"load\"", "python_callable=", "context[\"ds\"]"]}
+        },
+        "order": ["with DAG(", "task_id=\"extract\"", "task_id=\"transform\"", "task_id=\"load\"", ">>"],
+        "absent": ["datetime.now()", "datetime.today()", "days_ago(", "catchup=True"]
+      },
+      "hint": "default_args = {\"retries\": 2, \"retry_delay\": timedelta(minutes=5)}\n\nwith DAG(dag_id=\"daily_orders\", start_date=datetime(2026, 1, 1), schedule=\"@daily\",\n         catchup=False, default_args=default_args) as dag:\n    extract_task = PythonOperator(task_id=\"extract\", python_callable=extract)\n    transform_task = PythonOperator(task_id=\"transform\", python_callable=transform)\n    load_task = PythonOperator(task_id=\"load\", python_callable=load)\n\n    extract_task >> transform_task >> load_task",
+      "solution": "\"\"\"Daily orders pipeline: extract, transform, load.\"\"\"\nfrom datetime import datetime, timedelta\n\nfrom airflow import DAG\nfrom airflow.operators.python import PythonOperator\n\n\ndef extract(**context):\n    day = context[\"ds\"]\n    print(f\"extracting orders for {day}\")\n\n\ndef transform(**context):\n    day = context[\"ds\"]\n    print(f\"transforming orders for {day}\")\n\n\ndef load(**context):\n    day = context[\"ds\"]\n    print(f\"replacing the {day} partition of orders_daily\")\n\n\ndefault_args = {\"retries\": 2, \"retry_delay\": timedelta(minutes=5)}\n\nwith DAG(\n    dag_id=\"daily_orders\",\n    start_date=datetime(2026, 1, 1),\n    schedule=\"@daily\",\n    catchup=False,\n    default_args=default_args,\n) as dag:\n    extract_task = PythonOperator(task_id=\"extract\", python_callable=extract)\n    transform_task = PythonOperator(task_id=\"transform\", python_callable=transform)\n    load_task = PythonOperator(task_id=\"load\", python_callable=load)\n\n    extract_task >> transform_task >> load_task\n",
+      "fake_output": "$ airflow dags test daily_orders 2026-10-01\nextracting orders for 2026-10-01\ntransforming orders for 2026-10-01\nreplacing the 2026-10-01 partition of orders_daily\nDag run in success state",
+      "explanation": "A three-step daily pipeline that retries, doesn't backfill by surprise, and passes each task the day it's working on.",
+      "why": "Each requirement prevents a named failure. A fixed start_date: one computed from the current time changes on every parse, so the scheduler never finds an interval to run. catchup=False: without it, enabling the DAG starts a run for every day since January (dataeng-tutorial-001). Retries with a delay absorb a brief network or database blip, so a transient failure doesn't page anyone; retries are only safe because the tasks are idempotent. context[\"ds\"] is the logical date as text: each task works on that day's data whenever it actually executes, which is what makes re-runs and backfills correct; using the current date instead is the classic bug. The '>>' line is the dependency graph: leave a task out of it and it runs at the start, unordered. Notice what's absent from the top level of the file: no database connection, no heavy import, no real work. The scheduler imports this file every few seconds, so anything outside a task function is paid for constantly."
+    }
+  ]
+}

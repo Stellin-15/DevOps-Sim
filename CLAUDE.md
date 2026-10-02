@@ -7,7 +7,7 @@ what's built, why it's shaped this way, and what's next.
 
 `kube-sim` — a terminal game for learning real DevOps command-line skills
 by typing them, not memorizing them. Originally Kubernetes-only; now a
-multi-category simulator spanning 24 categories (**Kubernetes, Docker,
+multi-category simulator spanning 25 categories (**Kubernetes, Docker,
 Linux, Terraform, Networking, CI/CD, Monitoring, MLOps, AWS, Azure, GCP,
 Security, Servers, SRE, Git, System Design, Databases, and Web Servers
 & Proxies**), plus two modes that cut across
@@ -439,7 +439,8 @@ Current per-category content depth (tutorials / incidents):
 - serverless: 7 / 4 (Lambda, API Gateway, ECS on Fargate, Cloud Run, Azure Functions)
 - performance: 7 / 3 (profilers, flame graphs, eBPF tools, JVM and Go runtime inspection, measurement)
 - finops: 6 / 3 (cost allocation, rightsizing, commitments and spot, Kubernetes cost, quiet costs)
-- **total: 313 tutorials, 153 incidents, 48 Writing Labs, 14 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
+- dataeng: 5 / 2 (+1 Writing Lab): Airflow authoring, dbt, warehouses, Spark on Kubernetes, CDC
+- **total: 318 tutorials, 155 incidents, 49 Writing Labs, 14 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with

@@ -617,8 +617,8 @@ and an unreproducible model trained on unversioned data.
 - Model registries' promotion workflows (staging → production approval).
 - ~~Pipeline DAGs~~: **partly closed** by mlops-tutorial-014, which
   covers *operating* Airflow (import errors, `tasks test`, backfill and
-  idempotency, manual triggers). *Writing* a DAG file is still not
-  practiced; it would make a good Writing Lab.
+  idempotency, manual triggers). Writing one is **closed** by
+  dataeng-tutorial-001 and Writing Lab yaml-049.
 - Evaluation and data-validation tooling (Great Expectations, Evidently).
 
 ## Readiness verdict
@@ -1752,7 +1752,61 @@ that part is learned by doing it with real people and a real budget.
 
 ---
 
-# Part 25 — The backlog: everything that isn't in the game yet
+# Part 25 — Data Engineering
+
+**Content:** 5 tutorials, 2 incidents, 1 Writing Lab (an Airflow DAG).
+
+Data pipelines are production systems that platform engineers end up
+running. MLOps (Part 8) operates Airflow for model training; Databases
+and Messaging cover PostgreSQL and Kafka themselves. This part is the
+data platform's own tools, at an operator's depth.
+
+## Covered
+
+Every section of `commands/dataeng.md`:
+- **Airflow authoring:** import checks, the task tree, `dags test`,
+  catchup, the logical date, and idempotent tasks.
+- **dbt:** targets and schemas, selecting models and their dependants,
+  the four built-in tests, building only what changed, and source
+  freshness.
+- **Warehouses:** dry runs, partitions and clustering, requiring a
+  partition filter, and idle Snowflake warehouses.
+- **Spark on Kubernetes:** drivers and executors, reading a failing
+  job's log, data skew, and the Spark UI.
+- **Change data capture:** Kafka Connect's REST API, failed tasks behind
+  a 'running' connector, replication slots, and schema changes.
+
+Incidents:
+- revenue doubled by re-running an appending pipeline;
+- a dashboard scanning 4 TB an hour.
+
+Writing Lab yaml-049 has you write an Airflow DAG.
+
+## Still missing
+
+- **Real data.** Everything here is pre-written output.
+- Writing dbt models, macros, and incremental models; data modelling
+  (star schemas, slowly changing dimensions).
+- Spark tuning beyond skew: shuffle, partitions, caching, and Structured
+  Streaming. Flink.
+- Lakehouse formats (Iceberg, Delta, Hudi) and query engines (Trino,
+  Athena).
+- Data quality frameworks (Great Expectations, Soda), lineage
+  (OpenLineage), and catalogs.
+- Other orchestrators: Dagster, Prefect, Argo Workflows.
+- Data governance: PII handling, retention, and access control on data.
+
+## Readiness verdict
+
+Enough to keep a data platform's machinery healthy and to recognise the
+failures that produce wrong numbers instead of errors, which is what
+makes data work different from service work. It isn't a data engineer's
+training: modelling data and writing transformations are the craft, and
+they're learned by building pipelines on real data.
+
+---
+
+# Part 26 — The backlog: everything that isn't in the game yet
 
 The parts above each list what's missing *inside* a category. This part
 lists whole topics with no category at all, in three tiers. Nobody needs
@@ -1837,17 +1891,17 @@ employer uses it.
   software templates isn't covered.
 - ~~**Compliance and governance**~~: **done** in security-tutorial-012
   to 016, security-incident-007, and Writing Labs yaml-046 to 048.
-- **Data engineering:** writing Airflow DAGs, dbt, Spark on Kubernetes,
-  warehouses (BigQuery, Snowflake), and change data capture (Debezium).
+- ~~**Data engineering**~~: **now a category** (Data Engineering), with
+  five tutorials, two incidents, and an Airflow DAG lab.
 - **LLM operations:** evaluation harnesses, prompt and model versioning,
   retrieval and vector databases, guardrails, quantization, and GPU cost
   control.
 - **System design depth:** the list under Part 16.
 - ~~**Testing in delivery**~~: **done** in cicd-tutorial-020.
-- **Authoring gaps named in earlier parts:** an Airflow DAG (planned
-  with Data Engineering). Kyverno and Falco are done (yaml-047, 048). (Manual
-  OpenTelemetry spans, a Grafana dashboard, and burn-rate alert rules
-  are done: yaml-042 to 044.)
+- ~~**Authoring gaps named in earlier parts**~~: **all done** as Writing
+  Labs: a Grafana dashboard, burn-rate alerts, and manual spans
+  (yaml-042 to 044), a Kyverno policy and a Falco rule (yaml-047, 048),
+  and an Airflow DAG (yaml-049).
 
 ## Tier C: less popular, legacy, or niche
 
@@ -1890,7 +1944,7 @@ If content is added in the order that helps most people soonest:
 
 ---
 
-# Part 26 — Overall: will this make you proficient in DevOps?
+# Part 27 — Overall: will this make you proficient in DevOps?
 
 ## By the numbers
 
@@ -1920,7 +1974,8 @@ If content is added in the order that helps most people soonest:
 | Serverless | 7 | 4 | |
 | Performance | 7 | 3 | |
 | FinOps | 6 | 3 | |
-| **Total** | **313** | **153** | 48 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
+| Data Engineering | 5 | 2 | 1 Writing Lab (Airflow DAG) |
+| **Total** | **318** | **155** | 49 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -1932,14 +1987,14 @@ command beats the alternatives — not just what it does.
 will know the commands, the failure modes, and — most importantly — the
 debugging method** (check the layer before guessing the fix; refused vs
 timeout; verify after every change; revoke before cleaning up; revert
-don't force-push). The 153 incidents are modeled on the kinds of problems
+don't force-push). The 155 incidents are modeled on the kinds of problems
 that genuinely trip up working engineers, and working through them
 builds judgment that command references alone never will.
 
 **It will not, on its own, make you fully proficient**, for four reasons
 that no amount of additional scenario content can fully close:
 
-1. **Authoring vs. operating.** Largely addressed: 48 Writing Labs now
+1. **Authoring vs. operating.** Largely addressed: 49 Writing Labs now
    have you write real Kubernetes manifests, GitHub Actions workflows,
    Prometheus alert rules, Compose files, Dockerfiles, Terraform (AWS
    VPCs and security groups, GCP firewalls), IAM policies, Ansible

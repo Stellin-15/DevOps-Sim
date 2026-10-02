@@ -1,0 +1,47 @@
+{
+  "id": "dataeng-tutorial-004",
+  "type": "tutorial",
+  "category": "dataeng",
+  "title": "Spark on Kubernetes: Drivers, Executors, and Why Jobs Die",
+  "difficulty": "advanced",
+  "tags": ["spark", "kubernetes", "batch", "data-processing"],
+  "intro": "Spark processes data too big for one machine by splitting it across many. On Kubernetes, a job is one driver pod, which plans the work, and a set of executor pods, which do it. When a job fails, the cause is nearly always in how that split went: memory, or uneven data. Jobs run in the namespace spark; today's job is daily-sessionize.",
+  "steps": [
+    {
+      "prompt": "Find the driver pods in namespace spark.",
+      "expected_commands": ["kubectl get pods -n spark -l spark-role=driver", "kubectl get pod -n spark -l spark-role=driver", "kubectl get pods -l spark-role=driver -n spark"],
+      "fake_output": "NAME                              READY   STATUS    RESTARTS   AGE\ndaily-sessionize-a1f9c3-driver    1/1     Running   0          41m\nhourly-rollup-7c2b0d-driver       0/1     Error     0          3h",
+      "explanation": "Today's job has been running 41 minutes; an earlier hourly job ended in Error.",
+      "why": "Spark labels its pods by role. The driver is the job: if it dies, the job is over, and its log is where the job's own account of what happened lives. A driver in Error with executors long gone is the normal picture of a failed job, since the executors are cleaned up when the driver exits."
+    },
+    {
+      "prompt": "List the executors of the running job.",
+      "expected_commands": ["kubectl get pods -n spark -l spark-role=executor", "kubectl get pod -n spark -l spark-role=executor", "kubectl get pods -l spark-role=executor -n spark"],
+      "fake_output": "NAME                              READY   STATUS      RESTARTS   AGE\ndaily-sessionize-a1f9c3-exec-1    1/1     Running     0          41m\ndaily-sessionize-a1f9c3-exec-2    1/1     Running     0          41m\ndaily-sessionize-a1f9c3-exec-3    1/1     Running     0          41m\ndaily-sessionize-a1f9c3-exec-7    1/1     Running     0          2m\ndaily-sessionize-a1f9c3-exec-4    0/1     OOMKilled   0          41m\ndaily-sessionize-a1f9c3-exec-5    0/1     OOMKilled   0          29m\ndaily-sessionize-a1f9c3-exec-6    0/1     OOMKilled   0          14m",
+      "explanation": "Three healthy executors and a series of replacements that keep being OOMKilled.",
+      "why": "Spark replaces a lost executor and retries its tasks, so a job can limp along for a long time while one piece of work kills executor after executor. Executors 4, 5, 6, and now 7 are all the same task being retried. That pattern, most executors fine and one slot dying repeatedly, points at the data, not at the cluster."
+    },
+    {
+      "prompt": "Read the end of the driver's log for the job daily-sessionize-a1f9c3-driver.",
+      "expected_commands": ["kubectl logs -n spark daily-sessionize-a1f9c3-driver --tail=50", "kubectl logs daily-sessionize-a1f9c3-driver -n spark --tail=50", "kubectl logs -n spark daily-sessionize-a1f9c3-driver --tail 50"],
+      "fake_output": "WARN TaskSetManager: Lost task 117.2 in stage 4.0 (TID 9120, executor 6): ExecutorLostFailure (executor 6 exited caused by one of the running tasks) Reason: The executor with id 6 was deleted by a user or the framework. Container killed: OOMKilled\nINFO DAGScheduler: Resubmitting task 117 in stage 4.0 (attempt 3 of 4)\nINFO TaskSetManager: Finished task 118.0 in stage 4.0 in 4.1 s (199/200)",
+      "explanation": "Task 117 of 200 in stage 4 has killed three executors and is on its last attempt; the other 199 tasks finished in seconds.",
+      "why": "'199/200' finished in four seconds and one that can't finish at all is data skew: one partition holds vastly more data than the rest. Typically a join or a group-by on a key where one value dominates, a null, or a single enormous customer. All of that key's rows go to one task, which doesn't fit in an executor's memory."
+    },
+    {
+      "prompt": "One task out of 200 keeps running out of memory. What's the right fix?\n  a) Give every executor ten times the memory\n  b) Deal with the skew: handle the dominant key separately or salt it, enable adaptive skew handling, or filter out the nulls; more memory only postpones it\n  c) Add more executors\n  d) Retry more times\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "spark.sql.adaptive.enabled=true\nspark.sql.adaptive.skewJoin.enabled=true      # splits oversized partitions at run time\n\nor in the job: filter user_id IS NOT NULL before the join; treat the one huge key on its own path",
+      "hint": "More executors don't help when all the work is in one task.",
+      "explanation": "Fix the distribution of the data, not the size of the machines.",
+      "why": "Parallelism only helps work that's evenly spread. Adding executors gives 199 idle workers and one that still fails; adding memory works until that key grows again. Adaptive query execution handles many cases automatically. The Spark UI's stage page shows it directly: one task with a far larger input size and duration than the median."
+    },
+    {
+      "prompt": "Open the Spark UI of the running job to look at that stage: forward local port 4040 to the driver pod's port 4040.",
+      "expected_commands": ["kubectl port-forward -n spark daily-sessionize-a1f9c3-driver 4040:4040", "kubectl port-forward daily-sessionize-a1f9c3-driver 4040:4040 -n spark", "kubectl -n spark port-forward daily-sessionize-a1f9c3-driver 4040:4040", "kubectl port-forward -n spark pod/daily-sessionize-a1f9c3-driver 4040:4040"],
+      "fake_output": "Forwarding from 127.0.0.1:4040 -> 4040\nForwarding from [::1]:4040 -> 4040",
+      "explanation": "The job's web UI is now at http://localhost:4040.",
+      "why": "The UI lives in the driver and disappears with it, so for finished jobs you need the event log and a history server, which is worth setting up before you need it. On the stage page, sort tasks by duration or shuffle read size: skew is obvious at a glance. Note also that executor memory on Kubernetes needs overhead beyond the JVM heap, the same lesson as performance-incident-001."
+    }
+  ]
+}

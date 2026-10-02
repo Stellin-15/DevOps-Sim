@@ -1,0 +1,49 @@
+{
+  "id": "dataeng-incident-001",
+  "type": "incident",
+  "category": "dataeng",
+  "title": "Last week's revenue doubled overnight, and no customer noticed",
+  "difficulty": "intermediate",
+  "tags": ["airflow", "backfill", "idempotency", "data-quality"],
+  "intro": "The finance dashboard shows revenue for 22 to 28 September at exactly twice what it showed yesterday. Other weeks are unchanged. Yesterday afternoon an engineer re-ran the daily_orders pipeline for that week 'to pick up a fix'. The warehouse table is orders_daily in the shop_analytics database, reachable with psql.",
+  "steps": [
+    {
+      "prompt": "Confirm what the table holds. Count rows per day for 20 to 30 September: select day and count(*) from orders_daily where day is between those dates, grouped and ordered by day.",
+      "expected_commands": ["psql -d shop_analytics -c \"SELECT day, count(*) FROM orders_daily WHERE day BETWEEN '2026-09-20' AND '2026-09-30' GROUP BY day ORDER BY day;\"", "psql -d shop_analytics -c \"SELECT day, count(*) FROM orders_daily WHERE day BETWEEN '2026-09-20' AND '2026-09-30' GROUP BY day ORDER BY day\"", "psql -d shop_analytics -c \"SELECT day, count(*) FROM orders_daily WHERE day BETWEEN '2026-09-20' AND '2026-09-30' GROUP BY 1 ORDER BY 1;\""],
+      "fake_output": "    day     | count\n------------+-------\n 2026-09-20 | 40112\n 2026-09-21 | 39870\n 2026-09-22 | 82408\n 2026-09-23 | 81940\n 2026-09-24 | 83120\n 2026-09-25 | 84044\n 2026-09-26 | 82610\n 2026-09-27 | 80212\n 2026-09-28 | 82816\n 2026-09-29 | 41180\n 2026-09-30 | 41502",
+      "hint": "psql -d shop_analytics -c \"SELECT day, count(*) FROM orders_daily WHERE day BETWEEN '2026-09-20' AND '2026-09-30' GROUP BY day ORDER BY day;\""
+    },
+    {
+      "prompt": "About 41,000 rows a day normally, and about 82,000 on the seven re-run days. Check whether those are true duplicates: for 22 September, compare the total row count with the number of distinct order ids.",
+      "expected_commands": ["psql -d shop_analytics -c \"SELECT count(*), count(DISTINCT order_id) FROM orders_daily WHERE day = '2026-09-22';\"", "psql -d shop_analytics -c \"SELECT count(*), count(DISTINCT order_id) FROM orders_daily WHERE day = '2026-09-22'\"", "psql -d shop_analytics -c \"SELECT count(DISTINCT order_id), count(*) FROM orders_daily WHERE day = '2026-09-22';\""],
+      "fake_output": " count | count\n-------+-------\n 82408 | 41204",
+      "hint": "psql -d shop_analytics -c \"SELECT count(*), count(DISTINCT order_id) FROM orders_daily WHERE day = '2026-09-22';\""
+    },
+    {
+      "prompt": "82,408 rows and 41,204 distinct orders: every order is there exactly twice. Look at how the pipeline writes: search the DAG file dags/daily_orders.py for INSERT.",
+      "expected_commands": ["grep -n -i insert dags/daily_orders.py", "grep -n INSERT dags/daily_orders.py", "grep -in insert dags/daily_orders.py", "grep -n -i \"insert\" dags/daily_orders.py"],
+      "fake_output": "58:        INSERT INTO orders_daily (day, order_id, customer_id, total_cents)\n59:        SELECT %(day)s, id, customer_id, total_cents FROM staging_orders WHERE order_day = %(day)s",
+      "hint": "grep -n -i insert dags/daily_orders.py"
+    },
+    {
+      "prompt": "A plain INSERT with nothing removed first: running a day twice appends it twice. Repair the data. Remove the seven affected days so they can be reloaded cleanly: delete from orders_daily where day is between 2026-09-22 and 2026-09-28.",
+      "expected_commands": ["psql -d shop_analytics -c \"DELETE FROM orders_daily WHERE day BETWEEN '2026-09-22' AND '2026-09-28';\"", "psql -d shop_analytics -c \"DELETE FROM orders_daily WHERE day BETWEEN '2026-09-22' AND '2026-09-28'\""],
+      "fake_output": "DELETE 577150",
+      "hint": "psql -d shop_analytics -c \"DELETE FROM orders_daily WHERE day BETWEEN '2026-09-22' AND '2026-09-28';\""
+    },
+    {
+      "prompt": "The load task has been changed to delete the day's rows and insert them in one transaction. Reload the week: backfill the DAG daily_orders from 2026-09-22 to 2026-09-28.",
+      "expected_commands": ["airflow dags backfill -s 2026-09-22 -e 2026-09-28 daily_orders", "airflow dags backfill --start-date 2026-09-22 --end-date 2026-09-28 daily_orders", "airflow dags backfill daily_orders -s 2026-09-22 -e 2026-09-28"],
+      "fake_output": "[backfill progress] | finished run 7 of 7 | tasks waiting: 0 | succeeded: 21 | failed: 0",
+      "hint": "airflow dags backfill -s 2026-09-22 -e 2026-09-28 daily_orders"
+    },
+    {
+      "prompt": "Verify 22 September: total rows against distinct order ids.",
+      "expected_commands": ["psql -d shop_analytics -c \"SELECT count(*), count(DISTINCT order_id) FROM orders_daily WHERE day = '2026-09-22';\"", "psql -d shop_analytics -c \"SELECT count(*), count(DISTINCT order_id) FROM orders_daily WHERE day = '2026-09-22'\"", "psql -d shop_analytics -c \"SELECT count(DISTINCT order_id), count(*) FROM orders_daily WHERE day = '2026-09-22';\""],
+      "fake_output": " count | count\n-------+-------\n 41204 | 41204",
+      "hint": "The same query as the second step."
+    }
+  ],
+  "resolution": "The re-run did exactly what it was asked. The load step was an INSERT that appended a day's orders to the table. The first time each day ran, that was correct. Yesterday's re-run of seven days appended the same orders again, and the table then held every order from that week twice. No error, no failed task: the pipeline was green, and the dashboard doubled. This is the most common data-pipeline bug there is, and it stays hidden until someone does something perfectly reasonable: retries a failed task, backfills a range, or re-runs to pick up a fix. A pipeline must be idempotent: running it for the same day any number of times must leave the same result. The fix here deletes that day's rows and inserts them in one transaction; partition overwrite and MERGE on a key do the same job. The duplicate check, total rows against distinct keys, found it in one query, and that's also the test that should have been in place: a uniqueness test on order_id (dbt's 'unique' test, dataeng-tutorial-002) would have failed the run before the dashboard was touched. Two further points. A unique constraint or key on the table would have made the second insert fail outright, which is the strongest protection where the warehouse supports it. And consider who saw this first: finance, a day later. Data quality checks belong in the pipeline, with alerts to the team that owns it, so that wrong numbers are stopped before they're published. The numbers people act on were wrong for a day, and decisions may have been made with them; tell the consumers what was affected and for how long, the same way you'd report an outage.",
+  "real_commands_used": ["psql: count(*) per day", "psql: count(*) vs count(DISTINCT key)", "grep -n -i insert <dag file>", "psql: DELETE the affected range", "airflow dags backfill -s -e"]
+}

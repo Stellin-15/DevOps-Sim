@@ -1,0 +1,48 @@
+{
+  "id": "dataeng-tutorial-005",
+  "type": "tutorial",
+  "category": "dataeng",
+  "title": "Change Data Capture: Streaming a Database's Changes with Debezium",
+  "difficulty": "advanced",
+  "tags": ["cdc", "debezium", "kafka-connect", "replication"],
+  "intro": "Copying a whole table to the warehouse every night is slow and a day late. Change data capture reads the database's own replication log and emits every insert, update, and delete as an event, seconds after it happens. Debezium does this as a connector running in Kafka Connect. The Connect REST API's address is in the variable CONNECT; the connector is named shop-postgres.",
+  "steps": [
+    {
+      "prompt": "List the connectors running on the Connect cluster.",
+      "expected_commands": ["curl -s $CONNECT/connectors | jq", "curl -s $CONNECT/connectors", "curl -s $CONNECT/connectors | jq ."],
+      "fake_output": "[\n  \"shop-postgres\",\n  \"orders-to-warehouse\"\n]",
+      "explanation": "A source connector reading PostgreSQL, and a sink connector writing to the warehouse.",
+      "why": "Kafka Connect is a framework for moving data in and out of Kafka without writing consumers and producers. A source connector turns an external system into topics; a sink does the reverse. Everything is managed through this REST API, which is why it needs to be protected: it can read connector configs, and those reference credentials."
+    },
+    {
+      "prompt": "Check the health of the shop-postgres connector.",
+      "expected_commands": ["curl -s $CONNECT/connectors/shop-postgres/status | jq", "curl -s $CONNECT/connectors/shop-postgres/status", "curl -s $CONNECT/connectors/shop-postgres/status | jq ."],
+      "fake_output": "{\n  \"name\": \"shop-postgres\",\n  \"connector\": {\"state\": \"RUNNING\", \"worker_id\": \"10.1.4.21:8083\"},\n  \"tasks\": [\n    {\"id\": 0, \"state\": \"FAILED\", \"worker_id\": \"10.1.4.21:8083\",\n     \"trace\": \"org.postgresql.util.PSQLException: ERROR: replication slot \\\"debezium_shop\\\" is active for PID 41204\"}\n  ]\n}",
+      "explanation": "The connector says RUNNING, but its one task is FAILED.",
+      "why": "This catches people constantly: the connector's state and its tasks' states are separate, and a connector reads 'RUNNING' while the task that does the work is dead. Always look at the tasks. A failed task doesn't restart by itself by default. The trace gives the cause: another process is still attached to the replication slot, usually a previous instance that didn't shut down cleanly."
+    },
+    {
+      "prompt": "The stale connection has been cleared. Restart task 0 of the connector.",
+      "expected_commands": ["curl -s -X POST $CONNECT/connectors/shop-postgres/tasks/0/restart", "curl -X POST $CONNECT/connectors/shop-postgres/tasks/0/restart", "curl -s -X POST \"$CONNECT/connectors/shop-postgres/tasks/0/restart\""],
+      "fake_output": "(no output: HTTP 204)",
+      "explanation": "The task restarts and resumes from where it stopped.",
+      "why": "It picks up at the position recorded in the replication slot, so nothing is lost while the slot survives. Monitoring should alert on any task in FAILED, because of what's on the other side of this: while the connector is down, the database keeps every change for it."
+    },
+    {
+      "prompt": "A CDC connector that's stopped for a weekend is dangerous to the source database. Why?\n  a) It isn't\n  b) It reads through a replication slot, and the database must keep all WAL the slot hasn't consumed: a stalled connector makes the primary's disk fill up\n  c) It deletes rows\n  d) It locks every table\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "SELECT slot_name, active, pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)) FROM pg_replication_slots;\n   slot_name   | active | pg_size_pretty\n ---------------+--------+----------------\n debezium_shop | f      | 212 GB",
+      "hint": "databases-incident-001.",
+      "explanation": "The slot pins write-ahead log on the primary until it's read.",
+      "why": "This is the price of CDC's guarantee of not missing changes. A data pipeline that the data team considers 'non-critical' can take down the production database. So the connector's health is a production alert, the slot's retained size is monitored, and the database sets max_slot_wal_keep_size as a ceiling. If a CDC experiment is abandoned, its slot must be dropped."
+    },
+    {
+      "prompt": "A column is renamed in the source table. What happens downstream?\n  a) Nothing changes\n  b) Events after that moment carry the new column name: consumers and warehouse tables that expected the old one break, or silently fill it with nulls\n  c) The connector deletes the topic\n  d) Kafka renames it everywhere\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "before : {\"id\": 8812, \"fullname\": \"Dana K\"}\nafter  : {\"id\": 8812, \"display_name\": \"Dana K\"}\n\nconsumers reading 'fullname' now get null",
+      "hint": "The event stream mirrors the table's shape at each moment.",
+      "explanation": "The application's schema is now an API that data consumers depend on.",
+      "why": "CDC couples every downstream consumer to the application's internal table structure, and application teams rename columns without knowing who's listening. Defences: a schema registry with compatibility rules, so that a breaking change is rejected or at least detected; the outbox pattern, where the application publishes deliberate events instead of exposing its tables; and the expand-and-contract migration from cicd-tutorial-014, which keeps the old column alive during the change."
+    }
+  ]
+}

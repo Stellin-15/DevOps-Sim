@@ -1,0 +1,48 @@
+{
+  "id": "dataeng-tutorial-001",
+  "type": "tutorial",
+  "category": "dataeng",
+  "title": "Writing an Airflow DAG That Can Be Re-run Safely",
+  "difficulty": "intermediate",
+  "tags": ["airflow", "dag", "pipelines", "idempotency"],
+  "intro": "mlops-tutorial-014 operated Airflow. This is the author's side. A DAG is a Python file that declares tasks and their order; most pipeline trouble is decided when it's written: whether a re-run duplicates data, whether a year of history runs by accident, whether one slow file slows every other DAG. You've written dags/daily_orders.py, with the DAG id daily_orders.",
+  "steps": [
+    {
+      "prompt": "The cheapest test first: does the file import at all? Run it with Python.",
+      "expected_commands": ["python dags/daily_orders.py", "python3 dags/daily_orders.py"],
+      "fake_output": "Traceback (most recent call last):\n  File \"dags/daily_orders.py\", line 4, in <module>\n    from pandas import read_sql\nModuleNotFoundError: No module named 'pandas'",
+      "explanation": "The file fails on an import: pandas isn't installed where the scheduler runs.",
+      "why": "A DAG file is just Python, and the scheduler imports it. If the import fails, the DAG never appears, with no error anywhere a user would look. Running the file directly takes a second and catches syntax errors and missing packages. Heavy imports at the top of a DAG file are a cost as well: the scheduler re-parses every file constantly, so import libraries inside the task function that needs them."
+    },
+    {
+      "prompt": "With the import moved inside the task, the file loads. Show the DAG's tasks as a tree, to check the dependencies are what you intended.",
+      "expected_commands": ["airflow tasks list daily_orders --tree", "airflow tasks list --tree daily_orders"],
+      "fake_output": "<Task(PythonOperator): extract>\n    <Task(PythonOperator): transform>\n        <Task(PythonOperator): load>\n<Task(PythonOperator): notify>",
+      "explanation": "extract, then transform, then load. And notify stands alone, depending on nothing.",
+      "why": "notify was meant to run after load and is unconnected, so it would fire at the start, announcing success before any work is done. Dependencies are declared with '>>' (extract >> transform >> load >> notify), and a forgotten link doesn't raise an error. Print the tree whenever you change the structure."
+    },
+    {
+      "prompt": "Run the whole DAG once, locally, for the logical date 2026-10-01, without the scheduler.",
+      "expected_commands": ["airflow dags test daily_orders 2026-10-01"],
+      "fake_output": "[2026-10-02 15:02:11] INFO - Running task extract for 2026-10-01\n[2026-10-02 15:02:14] INFO - extracted 41,204 orders for 2026-10-01\n[2026-10-02 15:02:14] INFO - Running task transform\n[2026-10-02 15:02:19] INFO - Running task load\n[2026-10-02 15:02:22] INFO - loaded 41,204 rows into warehouse.orders_daily partition 2026-10-01\n[2026-10-02 15:02:22] INFO - Dag run in success state",
+      "explanation": "All tasks ran in order, in one process, for that date.",
+      "why": "'dags test' runs a full DAG run in the foreground, so you can debug a pipeline like a script. The date argument is the logical date: the day of data the run is for, which each task receives. Tasks must use it, never the current time: a run for 1 October executed on the 5th must still process the 1st."
+    },
+    {
+      "prompt": "The DAG has start_date 1 January 2025 and a daily schedule. When it's first switched on, what happens with the default setting catchup=True?\n  a) It runs once, for today\n  b) The scheduler creates a run for every day since the start date: over 600 runs, started as fast as it can\n  c) Nothing until tomorrow\n  d) It fails to load\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "with DAG(\"daily_orders\", start_date=datetime(2025, 1, 1), schedule=\"@daily\", catchup=False):\n    ...",
+      "hint": "Airflow tries to 'catch up' on every interval it thinks it missed.",
+      "explanation": "Hundreds of historical runs, all at once, unless catchup is False.",
+      "why": "This surprises nearly everyone once: enabling a new DAG and watching it launch a year and a half of jobs against the source database. Set catchup=False unless you really want history, and backfill deliberately with a command when you do. Also give start_date a fixed date: a start date computed from 'now' moves every time the file is parsed, and the DAG never runs."
+    },
+    {
+      "prompt": "The load task appends the day's rows to the warehouse table with INSERT. The run for 1 October fails half-way and is retried. What's in the table afterwards?\n  a) Exactly the right rows\n  b) Some of 1 October's rows twice: the first attempt's partial insert plus the retry's full one\n  c) Nothing\n  d) Only the retry's rows\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "not idempotent : INSERT INTO orders_daily SELECT ...            -> a retry adds the rows again\nidempotent     : DELETE WHERE day = '2026-10-01'; INSERT ...    -> or overwrite that day's partition, or MERGE on a key",
+      "hint": "Retries and backfills run the same task for the same date more than once.",
+      "explanation": "An appending task duplicates data whenever it runs twice.",
+      "why": "Every scheduler retries, and every pipeline is eventually backfilled, so a task must be safe to run any number of times for the same date. The patterns: overwrite the date's partition, delete-then-insert in one transaction, or MERGE on a unique key. This one property is what makes pipelines operable; dataeng-incident-001 is what happens without it."
+    }
+  ]
+}

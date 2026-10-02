@@ -1,0 +1,43 @@
+{
+  "id": "dataeng-incident-002",
+  "type": "incident",
+  "category": "dataeng",
+  "title": "The BigQuery bill jumped by $14,000 and nobody ran anything unusual",
+  "difficulty": "intermediate",
+  "tags": ["bigquery", "cost", "partitioning", "dashboards"],
+  "intro": "The analytics project's BigQuery charges went from about $900 a month to a forecast of $15,000. Nobody remembers running a big query. A new executive dashboard went live nine days ago. The events table, analytics.events, is 4 TB, partitioned by event_date.",
+  "steps": [
+    {
+      "prompt": "Find which queries are scanning the most. BigQuery records every job. A saved query, top-jobs.sql, selects the user, the statement, the job count, and the total bytes billed from INFORMATION_SCHEMA.JOBS over the last 7 days, grouped and sorted. Run it.",
+      "expected_commands": ["bq query --use_legacy_sql=false < top-jobs.sql", "bq query --use_legacy_sql=false \"$(cat top-jobs.sql)\"", "cat top-jobs.sql | bq query --use_legacy_sql=false"],
+      "fake_output": "+-------------------------------------+------+----------------+------------------------------------------------------------+\n| user_email                          | jobs | tb_billed      | query                                                      |\n+-------------------------------------+------+----------------+------------------------------------------------------------+\n| dashboards@shop-analytics.iam...    |  168 |     692.2      | SELECT country, COUNT(DISTINCT user_id) FROM analytics.ev… |\n| dbt@shop-analytics.iam...           |   49 |       3.1      | CREATE OR REPLACE TABLE analytics.orders_daily AS ...      |\n| dana@example.com                    |   12 |       0.4      | SELECT * FROM analytics.orders_daily WHERE ...             |\n+-------------------------------------+------+----------------+------------------------------------------------------------+",
+      "hint": "bq query --use_legacy_sql=false < top-jobs.sql"
+    },
+    {
+      "prompt": "One query, run 168 times in 7 days by the dashboards service account: once an hour, 692 TB in total. Dry-run it to see what one execution reads: SELECT country, COUNT(DISTINCT user_id) FROM analytics.events GROUP BY country",
+      "expected_commands": ["bq query --dry_run --use_legacy_sql=false 'SELECT country, COUNT(DISTINCT user_id) FROM analytics.events GROUP BY country'", "bq query --use_legacy_sql=false --dry_run 'SELECT country, COUNT(DISTINCT user_id) FROM analytics.events GROUP BY country'", "bq query --dry_run --use_legacy_sql=false \"SELECT country, COUNT(DISTINCT user_id) FROM analytics.events GROUP BY country\""],
+      "fake_output": "Query successfully validated. Assuming the tables are not modified, running this query will process 4120441020440 bytes of data.",
+      "hint": "bq query --dry_run --use_legacy_sql=false 'SELECT country, COUNT(DISTINCT user_id) FROM analytics.events GROUP BY country'"
+    },
+    {
+      "prompt": "4.1 TB every hour: the whole table, because there's no filter on event_date. The dashboard tile is labelled 'active users, last 7 days'. Dry-run the query it should have been, with the filter: WHERE event_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY)",
+      "expected_commands": ["bq query --dry_run --use_legacy_sql=false 'SELECT country, COUNT(DISTINCT user_id) FROM analytics.events WHERE event_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY) GROUP BY country'", "bq query --use_legacy_sql=false --dry_run 'SELECT country, COUNT(DISTINCT user_id) FROM analytics.events WHERE event_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY) GROUP BY country'", "bq query --dry_run --use_legacy_sql=false \"SELECT country, COUNT(DISTINCT user_id) FROM analytics.events WHERE event_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY) GROUP BY country\""],
+      "fake_output": "Query successfully validated. Assuming the tables are not modified, running this query will process 18204410220 bytes of data.",
+      "hint": "bq query --dry_run --use_legacy_sql=false 'SELECT country, COUNT(DISTINCT user_id) FROM analytics.events WHERE event_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY) GROUP BY country'"
+    },
+    {
+      "prompt": "18 GB instead of 4.1 TB: over 200 times less. The dashboard's query has been corrected. Now make the mistake impossible for the next dashboard: require a partition filter on the table analytics.events.",
+      "expected_commands": ["bq update --require_partition_filter analytics.events", "bq update --require_partition_filter=true analytics.events"],
+      "fake_output": "Table 'shop-analytics:analytics.events' successfully updated.",
+      "hint": "bq update --require_partition_filter analytics.events"
+    },
+    {
+      "prompt": "A tile showing a 7-day figure doesn't need recomputing from raw events every hour either. What's the better design for it?\n  a) Refresh every minute so it's always current\n  b) Precompute it: a small daily summary table built by the pipeline (or a materialized view), which the dashboard reads in milliseconds for almost nothing\n  c) Remove the dashboard\n  d) Buy more capacity\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "raw events (4 TB)  --daily dbt model-->  active_users_by_country_daily (a few MB)  <--  dashboard\n\ncost per refresh: 18 GB  ->  a few MB",
+      "hint": "Many readers, the same answer, slowly changing data."
+    }
+  ],
+  "resolution": "Nobody ran anything unusual; a dashboard did, 24 times a day. One tile's query had no filter on the table's partition column, so each refresh scanned all 4.1 TB of events to produce a 7-day number. At on-demand prices that's about $25 a time, hourly: $600 a day from a tile nobody thought of as a query at all. The job history named it at once: INFORMATION_SCHEMA.JOBS records every query with who ran it and how much it billed, and sorting by total bytes puts the culprit on the first line. It's the warehouse's equivalent of pg_stat_statements, and for the same reason the answer was a modest query run constantly, not one giant one. Adding the partition filter cut each run by a factor of 200. Requiring a partition filter on the table means the next unfiltered query fails with a message instead of running. And the real fix is not to query raw events from a dashboard at all: aggregate once in the pipeline into a small table, and let every reader use that. Dashboards and scheduled queries are where warehouse cost goes wrong, because they multiply a query's cost by its refresh rate, unattended, for ever. Guard rails to have in place: require_partition_filter on large tables; a maximum-bytes-billed limit on scheduled and service-account queries; a daily custom quota per project; and a budget alert on the warehouse's spending, which would have caught this on day one instead of day nine. The service account running dashboards deserves the tightest limits of all, since no person is watching what it runs.",
+  "real_commands_used": ["bq query on INFORMATION_SCHEMA.JOBS (top bytes billed)", "bq query --dry_run (before and after the partition filter)", "bq update --require_partition_filter <table>"]
+}

@@ -53,6 +53,7 @@ CATEGORY_LABELS = {
     "serverless": "Serverless",
     "performance": "Performance",
     "finops": "FinOps",
+    "dataeng": "Data Engineering",
 }
 
 
