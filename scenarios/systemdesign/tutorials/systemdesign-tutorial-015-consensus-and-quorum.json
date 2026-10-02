@@ -1,0 +1,49 @@
+{
+  "id": "systemdesign-tutorial-015",
+  "type": "tutorial",
+  "category": "systemdesign",
+  "title": "Consensus in Practice: Leaders, Terms, and Quorum with etcd",
+  "difficulty": "advanced",
+  "tags": ["system-design", "raft", "etcd", "quorum", "consensus"],
+  "intro": "Some decisions must be agreed by a group of machines even when some of them fail: who the leader is, what the configuration says, who holds a lock. Consensus algorithms such as Raft provide that, and they sit under Kubernetes (etcd), Kafka's controllers, Consul, and Patroni's failover. You operate them more than you implement them. This is a three-member etcd cluster.",
+  "steps": [
+    {
+      "prompt": "Show the status of every member of the cluster as a table.",
+      "expected_commands": ["etcdctl endpoint status --cluster -w table", "etcdctl endpoint status --cluster --write-out=table", "etcdctl endpoint status -w table --cluster"],
+      "fake_output": "+------------------------+------------------+---------+---------+-----------+-----------+------------+\n|        ENDPOINT        |        ID        | VERSION | DB SIZE | IS LEADER | RAFT TERM | RAFT INDEX |\n+------------------------+------------------+---------+---------+-----------+-----------+------------+\n| https://10.0.1.11:2379 | 8e9e05c52164694d |  3.5.15 |  212 MB |     false |        42 |    9120044 |\n| https://10.0.1.12:2379 | 91bc3c398fb3c146 |  3.5.15 |  212 MB |      true |        42 |    9120044 |\n| https://10.0.1.13:2379 | fd422379fda50e48 |  3.5.15 |  212 MB |     false |        42 |    9120040 |\n+------------------------+------------------+---------+---------+-----------+-----------+------------+",
+      "explanation": "One leader (10.0.1.12), all in term 42, and one follower four entries behind.",
+      "why": "Raft has exactly one leader per term; all writes go through it and are copied to the followers. The term number rises at every election, so a term that keeps climbing means the cluster keeps losing and re-electing its leader, usually from slow disks or a flaky network. The index is the position in the replicated log; a follower slightly behind is normal, one far behind is struggling."
+    },
+    {
+      "prompt": "A write is committed once a majority (a quorum) of members have stored it. With 3 members, how many can fail while the cluster keeps accepting writes?\n  a) 0\n  b) 1: two of three is still a majority\n  c) 2\n  d) 3\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "members  quorum  failures tolerated\n   1        1           0\n   2        2           0\n   3        2           1\n   4        3           1\n   5        3           2",
+      "hint": "Quorum is more than half: floor(n/2) + 1.",
+      "explanation": "Three members tolerate one failure.",
+      "why": "Note the table's lesson about even numbers: four members tolerate the same single failure as three, with more to go wrong, and two members tolerate none. That's why these clusters have 3 or 5 members. Five survives two failures, which matters during maintenance: with three, taking one down for an upgrade leaves no margin for an unplanned failure."
+    },
+    {
+      "prompt": "A network fault splits a 5-member cluster into a group of 3 and a group of 2. What happens?\n  a) Both groups keep accepting writes\n  b) The group of 3 has a majority and carries on; the group of 2 can't reach quorum and refuses writes. There can never be two leaders committing different data\n  c) Both stop\n  d) The smaller group wins\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "[ A  B  C ]  |  [ D  E ]\n  majority       minority\n  elects/keeps   cannot commit\n  a leader       (reads may be stale; writes rejected)",
+      "hint": "Two majorities can't exist in one cluster.",
+      "explanation": "Only the majority side can make progress, which prevents split brain.",
+      "why": "This is the point of requiring a majority: any two majorities overlap in at least one member, so two sides can't both decide. The minority side becoming unavailable is the system choosing consistency over availability, which is right for the things consensus is used for. It's also why members should be spread across three failure zones: with only two zones, losing the zone holding the majority stops everything."
+    },
+    {
+      "prompt": "Check the health of each member.",
+      "expected_commands": ["etcdctl endpoint health --cluster", "etcdctl endpoint health --cluster -w table"],
+      "fake_output": "https://10.0.1.12:2379 is healthy: successfully committed proposal: took = 2.104ms\nhttps://10.0.1.11:2379 is healthy: successfully committed proposal: took = 2.412ms\nhttps://10.0.1.13:2379 is healthy: successfully committed proposal: took = 188.204ms",
+      "explanation": "All healthy, but 10.0.1.13 took 188 ms to commit where the others took 2.",
+      "why": "The health check performs a real write through consensus, so its duration is meaningful. Raft needs every commit written durably to disk, which makes these systems extremely sensitive to disk latency: a slow disk on one member delays it, and on the leader it delays everyone and can trigger elections. etcd wants fast, dedicated disks; sharing them with a noisy workload is a classic cause of an unstable Kubernetes control plane."
+    },
+    {
+      "prompt": "Why shouldn't you use a consensus store like etcd as your application's main database?\n  a) It's too reliable\n  b) Every write is agreed by a majority and written to disk on each member, so it's built for small, critical data with modest write rates, not gigabytes of application data\n  c) It has no API\n  d) It can't store text\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "good fit : configuration, leader locks, service discovery, cluster state   (small, must be correct)\nbad fit  : user data, events, anything large or high-volume",
+      "hint": "Agreement on every write has a cost.",
+      "explanation": "Consensus buys correctness with throughput; keep it for the data that needs it.",
+      "why": "The pattern in real systems is a small consensus core holding the decisions (who is leader, what the configuration is), with the bulk data replicated by cheaper means around it. Kafka, Patroni-managed PostgreSQL, and Kubernetes all have that shape. etcd's default size limit of a few gigabytes is the design telling you what it's for."
+    }
+  ]
+}

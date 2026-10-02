@@ -1,0 +1,49 @@
+{
+  "id": "systemdesign-incident-008",
+  "type": "incident",
+  "category": "systemdesign",
+  "title": "One availability zone failed, and the 'highly available' cluster went read-only",
+  "difficulty": "advanced",
+  "tags": ["system-design", "quorum", "etcd", "availability-zones", "consensus"],
+  "intro": "At 10:02 the cloud provider lost availability zone us-east-1a. The platform's etcd cluster, which holds configuration and leader locks for several services, has three members and was described as tolerating a zone failure. Since 10:02 every write to it fails with 'etcdserver: request timed out', and services that need a lock can't start. Reads still work. The members are etcd-1, etcd-2, and etcd-3.",
+  "steps": [
+    {
+      "prompt": "Check the health of each member.",
+      "expected_commands": ["etcdctl endpoint health --cluster", "etcdctl endpoint health --cluster -w table", "etcdctl endpoint health"],
+      "fake_output": "https://etcd-3:2379 is unhealthy: failed to commit proposal: context deadline exceeded\nhttps://etcd-1:2379 is unhealthy: failed to connect: context deadline exceeded\nhttps://etcd-2:2379 is unhealthy: failed to connect: context deadline exceeded\nError: unhealthy cluster",
+      "hint": "etcdctl endpoint health --cluster"
+    },
+    {
+      "prompt": "etcd-1 and etcd-2 can't be reached at all; etcd-3 answers but can't commit. See where each member runs: list the etcd instances with their availability zones. They're EC2 instances tagged role=etcd.",
+      "expected_commands": ["aws ec2 describe-instances --filters Name=tag:role,Values=etcd --query 'Reservations[].Instances[].[Tags[?Key==`Name`]|[0].Value,Placement.AvailabilityZone,State.Name]' --output table", "aws ec2 describe-instances --filters Name=tag:role,Values=etcd --query \"Reservations[].Instances[].[Tags[?Key==`Name`]|[0].Value,Placement.AvailabilityZone,State.Name]\" --output table", "aws ec2 describe-instances --filters Name=tag:role,Values=etcd"],
+      "fake_output": "-------------------------------------------\n|  etcd-1  |  us-east-1a  |  running     |\n|  etcd-2  |  us-east-1a  |  running     |\n|  etcd-3  |  us-east-1b  |  running     |\n-------------------------------------------",
+      "hint": "aws ec2 describe-instances --filters Name=tag:role,Values=etcd --query 'Reservations[].Instances[].[Tags[?Key==`Name`]|[0].Value,Placement.AvailabilityZone,State.Name]' --output table"
+    },
+    {
+      "prompt": "Two of the three members are in the zone that failed. With only etcd-3 left, why can't the cluster accept writes?\n  a) etcd-3 is broken\n  b) A write needs a majority, 2 of 3, to agree; one member alone can't form a quorum, so it refuses writes instead of risking two diverging histories\n  c) The disk is full\n  d) The certificate expired\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "members: 3   quorum: 2   reachable: 1   -> no quorum -> no commits\n\netcd-3 can't tell 'the others are dead' from 'I've been cut off and they're carrying on'",
+      "hint": "systemdesign-tutorial-015."
+    },
+    {
+      "prompt": "The cluster behaved correctly; the placement was wrong. The zone is expected back within the hour, and the data is intact on all three disks. What should you do now?\n  a) Force etcd-3 to become a new single-member cluster immediately\n  b) Wait for the zone to return, since the members will rejoin by themselves and nothing is lost; force a new cluster from etcd-3 only if the zone is declared unrecoverable\n  c) Delete etcd-3\n  d) Add ten new members\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "wait      : quorum returns when 1a does; zero data loss; no risk\nforce-new : etcd --force-new-cluster on etcd-3 discards the other members; if 1a comes back with newer data, that data is gone",
+      "hint": "One option is reversible."
+    },
+    {
+      "prompt": "The zone returns at 10:41. Confirm the cluster has a leader and all members are in step.",
+      "expected_commands": ["etcdctl endpoint status --cluster -w table", "etcdctl endpoint status --cluster --write-out=table", "etcdctl endpoint status -w table --cluster"],
+      "fake_output": "+---------------------+------------------+---------+-----------+-----------+------------+\n|      ENDPOINT       |        ID        | VERSION | IS LEADER | RAFT TERM | RAFT INDEX |\n+---------------------+------------------+---------+-----------+-----------+------------+\n| https://etcd-1:2379 | 8e9e05c52164694d |  3.5.15 |      true |        44 |    9120412 |\n| https://etcd-2:2379 | 91bc3c398fb3c146 |  3.5.15 |     false |        44 |    9120412 |\n| https://etcd-3:2379 | fd422379fda50e48 |  3.5.15 |     false |        44 |    9120412 |\n+---------------------+------------------+---------+-----------+-----------+------------+",
+      "hint": "etcdctl endpoint status --cluster -w table"
+    },
+    {
+      "prompt": "Service is back. To make the cluster really survive a zone failure, where must its three members be?\n  a) All in the most reliable zone\n  b) One in each of three zones, so that losing any single zone leaves two members: a majority\n  c) Two in one zone and one in another, as now\n  d) All on one large host\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "2 + 1 across two zones : lose the '2' zone -> 1 of 3 -> no quorum   (what happened)\n1 + 1 + 1 across three : lose any zone     -> 2 of 3 -> quorum holds",
+      "hint": "No single failure domain may hold a majority."
+    }
+  ],
+  "resolution": "A three-member consensus cluster tolerates one failure. Whether it tolerates a zone failure depends on what a zone failure takes away. Two of the three members had been placed in the same zone, so losing that zone was two failures at once. The survivor, etcd-3, was healthy and correct to refuse writes: a single member can't distinguish 'the others have died' from 'I'm the one that's been cut off', and if it accepted writes in the second case there would be two histories. So it kept serving reads, which may be stale, and timed out every write. The cluster's design was sound; its placement defeated it. Nobody had checked where the three instances had actually landed, and two in one zone is what you get by default when capacity happens to be available there. The decision during the incident mattered as much as the diagnosis. Forcing a new single-member cluster from etcd-3 would have restored writes in minutes and would have thrown away the other members; had the zone returned holding a newer write, that data would be gone, with a diverged cluster to untangle. Because the outage had a known, short end and the disks were intact, waiting was the safe choice. Force-new-cluster is for when the majority is known to be permanently lost. The rule for any quorum system: no single failure domain may contain a majority. Three members go in three zones; with only two zones available, real zone tolerance isn't achievable, and a third location, even a small one acting as a tie-breaker, is needed. The same reasoning applies to Kafka controllers, Patroni's consensus store, Consul, and Kubernetes control planes. Verify placement with a query, in a readiness review, not with a diagram.",
+  "real_commands_used": ["etcdctl endpoint health --cluster", "aws ec2 describe-instances (Placement.AvailabilityZone of each member)", "etcdctl endpoint status --cluster -w table"]
+}

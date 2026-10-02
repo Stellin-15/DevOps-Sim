@@ -1130,7 +1130,7 @@ hands-on skill.
 
 # Part 16 — System Design
 
-**Content:** 11 tutorials, 6 incidents, 2 Writing Labs (design documents).
+**Content:** 18 tutorials, 8 incidents, 4 Writing Labs (design documents).
 
 System design is mostly judgment, which a command matcher can't check
 directly. So this category mixes three kinds of step:
@@ -1177,14 +1177,19 @@ a URL shortener and a rate limiter.
   required sections and key terms are present. They can't tell a good
   design from a bad one that uses the right words. Have a person review
   your documents.
-- Distributed transactions: sagas, the outbox pattern, two-phase commit.
-- CQRS and event sourcing.
-- Multi-region designs: active-active, data residency, failover.
-- Consensus internals (Raft) beyond quorum arithmetic.
-- Probabilistic structures (Bloom filters, HyperLogLog), search systems,
-  and real-time delivery (WebSockets, long polling).
-- More worked designs. Only two exist; interviews and real work draw on
-  many (chat, a news feed, payments, notifications, a job scheduler).
+- ~~Distributed transactions, CQRS, multi-region, consensus,
+  probabilistic structures, real-time delivery~~: **closed** by
+  systemdesign-tutorial-012 (dual writes, outbox, sagas, 2PC), 013
+  (CQRS and event sourcing), 014 (active-passive vs active-active,
+  conflicts, residency), 015 (Raft in practice with etcd), 016
+  (HyperLogLog and Bloom filters), and 017 (SSE, WebSockets, fan-out),
+  with incidents systemdesign-incident-007 (lost events from a dual
+  write) and 008 (quorum lost with one zone).
+- ~~More worked designs~~: **partly closed**: a chat system
+  (systemdesign-tutorial-018 and lab yaml-050) and a notification system
+  (lab yaml-051) join the URL shortener and rate limiter. Still to do:
+  a news feed, payments, search, and a job scheduler.
+- Search systems (inverted indexes, relevance), and geospatial data.
 - Speaking a design aloud under time pressure, which is its own skill.
 
 ## Readiness verdict
@@ -1901,7 +1906,8 @@ employer uses it.
   five tutorials, two incidents, and an Airflow DAG lab.
 - ~~**LLM operations**~~: **done** in mlops-tutorial-015 to 018 and
   mlops-incident-008.
-- **System design depth:** the list under Part 16.
+- ~~**System design depth**~~: **done** in systemdesign-tutorial-012 to
+  018, two incidents, and two more design-document labs.
 - ~~**Testing in delivery**~~: **done** in cicd-tutorial-020.
 - ~~**Authoring gaps named in earlier parts**~~: **all done** as Writing
   Labs: a Grafana dashboard, burn-rate alerts, and manual spans
@@ -1970,7 +1976,7 @@ If content is added in the order that helps most people soonest:
 | Server Fleet Ops | 13 | 7 | 1 Writing Lab (Ansible) |
 | SRE | 13 | 6 | 2 Writing Labs (postmortem, catalog entry) |
 | Git | 11 | 6 | |
-| System Design | 11 | 6 | 2 Writing Labs (design documents) |
+| System Design | 18 | 8 | 4 Writing Labs (design documents) |
 | Databases | 12 | 6 | |
 | Web Servers & Proxies | 11 | 6 | 2 Writing Labs (nginx configuration) |
 | Identity & Secrets | 9 | 5 | 2 Writing Labs (Vault policy, cert-manager) |
@@ -1980,7 +1986,7 @@ If content is added in the order that helps most people soonest:
 | Performance | 7 | 3 | |
 | FinOps | 6 | 3 | |
 | Data Engineering | 5 | 2 | 1 Writing Lab (Airflow DAG) |
-| **Total** | **322** | **156** | 49 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
+| **Total** | **329** | **158** | 51 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -1992,14 +1998,14 @@ command beats the alternatives — not just what it does.
 will know the commands, the failure modes, and — most importantly — the
 debugging method** (check the layer before guessing the fix; refused vs
 timeout; verify after every change; revoke before cleaning up; revert
-don't force-push). The 156 incidents are modeled on the kinds of problems
+don't force-push). The 158 incidents are modeled on the kinds of problems
 that genuinely trip up working engineers, and working through them
 builds judgment that command references alone never will.
 
 **It will not, on its own, make you fully proficient**, for four reasons
 that no amount of additional scenario content can fully close:
 
-1. **Authoring vs. operating.** Largely addressed: 49 Writing Labs now
+1. **Authoring vs. operating.** Largely addressed: 51 Writing Labs now
    have you write real Kubernetes manifests, GitHub Actions workflows,
    Prometheus alert rules, Compose files, Dockerfiles, Terraform (AWS
    VPCs and security groups, GCP firewalls), IAM policies, Ansible

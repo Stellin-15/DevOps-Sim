@@ -1,0 +1,50 @@
+{
+  "id": "systemdesign-tutorial-017",
+  "type": "tutorial",
+  "category": "systemdesign",
+  "title": "Real-Time Delivery: WebSockets, Server-Sent Events, and Fan-Out",
+  "difficulty": "advanced",
+  "tags": ["system-design", "websockets", "sse", "real-time", "fan-out"],
+  "intro": "HTTP is request and response: the server can't speak until asked. Chat, notifications, live prices, and collaborative editing need the server to push. There are three ways to do it, and each changes what your load balancers, proxies, and servers have to cope with. The service is live.example.com.",
+  "steps": [
+    {
+      "prompt": "Server-sent events are the simplest push: one long-lived HTTP response that the server keeps writing to. Open the stream at https://live.example.com/events without buffering.",
+      "expected_commands": ["curl -N https://live.example.com/events", "curl -sN https://live.example.com/events", "curl --no-buffer https://live.example.com/events", "curl -N -s https://live.example.com/events"],
+      "fake_output": "event: price\ndata: {\"sku\":\"ab-1001\",\"cents\":1999}\n\nevent: price\ndata: {\"sku\":\"ab-1001\",\"cents\":1949}\n\n: keep-alive\n\nevent: price\ndata: {\"sku\":\"cd-2040\",\"cents\":8800}",
+      "explanation": "The connection stays open and events arrive as lines of text.",
+      "why": "SSE is plain HTTP, so it passes through proxies, works with ordinary authentication, and browsers reconnect automatically, resuming from the last event id. It's one-way, server to client, which is all that notifications, feeds, and streamed LLM responses need. The ': keep-alive' comment lines stop idle-timeout settings on proxies closing the connection."
+    },
+    {
+      "prompt": "WebSockets give a two-way channel. They start as an HTTP request asking to upgrade. Make that handshake by hand to wss://live.example.com/ws and look at the response headers. (Use the key dGhlIHNhbXBsZSBub25jZQ==.)",
+      "expected_commands": ["curl -i -N -H \"Connection: Upgrade\" -H \"Upgrade: websocket\" -H \"Sec-WebSocket-Version: 13\" -H \"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\" https://live.example.com/ws", "curl -i -N -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' https://live.example.com/ws"],
+      "fake_output": "HTTP/1.1 101 Switching Protocols\nUpgrade: websocket\nConnection: Upgrade\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",
+      "hint": "curl -i -N -H \"Connection: Upgrade\" -H \"Upgrade: websocket\" -H \"Sec-WebSocket-Version: 13\" -H \"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\" https://live.example.com/ws",
+      "explanation": "101 Switching Protocols: the connection is now a WebSocket, no longer HTTP.",
+      "why": "After the 101, the same TCP connection carries messages in both directions for as long as it lives. Every proxy on the path has to allow the upgrade: nginx needs the Upgrade and Connection headers passed on explicitly and a long read timeout, or connections drop after 60 seconds. A response of 200 or 400 here instead of 101 means some proxy in between didn't forward the upgrade. 'wscat -c wss://...' is the interactive client."
+    },
+    {
+      "prompt": "A chat service keeps 200,000 WebSocket connections open across 20 servers. Alice is connected to server 3 and sends a message to Bob, who's connected to server 14. How does it reach him?\n  a) Server 3 already has Bob's connection\n  b) Through a shared pub/sub layer: server 3 publishes the message, and server 14, which holds Bob's connection and subscribes for his messages, delivers it\n  c) The load balancer forwards it\n  d) It can't be done\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "alice --ws--> server 3 --publish--> [ Redis pub/sub / Kafka / NATS ] --deliver--> server 14 --ws--> bob",
+      "hint": "A connection lives on exactly one server, and that server isn't the sender's.",
+      "explanation": "Servers hold connections; a message bus between them routes messages.",
+      "why": "Long-lived connections make servers stateful: each one holds a particular set of users. So real-time systems are two layers: connection servers that only hold sockets, and a backplane that gets each message to whichever server has the recipient. A registry of 'which server has which user' or a topic per user does the routing."
+    },
+    {
+      "prompt": "You deploy a new version of the connection servers. What's different from deploying a stateless HTTP service?\n  a) Nothing\n  b) Restarting a server drops every connection it holds; all those clients reconnect at once, so rollouts must be gradual and clients must reconnect with backoff and jitter\n  c) WebSocket servers can't be deployed\n  d) Connections move to the new server automatically\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "restart 1 of 20 servers -> 10,000 clients reconnect within a second -> a thundering herd on the others\n\nclient: reconnect after random(1..30)s, doubling on failure\nserver: drain slowly before shutdown; limit new connections per second",
+      "hint": "The connections are the state, and they can't be handed over.",
+      "explanation": "A restart is a mass disconnect, and the reconnect storm is the real risk.",
+      "why": "This is the retry storm from the SRE category in another form. A whole-fleet restart can produce more load than the system has ever seen, from its own clients. So: drain slowly, restart a few at a time, and have clients spread their reconnects randomly. Load balancers also need long idle timeouts and connection-aware balancing, since a new server gets no load until clients reconnect."
+    },
+    {
+      "prompt": "A notification feature only needs to send updates from the server to the browser, a few per minute. Which transport should you choose?\n  a) WebSockets, because they're the most powerful\n  b) Server-sent events: one-way push over ordinary HTTP, simpler to operate, with reconnection built in\n  c) Poll the server every 100 ms\n  d) A new TCP protocol\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "long polling : works everywhere; a request per message; fine at low volume\nSSE          : server -> client only; plain HTTP; auto-reconnect\nWebSocket    : two-way, low overhead per message; more moving parts (upgrade, proxies, own protocol)",
+      "hint": "Pick the least machinery that meets the requirement.",
+      "explanation": "One-way updates don't need a two-way channel.",
+      "why": "WebSockets are right when the client also sends often and latency matters in both directions: chat, games, collaborative editing. For server-to-client updates SSE gives the same result with HTTP's tooling intact. And plain polling every 30 seconds is entirely adequate for many 'real-time' features; the cheapest design that meets the actual latency requirement is the right one."
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "id": "systemdesign-tutorial-016",
+  "type": "tutorial",
+  "category": "systemdesign",
+  "title": "Approximate Answers at Scale: HyperLogLog and Bloom Filters",
+  "difficulty": "intermediate",
+  "tags": ["system-design", "hyperloglog", "bloom-filter", "redis", "approximation"],
+  "intro": "Some questions are expensive to answer exactly and cheap to answer nearly: how many distinct visitors today, and have we seen this item before? Probabilistic data structures give an answer with a small, known error, using a tiny fraction of the memory. Redis has both built in. The instance is on cache.internal.",
+  "steps": [
+    {
+      "prompt": "Count unique visitors exactly first, to see the cost. Each visitor id has been added to a Redis set named visitors:exact. Check how much memory that key uses.",
+      "expected_commands": ["redis-cli -h cache.internal MEMORY USAGE visitors:exact", "redis-cli -h cache.internal memory usage visitors:exact"],
+      "fake_output": "(integer) 412044102",
+      "explanation": "About 412 MB to remember 9 million visitor ids for one day.",
+      "why": "An exact distinct count needs every value kept, so memory grows with the number of unique items. Per day, per page, per country, that multiplies quickly. If the question is 'how many', not 'which ones', you're storing far more than the answer needs."
+    },
+    {
+      "prompt": "The same ids were also added to a HyperLogLog, visitors:hll, with PFADD. Ask it for the count.",
+      "expected_commands": ["redis-cli -h cache.internal PFCOUNT visitors:hll", "redis-cli -h cache.internal pfcount visitors:hll"],
+      "fake_output": "(integer) 9071102",
+      "explanation": "9,071,102, against a true count of 9,120,044: about half a per cent off.",
+      "why": "A HyperLogLog estimates the number of distinct items from patterns in their hashes, without storing the items. Redis's has a standard error of about 0.81%. For a dashboard of unique visitors, that's indistinguishable from exact, and the next step shows what it costs."
+    },
+    {
+      "prompt": "Check the HyperLogLog's memory use.",
+      "expected_commands": ["redis-cli -h cache.internal MEMORY USAGE visitors:hll", "redis-cli -h cache.internal memory usage visitors:hll"],
+      "fake_output": "(integer) 14408",
+      "explanation": "About 14 KB, against 412 MB: nearly 30,000 times smaller.",
+      "why": "The size is fixed at about 12 KB however many items are added: a billion visitors cost the same as a thousand. HyperLogLogs can also be merged (PFMERGE), so daily counts combine into a weekly unique count without double-counting, which exact sets can only do by keeping everything. The trade: you can never ask it which visitors, or remove one."
+    },
+    {
+      "prompt": "A different question: 'have we already crawled this URL?', asked millions of times against billions of URLs. A Bloom filter answers it in little memory. It can be wrong in one direction only. Which?\n  a) It may say 'not seen' for something that was added\n  b) It may say 'probably seen' for something never added (a false positive); it never says 'not seen' for something that was added\n  c) It's wrong in both directions equally\n  d) It's never wrong\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "BF.EXISTS seen_urls https://example.com/a   -> 0  : definitely not seen     (always correct)\nBF.EXISTS seen_urls https://example.com/b   -> 1  : probably seen           (wrong ~1% of the time, by configuration)",
+      "hint": "A 'no' is certain. A 'yes' is likely.",
+      "explanation": "False positives are possible; false negatives aren't.",
+      "why": "That one-sided error is what makes it useful as a first check in front of something expensive: if the filter says no, skip the costly lookup with complete confidence; if it says yes, do the real lookup to confirm. Databases use them this way internally to avoid reading files that can't contain a key. The error rate is chosen when the filter is created, traded against memory."
+    },
+    {
+      "prompt": "A cache sits in front of a database. Attackers request millions of ids that don't exist; each misses the cache and hits the database. How does a Bloom filter of valid ids help?\n  a) It doesn't\n  b) Requests for ids the filter says don't exist are rejected immediately, without touching the cache or the database\n  c) It makes the database faster\n  d) It encrypts the ids\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "request id -> Bloom filter\n   'definitely not present' -> 404 at once                 (no cache, no database)\n   'probably present'       -> cache -> database on a miss",
+      "hint": "The filter's certain answer is 'no'.",
+      "explanation": "Certain misses are stopped before they cost anything.",
+      "why": "This attack is called cache penetration: lookups for nonexistent keys can never be cached as hits, so every one reaches the database. The filter turns them away for a few bits per valid id. The catch is keeping the filter current as ids are added, and plain Bloom filters can't delete; a counting or cuckoo filter can."
+    }
+  ]
+}

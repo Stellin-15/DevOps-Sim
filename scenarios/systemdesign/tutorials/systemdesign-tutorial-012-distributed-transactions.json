@@ -1,0 +1,50 @@
+{
+  "id": "systemdesign-tutorial-012",
+  "type": "tutorial",
+  "category": "systemdesign",
+  "title": "Distributed Transactions: Dual Writes, the Outbox, and Sagas",
+  "difficulty": "advanced",
+  "tags": ["system-design", "outbox", "saga", "consistency", "transactions"],
+  "intro": "Inside one database, a transaction makes several changes succeed or fail together. Once a business action touches two systems, a database and a message broker, or two services with their own databases, that guarantee is gone. This is where most data inconsistencies in distributed systems come from. The example: placing an order must save the order and tell the inventory service to reserve stock.",
+  "steps": [
+    {
+      "prompt": "The checkout service does this:\n    1. INSERT the order into its database, and COMMIT\n    2. publish an 'order placed' event to Kafka\nThe process crashes between step 1 and step 2. What is the system's state?\n  a) Consistent: both happened or neither\n  b) The order exists and no event was ever sent: inventory is never reserved, and nothing will fix it\n  c) The order is rolled back automatically\n  d) Kafka will ask for the event later\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "database : order 4812906 saved        (committed)\nkafka    : nothing                    (process died first)\n-> an order with no stock reserved; no error anywhere; no retry will ever happen",
+      "hint": "Two separate systems, written one after the other, with no shared transaction.",
+      "explanation": "A dual write: one succeeded, the other never happened.",
+      "why": "This is the dual-write problem. Reversing the order (publish first, then save) just reverses the failure: an event for an order that doesn't exist. No ordering of two independent writes is safe, because a crash, a timeout, or a deploy can land between them. It happens rarely, which is worse: it shows up as a handful of unexplained mismatches a month."
+    },
+    {
+      "prompt": "The transactional outbox fixes it. In the same database transaction as the order, the service inserts a row into an outbox table describing the event. A separate relay publishes outbox rows to Kafka and marks them sent. Why does this work?\n  a) It's faster\n  b) The order and the intent to publish are committed atomically in one database; if the transaction commits, the event will be published eventually, and if it doesn't, there's neither\n  c) It avoids using Kafka\n  d) It makes the order smaller\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "BEGIN;\n  INSERT INTO orders (id, ...) VALUES (4812906, ...);\n  INSERT INTO outbox (aggregate_id, type, payload) VALUES (4812906, 'order.placed', '{...}');\nCOMMIT;\n\nrelay: SELECT ... FROM outbox WHERE published_at IS NULL  ->  publish  ->  UPDATE published_at",
+      "hint": "One system, one transaction, two rows.",
+      "explanation": "The decision to publish becomes part of the same transaction as the data.",
+      "why": "You can't make two systems atomic, so you make one write atomic and derive the other from it. The relay can crash and retry freely; the worst case is publishing an event twice, never losing one. That's at-least-once delivery, so consumers must be idempotent. The relay is often change data capture reading the outbox table (dataeng-tutorial-005)."
+    },
+    {
+      "prompt": "The outbox table is something to operate. Check its backlog: count the rows not yet published.",
+      "expected_commands": ["psql -c \"SELECT count(*) FROM outbox WHERE published_at IS NULL;\"", "psql -c \"SELECT count(*) FROM outbox WHERE published_at IS NULL\""],
+      "fake_output": " count\n-------\n 41204",
+      "explanation": "41,204 events are waiting to be published.",
+      "why": "A healthy outbox is nearly empty. A backlog means the relay is down or slow, and every downstream system is that far behind reality while the source looks perfectly healthy. The count, and the age of the oldest unpublished row, are the two metrics to alert on. Published rows also need deleting, or the table grows for ever."
+    },
+    {
+      "prompt": "Placing an order now spans three services: reserve stock, charge the card, create the shipment. The card is charged and then creating the shipment fails. There's no transaction across the three. What does a saga do?\n  a) Leaves it: the customer was charged and gets nothing\n  b) Runs compensating actions for the steps already completed: refund the charge and release the stock, each as its own transaction\n  c) Locks all three databases until it works\n  d) Deletes the order silently\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "reserve stock   OK        -> compensation: release stock\ncharge card     OK        -> compensation: refund\ncreate shipment FAILED\n\nrun compensations in reverse: refund, then release stock",
+      "hint": "You can't roll back another service's committed work. You can undo it.",
+      "explanation": "A saga undoes completed steps with explicit compensating steps.",
+      "why": "A saga is a sequence of local transactions, each with a defined 'undo'. It gives eventual consistency, not isolation: in between, other requests can see the half-finished state, such as stock reserved for an order that will be cancelled. Compensations must themselves be retried until they succeed, and must be idempotent. Some steps can't be undone (an email sent, a parcel dispatched), so put those last."
+    },
+    {
+      "prompt": "Two-phase commit (2PC) does give atomicity across systems: a coordinator asks every participant to prepare, then tells all of them to commit. Why is it rarely used between microservices?\n  a) It's illegal\n  b) Every participant holds locks while waiting for the coordinator; if the coordinator fails after 'prepare', they're stuck holding them. It trades availability for consistency and couples every service's uptime to the others'\n  c) It's too fast\n  d) It only works with one database\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "prepare -> all vote yes -> (coordinator crashes) -> participants hold locks, unable to commit or abort\n\ndatabases-incident-005 was exactly this leftover: an orphaned prepared transaction",
+      "hint": "What do the participants do if the coordinator disappears mid-way?",
+      "explanation": "2PC blocks on a coordinator failure, and makes availability the product of every participant's.",
+      "why": "It's used where it fits: inside a database cluster, or between a few tightly managed resources. Across independently deployed services, a design where one slow service can freeze the others' rows is worse than temporary inconsistency. So the usual toolkit is the outbox for reliable publishing, sagas for multi-step work, and idempotency everywhere."
+    }
+  ]
+}

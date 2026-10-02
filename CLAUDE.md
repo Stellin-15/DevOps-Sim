@@ -415,7 +415,7 @@ Current per-category content depth (tutorials / incidents):
 - sre: 13 / 6 (big-tech practices, via public tools; +2 Writing Labs)
 - git: 11 / 6 (Git in its own right; everyday workflow, revert vs
   reset, and bisect stay in cicd)
-- systemdesign: 11 / 6 (+2 design-document Writing Labs; mixes real
+- systemdesign: 18 / 8 (+4 design-document Writing Labs; mixes real
   commands with multiple-choice decision steps)
 - databases: 12 / 6 (operator's side: psql, on-call SQL, roles,
   activity and locks, slow queries, vacuum, backup and point-in-time
@@ -440,7 +440,7 @@ Current per-category content depth (tutorials / incidents):
 - performance: 7 / 3 (profilers, flame graphs, eBPF tools, JVM and Go runtime inspection, measurement)
 - finops: 6 / 3 (cost allocation, rightsizing, commitments and spot, Kubernetes cost, quiet costs)
 - dataeng: 5 / 2 (+1 Writing Lab): Airflow authoring, dbt, warehouses, Spark on Kubernetes, CDC
-- **total: 322 tutorials, 156 incidents, 49 Writing Labs, 14 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
+- **total: 329 tutorials, 158 incidents, 51 Writing Labs, 14 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with

@@ -1,0 +1,49 @@
+{
+  "id": "systemdesign-incident-007",
+  "type": "incident",
+  "category": "systemdesign",
+  "title": "A few orders a week are paid for and never shipped",
+  "difficulty": "advanced",
+  "tags": ["system-design", "dual-write", "outbox", "kafka", "consistency"],
+  "intro": "Customer support has a steady trickle of the same complaint: an order shows as paid, and the warehouse never heard of it. It's 5 to 10 orders a week out of about 280,000. The checkout service saves each order to PostgreSQL and then publishes an 'order.placed' event to Kafka, which the warehouse service consumes. No errors are alerting. The Kafka bootstrap address is in BS.",
+  "steps": [
+    {
+      "prompt": "Establish the size of the gap. Count yesterday's orders in the database: orders whose created_at date is 2026-10-01.",
+      "expected_commands": ["psql -c \"SELECT count(*) FROM orders WHERE created_at::date = '2026-10-01';\"", "psql -c \"SELECT count(*) FROM orders WHERE created_at::date = '2026-10-01'\"", "psql -At -c \"SELECT count(*) FROM orders WHERE created_at::date = '2026-10-01';\""],
+      "fake_output": " count\n-------\n 41204",
+      "hint": "psql -c \"SELECT count(*) FROM orders WHERE created_at::date = '2026-10-01';\""
+    },
+    {
+      "prompt": "41,204 orders. The warehouse service records each event it receives in its own table, received_orders. Count what it received for the same day (its database is warehouse).",
+      "expected_commands": ["psql -d warehouse -c \"SELECT count(*) FROM received_orders WHERE order_date = '2026-10-01';\"", "psql -d warehouse -c \"SELECT count(*) FROM received_orders WHERE order_date = '2026-10-01'\"", "psql -d warehouse -At -c \"SELECT count(*) FROM received_orders WHERE order_date = '2026-10-01';\""],
+      "fake_output": " count\n-------\n 41202",
+      "hint": "psql -d warehouse -c \"SELECT count(*) FROM received_orders WHERE order_date = '2026-10-01';\""
+    },
+    {
+      "prompt": "Two fewer. Is the warehouse dropping them, or were they never published? Check the consumer first: describe the consumer group warehouse on Kafka and look at its lag.",
+      "expected_commands": ["kafka-consumer-groups.sh --bootstrap-server $BS --describe --group warehouse", "kafka-consumer-groups --bootstrap-server $BS --describe --group warehouse", "kafka-consumer-groups.sh --bootstrap-server $BS --group warehouse --describe"],
+      "fake_output": "GROUP      TOPIC          PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG\nwarehouse  order.placed   0          9120044         9120044         0\nwarehouse  order.placed   1          9118310         9118310         0\nwarehouse  order.placed   2          9121877         9121877         0",
+      "hint": "kafka-consumer-groups.sh --bootstrap-server $BS --describe --group warehouse"
+    },
+    {
+      "prompt": "Zero lag: the warehouse has read everything in the topic. So the missing events were never there. Look for what happened on the publishing side: search the checkout deployment's logs in namespace shop for 'publish'.",
+      "expected_commands": ["kubectl logs deployment/checkout -n shop --since=48h | grep -i publish", "kubectl logs deploy/checkout -n shop --since=48h | grep -i publish", "kubectl logs -n shop deployment/checkout --since=48h | grep -i publish", "kubectl logs deployment/checkout -n shop | grep -i publish"],
+      "fake_output": "2026-10-01T03:14:22Z WARN  order 4810117 saved; failed to publish order.placed: TimeoutException: Topic order.placed not present in metadata after 5000 ms\n2026-10-01T16:40:09Z INFO  SIGTERM received, shutting down (order 4811904 saved, publish pending)",
+      "hint": "kubectl logs deployment/checkout -n shop --since=48h | grep -i publish"
+    },
+    {
+      "prompt": "Two orders, two different causes, one pattern: the database commit succeeded and the publish afterwards didn't happen, once from a broker timeout that was logged as a warning, once because the pod was shut down by a deploy in between. What's the design fix?\n  a) Retry the publish three times\n  b) The transactional outbox: write the event to an outbox table in the same database transaction as the order, and have a separate relay publish from that table until it succeeds\n  c) Publish first, then save the order\n  d) Raise the Kafka timeout\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "BEGIN; INSERT INTO orders ...; INSERT INTO outbox (type, payload) VALUES ('order.placed', ...); COMMIT;\nrelay: publish unpublished outbox rows, mark them, retry for ever",
+      "hint": "systemdesign-tutorial-012."
+    },
+    {
+      "prompt": "Meanwhile, find every order that's been affected so far, to republish them. A reconciliation script has loaded the warehouse's received ids into a table, wh_received, in the shop database. List the ids of orders that have no matching row there.",
+      "expected_commands": ["psql -c \"SELECT o.id FROM orders o LEFT JOIN wh_received w ON w.order_id = o.id WHERE w.order_id IS NULL;\"", "psql -c \"SELECT o.id FROM orders o LEFT JOIN wh_received w ON w.order_id = o.id WHERE w.order_id IS NULL\"", "psql -c \"SELECT id FROM orders WHERE id NOT IN (SELECT order_id FROM wh_received);\""],
+      "fake_output": "   id\n---------\n 4712044\n 4733910\n 4790212\n 4810117\n 4811904\n(41 rows)",
+      "hint": "psql -c \"SELECT o.id FROM orders o LEFT JOIN wh_received w ON w.order_id = o.id WHERE w.order_id IS NULL;\""
+    }
+  ],
+  "resolution": "The checkout service wrote to two systems, one after the other, with nothing binding them together: commit the order to PostgreSQL, then publish an event to Kafka. Anything that interrupts the gap between those two lines leaves an order with no event. Over months, several things did: a broker metadata timeout during a Kafka rolling restart, and a pod receiving SIGTERM from an ordinary deploy just after committing. Each case was rare, logged as a warning or not at all, and produced no error for the customer, who had paid. Forty-one orders in total. The investigation worked by counting on both sides and then asking where the difference arose: the consumer had zero lag, so it had processed everything that existed, which meant the events had never been published. This is the dual-write problem, and retries don't solve it: a retry loop also dies with the process, and publishing before saving creates events for orders that failed. The outbox makes the order and the intention to announce it one atomic database write; a relay then publishes until it succeeds, so the worst case becomes a duplicate event, which an idempotent consumer absorbs. Until that ships, a reconciliation job closes the gap: compare the two sides daily and republish what's missing. Reconciliation is worth keeping permanently, because it detects every cause of divergence, including the ones you haven't thought of. Two wider lessons: a count that should match between two systems is a monitor worth having, and 'rare, silent, and affecting money' is the signature of a consistency bug, which no dashboard of error rates will ever show.",
+  "real_commands_used": ["psql: count orders for a day", "psql -d warehouse: count received events", "kafka-consumer-groups.sh --describe --group (lag)", "kubectl logs deployment/checkout | grep -i publish", "psql: LEFT JOIN ... WHERE right side IS NULL (find the missing)"]
+}

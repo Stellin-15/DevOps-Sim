@@ -112,3 +112,26 @@ sliding window, token bucket), pagination, idempotent APIs, 301 vs 302.
 5. Bottlenecks and how each scales.
 6. Failure modes: what happens when each component dies.
 7. Trade-offs made, and what you'd do with more time.
+
+## Going Deeper
+
+```
+psql -c "SELECT count(*) FROM outbox WHERE published_at IS NULL;"          # the outbox pattern's backlog
+psql -c "BEGIN; INSERT INTO orders ...; INSERT INTO outbox ...; COMMIT;"   # one transaction, two rows
+etcdctl endpoint status --cluster -w table        # leader, raft term, raft index
+etcdctl endpoint health --cluster
+etcdctl member list -w table
+redis-cli PFADD visitors:2026-10-02 <id>          redis-cli PFCOUNT visitors:2026-10-02     # HyperLogLog
+redis-cli BF.ADD seen_urls <url>                  redis-cli BF.EXISTS seen_urls <url>       # Bloom filter
+redis-cli MEMORY USAGE <key>
+curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" -H "Sec-WebSocket-Version: 13" \
+     -H "Sec-WebSocket-Key: <key>" https://<host>/ws
+wscat -c wss://<host>/ws
+curl -N https://<host>/events                     # server-sent events stream
+```
+
+Concepts: the dual-write problem, transactional outbox, sagas and
+compensation, two-phase commit, CQRS and event sourcing, active-passive
+vs active-active regions, conflict resolution, quorum (n/2 + 1), Bloom
+filters and HyperLogLog, WebSockets vs server-sent events vs long
+polling, fan-out on write vs fan-out on read.

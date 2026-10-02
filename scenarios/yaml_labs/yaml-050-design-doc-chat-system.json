@@ -1,0 +1,33 @@
+{
+  "id": "yaml-050",
+  "type": "yaml_lab",
+  "category": "systemdesign",
+  "title": "Write a Design Document: A Chat System",
+  "difficulty": "advanced",
+  "tags": ["system-design", "design-doc", "chat", "websockets"],
+  "intro": "systemdesign-tutorial-018 walked through a chat system's decisions one at a time. Now write it down as a design document, the form in which a design is actually reviewed. The brief is the same: 10 million daily users, about 4,600 messages a second on average, messages kept for ever, delivery in under a second, several devices per user.",
+  "steps": [
+    {
+      "file": "design-chat-system.md",
+      "format": "markdown",
+      "starter_content": "# Design: Chat System\n\n",
+      "prompt": "Write design-chat-system.md with a '# Design: ...' title and these level-2 sections, in this order, none empty:\n## Requirements\n## Estimates           (must state about 4,600 messages/s and the number of concurrent connections)\n## Connections         (must mention WebSocket connections and push notifications for offline devices)\n## Message storage     (must name the partition key, conversation id, and say messages are ordered within it)\n## Delivery and sync   (must say messages are stored before delivery, and how a device catches up after being offline)\n## Group fan-out       (must distinguish fan-out on write from fan-out on read)\n## Failure modes       (what happens when a connection server or the message store fails)\n## Trade-offs",
+      "apply_commands": ["git add design-chat-system.md", "check"],
+      "validate": {
+        "fields": {
+          "title": {"contains": "Design"},
+          "empty_section_count": 0,
+          "text": {"contains": ["4,600", "WebSocket", "push notification", "conversation", "fan-out on write", "fan-out on read"]},
+          "sections.delivery and sync": {"contains": "stored"},
+          "sections.failure modes": {"contains": "connection server"}
+        },
+        "order": ["## Requirements", "## Estimates", "## Connections", "## Message storage", "## Delivery and sync", "## Group fan-out", "## Failure modes", "## Trade-offs"]
+      },
+      "hint": "Use exactly those headings. In 'Delivery and sync' say that a message is stored durably before any push, and that each device keeps the id of the last message it has and asks for everything after it. In 'Failure modes' say what clients do when their connection server dies (reconnect with backoff to another one, then sync). systemdesign-tutorial-018 has every decision.",
+      "solution": "# Design: Chat System\n\n## Requirements\n\nFunctional: one-to-one and group chat, message history kept for ever, several devices per user, offline delivery.\nNon-functional: delivery in under a second when online, no lost messages, messages in a consistent order within a conversation, 10 million daily users.\n\n## Estimates\n\n400 million messages a day is about 4,600 messages/s on average and roughly 15,000/s at peak.\nAt about 300 bytes each that is 120 GB a day, around 44 TB a year before replication.\nAbout 2 to 3 million concurrent connections at peak.\n\n## Connections\n\nEach device holds a WebSocket connection to a fleet of connection servers, which only hold sockets.\nA registry maps each user to the servers their devices are on; a pub/sub backplane carries messages between servers.\nDevices that are offline are woken with a push notification and then sync over HTTP.\n\n## Message storage\n\nMessages live in a wide-column store partitioned by conversation id, ordered within the partition by a server-assigned, time-ordered message id.\nThe common query, the latest messages in a conversation, is a single-partition read.\nUsers, contacts, and group membership are in a relational database.\n\n## Delivery and sync\n\nA message is stored durably first, and only then pushed to recipients' online devices.\nEach device records the id of the last message it has and, on reconnect, asks for everything after it.\nMessage ids make delivery idempotent, so a message received twice is shown once.\n\n## Group fan-out\n\nSmall chats use fan-out on write: the message is delivered to each member's devices directly.\nLarge groups and channels use fan-out on read: the message is stored once and members' devices fetch it, with notifications only to members who are online.\n\n## Failure modes\n\nIf a connection server dies, its clients reconnect to another one with randomised backoff and sync from their last message id; nothing is lost because messages are stored before delivery.\nIf the message store is unavailable, sends are rejected and retried by the client; reads fall back to what the device has cached.\nIf the backplane is down, live delivery stops and devices catch up by syncing.\n\n## Trade-offs\n\nStoring before delivering adds a little latency and removes the possibility of loss.\nOrdering is guaranteed per conversation, not globally, which is cheaper and all that users can observe.\nTwo fan-out strategies add complexity and keep the cost of a message independent of the audience size.\n",
+      "fake_output": "(design-chat-system.md staged; ready for design review)",
+      "explanation": "A reviewable design: numbers first, then each component with the reason for it, then how it fails.",
+      "why": "The document's order mirrors how the design was reasoned: the estimates justify the storage choice and the separate connection tier, and the delivery section explains why nothing is lost. The 'Failure modes' and 'Trade-offs' sections are what reviewers read most closely, because they show whether the author knows what was given up. The checker only confirms the sections exist and mention the key ideas; it can't judge the design. Ask someone to review it and argue with your choices: where would a 100,000-member group put its hot partition, and what happens to ordering if two regions accept writes for the same conversation?"
+    }
+  ]
+}

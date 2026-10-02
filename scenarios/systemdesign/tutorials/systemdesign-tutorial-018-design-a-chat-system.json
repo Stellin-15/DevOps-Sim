@@ -1,0 +1,59 @@
+{
+  "id": "systemdesign-tutorial-018",
+  "type": "tutorial",
+  "category": "systemdesign",
+  "title": "Putting It Together: Design a Chat System",
+  "difficulty": "advanced",
+  "tags": ["system-design", "chat", "websockets", "messaging", "worked-example"],
+  "intro": "A second worked design, harder than the URL shortener because it has long-lived connections, ordering, and delivery guarantees. The brief: one-to-one and group chat for 10 million daily users, about 40 messages a day each, messages kept for ever, delivered in under a second, readable on several devices. Answer each decision with a letter.",
+  "steps": [
+    {
+      "prompt": "Start with numbers. 10 million users sending 40 messages a day is 400 million messages a day. Roughly how many per second on average, and what does that say?\n  a) About 46: trivial\n  b) About 4,600 per second on average, several times that at peak: a write-heavy system, where storage grows by hundreds of gigabytes a day\n  c) About 4.6 million per second\n  d) It can't be estimated\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "400,000,000 / 86,400 s  ~ 4,600 messages/s average, ~15,000/s peak\n400M x ~300 bytes       ~ 120 GB/day  ~ 44 TB/year, before replication\nconcurrent connections  ~ 2-3 million",
+      "hint": "A day is about 86,400 seconds.",
+      "explanation": "Thousands of writes a second, tens of terabytes a year, millions of open connections.",
+      "why": "Three numbers shape everything that follows. The write rate rules out a single relational primary as the message store. The storage growth means partitioning from the start. And millions of concurrent connections is a problem of its own, separate from message volume. The URL shortener was read-heavy; this is the opposite, and it produces a different architecture."
+    },
+    {
+      "prompt": "How do clients receive messages?\n  a) Poll the server every second with HTTP\n  b) A persistent WebSocket per device to a fleet of connection servers, with push notifications for devices that are offline\n  c) Email\n  d) One request per message from the server to the client\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "online  : device --WebSocket--> connection server      (sub-second delivery)\noffline : push notification service wakes the app, which then syncs over HTTP",
+      "hint": "Both sides send often, and latency matters in both directions.",
+      "explanation": "WebSockets when connected, push notifications when not.",
+      "why": "Polling 3 million devices every second is 3 million requests a second, nearly all returning nothing. Chat is the case WebSockets exist for (systemdesign-tutorial-017). The connection servers do one job, holding sockets, and are kept separate from the services with business logic so that each scales and deploys on its own terms."
+    },
+    {
+      "prompt": "Which store suits the messages themselves: 4,600 writes a second, read almost always as 'the latest messages in this conversation'?\n  a) One PostgreSQL primary with a single messages table\n  b) A wide-column store (Cassandra, ScyllaDB, DynamoDB) partitioned by conversation id, with messages ordered by time within each partition\n  c) Files on a shared disk\n  d) Redis only, with no persistence\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "partition key  : conversation_id     -> all of a chat's messages live together\nclustering key : message_id (time-ordered)\nquery          : 'last 50 messages of conversation X'  = one partition, one sequential read",
+      "hint": "Match the store to the access pattern: huge write volume, one simple read query.",
+      "explanation": "Partition by conversation, order by time within it.",
+      "why": "The access pattern is narrow and known: append a message, read a conversation's recent messages. Wide-column stores are built for exactly that at this write rate, and scale by adding nodes. Users, contacts, and group membership are small, relational, and change rarely: they belong in a relational database. Choosing a store per kind of data is the skill; a busy group with millions of messages is this design's hot partition to plan for."
+    },
+    {
+      "prompt": "Two messages are sent to a group at nearly the same instant from different servers. How do all members see them in the same order?\n  a) Sort by each sender's device clock\n  b) Assign each message an id from a per-conversation sequence, or a time-ordered id generated server-side, and order by that; clients display in id order\n  c) Order doesn't matter\n  d) Sort alphabetically\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "device clocks : wrong by seconds or hours; can be set by the user\nserver-side id: (timestamp | sequence | node)  -> sortable, unique, one order for everyone in the conversation",
+      "hint": "Whose clock do you trust?",
+      "explanation": "The server assigns the order.",
+      "why": "Client clocks can't be trusted. Order only needs to be consistent within a conversation, not globally, which is much cheaper: a sequence per conversation, or ids that embed a server timestamp. The same id also makes delivery idempotent: a client that receives a message twice after a reconnect recognises it and shows it once."
+    },
+    {
+      "prompt": "Bob's phone is offline for an hour. How does he get what he missed when it reconnects, without losing or duplicating anything?\n  a) The server remembers which packets it sent and resends from memory\n  b) Messages are stored first; the device tracks the last message id it has, and on reconnect asks for everything after it\n  c) He doesn't\n  d) The sender's phone resends\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "send : store message durably -> then try to push to online devices\nsync : device: 'I have up to id 8812044' -> server: returns everything after it, per conversation",
+      "hint": "The durable store is the truth; live delivery is an optimisation.",
+      "explanation": "Store first, then deliver, and let each device catch up from a cursor.",
+      "why": "This is the central design decision. If live push were the only path, any dropped connection would lose messages. Making the store authoritative and each device responsible for its own position gives multi-device sync, offline catch-up, and recovery from every failure, by one mechanism. It's the consumer-offset idea from Kafka applied to devices."
+    },
+    {
+      "prompt": "A group has 100,000 members. Delivering each message by writing a copy into every member's inbox is 100,000 writes per message. What's the usual answer?\n  a) Ban large groups\n  b) Fan out on read for large groups: store the message once in the group's conversation, and let members' devices fetch from it; keep fan-out on write for small chats\n  c) Send it by email\n  d) Write the copies anyway\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "small chat (2-200) : fan-out on write   -> cheap, each member's view is ready\nhuge group/channel : fan-out on read    -> one write; readers pull; notify only those online",
+      "hint": "The cost of one message shouldn't scale with the audience.",
+      "explanation": "Different strategies for different sizes.",
+      "why": "It's the same trade as a social feed: precompute per reader (fast reads, expensive writes) or compute when read (cheap writes, more work per read). Real systems use both, switching on group size. Naming a threshold and designing each side separately is what a strong answer to this question looks like. Write this design up in the Writing Lab yaml-050."
+    }
+  ]
+}

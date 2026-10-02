@@ -1,0 +1,51 @@
+{
+  "id": "systemdesign-tutorial-013",
+  "type": "tutorial",
+  "category": "systemdesign",
+  "title": "CQRS and Event Sourcing: Separate Models for Writing and Reading",
+  "difficulty": "advanced",
+  "tags": ["system-design", "cqrs", "event-sourcing", "read-models"],
+  "intro": "Most systems use one data model for both changing data and querying it. When the two needs pull apart, writes that need strict rules and reads that need speed in many shapes, they can be split. CQRS separates the write model from one or more read models. Event sourcing goes further and stores the changes themselves as the source of truth. Both are powerful and both are frequently over-applied. The example is an order service.",
+  "steps": [
+    {
+      "prompt": "The order service's normalised tables are right for placing orders, and the 'order history' page needs a query joining six tables that takes 800 ms. Under CQRS, how is that page served?\n  a) By adding more indexes until the join is fast\n  b) From a separate read model: a table shaped exactly for that page, kept up to date from the write side's events\n  c) By caching the join for a year\n  d) By removing the page\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "write side : orders, order_items, payments, shipments ...   (normalised; enforces the rules)\n      | events: order.placed, order.paid, order.shipped\n      v\nread side  : order_history_view (one row per order, everything the page shows)   -> 3 ms lookup",
+      "hint": "Command Query Responsibility Segregation: commands change state, queries read it.",
+      "explanation": "A read model built for the query, updated from events.",
+      "why": "The write model stays optimised for correctness, and each read model for one use: a flat table for the history page, a search index for search, a cache for the home page. A read replica gives you a copy of the same shape; a read model gives you a different shape. You've already seen one: a search index fed from a database is CQRS."
+    },
+    {
+      "prompt": "The read model is updated asynchronously from events. A customer places an order and immediately opens their order history. What might they see?\n  a) Always the new order\n  b) Possibly not the new order yet: the read model lags the write by the time it takes the event to be processed\n  c) An error\n  d) Someone else's order\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "t=0 ms    order written                       (write model: has it)\nt=0 ms    customer redirected to /orders\nt=40 ms   event consumed, read model updated  (read model: now has it)",
+      "hint": "The same problem as reading from a lagging replica.",
+      "explanation": "Eventual consistency between the two sides.",
+      "why": "This is the price of CQRS, and it's the 'I saved it and it changed back' incident again (systemdesign-incident-002). Handle it deliberately: read your own writes from the write side just after a change, show the new item optimistically in the interface, or have the client wait for the read model to reach a known version. Monitor the lag; it's the consumer lag of the projection."
+    },
+    {
+      "prompt": "A bug in the code that builds the read model has put wrong totals in it for a week. The events are all still in the topic. How do you repair the read model?\n  a) Edit the rows by hand\n  b) Fix the code, clear the read model, and replay the events from the beginning to rebuild it\n  c) Restore last week's backup and lose the week\n  d) It can't be repaired\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "kafka-consumer-groups.sh --bootstrap-server $BS --group order-history-projection \\\n    --topic orders --reset-offsets --to-earliest --execute\n\nprojection rebuilds order_history_view from event 0",
+      "hint": "The read model is derived data.",
+      "explanation": "Rebuild the projection by replaying the log.",
+      "why": "A read model is disposable: it's a function of the events, so it can always be recomputed, and a new read model for a new feature is built the same way, from history. That only holds if the events are retained long enough and the projection is idempotent. Replaying is messaging-tutorial-003's offset reset, used on purpose."
+    },
+    {
+      "prompt": "Event sourcing stores every change as an event (OrderPlaced, ItemAdded, OrderCancelled) and derives the current state by replaying them, instead of storing only the latest row. What does that give you that a normal table doesn't?\n  a) Smaller storage\n  b) A complete history: how any record came to be in its current state, and the ability to reconstruct the state at any past moment\n  c) Faster simple queries\n  d) No need for backups\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "table  : account 4417  balance = 70                              (what, now)\nevents : Opened(100) -> Withdrew(30)                              (what happened, in order)\n         balance at any time = replay up to that point",
+      "hint": "A row tells you where things stand; it doesn't tell you how they got there.",
+      "explanation": "The log of changes is the truth; state is derived.",
+      "why": "For domains where history is the business (ledgers, audit, orders), this is natural: an accountant never overwrites an entry. The costs are real: every read needs a projection, events live for ever and their format must stay readable for ever, and 'just fix that row' becomes 'append a correcting event'. Deleting personal data on request is hard in a log designed never to forget."
+    },
+    {
+      "prompt": "A team proposes event sourcing and CQRS for a simple internal admin tool with a dozen tables and a few users. What's the right call?\n  a) Yes, always use them\n  b) No: they add eventual consistency, projections, and replay machinery to solve problems this tool doesn't have. Use a plain database, and adopt these patterns for the specific parts that need them\n  c) Use them for the login page only\n  d) Use two databases to be safe\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "signs CQRS fits     : very different read and write loads; many read shapes; reads far outnumber writes\nsigns event sourcing fits : history is a requirement; audit; rebuilding state matters\nsigns neither fits  : CRUD screens over tables, strong consistency expected, a small team",
+      "hint": "Every pattern is a trade, and here there's nothing to buy.",
+      "explanation": "Most systems don't need them; some parts of some systems do.",
+      "why": "These patterns are solutions to specific pressures, and applied everywhere they multiply the moving parts and the ways to be inconsistent. A good design uses the simplest thing that meets the requirement, and reserves the heavy machinery for the component whose requirements demand it. Saying 'we don't need that here' is a design skill."
+    }
+  ]
+}

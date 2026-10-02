@@ -34,7 +34,7 @@ string.
   The game writes a real file to `workspace/`, tells you what to build or
   fix, and you edit it in your actual editor (vim, nano, VS Code —
   whatever you'd really use). Typing the apply command reads your real
-  file and checks it field by field. 49 labs across thirteen formats:
+  file and checks it field by field. 51 labs across thirteen formats:
   Kubernetes manifests, GitHub Actions workflows, Prometheus alert rules,
   Docker Compose files, Dockerfiles, Terraform (AWS VPCs, security
   groups, GCP firewalls, a reusable module), AWS IAM policies, Ansible
@@ -366,7 +366,7 @@ the engine, loader, sandboxes, yaml_lab, career_path, mystery, or scenario conte
 | Server Fleet Ops | 13 | 7 | Ansible (inventories, safe playbook runs, rolling serial updates, Vault/lint), Debian and RHEL patching with rollback, kernels and reboots, SSM Patch Manager, chrony, LVM growth, backups with real restore tests, NFS, Ceph health |
 | SRE | 13 | 6 | incident first ten minutes, Argo Rollouts canaries, Istio resilience, capacity planning, load testing (k6/vegeta), chaos engineering, feature flags/kill switches, postmortem timelines, graceful degradation, production readiness reviews, disaster recovery drills, service catalogs and golden paths, DORA metrics |
 | Git | 11 | 6 | objects/refs/HEAD, precise staging, branches, merge conflicts, rebase (autosquash, --onto), the undo matrix and reflog, searching history, remotes and forks, stash/worktrees, config/attributes/hooks, shallow and partial clones, submodules, LFS, signing |
-| System Design | 11 | 6 | estimation, load balancing, caching, indexes and query plans, replication, sharding, queues, consistency and quorums, rate limiting and idempotency, CDNs, a worked URL shortener; real commands plus multiple-choice trade-off questions; plus 2 design-document Writing Labs |
+| System Design | 18 | 8 | estimation, load balancing, caching, indexes and query plans, replication, sharding, queues, consistency and quorums, rate limiting and idempotency, CDNs, distributed transactions (outbox, sagas), CQRS, multi-region, consensus and quorum, HyperLogLog and Bloom filters, real-time delivery, worked designs (URL shortener, chat); real commands plus multiple-choice trade-off questions; plus 4 design-document Writing Labs |
 | Databases | 12 | 6 | psql, on-call SQL (joins, GROUP BY, window functions), transactions and isolation, roles and privileges, pg_stat_activity and lock chains, slow queries (pg_stat_statements, EXPLAIN), vacuum and wraparound, pg_dump/pg_restore, point-in-time recovery (pgBackRest), Patroni failover, MySQL, Redis operations |
 | Web Servers & Proxies | 11 | 6 | nginx (test and reload, server blocks and locations, reverse proxying, TLS with certbot, access-log analysis, reading 502/503/504, rate and body limits, caching and gzip, connection and file-descriptor capacity), HAProxy draining, and recognising Envoy, Caddy, Traefik, and Apache; plus 2 nginx Writing Labs |
 | Identity & Secrets | 9 | 5 | reading JWTs, OAuth 2.0 and OIDC flows, Kubernetes workload identity, Vault (KV, policies, dynamic database credentials), External Secrets Operator, SOPS and Sealed Secrets, PKI and mutual TLS, cert-manager; plus 2 Writing Labs |
@@ -376,7 +376,7 @@ the engine, loader, sandboxes, yaml_lab, career_path, mystery, or scenario conte
 | Performance | 7 | 3 | perf CPU profiling, flame graphs, py-spy, JVM heap/GC/thread dumps, eBPF tools (execsnoop, biolatency, bpftrace), Go pprof, honest benchmarking and percentiles |
 | FinOps | 6 | 3 | reading the bill by service and team, tags/budgets/anomaly alerts, rightsizing, Savings Plans and spot, Kubernetes cost (OpenCost), storage classes, log retention, and data transfer |
 | Data Engineering | 5 | 2 | writing and testing Airflow DAGs, dbt (models, tests, state-based builds, freshness), warehouse cost and partitions (BigQuery, Snowflake), Spark on Kubernetes, change data capture with Debezium; plus 1 Writing Lab |
-| **Total** | **322** | **156** | + 49 Writing Labs |
+| **Total** | **329** | **158** | + 51 Writing Labs |
 
 The three clouds use different names for the same ideas (security group
 vs NSG vs firewall rule; CloudTrail vs Activity Log vs Audit Logs). The

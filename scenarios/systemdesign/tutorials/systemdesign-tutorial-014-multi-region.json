@@ -1,0 +1,50 @@
+{
+  "id": "systemdesign-tutorial-014",
+  "type": "tutorial",
+  "category": "systemdesign",
+  "title": "Multi-Region Design: Active-Passive, Active-Active, and Conflicts",
+  "difficulty": "advanced",
+  "tags": ["system-design", "multi-region", "availability", "replication", "conflicts"],
+  "intro": "Running in one region means a regional outage is your outage, and users far away wait longer. Running in several fixes both and creates the hardest problem in the field: the same data, written in two places, across a link slow enough to matter. The choice of model decides what you can promise. The shop wants to serve Europe and North America and survive losing either region.",
+  "steps": [
+    {
+      "prompt": "Measure why distance matters. From a host in Europe, time a request to the US region's health endpoint, https://us.shop.example.com/health: print the connect time and the total.",
+      "expected_commands": ["curl -s -o /dev/null -w \"connect=%{time_connect} total=%{time_total}\\n\" https://us.shop.example.com/health", "curl -s -o /dev/null -w 'connect=%{time_connect} total=%{time_total}\\n' https://us.shop.example.com/health", "curl -o /dev/null -s -w \"connect=%{time_connect} total=%{time_total}\\n\" https://us.shop.example.com/health"],
+      "fake_output": "connect=0.088 total=0.291",
+      "explanation": "88 ms just to open the connection, and 291 ms in total with the TLS handshake and one request.",
+      "why": "A round trip across the Atlantic is about 80 to 100 ms and no engineering removes it. A page that makes ten sequential calls to a far region is a second slower. It also sets the price of consistency: a write that must be confirmed in both regions before returning costs at least one of those round trips every time."
+    },
+    {
+      "prompt": "In an active-passive design, one region takes all traffic and the other is a warm copy that takes over on failure. What's its main weakness?\n  a) It's too consistent\n  b) The passive region is rarely exercised: failover is a rare, manual, risky event, and the standby may not work when needed. Distant users are also always served from far away\n  c) It costs nothing\n  d) It can't use DNS\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "active-passive : one writer, simple data model, async copy -> RPO = replication lag, RTO = failover time\n                 the standby is tested only if you test it (sre-tutorial-011)",
+      "hint": "What do you know about a system that has never taken traffic?",
+      "explanation": "Simple data, an untested standby, and no latency benefit.",
+      "why": "It's the right starting point for most systems because there's a single writer and so no conflicts. Its risk is that the second region is a hope until proven: capacity, configuration, and secrets drift. Regular failover drills, or sending a little real traffic through it, are what make it trustworthy."
+    },
+    {
+      "prompt": "In active-active, both regions accept writes. Two users, one per region, update the same customer's delivery address within the same second. What must the design decide?\n  a) Nothing: databases handle it\n  b) A conflict-resolution rule: both writes succeeded locally, so when they replicate, something must decide which survives or how they merge\n  c) Which user to block\n  d) To delete the customer\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "EU : address = 'Berlin'   at 12:00:00.410\nUS : address = 'Boston'   at 12:00:00.380\n\nlast-write-wins by timestamp : 'Berlin' survives, 'Boston' is silently lost (and clocks disagree)\nper-field merge / CRDTs      : works for counters, sets; not for everything\navoid the conflict            : each record has a home region that owns its writes",
+      "hint": "Neither region knew about the other's write when it accepted its own.",
+      "explanation": "Concurrent writes to the same data need a rule, and every rule loses something.",
+      "why": "Last-write-wins is simple and discards data without telling anyone, and depends on clocks that aren't perfectly in sync. Merge-able data types work for some shapes. The most practical answer is to avoid conflicts by design: give each user or record a home region where its writes go, so both regions are active but no record has two writers."
+    },
+    {
+      "prompt": "Which data in the shop can safely be written in both regions with a simple merge, and which needs a single owner?\n  a) Everything can be merged\n  b) A shopping cart can be merged (take the union of items); an account balance or stock count can't be: two regions each selling 'the last item' oversells\n  c) Nothing can be merged\n  d) Only images\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "mergeable        : carts, likes, view counts, 'last seen'       (union / sum; brief disagreement is harmless)\nneeds one writer : balances, inventory, unique usernames, seats   (an invariant spans the regions)",
+      "hint": "Ask what goes wrong if both regions say yes at the same moment.",
+      "explanation": "Classify data by whether an invariant must hold globally.",
+      "why": "This is the design's central exercise. Where a wrong answer is cheap and repairable, accept eventual consistency and get low latency and full availability. Where a rule must never be broken, route those writes to one place or use a database that coordinates across regions and pay the latency. Most systems are a mix, decided per kind of data."
+    },
+    {
+      "prompt": "European customers' personal data must stay in the EU by law. How does that shape a multi-region design?\n  a) It doesn't\n  b) Data placement becomes a requirement: those users' records are stored and processed in the EU region, replication of them to other regions is restricted, and routing must send those users there\n  c) Use a bigger US database\n  d) Encrypt it and store it anywhere\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "users.home_region = 'eu'  -> rows live in the EU cluster only\nglobal tables            : product catalogue, prices            (replicated everywhere)\nregional tables          : customers, orders, payments          (pinned to the home region)",
+      "hint": "Not all data may be copied everywhere.",
+      "explanation": "Residency turns 'replicate everything everywhere' into a per-table decision.",
+      "why": "It lines up neatly with the home-region idea: the region that owns a user's writes also holds their data. The consequence is that a regional outage makes those users unavailable unless the law allows a copy elsewhere, a trade-off to settle with the legal team, not in an incident. Backups, logs, and analytics copies are covered by the same rule and are where it's usually broken."
+    }
+  ]
+}
