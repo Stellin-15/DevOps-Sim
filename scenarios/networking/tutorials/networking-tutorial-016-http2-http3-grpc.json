@@ -1,0 +1,48 @@
+{
+  "id": "networking-tutorial-016",
+  "type": "tutorial",
+  "category": "networking",
+  "title": "HTTP/2, HTTP/3, and Debugging gRPC",
+  "difficulty": "intermediate",
+  "tags": ["http2", "http3", "grpc", "grpcurl", "load-balancing"],
+  "intro": "networking-tutorial-008 debugged HTTP/1.1 with curl. Most traffic between services is now HTTP/2, often as gRPC, and browsers increasingly use HTTP/3. They behave differently on the wire, and those differences cause specific, confusing failures. The public site is shop.example.com; the internal gRPC service is inventory.internal on port 443.",
+  "steps": [
+    {
+      "prompt": "Find out which HTTP version a request to https://shop.example.com/ actually uses: print only the version.",
+      "expected_commands": ["curl -s -o /dev/null -w \"%{http_version}\\n\" https://shop.example.com/", "curl -s -o /dev/null -w '%{http_version}\\n' https://shop.example.com/", "curl -so /dev/null -w \"%{http_version}\\n\" https://shop.example.com/"],
+      "fake_output": "2",
+      "explanation": "The connection negotiated HTTP/2.",
+      "why": "The version is agreed during the TLS handshake (ALPN), so client and server each use the best they share. HTTP/2 sends many requests at once over a single connection, where HTTP/1.1 needed a connection per concurrent request. That one long-lived connection is the source of both its speed and its most common operational surprise, which is two steps on."
+    },
+    {
+      "prompt": "Check whether the site offers HTTP/3: request the headers and look for the alt-svc header.",
+      "expected_commands": ["curl -sI https://shop.example.com/ | grep -i alt-svc", "curl -sI https://shop.example.com | grep -i alt-svc", "curl -s -I https://shop.example.com/ | grep -i alt-svc"],
+      "fake_output": "alt-svc: h3=\":443\"; ma=86400",
+      "explanation": "The server advertises HTTP/3 on port 443, for clients to remember for a day.",
+      "why": "HTTP/3 runs over QUIC, which uses UDP. A browser first connects with HTTP/2 over TCP, sees this header, and tries UDP port 443 next time. So HTTP/3 only works if UDP 443 is open through every firewall and load balancer on the way, a rule nobody had before. If it's blocked, clients fall back silently and you simply never get HTTP/3."
+    },
+    {
+      "prompt": "A gRPC service has three replicas behind a plain Kubernetes Service, and one replica gets nearly all the requests. Why?\n  a) Kubernetes is broken\n  b) gRPC keeps one long-lived HTTP/2 connection and sends every request over it; a connection-level (L4) balancer picks a backend once, when the connection opens\n  c) The other replicas are unhealthy\n  d) gRPC can't be load-balanced\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "L4 (kube-proxy, NLB) : balances CONNECTIONS -> 1 connection = 1 pod, for hours\nL7 (Envoy, Linkerd, an HTTP/2-aware ingress) : balances REQUESTS across pods",
+      "hint": "How many connections does the client open?",
+      "explanation": "Connections are balanced, not requests, and there's only one connection.",
+      "why": "This is the classic gRPC-on-Kubernetes problem: scaling up adds pods that receive nothing, because existing clients stay on their existing connections. The fixes are a request-level proxy (a service mesh, or an L7 load balancer), or client-side balancing with a headless Service, plus a maximum connection age on the server so that connections are re-established periodically."
+    },
+    {
+      "prompt": "Explore the gRPC service: list the services inventory.internal:443 exposes.",
+      "expected_commands": ["grpcurl inventory.internal:443 list"],
+      "fake_output": "grpc.health.v1.Health\ngrpc.reflection.v1.ServerReflection\nshop.inventory.v1.InventoryService",
+      "explanation": "Three services: health checking, reflection, and the application's own.",
+      "why": "grpcurl is curl for gRPC. Listing works because the server has reflection turned on, which lets a client ask what methods exist. Without reflection you pass the .proto files instead. 'grpcurl inventory.internal:443 describe shop.inventory.v1.InventoryService' shows the methods and message types. Reflection is handy internally and usually switched off on anything public."
+    },
+    {
+      "prompt": "Call the method shop.inventory.v1.InventoryService/GetStock with the JSON request {\"sku\": \"ab-1001\"}.",
+      "expected_commands": ["grpcurl -d '{\"sku\": \"ab-1001\"}' inventory.internal:443 shop.inventory.v1.InventoryService/GetStock", "grpcurl -d '{\"sku\":\"ab-1001\"}' inventory.internal:443 shop.inventory.v1.InventoryService/GetStock", "grpcurl -d \"{\\\"sku\\\": \\\"ab-1001\\\"}\" inventory.internal:443 shop.inventory.v1.InventoryService/GetStock"],
+      "fake_output": "ERROR:\n  Code: DeadlineExceeded\n  Message: context deadline exceeded",
+      "hint": "grpcurl -d '{\"sku\": \"ab-1001\"}' inventory.internal:443 shop.inventory.v1.InventoryService/GetStock",
+      "explanation": "The call failed with the gRPC status DeadlineExceeded.",
+      "why": "gRPC has its own status codes, carried in a trailer, and the HTTP status is 200 even when the call failed. So proxies, access logs, and dashboards that only look at the HTTP status show gRPC errors as successes. Log and alert on the grpc-status instead. The codes to know: Unavailable (can't reach it; safe to retry), DeadlineExceeded (too slow), ResourceExhausted (rate limited), PermissionDenied and Unauthenticated, and Internal. Deadlines also propagate: the caller's remaining time is passed down the call chain."
+    }
+  ]
+}

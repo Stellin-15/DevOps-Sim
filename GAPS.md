@@ -372,7 +372,7 @@ be genuinely productive.
 
 # Part 5 — Networking
 
-**Content:** 12 tutorials, 7 incidents.
+**Content:** 17 tutorials, 8 incidents.
 
 ## Covered
 
@@ -403,10 +403,18 @@ terminating load balancers.
   clamping as the real fix).
 - ~~Cloud networking specifics~~: **mostly closed** for AWS by Part 9.
   The AWS sandbox makes you debug security groups vs NACLs, IGW and NAT
-  routes, and VPC endpoints hands-on. VPC peering and Transit Gateway
-  are still missing.
-- Load balancer internals (L4 vs L7, health checks, connection draining,
-  sticky sessions) and service meshes.
+  routes, and VPC endpoints hands-on. Peering, Transit Gateway, and
+  PrivateLink are **closed** by aws-tutorial-014.
+- ~~Load balancer internals and meshes~~: **closed** across categories:
+  L4 vs L7 and gRPC balancing in networking-tutorial-016, proxies in Web
+  Servers (Part 18), and meshes in tutorial-035 and the SRE part.
+- ~~VPNs, BGP, DNS servers, HTTP/2 and gRPC, CNI~~: **closed** by
+  networking-tutorial-013 (WireGuard and AllowedIPs), 014 (reading BGP
+  sessions and advertisements), 015 (delegation, authoritative answers,
+  SOA, CoreDNS), 016 (HTTP/2, HTTP/3, grpcurl and gRPC status codes),
+  and 017 (Cilium and Hubble flow verdicts), with
+  networking-incident-008 (overlapping AllowedIPs). Not covered: IPsec,
+  designing BGP policy, DNSSEC, Calico, and running BIND.
 - ~~IPv6~~: **closed** at the basics level by networking-tutorial-012
   (v6 addresses, AAAA records, `curl -6`, dual-stack listeners, and the
   v6 routing table). IPv6-only clusters and NAT64 aren't covered.
@@ -621,7 +629,7 @@ current MLOps roles ask for.
 
 # Part 9 — AWS
 
-**Content:** 13 tutorials, 7 incidents, an interactive AWS Sandbox, and
+**Content:** 14 tutorials, 7 incidents, an interactive AWS Sandbox, and
 4 Mystery Incidents on it.
 
 The sandbox is a fake account with one production VPC:
@@ -685,7 +693,9 @@ route, a security group missing 443, and a stateless NACL dropping replies.
   alias records, lowering the TTL before a migration, `get-change`, and
   querying the authoritative servers). Health-check failover routing is
   described, not practiced.
-- Multi-account networking (Transit Gateway, VPC peering, PrivateLink).
+- ~~Multi-account networking~~: **closed** by aws-tutorial-014 (peering
+  and its non-transitivity, Transit Gateway routes and black holes,
+  PrivateLink).
 - CloudFormation/CDK (Terraform is used as the infrastructure-as-code representative).
 - KMS key policies, and Secrets Manager rotation.
 - The AWS Certified Solutions Architect / SysOps exam breadth: this is an
@@ -1797,10 +1807,9 @@ employer uses it.
 - ~~**Other infrastructure-as-code tools**~~: **done** inside Terraform
   (terraform-tutorial-013 to 016, one incident), at the level of
   operating and recognising them. Authoring in each tool is still open.
-- **Advanced networking:** BGP basics, VPNs (WireGuard, IPsec), Transit
-  Gateway, peering and PrivateLink, running DNS servers, L4 vs L7 load
-  balancer internals, CNI internals (Cilium, Calico), HTTP/2, HTTP/3,
-  and gRPC debugging.
+- ~~**Advanced networking**~~: **done** in networking-tutorial-013 to
+  017, networking-incident-008, and aws-tutorial-014. Still open:
+  IPsec, DNSSEC, Calico, and BGP design.
 - **Storage and disaster recovery:** Ceph and Rook, NFS, CSI snapshots,
   Velero cluster backups, and DR drills against real RPO and RTO
   targets.
@@ -1875,11 +1884,11 @@ If content is added in the order that helps most people soonest:
 | Docker | 11 | 5 | 3 Writing Labs (Dockerfile, Compose), Sandbox, 2 Mysteries |
 | Linux | 15 | 6 | 4 Writing Labs (bash), interactive Sandbox, 4 Mysteries |
 | Terraform | 16 | 7 | 5 Writing Labs (HCL, including a module) |
-| Networking | 12 | 7 | |
+| Networking | 17 | 8 | |
 | CI/CD | 20 | 8 | 4 Writing Labs (Actions, GitLab CI) |
 | Monitoring | 17 | 8 | 5 Writing Labs (alert rules, SLO burn alerts, a dashboard, manual spans) |
 | MLOps | 14 | 7 | |
-| AWS | 13 | 7 | 1 Writing Lab (IAM policy), Sandbox (VPC), 4 Mysteries |
+| AWS | 14 | 7 | 1 Writing Lab (IAM policy), Sandbox (VPC), 4 Mysteries |
 | Azure | 10 | 6 | Sandbox, 3 Mysteries |
 | Google Cloud | 10 | 6 | 1 Writing Lab (firewall), Sandbox, 3 Mysteries |
 | Security | 11 | 6 | 2 hacked-server Mysteries (Linux sandbox) |
@@ -1895,7 +1904,7 @@ If content is added in the order that helps most people soonest:
 | Serverless | 7 | 4 | |
 | Performance | 7 | 3 | |
 | FinOps | 6 | 3 | |
-| **Total** | **294** | **149** | 44 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
+| **Total** | **300** | **150** | 44 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -1907,7 +1916,7 @@ command beats the alternatives — not just what it does.
 will know the commands, the failure modes, and — most importantly — the
 debugging method** (check the layer before guessing the fix; refused vs
 timeout; verify after every change; revoke before cleaning up; revert
-don't force-push). The 149 incidents are modeled on the kinds of problems
+don't force-push). The 150 incidents are modeled on the kinds of problems
 that genuinely trip up working engineers, and working through them
 builds judgment that command references alone never will.
 

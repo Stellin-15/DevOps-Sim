@@ -107,3 +107,36 @@ kubectl port-forward svc/<name> 8080:80
 - DNS resolution order: /etc/hosts → local resolver → configured DNS server → (in k8s) CoreDNS
 - A "connection refused" means the port is reachable but nothing is listening; a timeout usually means a firewall/security group/network policy is silently dropping packets — this distinction is the first branch point in almost every network debugging session
 - NAT vs no-NAT matters for understanding why a pod's own IP looks different from outside vs inside the cluster
+
+## Beyond the Basics: VPNs, BGP, DNS Delegation, HTTP/2 and gRPC, Cilium
+
+```
+sudo wg show                         sudo wg-quick up wg0        sudo wg-quick down wg0
+sudo wg show wg0 latest-handshakes   ip route get <ip>
+
+sudo vtysh -c "show bgp summary"
+sudo vtysh -c "show ip bgp neighbors <peer> advertised-routes"
+sudo vtysh -c "show ip route bgp"
+sudo birdc show protocols
+
+dig +trace <name>                    dig NS <zone> +short
+dig SOA <zone> +short                dig @<nameserver> <name> +norecurse
+dig +dnssec <name>                   named-checkzone <zone> <file>      rndc reload
+kubectl -n kube-system get configmap coredns -o yaml
+
+curl -sI --http2 https://<host>/     curl -sI --http3 https://<host>/
+curl -s -o /dev/null -w "%{http_version}\n" https://<host>/
+grpcurl <host>:443 list              grpcurl <host>:443 describe <service>
+grpcurl -d '{"id": 1}' <host>:443 <service>/<method>
+grpc_health_probe -addr=<host>:<port>
+
+cilium status                        cilium connectivity test
+hubble observe --namespace <ns> --verdict DROPPED
+hubble observe --from-pod <ns>/<pod> --to-pod <ns>/<pod>
+kubectl get ciliumnetworkpolicies -A
+
+aws ec2 describe-vpc-peering-connections
+aws ec2 describe-transit-gateway-attachments
+aws ec2 search-transit-gateway-routes --transit-gateway-route-table-id <id> --filters Name=type,Values=static,propagated
+aws ec2 describe-vpc-endpoints
+```

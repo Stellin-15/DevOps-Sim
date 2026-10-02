@@ -1,0 +1,47 @@
+{
+  "id": "networking-tutorial-017",
+  "type": "tutorial",
+  "category": "networking",
+  "title": "Cluster Networking with Cilium: Seeing Which Packets Were Dropped",
+  "difficulty": "advanced",
+  "tags": ["cilium", "hubble", "cni", "ebpf", "network-policy"],
+  "intro": "Every Kubernetes cluster has a CNI plugin that gives pods addresses and enforces network policy. Cilium does it with eBPF programs in the kernel, and comes with Hubble, which records each connection and whether policy allowed it. That turns 'my pod can't connect' from guesswork into a lookup. The cluster runs Cilium; the application is in namespace shop.",
+  "steps": [
+    {
+      "prompt": "Check Cilium's own health.",
+      "expected_commands": ["cilium status", "cilium status --wait"],
+      "fake_output": "    /¯¯\\\n /¯¯\\__/¯¯\\    Cilium:             OK\n \\__/¯¯\\__/    Operator:           OK\n /¯¯\\__/¯¯\\    Envoy DaemonSet:    OK\n \\__/¯¯\\__/    Hubble Relay:       OK\n    \\__/       ClusterMesh:        disabled\n\nDaemonSet         cilium          Desired: 14, Ready: 14/14, Available: 14/14\nDeployment        cilium-operator Desired: 2, Ready: 2/2\nCluster Pods:     212/212 managed by Cilium",
+      "explanation": "The agent is ready on all 14 nodes, and every pod is managed.",
+      "why": "The CNI is a dependency of everything: a node whose agent isn't ready can't give new pods an address, and they sit in ContainerCreating. 'managed by Cilium' below the total means some pods started before the agent did and aren't under policy, which is fixed by restarting them. 'cilium connectivity test' runs a full suite of real connections when you need proof."
+    },
+    {
+      "prompt": "The checkout pods can't reach the payments service. Ask Hubble for recently dropped traffic in namespace shop.",
+      "expected_commands": ["hubble observe --namespace shop --verdict DROPPED", "hubble observe -n shop --verdict DROPPED", "hubble observe --verdict DROPPED --namespace shop"],
+      "fake_output": "Oct  2 14:02:11.412: shop/checkout-7d9f:51022 (ID:41204) <> shop/payments-5f8d:8443 (ID:88120) Policy denied DROPPED (TCP Flags: SYN)\nOct  2 14:02:12.418: shop/checkout-7d9f:51022 (ID:41204) <> shop/payments-5f8d:8443 (ID:88120) Policy denied DROPPED (TCP Flags: SYN)\nOct  2 14:02:14.430: shop/checkout-7d9f:51030 (ID:41204) <> shop/payments-5f8d:8443 (ID:88120) Policy denied DROPPED (TCP Flags: SYN)",
+      "explanation": "The first packet (SYN) from checkout to payments on port 8443 is dropped: 'Policy denied'.",
+      "why": "This is the answer that used to take an hour of tcpdump and reading YAML. It names the source, destination, port, and the reason. A drop looks like a timeout to the application, since nothing comes back, which is why policy problems are reported as 'the network is slow'. 'Policy denied' says a network policy is responsible, not routing or DNS."
+    },
+    {
+      "prompt": "List the network policies in namespace shop, both the standard kind and Cilium's own.",
+      "expected_commands": ["kubectl get networkpolicies,ciliumnetworkpolicies -n shop", "kubectl get netpol,cnp -n shop", "kubectl get networkpolicy,ciliumnetworkpolicy -n shop", "kubectl get ciliumnetworkpolicies,networkpolicies -n shop"],
+      "fake_output": "NAME                                              POD-SELECTOR   AGE\nnetworkpolicy.networking.k8s.io/default-deny      <none>         90d\nnetworkpolicy.networking.k8s.io/allow-dns         <none>         90d\n\nNAME                                              AGE\nciliumnetworkpolicy.cilium.io/payments-ingress    2h",
+      "explanation": "A default-deny, a DNS allowance, and a Cilium policy on payments created two hours ago.",
+      "why": "With a default-deny in place, every flow needs an explicit allow. The policy created two hours ago is the suspect: it now governs what may reach payments, and checkout isn't on its list, perhaps because its label was typed differently. Cilium policies extend the standard ones with rules on DNS names and on HTTP methods and paths."
+    },
+    {
+      "prompt": "The policy has been corrected to allow pods labelled app=checkout. Confirm traffic now flows: observe traffic from the pod shop/checkout-7d9f to the pod shop/payments-5f8d.",
+      "expected_commands": ["hubble observe --from-pod shop/checkout-7d9f --to-pod shop/payments-5f8d", "hubble observe --to-pod shop/payments-5f8d --from-pod shop/checkout-7d9f"],
+      "fake_output": "Oct  2 14:20:01.102: shop/checkout-7d9f:51440 (ID:41204) -> shop/payments-5f8d:8443 (ID:88120) policy-verdict:L3-L4 INGRESS ALLOWED (TCP Flags: SYN)\nOct  2 14:20:01.103: shop/checkout-7d9f:51440 (ID:41204) -> shop/payments-5f8d:8443 (ID:88120) to-endpoint FORWARDED (TCP Flags: SYN)\nOct  2 14:20:01.104: shop/checkout-7d9f:51440 (ID:41204) <- shop/payments-5f8d:8443 (ID:88120) to-endpoint FORWARDED (TCP Flags: SYN, ACK)",
+      "explanation": "The policy verdict is ALLOWED and the handshake completes.",
+      "why": "Verifying with the same tool closes the loop: you can see the verdict change from denied to allowed. The 'ID' numbers are Cilium identities: it doesn't match policy on IP addresses, which change with every pod, but on a number derived from the pod's labels. That's what lets policy scale in clusters where pods come and go constantly."
+    },
+    {
+      "prompt": "Before applying a default-deny policy to a namespace that has never had one, what should you do first?\n  a) Apply it and see who complains\n  b) Observe the real traffic for a while (Hubble flows, or the policy in audit mode), write allow rules for what's legitimate, and then enforce\n  c) Delete all the Services\n  d) Nothing: default-deny never breaks anything\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "hubble observe -n shop --verdict FORWARDED -o jsonpb | jq ...   # who talks to whom, on which ports\n-> allow rules for those flows -> audit mode -> enforce",
+      "hint": "The same rollout as any policy: see what it would block first.",
+      "explanation": "Learn the traffic, allow it, then deny the rest.",
+      "why": "A default-deny applied blind breaks things nobody knew about: DNS, metrics scraping, health checks from the ingress controller, a monthly batch job. Flow logs give you the list of what really happens. Remember DNS and egress to the API server in particular; those two are forgotten most often."
+    }
+  ]
+}

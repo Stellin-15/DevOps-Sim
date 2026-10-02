@@ -402,11 +402,11 @@ Current per-category content depth (tutorials / incidents):
 - docker: 11 / 5 (+3 Writing Labs: 2 Dockerfile, 1 Compose)
 - linux: 15 / 6 (+4 Writing Labs: bash)
 - terraform: 16 / 7 (+5 Writing Labs: HCL, including a three-file module)
-- networking: 12 / 7
+- networking: 17 / 8
 - cicd: 20 / 8 (+4 Writing Labs: GitHub Actions, GitLab CI)
 - monitoring: 17 / 8 (+5 Writing Labs: alert rules, burn-rate alerts, a Grafana dashboard, manual OTel spans)
 - mlops: 14 / 7
-- aws: 13 / 7 (+1 Writing Lab, AWS VPC sandbox, 4 mysteries)
+- aws: 14 / 7 (+1 Writing Lab, AWS VPC sandbox, 4 mysteries)
 - azure: 10 / 6 (+ Azure sandbox, 3 mysteries)
 - gcp: 10 / 6 (+ Google Cloud sandbox, 3 mysteries)
 - security: 11 / 6 (+ 2 hacked-server mysteries on the Linux sandbox)
@@ -438,7 +438,7 @@ Current per-category content depth (tutorials / incidents):
 - serverless: 7 / 4 (Lambda, API Gateway, ECS on Fargate, Cloud Run, Azure Functions)
 - performance: 7 / 3 (profilers, flame graphs, eBPF tools, JVM and Go runtime inspection, measurement)
 - finops: 6 / 3 (cost allocation, rightsizing, commitments and spot, Kubernetes cost, quiet costs)
-- **total: 294 tutorials, 149 incidents, 44 Writing Labs, 14 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
+- **total: 300 tutorials, 150 incidents, 44 Writing Labs, 14 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with

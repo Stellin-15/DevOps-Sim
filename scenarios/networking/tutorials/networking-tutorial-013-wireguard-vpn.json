@@ -1,0 +1,48 @@
+{
+  "id": "networking-tutorial-013",
+  "type": "tutorial",
+  "category": "networking",
+  "title": "VPN Tunnels with WireGuard",
+  "difficulty": "intermediate",
+  "tags": ["wireguard", "vpn", "tunnels", "routing"],
+  "intro": "A VPN makes two private networks, or a laptop and a network, reachable to each other across the internet through an encrypted tunnel. WireGuard is the modern one: a small config, public keys instead of certificates, and behaviour you can reason about. This host is a gateway whose tunnel interface, wg0, links the office (10.20.0.0/16) to the cloud network (10.0.0.0/16).",
+  "steps": [
+    {
+      "prompt": "Bring the tunnel up from its config file, /etc/wireguard/wg0.conf.",
+      "expected_commands": ["sudo wg-quick up wg0", "wg-quick up wg0"],
+      "fake_output": "[#] ip link add wg0 type wireguard\n[#] wg setconf wg0 /dev/fd/63\n[#] ip -4 address add 10.99.0.1/24 dev wg0\n[#] ip link set mtu 1420 up dev wg0\n[#] ip -4 route add 10.0.0.0/16 dev wg0",
+      "explanation": "An interface was created, given an address, and a route to the cloud network was added through it.",
+      "why": "wg-quick shows every step it takes, which is the tunnel's whole anatomy: an interface, an address, an MTU of 1420 (1500 minus the tunnel's overhead), and a route for each range the peer is allowed to send. That last line comes from the peer's AllowedIPs setting, which is the most important line in any WireGuard config."
+    },
+    {
+      "prompt": "Check the tunnel's state.",
+      "expected_commands": ["sudo wg show", "wg show", "sudo wg show wg0", "sudo wg"],
+      "fake_output": "interface: wg0\n  public key: x7Qk2mB9T1uVwYz0examplepublickeyAAAAAAAAAAA=\n  listening port: 51820\n\npeer: m2B9T1uVwYz0x7QkexamplepeerkeyBBBBBBBBBBBB=\n  endpoint: 203.0.113.80:51820\n  allowed ips: 10.0.0.0/16\n  latest handshake: 41 seconds ago\n  transfer: 1.20 GiB received, 880.41 MiB sent",
+      "explanation": "One peer, a handshake 41 seconds ago, and traffic flowing both ways.",
+      "why": "'latest handshake' is the health indicator. WireGuard is silent by design: it has no 'connected' state and sends nothing when idle. A handshake within the last couple of minutes means the keys match and packets get through. No handshake at all means the peer is unreachable (UDP port 51820 blocked, wrong endpoint) or the keys don't match, and WireGuard won't log why."
+    },
+    {
+      "prompt": "A peer's 'allowed ips' line does two jobs. What are they?\n  a) It's only a firewall\n  b) Outbound, it's the routing table: packets to those addresses go to this peer. Inbound, it's a filter: packets from this peer are only accepted if their source is in that list\n  c) It sets the encryption strength\n  d) It lists DNS servers\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "outbound: destination 10.0.4.21 -> which peer has 10.0.0.0/16 in AllowedIPs? -> encrypt for that peer\ninbound : decrypted packet from peer, source 10.0.4.21 -> in that peer's AllowedIPs? yes -> accept",
+      "hint": "It's called 'cryptokey routing'.",
+      "explanation": "A route going out and a source filter coming in.",
+      "why": "Most WireGuard problems are an AllowedIPs mistake. A range missing on one side gives traffic that works in one direction only. The same range listed on two peers sends everything to whichever was configured last (networking-incident-008). And 0.0.0.0/0 on a client sends all its traffic through the tunnel, which may or may not be what you meant."
+    },
+    {
+      "prompt": "Confirm the kernel will send a packet for the cloud host 10.0.4.21 through the tunnel.",
+      "expected_commands": ["ip route get 10.0.4.21"],
+      "fake_output": "10.0.4.21 dev wg0 src 10.99.0.1 uid 1000\n    cache",
+      "explanation": "It leaves through wg0.",
+      "why": "'ip route get' asks the kernel which route a specific destination would use, which is more reliable than reading the routing table yourself. If this showed eth0, traffic for the cloud would be going out unencrypted to the default gateway. Remember the return path as well: hosts in the cloud network need a route back to 10.20.0.0/16 via the gateway, and the gateway needs IP forwarding enabled."
+    },
+    {
+      "prompt": "Large file transfers through the tunnel stall while pings work. What's the likely cause?\n  a) The keys are wrong\n  b) MTU: the tunnel adds overhead, so full-size packets no longer fit, and if the 'too big' ICMP messages are blocked, large packets vanish\n  c) DNS\n  d) The handshake is too recent\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "ping -M do -s 1392 10.0.4.21   -> works   (1392 + 28 = 1420)\nping -M do -s 1400 10.0.4.21   -> 'message too long, mtu=1420'",
+      "hint": "Small packets pass and big ones don't.",
+      "explanation": "A tunnel shrinks the usable packet size.",
+      "why": "Every tunnel (WireGuard, IPsec, VXLAN, GRE) wraps packets in extra headers, so the inner MTU must be smaller than the outer path's. 1420 is right over a standard 1500-byte path; over PPPoE or another tunnel it must be lower. The symptom, small things work and large things hang, is the same black hole as networking-incident-007."
+    }
+  ]
+}

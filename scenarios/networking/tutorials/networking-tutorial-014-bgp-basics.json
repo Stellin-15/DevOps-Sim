@@ -1,0 +1,48 @@
+{
+  "id": "networking-tutorial-014",
+  "type": "tutorial",
+  "category": "networking",
+  "title": "BGP for Operators: Reading Sessions and Routes",
+  "difficulty": "advanced",
+  "tags": ["bgp", "routing", "frr", "datacenter"],
+  "intro": "BGP is how networks tell each other which addresses they can reach. It runs the internet, and it also turns up inside your own infrastructure: cloud dedicated connections and VPNs, MetalLB and Calico in Kubernetes clusters, and data-centre fabrics. You don't need to design with it, but you should be able to read whether a session is up and what's being advertised. This router runs FRR, driven with vtysh. Its peers are 10.255.0.1 and 10.255.0.2.",
+  "steps": [
+    {
+      "prompt": "Show the state of the BGP sessions.",
+      "expected_commands": ["sudo vtysh -c \"show bgp summary\"", "vtysh -c \"show bgp summary\"", "sudo vtysh -c 'show bgp summary'", "sudo vtysh -c \"show ip bgp summary\""],
+      "fake_output": "IPv4 Unicast Summary:\nBGP router identifier 10.255.0.10, local AS number 65010\n\nNeighbor     V    AS   MsgRcvd  MsgSent  Up/Down   State/PfxRcd  PfxSnt\n10.255.0.1   4  65000    41204    41180  14d02h             12       4\n10.255.0.2   4  65000       88      412  00:01:12       Active       0",
+      "explanation": "The session to 10.255.0.1 has been up 14 days and receives 12 prefixes. The one to 10.255.0.2 is in state 'Active'.",
+      "why": "The last column is the one to read. A number means the session is established and that many routes were received. A word means it isn't: 'Active' sounds healthy and means the opposite, it's actively trying and failing to connect. 'Idle' means not trying. The usual causes are a firewall blocking TCP port 179, a wrong AS number or peer address, or a password mismatch."
+    },
+    {
+      "prompt": "See which routes this router has learned from BGP and installed.",
+      "expected_commands": ["sudo vtysh -c \"show ip route bgp\"", "vtysh -c \"show ip route bgp\"", "sudo vtysh -c 'show ip route bgp'"],
+      "fake_output": "B>* 10.0.0.0/16 [20/0] via 10.255.0.1, eth1, weight 1, 14d02h\nB>* 10.1.0.0/16 [20/0] via 10.255.0.1, eth1, weight 1, 14d02h\nB>* 172.16.0.0/12 [20/0] via 10.255.0.1, eth1, weight 1, 02:14:40",
+      "explanation": "Three networks are reachable through 10.255.0.1, all on a single path.",
+      "why": "'B' is BGP and '>*' means selected and installed. Every route points at one neighbour because the second session is down: the redundancy that was designed in isn't there, and nothing has failed yet to show it. A down backup path is silent until the primary fails, which is why sessions, not just reachability, need monitoring."
+    },
+    {
+      "prompt": "Check what this router is telling the neighbour 10.255.0.1 about its own networks.",
+      "expected_commands": ["sudo vtysh -c \"show ip bgp neighbors 10.255.0.1 advertised-routes\"", "vtysh -c \"show ip bgp neighbors 10.255.0.1 advertised-routes\"", "sudo vtysh -c 'show ip bgp neighbors 10.255.0.1 advertised-routes'"],
+      "fake_output": "   Network          Next Hop      Metric LocPrf Weight Path\n*> 10.20.0.0/16     0.0.0.0            0         32768 i\n*> 10.20.8.0/24     0.0.0.0            0         32768 i\n*> 10.21.0.0/16     0.0.0.0            0         32768 i\n*> 0.0.0.0/0        0.0.0.0            0         32768 i\n\nTotal number of prefixes 4",
+      "explanation": "It advertises its three office networks, and also a default route, 0.0.0.0/0.",
+      "why": "Advertising a route is a promise: 'send that traffic to me'. The default route here is almost certainly a mistake: this router is telling its peer to send it everything destined for the whole internet. Accidental advertisements like this, leaked beyond one network, are the cause of several famous internet-wide outages. What you advertise should be an explicit list, filtered on both sides."
+    },
+    {
+      "prompt": "Two routes exist for the same destination: 10.0.0.0/16 and the more specific 10.0.4.0/24. A packet is addressed to 10.0.4.21. Which route does it take?\n  a) The first one learned\n  b) The most specific match (longest prefix): 10.0.4.0/24\n  c) The larger network\n  d) They're load-balanced\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "10.0.4.21  matches  10.0.0.0/16  (16 bits)\n           matches  10.0.4.0/24  (24 bits)   <- wins",
+      "hint": "The same rule as every routing table.",
+      "explanation": "Longest prefix wins, before any other attribute is considered.",
+      "why": "This rule is how traffic is steered deliberately, and how it's hijacked: whoever advertises a more specific prefix gets the traffic, regardless of who owns the range. It's why cloud route tables behave as they do, and why a stray /24 advertisement can pull traffic away from a legitimate /16."
+    },
+    {
+      "prompt": "Why should a BGP session accept a limited number of prefixes from a peer, and only expected ranges?\n  a) To save memory only\n  b) Because a peer's mistake becomes yours: without filters and a maximum-prefix limit, a misconfigured neighbour can hand you routes for networks it doesn't own, or its entire table\n  c) It's a licence restriction\n  d) BGP requires it\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "neighbor 10.255.0.1 prefix-list FROM-CLOUD in\nneighbor 10.255.0.1 prefix-list OUR-NETWORKS out\nneighbor 10.255.0.1 maximum-prefix 100",
+      "hint": "BGP believes whatever it's told.",
+      "explanation": "Filter in, filter out, and cap the count.",
+      "why": "BGP has no built-in notion of who's allowed to announce what; it trusts its peers. Inbound filters stop you believing nonsense, outbound filters stop you spreading it, and a prefix limit drops the session if a peer suddenly sends far more than agreed. On the public internet RPKI adds cryptographic checks of ownership. These three lines are the difference between a neighbour's typo and your outage."
+    }
+  ]
+}

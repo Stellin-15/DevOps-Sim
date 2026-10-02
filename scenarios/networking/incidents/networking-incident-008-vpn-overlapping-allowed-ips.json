@@ -1,0 +1,49 @@
+{
+  "id": "networking-incident-008",
+  "type": "incident",
+  "category": "networking",
+  "title": "Adding the second office to the VPN took the first office off it",
+  "difficulty": "advanced",
+  "tags": ["wireguard", "vpn", "routing", "allowed-ips"],
+  "intro": "The cloud VPN gateway, vpn-gw-1, runs WireGuard with one peer: the London office (10.20.0.0/16). This morning a second peer was added for the new Berlin office. Berlin works. London has been unable to reach anything in the cloud since. London's own gateway shows the tunnel as up, with recent handshakes. You have a shell on vpn-gw-1.",
+  "steps": [
+    {
+      "prompt": "Look at the tunnel's peers and what each is allowed.",
+      "expected_commands": ["sudo wg show", "wg show", "sudo wg show wg0", "sudo wg"],
+      "fake_output": "interface: wg0\n  listening port: 51820\n\npeer: LONDONx7Qk2mB9T1uVwYz0examplekeyAAAAAAAAAAA=\n  endpoint: 198.51.100.20:51820\n  allowed ips: (none)\n  latest handshake: 38 seconds ago\n  transfer: 41.20 GiB received, 38.80 GiB sent\n\npeer: BERLINm2B9T1uVwYz0x7QkexamplekeyBBBBBBBBBBB=\n  endpoint: 203.0.113.60:51820\n  allowed ips: 10.20.0.0/16\n  latest handshake: 12 seconds ago\n  transfer: 2.10 MiB received, 1.84 MiB sent",
+      "hint": "sudo wg show"
+    },
+    {
+      "prompt": "London's allowed ips are '(none)', and Berlin has 10.20.0.0/16, which is London's range. Confirm where the gateway now sends traffic for a London host, 10.20.8.15.",
+      "expected_commands": ["ip route get 10.20.8.15"],
+      "fake_output": "10.20.8.15 dev wg0 src 10.99.0.1 uid 0\n    cache",
+      "hint": "ip route get 10.20.8.15"
+    },
+    {
+      "prompt": "It goes into wg0, and WireGuard then picks the peer whose AllowedIPs contain the address: Berlin. Look at the config file to see what was written this morning: print /etc/wireguard/wg0.conf, hiding the private key line.",
+      "expected_commands": ["sudo grep -v PrivateKey /etc/wireguard/wg0.conf", "sudo cat /etc/wireguard/wg0.conf | grep -v PrivateKey", "grep -v PrivateKey /etc/wireguard/wg0.conf", "sudo grep -v -i privatekey /etc/wireguard/wg0.conf"],
+      "fake_output": "[Interface]\nAddress = 10.99.0.1/24\nListenPort = 51820\n\n[Peer]\n# London\nPublicKey = LONDONx7Qk2mB9T1uVwYz0examplekeyAAAAAAAAAAA=\nAllowedIPs = 10.20.0.0/16\n\n[Peer]\n# Berlin\nPublicKey = BERLINm2B9T1uVwYz0x7QkexamplekeyBBBBBBBBBBB=\nAllowedIPs = 10.20.0.0/16",
+      "hint": "sudo grep -v PrivateKey /etc/wireguard/wg0.conf"
+    },
+    {
+      "prompt": "The Berlin block was copied from London's and the range was never changed. Berlin's network is 10.30.0.0/16. Fix it on the running interface: set the Berlin peer's allowed ips to 10.30.0.0/16.",
+      "expected_commands": ["sudo wg set wg0 peer BERLINm2B9T1uVwYz0x7QkexamplekeyBBBBBBBBBBB= allowed-ips 10.30.0.0/16", "wg set wg0 peer BERLINm2B9T1uVwYz0x7QkexamplekeyBBBBBBBBBBB= allowed-ips 10.30.0.0/16"],
+      "fake_output": "(no output)",
+      "hint": "sudo wg set wg0 peer BERLINm2B9T1uVwYz0x7QkexamplekeyBBBBBBBBBBB= allowed-ips 10.30.0.0/16"
+    },
+    {
+      "prompt": "And give London its range back.",
+      "expected_commands": ["sudo wg set wg0 peer LONDONx7Qk2mB9T1uVwYz0examplekeyAAAAAAAAAAA= allowed-ips 10.20.0.0/16", "wg set wg0 peer LONDONx7Qk2mB9T1uVwYz0examplekeyAAAAAAAAAAA= allowed-ips 10.20.0.0/16"],
+      "fake_output": "(no output)",
+      "hint": "sudo wg set wg0 peer LONDONx7Qk2mB9T1uVwYz0examplekeyAAAAAAAAAAA= allowed-ips 10.20.0.0/16"
+    },
+    {
+      "prompt": "The config file has been corrected to match. Verify from the gateway that a London host answers: send 3 pings to 10.20.8.15.",
+      "expected_commands": ["ping -c 3 10.20.8.15", "ping -c3 10.20.8.15"],
+      "fake_output": "64 bytes from 10.20.8.15: icmp_seq=1 ttl=63 time=11.2 ms\n64 bytes from 10.20.8.15: icmp_seq=2 ttl=63 time=10.9 ms\n64 bytes from 10.20.8.15: icmp_seq=3 ttl=63 time=11.4 ms\n\n3 packets transmitted, 3 received, 0% packet loss",
+      "hint": "ping -c 3 10.20.8.15"
+    }
+  ],
+  "resolution": "In WireGuard a range can belong to only one peer on an interface. AllowedIPs is the routing table for outgoing packets and the source filter for incoming ones, so a given address has to map to exactly one peer. When the Berlin peer was added with London's range, copied and not edited, WireGuard did what it always does with a duplicate: it moved the range to the newest peer and left the older one with none. No error, no warning. From then on, the gateway encrypted everything destined for London's network with Berlin's key and sent it to Berlin, which dropped it. And packets arriving from London were decrypted successfully and then discarded, because their source addresses were no longer in London's allowed list. London's tunnel still looked healthy: handshakes carry on regardless of AllowedIPs, since they only prove the keys match. That's the trap in reading 'latest handshake' as 'working'. 'wg show' made it plain: a peer with '(none)' is a peer that can't send or receive anything. Fixing it live with 'wg set' restored service at once; the config file had to be corrected too, or the next restart would bring the fault back. What to take from it: 'ip route get' and 'wg show' together answer where a packet will actually go; a handshake is a liveness check, not a correctness check, so monitor real traffic through the tunnel (a probe to a host on the far side); generate VPN configs from a single source of truth that refuses overlapping ranges; and keep an address plan, because the same collision is waiting in cloud peering and Transit Gateway routes for any two sites that were given the same range.",
+  "real_commands_used": ["wg show (allowed ips per peer)", "ip route get <ip>", "grep -v PrivateKey /etc/wireguard/wg0.conf", "wg set wg0 peer <key> allowed-ips <range>", "ping -c 3"]
+}

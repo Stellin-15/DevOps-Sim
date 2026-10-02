@@ -1,0 +1,49 @@
+{
+  "id": "aws-tutorial-014",
+  "type": "tutorial",
+  "category": "aws",
+  "title": "Connecting VPCs: Peering, Transit Gateway, and PrivateLink",
+  "difficulty": "advanced",
+  "tags": ["aws", "vpc-peering", "transit-gateway", "privatelink", "networking"],
+  "intro": "One VPC is rarely enough: separate accounts per team and environment mean separate networks that still need to talk. AWS has three ways to join them, and choosing the wrong one creates a network nobody can reason about. The company has a shared-services VPC (10.0.0.0/16), a production VPC (10.1.0.0/16), and a data VPC (10.2.0.0/16).",
+  "steps": [
+    {
+      "prompt": "List the VPC peering connections in this account.",
+      "expected_commands": ["aws ec2 describe-vpc-peering-connections", "aws ec2 describe-vpc-peering-connections --output table"],
+      "fake_output": "{\n  \"VpcPeeringConnections\": [{\n    \"VpcPeeringConnectionId\": \"pcx-0a1b2c3d4e5f67890\",\n    \"Status\": {\"Code\": \"active\"},\n    \"RequesterVpcInfo\": {\"VpcId\": \"vpc-0aaa1111bbbb2222c\", \"CidrBlock\": \"10.1.0.0/16\"},\n    \"AccepterVpcInfo\": {\"VpcId\": \"vpc-0ddd3333eeee4444f\", \"CidrBlock\": \"10.0.0.0/16\"}\n  }]\n}",
+      "explanation": "One active peering between production (10.1.0.0/16) and shared services (10.0.0.0/16).",
+      "why": "Peering is a direct private link between two VPCs. 'active' isn't enough for traffic to flow: each side also needs a route to the other's range via the peering connection, and security groups that allow it. A peering with no routes is the commonest 'it's connected but nothing works'. The two ranges also must not overlap, which is why address planning matters from day one."
+    },
+    {
+      "prompt": "Production is peered with shared services. Shared services is also peered with the data VPC. Can production reach the data VPC through shared services?\n  a) Yes, peering forwards traffic onward\n  b) No: peering isn't transitive. Each pair that needs to talk needs its own peering, or a hub that routes\n  c) Only for TCP\n  d) Only on weekdays\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "A <-> B   and   B <-> C     does NOT give   A <-> C\n\npairs needed for a full mesh:  3 VPCs = 3,  10 VPCs = 45,  30 VPCs = 435",
+      "hint": "A VPC only delivers traffic that starts or ends in it.",
+      "explanation": "Peering connects exactly two VPCs and never relays.",
+      "why": "This is the limit that pushes growing organisations off peering: a full mesh needs a connection, and routes, for every pair. Beyond a handful of VPCs it becomes unmanageable, and the answer is a hub."
+    },
+    {
+      "prompt": "The hub is a Transit Gateway. List its attachments.",
+      "expected_commands": ["aws ec2 describe-transit-gateway-attachments", "aws ec2 describe-transit-gateway-attachments --output table"],
+      "fake_output": "{\n  \"TransitGatewayAttachments\": [\n    {\"TransitGatewayAttachmentId\": \"tgw-attach-0a1b2c3d4e5f60001\", \"ResourceType\": \"vpc\", \"ResourceId\": \"vpc-0aaa1111bbbb2222c\", \"State\": \"available\"},\n    {\"TransitGatewayAttachmentId\": \"tgw-attach-0a1b2c3d4e5f60002\", \"ResourceType\": \"vpc\", \"ResourceId\": \"vpc-0ddd3333eeee4444f\", \"State\": \"available\"},\n    {\"TransitGatewayAttachmentId\": \"tgw-attach-0a1b2c3d4e5f60003\", \"ResourceType\": \"vpc\", \"ResourceId\": \"vpc-0ggg5555hhhh6666i\", \"State\": \"available\"},\n    {\"TransitGatewayAttachmentId\": \"tgw-attach-0a1b2c3d4e5f60004\", \"ResourceType\": \"vpn\", \"ResourceId\": \"vpn-0a1b2c3d4e5f67890\", \"State\": \"available\"}\n  ]\n}",
+      "explanation": "Three VPCs and a VPN to the office, all attached to one gateway.",
+      "why": "A Transit Gateway is a router in the cloud: each network attaches once and the gateway's route tables decide who reaches whom. That gives one place to look and to control, and it does route between attachments. It's charged per attachment and per gigabyte, so it costs more than peering for heavy traffic between two VPCs."
+    },
+    {
+      "prompt": "See what the gateway's route table rtb contains. Its id is tgw-rtb-0a1b2c3d4e5f67890. Search it for static and propagated routes.",
+      "expected_commands": ["aws ec2 search-transit-gateway-routes --transit-gateway-route-table-id tgw-rtb-0a1b2c3d4e5f67890 --filters Name=type,Values=static,propagated", "aws ec2 search-transit-gateway-routes --transit-gateway-route-table-id tgw-rtb-0a1b2c3d4e5f67890 --filters \"Name=type,Values=static,propagated\""],
+      "fake_output": "{\n  \"Routes\": [\n    {\"DestinationCidrBlock\": \"10.0.0.0/16\", \"Type\": \"propagated\", \"State\": \"active\"},\n    {\"DestinationCidrBlock\": \"10.1.0.0/16\", \"Type\": \"propagated\", \"State\": \"active\"},\n    {\"DestinationCidrBlock\": \"10.2.0.0/16\", \"Type\": \"propagated\", \"State\": \"active\"},\n    {\"DestinationCidrBlock\": \"10.20.0.0/16\", \"Type\": \"propagated\", \"State\": \"active\"},\n    {\"DestinationCidrBlock\": \"0.0.0.0/0\", \"Type\": \"static\", \"State\": \"blackhole\"}\n  ]\n}",
+      "hint": "aws ec2 search-transit-gateway-routes --transit-gateway-route-table-id tgw-rtb-0a1b2c3d4e5f67890 --filters Name=type,Values=static,propagated",
+      "explanation": "Routes to all three VPCs and the office, and a default route whose state is 'blackhole'.",
+      "why": "'blackhole' means the route's target attachment no longer exists, so matching traffic is silently discarded: here, everything bound for the internet through the hub. It's the Transit Gateway's version of a route to a deleted NAT gateway. Traffic needs routes in three places: the source VPC's subnet route table (to the gateway), the gateway's own table, and the destination VPC's return route. Check all three in that order."
+    },
+    {
+      "prompt": "A partner needs to call one of your APIs privately, and you don't want to join networks with them at all. Which option fits?\n  a) VPC peering\n  b) A Transit Gateway attachment\n  c) PrivateLink: expose the one service as an endpoint in their VPC, with no routing between the networks\n  d) A public IP address\nType the letter.",
+      "expected_commands": ["c"],
+      "fake_output": "peering / TGW : network-to-network; everything reachable unless blocked; CIDRs must not overlap\nPrivateLink   : service-to-consumer; one port of one service; overlapping CIDRs are fine; one-way",
+      "hint": "They need one service, not your network.",
+      "explanation": "PrivateLink shares a service, not a network.",
+      "why": "PrivateLink puts a network interface for your service inside the consumer's VPC. Nothing else is reachable in either direction, the address ranges may overlap, and connections can only be opened from the consumer's side. It's also how AWS's own services are reached privately ('aws ec2 describe-vpc-endpoints' lists them). Default to the narrowest connection that does the job."
+    }
+  ]
+}

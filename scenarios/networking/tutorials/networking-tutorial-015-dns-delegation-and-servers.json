@@ -1,0 +1,46 @@
+{
+  "id": "networking-tutorial-015",
+  "type": "tutorial",
+  "category": "networking",
+  "title": "DNS From the Server's Side: Delegation, Zones, and Negative Answers",
+  "difficulty": "intermediate",
+  "tags": ["dns", "delegation", "zones", "coredns"],
+  "intro": "networking-tutorial-002 used DNS as a client. Someone has to run the other side: the authoritative servers that hold a zone, and the chain of delegation that leads resolvers to them. Mistakes there take a domain off the internet. The domain is example.com.",
+  "steps": [
+    {
+      "prompt": "Follow a lookup the way a resolver does, from the root downward, for shop.example.com.",
+      "expected_commands": ["dig +trace shop.example.com", "dig shop.example.com +trace"],
+      "fake_output": ".                 518400  IN  NS  a.root-servers.net.\n;; Received 239 bytes from 127.0.0.53#53 in 1 ms\n\ncom.              172800  IN  NS  a.gtld-servers.net.\n;; Received 1170 bytes from 198.41.0.4#53(a.root-servers.net) in 12 ms\n\nexample.com.      172800  IN  NS  ns1.dnshost.example.\nexample.com.      172800  IN  NS  ns2.dnshost.example.\n;; Received 310 bytes from 192.5.6.30#53(a.gtld-servers.net) in 18 ms\n\nshop.example.com. 300     IN  A   203.0.113.80\n;; Received 61 bytes from 198.51.100.53#53(ns1.dnshost.example) in 22 ms",
+      "explanation": "Root servers point to the .com servers, which point to example.com's name servers, which give the answer.",
+      "why": "Each level only knows who's responsible for the next one down: that's delegation. +trace shows exactly where a lookup breaks. If it stops at the .com servers with name servers that don't answer, the fault is the delegation (the NS records at the registrar), and nothing you change inside your zone can fix it."
+    },
+    {
+      "prompt": "List the name servers the zone itself says it has.",
+      "expected_commands": ["dig NS example.com +short", "dig +short NS example.com", "dig example.com NS +short"],
+      "fake_output": "ns1.dnshost.example.\nns2.dnshost.example.\nns3.dnshost.example.",
+      "explanation": "The zone lists three name servers; the registry's delegation in the previous step listed two.",
+      "why": "There are two copies of the NS list: the one at the parent (set at your registrar) and the one inside the zone. They should match. A mismatch works until it doesn't: here ns3 is never used by resolvers, and worse is the reverse case, where the parent lists a server that no longer serves the zone, a 'lame delegation' that makes a share of lookups fail at random. It's a classic leftover from a DNS provider migration."
+    },
+    {
+      "prompt": "Ask one authoritative server directly, without recursion, for shop.example.com: query ns1.dnshost.example.",
+      "expected_commands": ["dig @ns1.dnshost.example shop.example.com +norecurse", "dig +norecurse @ns1.dnshost.example shop.example.com", "dig @ns1.dnshost.example shop.example.com +norec"],
+      "fake_output": ";; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 4410\n;; flags: qr aa; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1\n\n;; ANSWER SECTION:\nshop.example.com.  300  IN  A  203.0.113.80",
+      "explanation": "NOERROR with the 'aa' flag: this server is authoritative for the name and gave the answer itself.",
+      "why": "'aa' (authoritative answer) is the flag to look for. Without it you're reading a cached copy from some resolver. Query every name server in the list this way and compare: after a change, servers that disagree mean the zone hasn't replicated to all of them, and users get different answers depending on which one their resolver picks."
+    },
+    {
+      "prompt": "Check the zone's SOA record, which holds its serial number and its negative-caching time.",
+      "expected_commands": ["dig SOA example.com +short", "dig +short SOA example.com", "dig example.com SOA +short"],
+      "fake_output": "ns1.dnshost.example. hostmaster.example.com. 2026100201 7200 900 1209600 3600",
+      "explanation": "Serial 2026100201, and the last number, 3600, is how long 'no such name' answers are cached.",
+      "why": "Secondaries copy the zone when the serial increases, so forgetting to bump it after an edit means the change never leaves the primary. The final field matters in incidents: if someone looks up a name before you create it, the 'doesn't exist' answer is cached for that long, an hour here. That's why a brand-new record sometimes 'doesn't work' for exactly the people who tested it too early."
+    },
+    {
+      "prompt": "Inside Kubernetes, CoreDNS is the DNS server. Show its configuration.",
+      "expected_commands": ["kubectl -n kube-system get configmap coredns -o yaml", "kubectl get configmap coredns -n kube-system -o yaml", "kubectl -n kube-system get cm coredns -o yaml"],
+      "fake_output": "data:\n  Corefile: |\n    .:53 {\n        errors\n        health\n        kubernetes cluster.local in-addr.arpa ip6.arpa {\n           pods insecure\n           fallthrough in-addr.arpa ip6.arpa\n        }\n        forward . /etc/resolv.conf\n        cache 30\n        loop\n        reload\n    }\n    corp.internal:53 {\n        forward . 10.20.0.53\n    }",
+      "explanation": "Names under cluster.local are answered from the Kubernetes API; corp.internal is forwarded to the office DNS server; everything else goes to the node's resolvers.",
+      "why": "The Corefile is read as a list of zones, each with plugins. The corp.internal block is a 'stub domain': a private zone sent to a specific server, which is how pods resolve on-premises names. If that server, 10.20.0.53, is unreachable from the cluster, only those names fail, and the symptom is slow timeouts for one domain. 'cache 30' caps how long answers, including failures, are remembered."
+    }
+  ]
+}
