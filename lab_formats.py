@@ -362,6 +362,20 @@ def parse_ansible(content: str):
             "text": content}, []
 
 
+def parse_yaml_list(content: str):
+    """Any other YAML file whose top level is a list (Falco rules, for
+    example): {'items': [...], 'lines', 'text'}. Paths then read
+    'items[0].rule' or 'items[*].priority'."""
+    parsed, problems = parse_yaml(content)
+    if problems:
+        return None, problems
+    if not isinstance(parsed, list):
+        return None, ["This file must be a YAML list: each top-level entry starts with '- '."]
+    return {"items": parsed,
+            "lines": [l.strip() for l in content.splitlines() if l.strip() and not l.strip().startswith("#")],
+            "text": content}, []
+
+
 # ---------------------------------------------------------------- nginx
 
 class NginxError(Exception):
@@ -540,6 +554,7 @@ PARSERS = {
     "bash": parse_bash,
     "markdown": parse_markdown,
     "ansible": parse_ansible,
+    "yamllist": parse_yaml_list,
 }
 
 

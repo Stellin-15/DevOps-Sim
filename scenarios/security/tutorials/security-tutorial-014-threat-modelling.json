@@ -1,0 +1,51 @@
+{
+  "id": "security-tutorial-014",
+  "type": "tutorial",
+  "category": "security",
+  "title": "Threat Modelling a Design with STRIDE",
+  "difficulty": "intermediate",
+  "tags": ["threat-modelling", "stride", "design", "security-review"],
+  "intro": "Scanners find known mistakes in things that exist. Threat modelling finds design flaws before anything is built, by asking 'what could go wrong here?' in a structured way. It needs a diagram and an hour, not a tool. The system: users' browsers call an API gateway over HTTPS; the gateway calls the checkout service; checkout reads and writes a PostgreSQL database and calls a third-party payment provider; an admin console lets staff issue refunds. This tutorial is a set of decisions: answer each with a letter.",
+  "steps": [
+    {
+      "prompt": "Threat modelling starts by drawing data flows and marking trust boundaries: places where data crosses from something you trust less to something you trust more. Which of these is the most important boundary in this system?\n  a) Between two functions in the checkout service\n  b) Between the internet (users' browsers) and the API gateway\n  c) Between two columns of a table\n  d) Between the service and its own log file\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "browser --(internet: untrusted)--> | API gateway --> checkout --> database\n                                   |                     \\--> payment provider (third party)\n   staff --(office network)-->     | admin console --> checkout",
+      "hint": "Where does input from people you know nothing about first arrive?",
+      "explanation": "The edge where untrusted input enters.",
+      "why": "Threats concentrate where trust changes, so that's where controls go: authentication, validation, rate limits. There are other boundaries here too: staff to the admin console, and your service to the payment provider, whose responses you also shouldn't trust blindly. The diagram's value is that it makes people agree on what the system actually is."
+    },
+    {
+      "prompt": "STRIDE is a checklist of six kinds of threat: Spoofing, Tampering, Repudiation, Information disclosure, Denial of service, Elevation of privilege. An attacker replays another user's stolen session token to place orders as them. Which kind is that?\n  a) Spoofing: pretending to be someone else\n  b) Denial of service\n  c) Repudiation\n  d) Tampering\nType the letter.",
+      "expected_commands": ["a"],
+      "fake_output": "Spoofing  -> countered by authentication\n  short-lived tokens, binding a token to the client, MFA for sensitive actions, revocation on logout",
+      "hint": "The attacker's claim is 'I am this user'.",
+      "explanation": "Spoofing an identity; the defence is stronger authentication.",
+      "why": "Each STRIDE letter pairs with a property you want: Spoofing with authentication, Tampering with integrity, Repudiation with audit logging, Information disclosure with confidentiality, Denial of service with availability, Elevation of privilege with authorization. Walking each element of the diagram through the six letters is the whole method."
+    },
+    {
+      "prompt": "A member of staff issues a refund to their own card through the admin console and later says they never did. The system has no record of who issued which refund. Which threat was left unaddressed?\n  a) Spoofing\n  b) Repudiation: being able to deny an action because nothing proves who did it\n  c) Denial of service\n  d) Information disclosure\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "Repudiation -> countered by audit logging\n  who, what, when, from where; written somewhere the actor can't edit; reviewed for sensitive actions",
+      "hint": "The problem isn't that it happened; it's that you can't show who did it.",
+      "explanation": "Repudiation, answered by an audit trail the actor can't alter.",
+      "why": "This is the threat engineers forget, because it isn't an 'attack' in the usual sense. For actions involving money or personal data, the log of who did what is a security control in itself, and it's also what the compliance frameworks ask for. For refunds you'd add a second control: approval by another person above some amount."
+    },
+    {
+      "prompt": "The checkout service looks up an order with the id from the URL, /orders/4812906, and returns it without checking that the order belongs to the logged-in user. Changing the number shows other customers' orders. Which threats are these?\n  a) Denial of service only\n  b) Information disclosure through a missing authorization check (and elevation of privilege: acting beyond what you're allowed)\n  c) Repudiation\n  d) Nothing: the user is logged in\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "authenticated  != authorized\n  'is this a valid user?'                 yes\n  'may THIS user see THIS order?'         never asked\n\nfix: every lookup scoped to the caller  ->  WHERE id = :id AND customer_id = :current_user",
+      "hint": "Logging in proves who you are, not what you may see.",
+      "explanation": "A broken object-level authorization check: the most common serious API flaw.",
+      "why": "Authentication happened; authorization didn't. This flaw tops the OWASP API risk list because it's invisible to scanners and to happy-path tests: the request is well-formed and the response is 200. A threat model catches it by asking, for each data flow, 'who is allowed to make this request about this object, and where is that checked?'."
+    },
+    {
+      "prompt": "For each threat you find, there are four possible responses. Which list is right?\n  a) Ignore, hide, deny, delete\n  b) Mitigate (add a control), eliminate (remove the feature or data), transfer (to a provider or insurer), or accept (knowingly, with an owner)\n  c) Always mitigate, whatever the cost\n  d) Wait for an incident\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "threat                               response\ncard data stolen from our database   eliminate: never store it; the provider tokenises it\nrefund fraud by staff                mitigate: audit log + second approval over a limit\nprovider outage                      transfer + mitigate: SLA, plus a queue and graceful degradation\nvolumetric DDoS                      transfer: the CDN's protection",
+      "hint": "Not every risk is worth a control, but every one deserves a decision.",
+      "explanation": "Mitigate, eliminate, transfer, or accept: on purpose.",
+      "why": "The strongest response is often elimination: data you don't hold can't leak, which is why card numbers go to the payment provider. Acceptance is legitimate when it's a recorded decision by someone entitled to make it. The output of a threat model is a short list of threats with a response and an owner for each, kept with the design document and revisited when the design changes."
+    }
+  ]
+}

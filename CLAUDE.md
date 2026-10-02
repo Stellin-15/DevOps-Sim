@@ -119,7 +119,8 @@ Don't duplicate content from these files elsewhere — link to them.
   `yaml_lab` — renamed only in the menu, to avoid churning ids and
   progress keys). A lab step's `format` field picks the parser: `yaml`
   (default; also used for JSON such as IAM policies), `dockerfile`,
-  `hcl`, `bash`, `ansible`, `markdown`, `nginx`, or `python`. Each returns a plain nested
+  `hcl`, `bash`, `ansible`, `yamllist` (any other top-level YAML list,
+  as `{"items": [...]}`; Falco rules use it), `markdown`, `nginx`, or `python`. Each returns a plain nested
   dict so the same dotted-path / `[*]` / `contains` checks work on every
   format: Dockerfile → `{"lines": [...], "FROM": [args...], "RUN": [...]}`,
   HCL → `{"resource": {"aws_s3_bucket": {"logs": {...}}}, "variable": ...}`,
@@ -409,7 +410,7 @@ Current per-category content depth (tutorials / incidents):
 - aws: 14 / 7 (+1 Writing Lab, AWS VPC sandbox, 4 mysteries)
 - azure: 10 / 6 (+ Azure sandbox, 3 mysteries)
 - gcp: 10 / 6 (+ Google Cloud sandbox, 3 mysteries)
-- security: 11 / 6 (+ 2 hacked-server mysteries on the Linux sandbox)
+- security: 16 / 7 (+3 Writing Labs, 2 hacked-server mysteries on the Linux sandbox)
 - servers: 13 / 7 (fleet ops: Ansible, patching, time, LVM, backups)
 - sre: 13 / 6 (big-tech practices, via public tools; +2 Writing Labs)
 - git: 11 / 6 (Git in its own right; everyday workflow, revert vs
@@ -438,7 +439,7 @@ Current per-category content depth (tutorials / incidents):
 - serverless: 7 / 4 (Lambda, API Gateway, ECS on Fargate, Cloud Run, Azure Functions)
 - performance: 7 / 3 (profilers, flame graphs, eBPF tools, JVM and Go runtime inspection, measurement)
 - finops: 6 / 3 (cost allocation, rightsizing, commitments and spot, Kubernetes cost, quiet costs)
-- **total: 308 tutorials, 152 incidents, 45 Writing Labs, 14 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
+- **total: 313 tutorials, 153 incidents, 48 Writing Labs, 14 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with

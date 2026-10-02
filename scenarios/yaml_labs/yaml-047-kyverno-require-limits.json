@@ -1,0 +1,37 @@
+{
+  "id": "yaml-047",
+  "type": "yaml_lab",
+  "category": "security",
+  "title": "Write a Kyverno Policy: Require CPU and Memory Limits",
+  "difficulty": "advanced",
+  "tags": ["kyverno", "admission-policy", "kubernetes", "resource-limits"],
+  "intro": "security-tutorial-011 watched Kyverno policies block and report. Now write one. It should check every Pod for CPU and memory limits, start in Audit mode so it only reports, and leave the system namespaces alone.",
+  "steps": [
+    {
+      "file": "require-resource-limits.yaml",
+      "starter_content": "",
+      "prompt": "Write require-resource-limits.yaml:\n- apiVersion kyverno.io/v1, kind ClusterPolicy, named require-resource-limits\n- spec.validationFailureAction: Audit\n- spec.background: true\n- spec.rules: one rule named validate-limits with\n    match.any: one entry whose resources.kinds lists Pod\n    exclude.any: one entry whose resources.namespaces lists kube-system and kyverno\n    validate.message: a sentence telling the user what to fix\n    validate.pattern: spec.containers is a list with one entry whose resources.limits has\n        memory: \"?*\"   and   cpu: \"?*\"",
+      "apply_commands": ["kubectl apply --dry-run=server -f require-resource-limits.yaml", "kyverno apply require-resource-limits.yaml --resource deployment.yaml", "check"],
+      "validate": {
+        "kind": "ClusterPolicy",
+        "fields": {
+          "apiVersion": "kyverno.io/v1",
+          "metadata.name": "require-resource-limits",
+          "spec.validationFailureAction": "Audit",
+          "spec.background": true,
+          "spec.rules[0].name": "validate-limits",
+          "spec.rules[0].match.any[0].resources.kinds[*]": "Pod",
+          "spec.rules[0].exclude.any[0].resources.namespaces[*]": ["kube-system", "kyverno"],
+          "spec.rules[0].validate.message": "ANY",
+          "spec.rules[0].validate.pattern.spec.containers[0].resources.limits.memory": "?*",
+          "spec.rules[0].validate.pattern.spec.containers[0].resources.limits.cpu": "?*"
+        }
+      },
+      "hint": "spec:\n  validationFailureAction: Audit\n  background: true\n  rules:\n    - name: validate-limits\n      match:\n        any:\n          - resources:\n              kinds:\n                - Pod\n      exclude:\n        any:\n          - resources:\n              namespaces:\n                - kube-system\n                - kyverno\n      validate:\n        message: \"...\"\n        pattern:\n          spec:\n            containers:\n              - resources:\n                  limits:\n                    memory: \"?*\"\n                    cpu: \"?*\"",
+      "solution": "apiVersion: kyverno.io/v1\nkind: ClusterPolicy\nmetadata:\n  name: require-resource-limits\nspec:\n  validationFailureAction: Audit\n  background: true\n  rules:\n    - name: validate-limits\n      match:\n        any:\n          - resources:\n              kinds:\n                - Pod\n      exclude:\n        any:\n          - resources:\n              namespaces:\n                - kube-system\n                - kyverno\n      validate:\n        message: \"CPU and memory limits are required on every container.\"\n        pattern:\n          spec:\n            containers:\n              - resources:\n                  limits:\n                    memory: \"?*\"\n                    cpu: \"?*\"\n",
+      "fake_output": "clusterpolicy.kyverno.io/require-resource-limits created (server dry run)",
+      "explanation": "A cluster-wide rule that reports every pod without limits, and can be switched to blocking with one word.",
+      "why": "Reading it top to bottom. 'Audit' lets non-compliant pods through and records them in policy reports; you fix or exempt what it finds, then change the word to 'Enforce'. Starting at Enforce would reject the next deploy of every workload that lacks limits, at the worst moment. 'background: true' also scans what already exists, so the report covers running pods, not only new ones. The rule matches Pods, and Kyverno automatically generates the equivalent rules for Deployments, StatefulSets, and Jobs, so the error appears on the object the user actually applied. The exclusion matters for safety: a policy engine that blocks its own namespace or kube-system can stop the cluster repairing itself, the deadlock in incident-014. In the pattern, each list entry applies to every container, and \"?*\" means 'any value of at least one character', so the field must exist and not be empty. The message is the only help the user gets when blocked, so make it say what to do. Test it against sample manifests with 'kyverno apply' in CI before it ever reaches a cluster."
+    }
+  ]
+}

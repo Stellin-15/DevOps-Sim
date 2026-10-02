@@ -1,0 +1,33 @@
+{
+  "id": "yaml-048",
+  "type": "yaml_lab",
+  "category": "security",
+  "title": "Write a Falco Rule: A Shell Started in a Container",
+  "difficulty": "advanced",
+  "tags": ["falco", "runtime-security", "detection", "containers"],
+  "intro": "security-tutorial-011 read Falco's alerts. A Falco rules file is a YAML list of rules, each with a condition written over system-call events. Write the classic first rule: someone has started an interactive shell inside a running container, which almost never happens in a healthy production system.",
+  "steps": [
+    {
+      "file": "shell-in-container.yaml",
+      "format": "yamllist",
+      "starter_content": "",
+      "prompt": "Write shell-in-container.yaml as a YAML list with one rule:\n- rule: Shell Spawned in Container\n  desc: a sentence describing it\n  condition: spawned_process and container and proc.name in (bash, sh, zsh)\n  output: a message that includes the fields %user.name, %container.name, and %proc.cmdline\n  priority: WARNING\n  tags: a list containing container and shell",
+      "apply_commands": ["falco --validate shell-in-container.yaml", "falco -V shell-in-container.yaml", "check"],
+      "validate": {
+        "fields": {
+          "items[0].rule": "Shell Spawned in Container",
+          "items[0].desc": "ANY",
+          "items[0].condition": {"contains": ["spawned_process", "container", "proc.name in", "bash", "sh"]},
+          "items[0].output": {"contains": ["%user.name", "%container.name", "%proc.cmdline"]},
+          "items[0].priority": "WARNING",
+          "items[0].tags[*]": ["container", "shell"]
+        }
+      },
+      "hint": "- rule: Shell Spawned in Container\n  desc: ...\n  condition: spawned_process and container and proc.name in (bash, sh, zsh)\n  output: \"Shell in container (user=%user.name container=%container.name cmd=%proc.cmdline)\"\n  priority: WARNING\n  tags: [container, shell]\nThe file starts with '- ' because it's a list of rules. Quote the output line: it contains characters YAML would otherwise interpret.",
+      "solution": "- rule: Shell Spawned in Container\n  desc: An interactive shell was started inside a running container.\n  condition: spawned_process and container and proc.name in (bash, sh, zsh)\n  output: \"Shell in container (user=%user.name container=%container.name cmd=%proc.cmdline)\"\n  priority: WARNING\n  tags: [container, shell, mitre_execution]\n",
+      "fake_output": "shell-in-container.yaml: Ok",
+      "explanation": "A rule that fires on the first thing most intruders do after getting into a container.",
+      "why": "The condition is three tests joined by 'and'. 'spawned_process' is a built-in macro meaning a new program was just executed. 'container' is another macro, true when the event comes from inside a container and not from the host. 'proc.name in (...)' matches the shell's name. Macros and lists are how Falco rules stay readable, and you can define your own. The output line is what a responder sees, so it carries the who, where, and what: user, container, and full command line. Without those fields an alert is only a prompt to go and investigate from scratch. Priority drives routing, like Sigma's level. Expect to tune it: some images run shell scripts as their entrypoint, and those need an exception by image or by parent process, kept as narrow as possible. Why it's worth having: production containers are supposed to be immutable and unattended, so a shell means either an attacker or an engineer debugging by hand, and you want to know about both. Validate rules in CI; a rules file that fails to load leaves Falco running with no detection at all."
+    }
+  ]
+}

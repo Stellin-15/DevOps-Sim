@@ -1,0 +1,56 @@
+{
+  "id": "security-tutorial-013",
+  "type": "tutorial",
+  "category": "security",
+  "title": "Compliance for Engineers: Controls and the Evidence Behind Them",
+  "difficulty": "intermediate",
+  "tags": ["compliance", "soc2", "iso27001", "audit", "evidence"],
+  "intro": "Sooner or later a customer asks for your SOC 2 report, or an auditor arrives. Compliance frameworks look like paperwork, and underneath they ask plain engineering questions: who can access production, are changes reviewed, are you logging, can you recover? An auditor wants a control and the evidence that it operates. Engineers are the ones who can produce that evidence, usually with one command.",
+  "steps": [
+    {
+      "prompt": "Which statement about the common frameworks is right?\n  a) They're all the same document\n  b) SOC 2 is an auditor's report on your controls over a period; ISO 27001 certifies a security management system; PCI DSS is a prescriptive standard for card data; HIPAA is US law for health data. They overlap heavily in what they ask of engineering\n  c) Only banks need any of them\n  d) They specify which cloud to use\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "asked by all of them, in different words:\n  access control   least privilege, MFA, access reviews, prompt offboarding\n  change control   reviewed, tested, traceable changes to production\n  logging          who did what, kept and protected\n  resilience       backups that are tested, incident response that is practised\n  encryption       in transit and at rest",
+      "hint": "Different origins and scopes, the same core questions.",
+      "explanation": "Four frameworks, one recurring set of controls.",
+      "why": "The practical consequence is 'implement once, map many times': a well-run engineering practice satisfies most of each framework. SOC 2 Type 1 looks at a moment; Type 2 looks at whether the controls actually operated over months, which is why evidence has to be generated continuously and not assembled the week before."
+    },
+    {
+      "prompt": "Change control. The control says 'changes to production require review'. Produce the evidence: show the branch protection on main for the repository acme/shop.",
+      "expected_commands": ["gh api repos/acme/shop/branches/main/protection"],
+      "fake_output": "{\n  \"required_pull_request_reviews\": {\"required_approving_review_count\": 1, \"dismiss_stale_reviews\": true},\n  \"required_status_checks\": {\"strict\": true, \"contexts\": [\"test\", \"lint\", \"security-scan\"]},\n  \"enforce_admins\": {\"enabled\": false},\n  \"allow_force_pushes\": {\"enabled\": false}\n}",
+      "explanation": "One approval and three passing checks are required. But the rule isn't enforced for administrators.",
+      "why": "This is evidence a reviewer can verify: the control is enforced by the system, not by good intentions. 'enforce_admins: false' is the gap an auditor will find: administrators can push straight to main, so the control has a bypass. A control enforced by tooling beats one described in a policy document, and the tooling's configuration is the evidence."
+    },
+    {
+      "prompt": "Access control. Generate the IAM credential report for the AWS account.",
+      "expected_commands": ["aws iam generate-credential-report"],
+      "fake_output": "{\n  \"State\": \"COMPLETE\",\n  \"Description\": \"No report exists. Starting a new report generation task\"\n}",
+      "explanation": "The report is ready to download.",
+      "why": "The credential report lists every IAM user with their password age, MFA status, and each access key's age and last use. It's the standard evidence for an access review, and it's also simply useful: it's where you find the forgotten users and keys."
+    },
+    {
+      "prompt": "Download and decode it into creds.csv.",
+      "expected_commands": ["aws iam get-credential-report --query Content --output text | base64 -d > creds.csv", "aws iam get-credential-report --query 'Content' --output text | base64 -d > creds.csv", "aws iam get-credential-report --output text --query Content | base64 -d > creds.csv"],
+      "fake_output": "(no output: creds.csv written)\n\nuser,mfa_active,password_last_used,access_key_1_active,access_key_1_last_used_date\n<root_account>,false,2026-09-30T08:12:00+00:00,false,N/A\ndana,true,2026-10-01T09:02:11+00:00,false,N/A\nsam.old,false,2026-06-14T11:40:00+00:00,true,2026-09-27T03:14:55+00:00\nci-legacy,false,N/A,true,2025-08-16T22:01:00+00:00",
+      "hint": "aws iam get-credential-report --query Content --output text | base64 -d > creds.csv",
+      "explanation": "The root account was used yesterday with no MFA; sam.old has an active key used last week; ci-legacy's key hasn't been used in over a year.",
+      "why": "Three findings in four lines. Root should never be used day to day and must have MFA. A key that's still being used, on an account named like a former employee's, is the one to chase first (security-incident-007). An access review isn't a spreadsheet exercise for the auditor: this is the output it's supposed to produce."
+    },
+    {
+      "prompt": "Logging. Confirm an audit trail exists and is actually recording: check the status of the trail named org-trail.",
+      "expected_commands": ["aws cloudtrail get-trail-status --name org-trail"],
+      "fake_output": "{\n  \"IsLogging\": true,\n  \"LatestDeliveryTime\": \"2026-10-02T14:31:02Z\",\n  \"LatestDeliveryError\": \"\",\n  \"LatestDigestDeliveryTime\": \"2026-10-02T13:54:10Z\"\n}",
+      "explanation": "Logging is on, the last delivery was minutes ago with no error, and digest files are being written.",
+      "why": "'A trail exists' and 'the trail is delivering' are different facts; a trail whose bucket policy broke months ago still exists. Digest files let you prove later that log files weren't altered or deleted, which is what makes logs evidence. The logs should go to a separate account that the people being logged can't write to."
+    },
+    {
+      "prompt": "What's the most sustainable way to be ready for an audit?\n  a) A two-week scramble before each one, collecting screenshots\n  b) Controls enforced by systems, with evidence generated automatically and continuously, so that the audit is an export of what already exists\n  c) Refusing audits\n  d) Writing longer policies\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "manual   : screenshots of settings, taken once a year, true on the day\nautomated: config in Git + pipeline logs + scheduled reports -> evidence with timestamps, every day",
+      "hint": "Type 2 reports ask whether the control worked all year.",
+      "explanation": "Make the compliant way the normal way, and let it leave a trail.",
+      "why": "Infrastructure as code, pull requests, pipelines, and central logging already produce nearly everything an auditor asks for: who changed what, who approved it, when it was deployed. Compliance tools mostly collect that automatically. If meeting a control needs someone to remember to do something by hand, it will fail the month they're on holiday."
+    }
+  ]
+}

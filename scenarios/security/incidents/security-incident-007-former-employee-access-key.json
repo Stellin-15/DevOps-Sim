@@ -1,0 +1,49 @@
+{
+  "id": "security-incident-007",
+  "type": "incident",
+  "category": "security",
+  "title": "An access review finds a key that left the company three months ago and is still busy",
+  "difficulty": "intermediate",
+  "tags": ["iam", "access-review", "offboarding", "cloudtrail", "aws"],
+  "intro": "During a quarterly access review, the IAM credential report shows a user named sam.old with an active access key that was last used five days ago. Sam left the company on 30 June. His laptop was returned and his single sign-on account was disabled that day. You need to find out what's using the key before deciding what to do.",
+  "steps": [
+    {
+      "prompt": "List the access keys of the user sam.old.",
+      "expected_commands": ["aws iam list-access-keys --user-name sam.old"],
+      "fake_output": "{\n  \"AccessKeyMetadata\": [{\n    \"UserName\": \"sam.old\",\n    \"AccessKeyId\": \"AKIAEXAMPLESAMOLD01\",\n    \"Status\": \"Active\",\n    \"CreateDate\": \"2024-11-02T10:14:00Z\"\n  }]\n}",
+      "hint": "aws iam list-access-keys --user-name sam.old"
+    },
+    {
+      "prompt": "One active key, nearly two years old. See what it's been doing: look up the CloudTrail events for the access key AKIAEXAMPLESAMOLD01, the 5 most recent.",
+      "expected_commands": ["aws cloudtrail lookup-events --lookup-attributes AttributeKey=AccessKeyId,AttributeValue=AKIAEXAMPLESAMOLD01 --max-results 5", "aws cloudtrail lookup-events --lookup-attributes AttributeKey=AccessKeyId,AttributeValue=AKIAEXAMPLESAMOLD01 --max-items 5", "aws cloudtrail lookup-events --max-results 5 --lookup-attributes AttributeKey=AccessKeyId,AttributeValue=AKIAEXAMPLESAMOLD01"],
+      "fake_output": "EventTime             EventName     SourceIPAddress   UserAgent\n2026-09-27T03:14:55Z  PutObject     10.0.3.41         aws-cli/1.18.69 Python/3.6.9 Linux\n2026-09-20T03:14:51Z  PutObject     10.0.3.41         aws-cli/1.18.69 Python/3.6.9 Linux\n2026-09-13T03:14:58Z  PutObject     10.0.3.41         aws-cli/1.18.69 Python/3.6.9 Linux\n2026-09-06T03:14:49Z  PutObject     10.0.3.41         aws-cli/1.18.69 Python/3.6.9 Linux\n2026-08-30T03:14:52Z  PutObject     10.0.3.41         aws-cli/1.18.69 Python/3.6.9 Linux",
+      "hint": "aws cloudtrail lookup-events --lookup-attributes AttributeKey=AccessKeyId,AttributeValue=AKIAEXAMPLESAMOLD01 --max-results 5"
+    },
+    {
+      "prompt": "The same action every Sunday at 03:14, from the internal address 10.0.3.41, with an old CLI. That's a scheduled job, not a person. Find which instance has that private address: show its id and Name tag.",
+      "expected_commands": ["aws ec2 describe-instances --filters Name=private-ip-address,Values=10.0.3.41 --query 'Reservations[].Instances[].[InstanceId,Tags[?Key==`Name`]|[0].Value]' --output text", "aws ec2 describe-instances --filters Name=private-ip-address,Values=10.0.3.41 --query \"Reservations[].Instances[].[InstanceId,Tags[?Key==`Name`]|[0].Value]\" --output text", "aws ec2 describe-instances --filters Name=private-ip-address,Values=10.0.3.41"],
+      "fake_output": "i-0aa11bb22cc33dd44\treporting",
+      "hint": "aws ec2 describe-instances --filters Name=private-ip-address,Values=10.0.3.41 --query 'Reservations[].Instances[].[InstanceId,Tags[?Key==`Name`]|[0].Value]' --output text"
+    },
+    {
+      "prompt": "The reporting server. Sam set up a weekly export there with his own key, and it has run ever since. The reporting team is told; they'll move the job to the instance's IAM role today. The key must stop working now. Which first step keeps the option of undoing it if something important breaks?\n  a) Delete the user immediately\n  b) Deactivate the key: it stops working at once and can be re-enabled, then delete it once nothing has complained for a while\n  c) Leave it until the next review\n  d) Change the user's name\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "Inactive : rejected immediately; reversible with one command\nDeleted  : gone for ever; the job, and anything else using it, fails with no way back",
+      "hint": "You've found one user of this key. Are you sure it's the only one?"
+    },
+    {
+      "prompt": "Deactivate the key.",
+      "expected_commands": ["aws iam update-access-key --user-name sam.old --access-key-id AKIAEXAMPLESAMOLD01 --status Inactive", "aws iam update-access-key --access-key-id AKIAEXAMPLESAMOLD01 --status Inactive --user-name sam.old", "aws iam update-access-key --user-name sam.old --status Inactive --access-key-id AKIAEXAMPLESAMOLD01"],
+      "fake_output": "(no output)",
+      "hint": "aws iam update-access-key --user-name sam.old --access-key-id AKIAEXAMPLESAMOLD01 --status Inactive"
+    },
+    {
+      "prompt": "Check what this user was allowed to do, to understand what the key could have been used for: list the policies attached to sam.old.",
+      "expected_commands": ["aws iam list-attached-user-policies --user-name sam.old"],
+      "fake_output": "{\n  \"AttachedPolicies\": [\n    {\"PolicyName\": \"AdministratorAccess\", \"PolicyArn\": \"arn:aws:iam::aws:policy/AdministratorAccess\"}\n  ]\n}",
+      "hint": "aws iam list-attached-user-policies --user-name sam.old"
+    }
+  ],
+  "resolution": "Offboarding worked exactly as designed, and missed this. Sam's single sign-on account was disabled the day he left, which removed every access that flowed through it. But an IAM user with a long-lived access key is a separate identity that single sign-on knows nothing about. The key had been created two years ago and pasted into a cron job on the reporting server, so that the job ran 'as Sam'. When Sam left, the key carried on working, with full administrator rights, in a file on a server, known to at least one person outside the company. The trail showed benign use: the same upload at the same minute every Sunday from an internal address. That's what let this be handled as hygiene and not as a breach, and it's why you look before acting: activity from an unfamiliar address would have meant treating it as a compromise (aws-incident-004). Deactivating first, then deleting later, stopped the exposure immediately while leaving a way back if some other forgotten job depended on the key. The last step showed how much was at stake: AdministratorAccess, for a job that only needed to write to one bucket. What to change. No human should have long-lived access keys: people sign in through single sign-on and get temporary credentials. No workload should use a person's credentials: servers use instance roles, pods use workload identity (identity-tutorial-003), and each has a narrow policy of its own. Offboarding should include a search for IAM users and keys tied to the person, which is easy once nobody is supposed to have any. And the access review earned its place: run it quarterly from the credential report, flag every key older than 90 days and every key unused for 90, and treat 'who is this and what is it for?' as a question that must have an answer.",
+  "real_commands_used": ["aws iam list-access-keys --user-name", "aws cloudtrail lookup-events --lookup-attributes AttributeKey=AccessKeyId,AttributeValue=<key>", "aws ec2 describe-instances --filters Name=private-ip-address,Values=<ip>", "aws iam update-access-key --status Inactive", "aws iam list-attached-user-policies"]
+}

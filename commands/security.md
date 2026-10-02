@@ -117,3 +117,30 @@ kill -STOP <pid>                     # freeze for forensics before killing
 aws ec2 modify-instance-attribute --instance-id <i-id> --groups <quarantine-sg>
 aws ec2 create-snapshot --volume-id <vol> --description "forensics"
 ```
+
+## Compliance, Posture, Detection, and Access
+
+```
+prowler aws --compliance cis_3.0_aws
+prowler aws --severity critical high --status FAIL
+prowler aws --service iam s3
+scout aws --report-dir ./scout-report
+aws configservice describe-compliance-by-config-rule --compliance-types NON_COMPLIANT
+
+aws iam generate-credential-report
+aws iam get-credential-report --query Content --output text | base64 -d > creds.csv
+aws iam list-access-keys --user-name <user>
+aws iam update-access-key --user-name <user> --access-key-id <id> --status Inactive
+aws cloudtrail describe-trails
+aws cloudtrail get-trail-status --name <trail>
+gh api repos/<org>/<repo>/branches/main/protection
+
+sigma check rules/
+sigma convert -t splunk -p sysmon rules/<rule>.yml
+sigma convert -t lucene -p ecs_windows rules/<rule>.yml
+
+tsh login --proxy=<proxy>        tsh status
+tsh ls                           tsh ssh <user>@<node>
+tsh db ls                        tsh kube ls
+tctl get roles                   tsh request create --roles=<role> --reason "<why>"
+```

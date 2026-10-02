@@ -1,0 +1,48 @@
+{
+  "id": "security-tutorial-012",
+  "type": "tutorial",
+  "category": "security",
+  "title": "Cloud Security Posture: Scanning Your Own Account with Prowler",
+  "difficulty": "intermediate",
+  "tags": ["prowler", "cspm", "cis", "aws", "posture"],
+  "intro": "Most cloud breaches come from misconfiguration, not clever attacks: a public bucket, an old access key, logging switched off. Posture scanners check an account's settings against a benchmark, hundreds of checks in minutes. Prowler is the common open-source one. You're authorised to audit this AWS account with a read-only role.",
+  "steps": [
+    {
+      "prompt": "Run Prowler against the account using the CIS AWS Foundations Benchmark version 3.0.",
+      "expected_commands": ["prowler aws --compliance cis_3.0_aws"],
+      "fake_output": "Prowler v4.3.5\nAccount: 111122223333  Role: security-audit-readonly\n\nOverview Results:\n  FAIL: 61 (18.2%)   PASS: 271 (80.9%)   MUTED: 3\n\nCIS 3.0 section results:\n  1 Identity and Access Management   FAIL(14)  PASS(9)\n  2 Storage                          FAIL(11)  PASS(22)\n  3 Logging                          FAIL(4)   PASS(7)\n  4 Monitoring                       FAIL(15)  PASS(1)\n  5 Networking                       FAIL(17)  PASS(232)",
+      "explanation": "61 failed checks out of 335, grouped by section of the benchmark.",
+      "why": "The CIS benchmark is a consensus list of settings that should be true in any account, and it's what auditors and customers' security questionnaires usually refer to. A scanner only needs read access, so run it with a read-only role. 61 failures in a first scan is typical; the work is in choosing which matter."
+    },
+    {
+      "prompt": "61 is too many to act on at once. Show only the failed checks of critical and high severity.",
+      "expected_commands": ["prowler aws --severity critical high --status FAIL", "prowler aws --status FAIL --severity critical high"],
+      "fake_output": "CRITICAL  iam_root_mfa_enabled                     Root account has no MFA device\nCRITICAL  s3_bucket_public_access                  Bucket shop-exports allows public read\nHIGH      iam_user_accesskey_unused                User ci-legacy has an access key unused for 412 days\nHIGH      ec2_securitygroup_allow_ingress_from_internet_to_tcp_port_22   sg-0f1e2d3c4b5a69788 allows 0.0.0.0/0 to port 22\nHIGH      cloudtrail_multi_region_enabled          No multi-region trail\nHIGH      rds_instance_storage_encrypted           shop-db is not encrypted at rest",
+      "explanation": "Six findings that an attacker would look for first.",
+      "why": "Prioritise by what an attacker can use from outside, today: the root account without MFA and the public bucket are both one step from disaster. A year-old unused access key is a credential nobody is watching. No multi-region trail means you wouldn't see activity in regions you don't use, which is where intruders go (finops-incident-001)."
+    },
+    {
+      "prompt": "Narrow the scan to two services to recheck after fixes: IAM and S3.",
+      "expected_commands": ["prowler aws --service iam s3", "prowler aws --services iam s3", "prowler aws --service s3 iam"],
+      "fake_output": "Scanning services: iam, s3\n\nOverview Results:\n  FAIL: 23 (41.0%)   PASS: 33 (59.0%)",
+      "explanation": "Only the IAM and S3 checks, finishing in under a minute.",
+      "why": "A full scan of a large organisation takes a long time and produces a flood. Scoping by service, by check, or by compliance framework keeps the loop tight while fixing. Output can go to JSON or CSV for tracking, or to Security Hub, so that findings have owners and dates instead of living in a terminal."
+    },
+    {
+      "prompt": "A scan is a snapshot of one moment. What turns posture checking from an annual exercise into a control?\n  a) Running the scan once before each audit\n  b) Continuous evaluation: the same rules checked on every change (AWS Config, Security Hub, or a scheduled scan), with findings routed to the owning team, plus preventive guard rails so the worst misconfigurations can't be created\n  c) Printing the report\n  d) Scanning less often\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "detect  : aws configservice describe-compliance-by-config-rule --compliance-types NON_COMPLIANT\nprevent : SCPs and S3 Block Public Access at the organisation level; policy checks in Terraform PRs\nrespond : auto-remediation for the unambiguous ones (close a public bucket), tickets for the rest",
+      "hint": "The account changes every day.",
+      "explanation": "Continuous detection, plus prevention for the worst cases.",
+      "why": "A clean scan in January says nothing about a bucket made public in March. Detect continuously, and for the handful of settings that are never right, make them impossible: account-level Block Public Access, service control policies, and the pull-request checks from terraform-tutorial-014. Prevention scales; chasing findings doesn't."
+    },
+    {
+      "prompt": "A check fails for a bucket that's meant to be public: it hosts the company's website images. What do you do with the finding?\n  a) Leave it failing for ever\n  b) Record an exception: mute that check for that resource, with a written reason, an owner, and a review date\n  c) Disable the check for the whole account\n  d) Make the bucket private\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "mutelist:\n  Accounts:\n    \"111122223333\":\n      Checks:\n        s3_bucket_public_access:\n          Resources: [\"shop-public-assets\"]\n          Description: \"Public by design: website images. Owner web-team. Review 2027-04.\"",
+      "hint": "The same answer as for a Terraform policy exception.",
+      "explanation": "A narrow, documented, time-limited exception.",
+      "why": "Failures that are known and accepted, but not recorded, train everyone to ignore the report, and then a real public bucket hides among the expected ones. A mute list in version control keeps the report meaningful: every remaining failure is something nobody has decided about. Auditors accept documented exceptions; they don't accept surprises."
+    }
+  ]
+}

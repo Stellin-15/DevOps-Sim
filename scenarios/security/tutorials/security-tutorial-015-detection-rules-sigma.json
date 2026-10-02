@@ -1,0 +1,49 @@
+{
+  "id": "security-tutorial-015",
+  "type": "tutorial",
+  "category": "security",
+  "title": "Detection Engineering: Writing and Testing Rules with Sigma",
+  "difficulty": "advanced",
+  "tags": ["sigma", "siem", "detection", "alerting"],
+  "intro": "Logs in a SIEM (Splunk, Elastic, Sentinel) only catch an intruder if someone has written the rule that notices them. Sigma is a vendor-neutral format for those rules: write one YAML file, convert it to whichever query language your SIEM speaks, and keep the rules in Git like any other code. You're in a repository of detection rules, under rules/.",
+  "steps": [
+    {
+      "prompt": "Check every rule under rules/ for format errors.",
+      "expected_commands": ["sigma check rules/", "sigma check rules"],
+      "fake_output": "Parsing 41 rules.\n\n=== Issues ===\nrules/linux/ssh_many_failures.yml: error=SigmaConditionError - Condition references undefined identifier 'selection_fail'\n\n=== Summary ===\nFound 1 errors, 0 condition errors, 2 issues.",
+      "explanation": "One rule's condition refers to a selection that isn't defined.",
+      "why": "A detection rule with a typo doesn't raise an error in production; it just never fires, and nobody finds out until the attack it was meant to catch has happened. Linting in CI is the cheapest protection. Detection rules are code: reviewed, versioned, tested, and deployed by pipeline."
+    },
+    {
+      "prompt": "Convert the rule rules/linux/root_ssh_login.yml into a Splunk query, using the sysmon processing pipeline.",
+      "expected_commands": ["sigma convert -t splunk -p sysmon rules/linux/root_ssh_login.yml", "sigma convert --target splunk --pipeline sysmon rules/linux/root_ssh_login.yml", "sigma convert -p sysmon -t splunk rules/linux/root_ssh_login.yml"],
+      "fake_output": "source=\"/var/log/auth.log\" \"Accepted\" \"for root from\" NOT (src_ip=\"10.0.0.0/8\")",
+      "explanation": "A Splunk search for successful root logins over SSH from outside the internal range.",
+      "why": "The rule describes the behaviour once (a log source, fields to match, a condition), and backends translate it for each product. The pipeline maps Sigma's generic field names to what your logs are actually called. That's what makes rules portable between SIEMs, and lets you use the thousands of public Sigma rules without rewriting them."
+    },
+    {
+      "prompt": "A rule fires on every successful SSH login by root. On day one it produces 400 alerts, all from the configuration-management server doing its job. What should happen to the rule?\n  a) Leave it: more alerts mean more security\n  b) Tune it: exclude the known, expected source explicitly, so that what remains is rare and worth a person's attention\n  c) Delete it\n  d) Send the alerts to a channel nobody reads\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "detection:\n  selection:\n    message|contains|all: ['Accepted', 'for root from']\n  filter_config_mgmt:\n    src_ip: 10.0.5.10          # ansible-control, expected\n  condition: selection and not filter_config_mgmt",
+      "hint": "An alert that fires 400 times a day gets ignored the first time it's real.",
+      "explanation": "Filter the known-good case, narrowly and in writing.",
+      "why": "Alert fatigue is how real attacks are missed with the detection in place. A good rule is quiet when things are normal. Exclusions should be as specific as possible (one host, not 'all internal addresses'), commented, and reviewed, because every exclusion is also a place an attacker can hide: if they take over the excluded server, this rule won't see them."
+    },
+    {
+      "prompt": "How do you know a detection rule actually works?\n  a) It passed the linter\n  b) You test it: replay or generate the behaviour it should catch, safely, and confirm the alert fires; and keep that as a repeatable test\n  c) It was copied from a blog\n  d) It has never fired, so nothing has happened\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "1. write the rule\n2. produce the event on a test host (log in as root from an outside address; or replay a sample log line)\n3. confirm: the alert fires, with the fields a responder needs\n4. keep the sample event as a test case that runs in CI",
+      "hint": "A rule that has never fired proves nothing either way.",
+      "explanation": "Fire it on purpose.",
+      "why": "'No alerts' has two explanations: nothing happened, or the detection is broken, a renamed field, a log source that stopped arriving. Only a test tells them apart. Teams run these as scheduled exercises (often called purple teaming, or 'detection as code' tests), using harmless simulations of each technique."
+    },
+    {
+      "prompt": "Rules are usually tagged with the technique they detect from MITRE ATT&CK, a public catalogue of attacker behaviour. What's the practical use of those tags?\n  a) Decoration\n  b) Coverage: you can see which stages and techniques you have detections for and which you have none for, and prioritise the gaps\n  c) They make rules run faster\n  d) They're required by the SIEM\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "tags:\n  - attack.initial_access\n  - attack.t1078        # Valid Accounts\n\ncoverage: initial access 9 rules | persistence 6 | privilege escalation 2 | exfiltration 0",
+      "hint": "You can't judge a set of rules by counting them.",
+      "explanation": "The tags turn a pile of rules into a coverage map.",
+      "why": "Forty rules that all detect brute-force logins leave you blind to everything after a successful login. Mapping to ATT&CK shows the shape of what you can see, so new work goes where there's nothing. The incidents in this category map onto it too: a cron job for persistence, a new uid-0 account, an outbound connection to a mining pool."
+    }
+  ]
+}

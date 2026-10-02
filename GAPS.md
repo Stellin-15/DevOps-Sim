@@ -839,7 +839,7 @@ The three clouds use different names for the same ideas:
 
 # Part 12 — Security (defensive)
 
-**Content:** 11 tutorials, 6 incidents, and 2 hacked-server Mystery Incidents
+**Content:** 16 tutorials, 7 incidents, and 2 hacked-server Mystery Incidents
 on the Linux sandbox.
 
 The Linux sandbox gained two compromise scenarios, and both are playable
@@ -890,16 +890,24 @@ cleanup counts as collateral damage:
 - **Offensive testing**, deliberately. Penetration testing and exploitation are
   out of scope for a DevOps game; the category is defensive: find your own
   exposure, harden, detect, and respond.
-- SIEM work (writing detection rules in Sentinel, Splunk, or Elastic), and
-  commercial EDR consoles.
+- ~~Detection rules~~: **closed** by security-tutorial-015 (Sigma:
+  linting, conversion, tuning, testing, ATT&CK coverage) and Writing Lab
+  yaml-046. Working inside a specific SIEM product and commercial EDR
+  consoles are still missing.
+- ~~Posture, compliance, threat modelling, zero trust~~: **closed** by
+  security-tutorial-012 (Prowler and CIS), 013 (frameworks and producing
+  evidence), 014 (STRIDE, as decision steps), and 016 (short-lived
+  certificates and just-in-time access), with security-incident-007 (a
+  former employee's key still in use).
 - ~~SELinux troubleshooting~~: **closed** by linux-tutorial-015 (Part 3).
   AppArmor is still missing.
 - ~~Kubernetes admission policy and runtime detection~~: **closed** at the
   operator level by security-tutorial-011 (Kyverno Enforce vs Audit, a
   blocked privileged pod, `kyverno apply` in CI, policy reports, and reading
   Falco alerts) and incident-014 (a webhook that deadlocks the cluster).
-  *Writing* Kyverno policies and Falco rules, OPA Gatekeeper, and network
-  policy auditing are still missing.
+  Writing them is **closed** by Writing Labs yaml-047 (a Kyverno policy)
+  and yaml-048 (a Falco rule). OPA Gatekeeper and network policy
+  auditing are still missing.
 - Incident-response process: evidence handling, legal and breach-notification
   duties. Only mentioned in debriefs.
 
@@ -1827,10 +1835,8 @@ employer uses it.
   sre-tutorial-013 (the four DORA metrics from real data), and Writing
   Lab yaml-045 (a catalog-info.yaml). Building Backstage plugins and
   software templates isn't covered.
-- **Compliance and governance:** SOC 2, ISO 27001, PCI-DSS, and HIPAA
-  basics; collecting audit evidence; cloud posture tools (Prowler,
-  ScoutSuite); threat modelling; SIEM detection rules; zero-trust
-  access.
+- ~~**Compliance and governance**~~: **done** in security-tutorial-012
+  to 016, security-incident-007, and Writing Labs yaml-046 to 048.
 - **Data engineering:** writing Airflow DAGs, dbt, Spark on Kubernetes,
   warehouses (BigQuery, Snowflake), and change data capture (Debezium).
 - **LLM operations:** evaluation harnesses, prompt and model versioning,
@@ -1838,8 +1844,8 @@ employer uses it.
   control.
 - **System design depth:** the list under Part 16.
 - ~~**Testing in delivery**~~: **done** in cicd-tutorial-020.
-- **Authoring gaps named in earlier parts:** Kyverno policies and Falco
-  rules, and an Airflow DAG. Each would be one Writing Lab. (Manual
+- **Authoring gaps named in earlier parts:** an Airflow DAG (planned
+  with Data Engineering). Kyverno and Falco are done (yaml-047, 048). (Manual
   OpenTelemetry spans, a Grafana dashboard, and burn-rate alert rules
   are done: yaml-042 to 044.)
 
@@ -1901,7 +1907,7 @@ If content is added in the order that helps most people soonest:
 | AWS | 14 | 7 | 1 Writing Lab (IAM policy), Sandbox (VPC), 4 Mysteries |
 | Azure | 10 | 6 | Sandbox, 3 Mysteries |
 | Google Cloud | 10 | 6 | 1 Writing Lab (firewall), Sandbox, 3 Mysteries |
-| Security | 11 | 6 | 2 hacked-server Mysteries (Linux sandbox) |
+| Security | 16 | 7 | 3 Writing Labs (Sigma, Kyverno, Falco), 2 hacked-server Mysteries (Linux sandbox) |
 | Server Fleet Ops | 13 | 7 | 1 Writing Lab (Ansible) |
 | SRE | 13 | 6 | 2 Writing Labs (postmortem, catalog entry) |
 | Git | 11 | 6 | |
@@ -1914,7 +1920,7 @@ If content is added in the order that helps most people soonest:
 | Serverless | 7 | 4 | |
 | Performance | 7 | 3 | |
 | FinOps | 6 | 3 | |
-| **Total** | **308** | **152** | 45 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
+| **Total** | **313** | **153** | 48 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -1926,14 +1932,14 @@ command beats the alternatives — not just what it does.
 will know the commands, the failure modes, and — most importantly — the
 debugging method** (check the layer before guessing the fix; refused vs
 timeout; verify after every change; revoke before cleaning up; revert
-don't force-push). The 152 incidents are modeled on the kinds of problems
+don't force-push). The 153 incidents are modeled on the kinds of problems
 that genuinely trip up working engineers, and working through them
 builds judgment that command references alone never will.
 
 **It will not, on its own, make you fully proficient**, for four reasons
 that no amount of additional scenario content can fully close:
 
-1. **Authoring vs. operating.** Largely addressed: 45 Writing Labs now
+1. **Authoring vs. operating.** Largely addressed: 48 Writing Labs now
    have you write real Kubernetes manifests, GitHub Actions workflows,
    Prometheus alert rules, Compose files, Dockerfiles, Terraform (AWS
    VPCs and security groups, GCP firewalls), IAM policies, Ansible

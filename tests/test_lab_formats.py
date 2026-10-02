@@ -328,3 +328,20 @@ class TestPython:
         }
         assert yaml_lab.validate_manifest(parsed, spec) == []
         assert yaml_lab.validate_manifest(parsed, {"fields": {"imports[*]": "subprocess"}}) != []
+
+
+class TestYamlList:
+    def test_top_level_list_is_wrapped_in_items(self):
+        parsed, problems = lab_formats.parse("yamllist", "# rules\n- rule: A\n  priority: WARNING\n- rule: B\n  priority: ERROR\n")
+        assert problems == []
+        assert yaml_lab.get_values(parsed, "items[*].rule") == ["A", "B"]
+        assert yaml_lab.get_values(parsed, "items[1].priority") == ["ERROR"]
+        assert "# rules" not in parsed["lines"] and "# rules" in parsed["text"]
+
+    def test_mapping_is_rejected(self):
+        parsed, problems = lab_formats.parse("yamllist", "rule: A\n")
+        assert parsed is None and "must be a YAML list" in problems[0]
+
+    def test_yaml_errors_pass_through(self):
+        parsed, problems = lab_formats.parse("yamllist", "- rule: [unclosed\n")
+        assert parsed is None and "YAML syntax error" in problems[0]

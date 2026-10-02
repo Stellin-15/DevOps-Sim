@@ -1,0 +1,37 @@
+{
+  "id": "yaml-046",
+  "type": "yaml_lab",
+  "category": "security",
+  "title": "Write a Sigma Detection Rule: Root SSH Logins from Outside",
+  "difficulty": "advanced",
+  "tags": ["sigma", "detection", "siem", "ssh"],
+  "intro": "security-tutorial-015 converted and tuned Sigma rules. Now write one. It should fire when root logs in successfully over SSH from an address outside the company's internal range, and stay quiet for the configuration-management server, which is expected to do that.",
+  "steps": [
+    {
+      "file": "root_ssh_login_external.yml",
+      "starter_content": "",
+      "prompt": "Write root_ssh_login_external.yml:\n- title: Root SSH Login From External Address\n- status: experimental\n- description: a sentence saying what it detects\n- logsource: product linux, service auth\n- detection:\n    selection:\n      message|contains|all: a list with 'Accepted' and 'for root from'\n    filter_internal:\n      src_ip|cidr: 10.0.0.0/8\n    condition: selection and not filter_internal\n- falsepositives: a list with at least one entry\n- level: high\n- tags: a list containing attack.t1078",
+      "apply_commands": ["sigma check root_ssh_login_external.yml", "sigma convert -t splunk -p sysmon root_ssh_login_external.yml", "check"],
+      "validate": {
+        "fields": {
+          "title": "Root SSH Login From External Address",
+          "status": "experimental",
+          "description": "ANY",
+          "logsource.product": "linux",
+          "logsource.service": "auth",
+          "detection.selection.message|contains|all[*]": ["Accepted", "for root from"],
+          "detection.filter_internal.src_ip|cidr": "10.0.0.0/8",
+          "detection.condition": "selection and not filter_internal",
+          "falsepositives[*]": "ANY",
+          "level": "high",
+          "tags[*]": "attack.t1078"
+        }
+      },
+      "hint": "title: Root SSH Login From External Address\nstatus: experimental\ndescription: ...\nlogsource:\n  product: linux\n  service: auth\ndetection:\n  selection:\n    message|contains|all:\n      - 'Accepted'\n      - 'for root from'\n  filter_internal:\n    src_ip|cidr: 10.0.0.0/8\n  condition: selection and not filter_internal\nfalsepositives:\n  - ...\nlevel: high\ntags:\n  - attack.t1078",
+      "solution": "title: Root SSH Login From External Address\nstatus: experimental\ndescription: Detects a successful SSH login as root from an address outside the internal range.\nlogsource:\n  product: linux\n  service: auth\ndetection:\n  selection:\n    message|contains|all:\n      - 'Accepted'\n      - 'for root from'\n  filter_internal:\n    src_ip|cidr: 10.0.0.0/8\n  condition: selection and not filter_internal\nfalsepositives:\n  - Break-glass access by an administrator from a home connection\nlevel: high\ntags:\n  - attack.initial_access\n  - attack.t1078\n",
+      "fake_output": "Parsing 1 rules.\n\n=== Summary ===\nNo rule errors found.",
+      "explanation": "A rule that names its log source, what to match, what to exclude, and how serious a hit is.",
+      "why": "The parts and why each is there. 'logsource' is what makes the rule portable: it says which kind of log to search, and the backend maps that to an index or table. 'selection' uses modifiers after a pipe: 'contains|all' means every listed string must appear, where a plain list would mean any of them. The filter and the condition express the tuning from the tutorial: match, except for the known-good range. Using a CIDR for the whole internal range is broad on purpose here; narrow it to specific hosts if insiders are part of your threat model. 'level' drives routing, so reserve 'high' and 'critical' for things that deserve a page. 'falsepositives' tells the responder what the innocent explanations are, which saves them time at 3 a.m. The ATT&CK tag (T1078, Valid Accounts) places the rule on the coverage map. 'status: experimental' marks it as not yet proven; promote it after it has run for a while without noise, and after you've made it fire on purpose."
+    }
+  ]
+}

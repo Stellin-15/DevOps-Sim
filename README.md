@@ -34,7 +34,7 @@ string.
   The game writes a real file to `workspace/`, tells you what to build or
   fix, and you edit it in your actual editor (vim, nano, VS Code —
   whatever you'd really use). Typing the apply command reads your real
-  file and checks it field by field. 45 labs across thirteen formats:
+  file and checks it field by field. 48 labs across thirteen formats:
   Kubernetes manifests, GitHub Actions workflows, Prometheus alert rules,
   Docker Compose files, Dockerfiles, Terraform (AWS VPCs, security
   groups, GCP firewalls, a reusable module), AWS IAM policies, Ansible
@@ -362,7 +362,7 @@ the engine, loader, sandboxes, yaml_lab, career_path, mystery, or scenario conte
 | AWS | 14 | 7 | profiles/identity, EC2, SSM vs SSH, VPC anatomy, security groups vs NACLs, IAM, S3, CloudWatch/CloudTrail, ALB/ASG, EKS/ECR, cost, RDS, Route 53, peering/Transit Gateway/PrivateLink; plus a VPC Sandbox |
 | Azure | 10 | 6 | subscriptions, resource groups/locks, VMs (stop vs deallocate), Run Command/Bastion/az ssh, VNets/NSGs, UDRs/Network Watcher, RBAC/managed identity, Key Vault/storage, Monitor/KQL, AKS |
 | Google Cloud | 10 | 6 | configurations/projects/APIs, Compute Engine filters, IAP SSH/serial console, global VPCs, tag-based firewalls, Cloud NAT, IAM without keys/impersonation, Cloud Storage, logging/quotas, GKE/Workload Identity |
-| Security | 11 | 6 | nmap discovery/TLS checks, Trivy/kube-bench, Lynis/OpenSCAP CIS audits, SSH hardening, fail2ban, auditd, osquery/AIDE, secrets scanning, compromise triage, Kubernetes admission policy (Kyverno) and runtime detection (Falco); plus 2 hacked-server mysteries |
+| Security | 16 | 7 | nmap discovery/TLS checks, Trivy/kube-bench, Lynis/OpenSCAP CIS audits, SSH hardening, fail2ban, auditd, osquery/AIDE, secrets scanning, compromise triage, Kubernetes admission policy (Kyverno) and runtime detection (Falco), cloud posture scanning (Prowler), compliance evidence, threat modelling (STRIDE), Sigma detection rules, zero-trust access; plus 3 Writing Labs and 2 hacked-server mysteries |
 | Server Fleet Ops | 13 | 7 | Ansible (inventories, safe playbook runs, rolling serial updates, Vault/lint), Debian and RHEL patching with rollback, kernels and reboots, SSM Patch Manager, chrony, LVM growth, backups with real restore tests, NFS, Ceph health |
 | SRE | 13 | 6 | incident first ten minutes, Argo Rollouts canaries, Istio resilience, capacity planning, load testing (k6/vegeta), chaos engineering, feature flags/kill switches, postmortem timelines, graceful degradation, production readiness reviews, disaster recovery drills, service catalogs and golden paths, DORA metrics |
 | Git | 11 | 6 | objects/refs/HEAD, precise staging, branches, merge conflicts, rebase (autosquash, --onto), the undo matrix and reflog, searching history, remotes and forks, stash/worktrees, config/attributes/hooks, shallow and partial clones, submodules, LFS, signing |
@@ -375,7 +375,7 @@ the engine, loader, sandboxes, yaml_lab, career_path, mystery, or scenario conte
 | Serverless | 7 | 4 | Lambda (invoke and logs, cold starts and concurrency, versions/aliases/canaries, event retries and failure destinations), API Gateway limits, ECS on Fargate, Cloud Run revisions and traffic, Azure Functions |
 | Performance | 7 | 3 | perf CPU profiling, flame graphs, py-spy, JVM heap/GC/thread dumps, eBPF tools (execsnoop, biolatency, bpftrace), Go pprof, honest benchmarking and percentiles |
 | FinOps | 6 | 3 | reading the bill by service and team, tags/budgets/anomaly alerts, rightsizing, Savings Plans and spot, Kubernetes cost (OpenCost), storage classes, log retention, and data transfer |
-| **Total** | **308** | **152** | + 45 Writing Labs |
+| **Total** | **313** | **153** | + 48 Writing Labs |
 
 The three clouds use different names for the same ideas (security group
 vs NSG vs firewall rule; CloudTrail vs Activity Log vs Audit Logs). The

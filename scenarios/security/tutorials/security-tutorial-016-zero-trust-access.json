@@ -1,0 +1,48 @@
+{
+  "id": "security-tutorial-016",
+  "type": "tutorial",
+  "category": "security",
+  "title": "Zero-Trust Access: Short-Lived Certificates Instead of Keys and VPNs",
+  "difficulty": "intermediate",
+  "tags": ["zero-trust", "teleport", "ssh", "access", "certificates"],
+  "intro": "The old model: get onto the VPN, and you can reach everything; SSH keys sit on laptops for years. Zero trust drops the idea that being on the network means being trusted. Every connection is authenticated as a person, authorized for that specific resource, and recorded. Access proxies such as Teleport, Boundary, and the cloud vendors' equivalents implement it. The company's proxy is teleport.example.com.",
+  "steps": [
+    {
+      "prompt": "Log in to the access proxy teleport.example.com.",
+      "expected_commands": ["tsh login --proxy=teleport.example.com", "tsh login --proxy teleport.example.com"],
+      "fake_output": "If browser window does not open automatically, open it by clicking on the link:\n http://127.0.0.1:51204/...\n\n> Profile URL:        https://teleport.example.com:443\n  Logged in as:       dana@example.com\n  Roles:              developer, oncall\n  Logins:             ubuntu\n  Kubernetes:         enabled\n  Valid until:        2026-10-02 22:41:07 +0000 UTC [valid for 8h0m0s]\n  Extensions:         permit-port-forwarding, permit-pty",
+      "explanation": "You signed in through the company's single sign-on and received credentials valid for 8 hours.",
+      "why": "The login issues a short-lived certificate tied to your identity and roles. There's no SSH key to copy to servers, lose on a laptop, or forget to remove when someone leaves: when the certificate expires, access ends, and removing the person from the identity provider stops the next login. Multi-factor sign-in comes from the identity provider, once, for everything."
+    },
+    {
+      "prompt": "List the servers you're allowed to reach.",
+      "expected_commands": ["tsh ls"],
+      "fake_output": "Node Name     Address         Labels\n------------- --------------- ---------------------------\nweb-1         10.0.1.21:3022  env=prod,team=web\nweb-2         10.0.1.22:3022  env=prod,team=web\nstaging-db-1  10.0.9.14:3022  env=staging,team=data",
+      "explanation": "Three servers. The production database hosts aren't in the list.",
+      "why": "You see only what your roles allow, matched by labels: this role grants production web servers and staging data servers. The servers have no public SSH port and aren't reachable directly, even from inside the network; they connect out to the proxy. So there's nothing to scan and nothing to brute-force."
+    },
+    {
+      "prompt": "Open a shell on web-1 as the user ubuntu.",
+      "expected_commands": ["tsh ssh ubuntu@web-1"],
+      "fake_output": "ubuntu@web-1:~$",
+      "explanation": "A shell, authenticated by your certificate, with the session recorded.",
+      "why": "The server trusts the proxy's certificate authority, not a list of individual keys, so nobody maintains authorized_keys files. Every session is logged with your identity, and can be recorded and replayed, which answers 'who did what on that server' without relying on shell history. The same goes for 'tsh kube' and 'tsh db', which give the same treatment to clusters and databases."
+    },
+    {
+      "prompt": "You need the production database for an incident, and your role doesn't include it. What's the zero-trust way to get it?\n  a) Ask a colleague for their password\n  b) Request temporary, elevated access: a time-limited role, with a reason, approved by another person, and removed automatically\n  c) Add yourself to the admin group permanently\n  d) Use the root SSH key from the wiki\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "$ tsh request create --roles=prod-db-admin --reason \"SHOP-4410: investigating failed orders\"\nRequest ID: 9f1c2e7a-41bb-4c08-8e11-f47a2d90be01\nWaiting for approval... approved by sam@example.com\nAccess granted: prod-db-admin until 2026-10-02 16:41 UTC",
+      "hint": "Access should match the task and end with it.",
+      "explanation": "Just-in-time access: requested, approved, time-boxed, and logged.",
+      "why": "Standing access to production data is the largest source of both risk and audit findings. Just-in-time access means nobody holds powerful rights when they don't need them, each use has a recorded reason and approver, and expiry is automatic. Keep a tested break-glass route for when the access system itself is down, with its use alarmed."
+    },
+    {
+      "prompt": "What's the core idea of zero trust, in one line?\n  a) Trust nothing, so block everything\n  b) Don't grant trust because of network location: authenticate and authorize every request, by identity and device, with the least access needed, and assume a breach is possible\n  c) Use a bigger firewall\n  d) Put everything on the VPN\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "perimeter model : inside the network = trusted  -> one phished laptop reaches everything\nzero trust      : every request checked            -> one phished laptop reaches what that user may, briefly",
+      "hint": "The name is about where trust comes from, not about refusing access.",
+      "explanation": "Identity, not network position, decides access, every time.",
+      "why": "A VPN moves an attacker from outside to inside in one step, and inside was treated as safe. Zero trust removes that step: services authenticate each caller (people through single sign-on, workloads through mTLS and workload identity), authorize per resource, and keep the network segmented anyway. It's a direction to move in, one system at a time, not a product to install."
+    }
+  ]
+}
