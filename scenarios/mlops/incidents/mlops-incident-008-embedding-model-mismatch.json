@@ -1,0 +1,49 @@
+{
+  "id": "mlops-incident-008",
+  "type": "incident",
+  "category": "mlops",
+  "title": "The support assistant started answering from the wrong documents",
+  "difficulty": "advanced",
+  "tags": ["rag", "embeddings", "pgvector", "retrieval", "llm"],
+  "intro": "Since Tuesday the support assistant's answers have been confidently irrelevant: asked about refunds, it quotes the shipping policy. Nothing errors, latency is normal, and the language model hasn't changed. On Tuesday the service that embeds users' questions was upgraded to a newer embedding model. Documents are stored with their embeddings in the PostgreSQL table documents (pgvector).",
+  "steps": [
+    {
+      "prompt": "The answers are built from retrieved documents, so check what's stored. Count the documents by the embedding model that produced each one's vector.",
+      "expected_commands": ["psql -c \"SELECT model, count(*) FROM documents GROUP BY model;\"", "psql -c \"SELECT model, count(*) FROM documents GROUP BY model\"", "psql -c \"SELECT count(*), model FROM documents GROUP BY model;\""],
+      "fake_output": "      model       | count\n------------------+-------\n embed-v2         | 41180\n embed-v3         |    24",
+      "hint": "psql -c \"SELECT model, count(*) FROM documents GROUP BY model;\""
+    },
+    {
+      "prompt": "41,180 documents were embedded with embed-v2, and 24, added since Tuesday, with embed-v3. Check which model the query service is using now: show the environment variables containing EMBED on the deployment query-api in namespace assistant.",
+      "expected_commands": ["kubectl set env deployment/query-api -n assistant --list | grep EMBED", "kubectl set env deploy/query-api -n assistant --list | grep EMBED", "kubectl set env deployment/query-api --list -n assistant | grep EMBED", "kubectl describe deployment query-api -n assistant | grep EMBED"],
+      "fake_output": "EMBEDDING_MODEL=embed-v3",
+      "hint": "kubectl set env deployment/query-api -n assistant --list | grep EMBED"
+    },
+    {
+      "prompt": "Questions are embedded with v3 and compared against documents embedded with v2. Why does that produce irrelevant results without any error?\n  a) The database is corrupted\n  b) Each embedding model has its own vector space: distances between a v3 query and v2 documents are meaningless, but both have the same dimension, so the search still runs and returns 'nearest' rows\n  c) The index is too small\n  d) The language model is hallucinating\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "v2('refund policy')  and  v3('refund policy')  are unrelated points in space\nsame dimension (1536) -> no type error -> nearest neighbours are effectively random,\nexcept the 24 new v3 documents, which now match everything",
+      "hint": "Nothing checks that the two vectors came from the same model."
+    },
+    {
+      "prompt": "Restore service first. Put the query service back on the model the documents were embedded with: set EMBEDDING_MODEL to embed-v2 on the deployment.",
+      "expected_commands": ["kubectl set env deployment/query-api -n assistant EMBEDDING_MODEL=embed-v2", "kubectl set env deploy/query-api -n assistant EMBEDDING_MODEL=embed-v2", "kubectl set env deployment/query-api EMBEDDING_MODEL=embed-v2 -n assistant"],
+      "fake_output": "deployment.apps/query-api env updated",
+      "hint": "kubectl set env deployment/query-api -n assistant EMBEDDING_MODEL=embed-v2"
+    },
+    {
+      "prompt": "The 24 documents embedded with v3 are now the ones that don't match. Mark them for re-embedding with v2 by clearing their vectors: set embedding to NULL where model is embed-v3. (The sync job re-embeds rows with a NULL embedding.)",
+      "expected_commands": ["psql -c \"UPDATE documents SET embedding = NULL WHERE model = 'embed-v3';\"", "psql -c \"UPDATE documents SET embedding = NULL WHERE model = 'embed-v3'\""],
+      "fake_output": "UPDATE 24",
+      "hint": "psql -c \"UPDATE documents SET embedding = NULL WHERE model = 'embed-v3';\""
+    },
+    {
+      "prompt": "The team still wants embed-v3, which is better. What's the correct way to move to it?\n  a) Switch the query service again and hope\n  b) Re-embed every document with v3 into a new column or table, build its index, evaluate retrieval quality, then switch queries and documents over together, keeping v2 until the switch is proven\n  c) Mix both models in one column\n  d) Delete the documents\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "1. add column embedding_v3 ; backfill all 41,204 rows ; build its HNSW index\n2. run the evaluation suite against v3 retrieval\n3. flip the query service and the reader to embedding_v3 in one release\n4. drop the v2 column after a week",
+      "hint": "The two sides must change together, and you want a way back."
+    }
+  ],
+  "resolution": "An embedding is a point in a space that only its own model defines. Two models can produce vectors of the same length whose coordinates have nothing to do with each other. The query service was upgraded to a new embedding model on Tuesday; the 41,180 stored documents had been embedded with the old one. From then on each question was converted with v3 and compared with v2 vectors. The dimensions matched, so the database raised no error and returned its nearest neighbours as usual, but nearness between the two spaces means nothing. The assistant received unrelated passages and did what it's built to do: answered fluently from whatever context it was given. The few documents added after Tuesday had been embedded with v3 by the same service, so they matched every question unnaturally well, which explains the same handful of documents being quoted for everything. Nothing in monitoring moved: no errors, normal latency, normal token counts. This is the characteristic failure of machine-learning systems, wrong answers with green dashboards, and only a quality measurement catches it. The 'model' column recorded with each vector made the diagnosis one query; without it this would have taken days. Rolling the query side back restored service in a minute. The proper migration treats an embedding model as a schema: re-embed everything into a parallel column, index it, evaluate, and switch reader and writer in a single release, as with any expand-and-contract change. Guards to add: the query service should refuse to start if its model differs from the one recorded in the index's metadata; the retrieval evaluation should run on every deploy of either side; and a canary question with a known answer, asked continuously in production, would have paged within minutes on Tuesday.",
+  "real_commands_used": ["psql: SELECT model, count(*) FROM documents GROUP BY model", "kubectl set env deployment --list | grep EMBED", "kubectl set env deployment EMBEDDING_MODEL=embed-v2", "psql: UPDATE documents SET embedding = NULL WHERE model = 'embed-v3'"]
+}

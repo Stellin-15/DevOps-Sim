@@ -1,0 +1,49 @@
+{
+  "id": "mlops-tutorial-018",
+  "type": "tutorial",
+  "category": "mlops",
+  "title": "Quantization and the Cost of GPU Memory",
+  "difficulty": "advanced",
+  "tags": ["llm", "quantization", "gpu", "cost", "gguf"],
+  "intro": "A language model's weights have to fit in GPU memory, and GPU memory is the most expensive resource in the building. Quantization stores each weight with fewer bits, so the same model needs a fraction of the memory, for a small loss in quality. It decides whether a model runs on one GPU or four. You have a 16-bit model file, model-f16.gguf, and the llama.cpp tools.",
+  "steps": [
+    {
+      "prompt": "Check what the GPUs on this host have: memory used, memory total, and utilisation, as CSV.",
+      "expected_commands": ["nvidia-smi --query-gpu=memory.used,memory.total,utilization.gpu --format=csv", "nvidia-smi --format=csv --query-gpu=memory.used,memory.total,utilization.gpu"],
+      "fake_output": "memory.used [MiB], memory.total [MiB], utilization.gpu [%]\n412 MiB, 24564 MiB, 0 %",
+      "explanation": "One GPU with 24 GB of memory, currently empty.",
+      "why": "Memory, not compute, is usually the constraint that decides which model you can run. A model with 13 billion parameters at 16 bits each needs about 26 GB for the weights alone, before any room for the conversation. So this model doesn't fit on this card as it is."
+    },
+    {
+      "prompt": "Quantize model-f16.gguf to the 4-bit format Q4_K_M, writing model-Q4_K_M.gguf.",
+      "expected_commands": ["./llama-quantize model-f16.gguf model-Q4_K_M.gguf Q4_K_M", "llama-quantize model-f16.gguf model-Q4_K_M.gguf Q4_K_M"],
+      "fake_output": "llama_model_quantize: model size  = 24826.4 MB\nllama_model_quantize: quant size  =  7866.9 MB\n\nmain: quantize time = 41204.10 ms",
+      "explanation": "From 24.8 GB to 7.9 GB: about a third of the size.",
+      "why": "Each weight goes from 16 bits to roughly 4.8 on average (the K_M variants keep more precision for the most sensitive layers). The 7.9 GB model fits on the 24 GB card with room for a long context and several concurrent requests. On a hosted GPU that's the difference between one mid-range card and several high-end ones."
+    },
+    {
+      "prompt": "The smaller model is cheaper. How do you decide whether its quality is still good enough for your use?\n  a) Smaller is always fine\n  b) Run your own evaluation suite on both versions and compare: the loss depends on the task, and only your cases tell you\n  c) Check the file size\n  d) Ask the model whether it's still accurate\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "              pass rate   p95 latency   GPU memory\nf16            91.7%       1,900 ms      25.1 GB (2 GPUs)\nQ8_0           91.7%       1,100 ms      13.8 GB\nQ4_K_M         90.8%         740 ms       8.4 GB\nQ2_K           71.2%         610 ms       5.1 GB",
+      "hint": "mlops-tutorial-015.",
+      "explanation": "Measure it on your own task.",
+      "why": "The typical curve: 8-bit is indistinguishable, 4-bit loses about a point, and below that quality falls off a cliff. But it varies by task: summarising tolerates it well, exact arithmetic and code less so. The evaluation suite turns the choice into a table like this one, where you pick the cheapest row that meets your bar."
+    },
+    {
+      "prompt": "Model weights aren't the only thing in GPU memory. What else grows with how you use the model?\n  a) Nothing\n  b) The context: memory for each concurrent request's conversation (the KV cache) grows with context length and the number of simultaneous requests\n  c) The log files\n  d) The driver version\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "GPU memory = weights + (KV cache per token x context length x concurrent sequences) + overhead\n\n8 GB weights, 8k context, 16 concurrent  -> fits in 24 GB\n8 GB weights, 128k context, 16 concurrent -> does not",
+      "hint": "mlops-incident-007 was a context-length setting that didn't fit.",
+      "explanation": "Context length times concurrency.",
+      "why": "A model that loads fine can still run out of memory under load, when many long conversations are in flight. Serving frameworks reserve this memory at start-up from the configured maximum context, which is why a default of 128k can refuse to start. Size the context limit to what the application needs, not to the largest the model supports."
+    },
+    {
+      "prompt": "GPUs are billed by the hour whether they're busy or idle. Which change usually saves the most on a self-hosted model serving steady traffic?\n  a) Leaving one GPU per team, mostly idle\n  b) Raising utilisation: batch concurrent requests on shared GPUs, scale replicas on queue depth, and scale to zero what's rarely used\n  c) Buying faster GPUs\n  d) Turning off monitoring\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "a GPU at 8% utilisation costs the same as one at 80%\n\nshared serving + continuous batching : many requests per GPU at once\nautoscale on vllm:num_requests_waiting : add a replica when a queue forms\nscale-to-zero for internal tools      : pay for a cold start instead of an idle GPU",
+      "hint": "The cost is fixed per hour; the question is how much work each hour does.",
+      "explanation": "Fill the GPUs you pay for.",
+      "why": "The unit that matters is cost per million tokens served, and for a fixed-price GPU that's driven by throughput. Continuous batching lets one GPU serve many requests at once with little added latency. Compare honestly with a hosted API: below a certain steady volume, paying per token is cheaper than any GPU you could run, and that break-even point is worth calculating before buying hardware."
+    }
+  ]
+}

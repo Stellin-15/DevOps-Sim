@@ -1,0 +1,49 @@
+{
+  "id": "mlops-tutorial-015",
+  "type": "tutorial",
+  "category": "mlops",
+  "title": "Evaluating an LLM Application Before You Change It",
+  "difficulty": "intermediate",
+  "tags": ["llm", "evaluation", "promptfoo", "regression-testing"],
+  "intro": "A prompt edit, a new model version, or a changed retrieval setting can make an LLM application better on the example you tried and worse on fifty you didn't. Without a test suite, every change is a guess. An evaluation harness runs a fixed set of cases through the application and scores the answers. This project uses promptfoo; its config is promptfooconfig.yaml, with 120 test cases for a support assistant.",
+  "steps": [
+    {
+      "prompt": "Run the evaluation suite defined in promptfooconfig.yaml.",
+      "expected_commands": ["promptfoo eval -c promptfooconfig.yaml", "promptfoo eval --config promptfooconfig.yaml", "npx promptfoo eval -c promptfooconfig.yaml", "promptfoo eval"],
+      "fake_output": "Evaluating 2 prompts x 120 test cases...\n\n┌────────────────────┬───────────────┬───────────────┐\n│                    │ prompt-v7     │ prompt-v8     │\n├────────────────────┼───────────────┼───────────────┤\n│ pass rate          │ 91.7% (110)   │ 85.0% (102)   │\n│ avg latency        │ 1,204 ms      │ 1,188 ms      │\n│ avg cost per case  │ $0.0041       │ $0.0038       │\n└────────────────────┴───────────────┴───────────────┘\nFailures in prompt-v8 not in prompt-v7: 11",
+      "explanation": "The new prompt, v8, passes 85% of cases where the current one passes 91.7%.",
+      "why": "v8 was written to fix a tone problem and looked better on the cases its author tried. Across 120 it's worse: it breaks 11 cases that used to pass. This is the whole reason for an evaluation suite: LLM changes have side effects you can't predict by reading the prompt. Run it on every change to a prompt, a model, or the retrieval pipeline, as a required check."
+    },
+    {
+      "prompt": "Save the results to a file so they can be compared and stored by CI: run the suite again, writing the output to results.json.",
+      "expected_commands": ["promptfoo eval -c promptfooconfig.yaml --output results.json", "promptfoo eval -c promptfooconfig.yaml -o results.json", "promptfoo eval --config promptfooconfig.yaml --output results.json"],
+      "fake_output": "Writing output to results.json\nEvaluation complete: 240 results",
+      "explanation": "Every case's input, output, score, latency, and cost, saved.",
+      "why": "Keeping results per commit gives you a history: you can see exactly which case regressed and when, and compare any two versions. It's the same idea as storing benchmark results or test reports. Because model outputs vary between runs, fix the temperature at 0 for evaluation where you can, and expect a little noise where you can't."
+    },
+    {
+      "prompt": "Test cases need a way to decide pass or fail. For 'does the answer state the correct refund window of 30 days?', which check is most reliable?\n  a) The answer is longer than 100 characters\n  b) A deterministic assertion where possible (the answer contains '30 days'), falling back to a model-graded rubric only for qualities that can't be checked mechanically\n  c) The answer sounds confident\n  d) A person reads all 120 answers after every change\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "assert:\n  - type: contains\n    value: \"30 days\"\n  - type: not-contains\n    value: \"60 days\"\n  - type: llm-rubric\n    value: \"Polite, and does not promise anything the policy doesn't allow\"",
+      "hint": "Cheap, exact checks first; judgment only where it's needed.",
+      "explanation": "Deterministic checks for facts, a graded rubric for qualities.",
+      "why": "String and structure checks are fast, free, and never disagree with themselves. A model grading another model's answer is useful for tone and faithfulness, and it's itself fallible, so validate the grader against human judgments on a sample. Human review still matters, on a sample, to find the failure types you haven't written a check for."
+    },
+    {
+      "prompt": "Where should the test cases come from?\n  a) Examples the developers thought of on day one\n  b) Real usage: sampled production questions, plus every failure reported by users, added as a new case when it's fixed\n  c) The model's own suggestions only\n  d) They never need updating\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "user reports a wrong answer -> reproduce -> add as a test case -> fix -> case stays in the suite for ever",
+      "hint": "The same discipline as a regression test for a bug.",
+      "explanation": "A suite built from real questions and real failures.",
+      "why": "Invented cases test what you expected; production traffic contains what you didn't. Turning each reported failure into a permanent case is how the suite comes to represent real use, and how a fixed problem stays fixed. Scrub personal data before storing real conversations as tests."
+    },
+    {
+      "prompt": "The provider is retiring the model version you use next month and you must move to a newer one. What's the safe way?\n  a) Switch the model name in production and watch for complaints\n  b) Run the evaluation suite against the new model first, review the regressions, adjust, then roll out gradually with the old version as fallback\n  c) Wait until the old one stops working\n  d) Rewrite every prompt from scratch\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "1. eval suite on the new model      -> 14 regressions, 9 improvements\n2. fix prompts for the regressions  -> re-run\n3. canary: 5% of traffic on the new model, compare quality and cost\n4. full rollout; pin the exact version string",
+      "hint": "A model version is a dependency, and this is a dependency upgrade.",
+      "explanation": "Evaluate, fix, canary, pin.",
+      "why": "A new model is not a drop-in replacement: it follows instructions differently, and prompts tuned to the old one can get worse. Pin an exact version, never an alias like 'latest' that changes underneath you, and treat upgrades like any other: tested in CI, then rolled out behind a canary (mlops-tutorial-010)."
+    }
+  ]
+}

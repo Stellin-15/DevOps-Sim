@@ -111,3 +111,26 @@ rate(model_requests_total[5m])
 - **Model versioning** — never deploy a model without a version tag; you need instant rollback capability just like any other deployment
 - **Data drift vs concept drift** — data drift is input distribution changing, concept drift is the relationship between input and output changing; both look like "the model got worse" but need different fixes
 - **Canary deploys for models** — route 5% of traffic to the new model version, compare live metrics before full rollout, exactly like a canary code deploy
+
+## LLM Operations
+
+```
+promptfoo eval -c promptfooconfig.yaml
+promptfoo eval -c promptfooconfig.yaml --output results.json
+promptfoo view
+lm_eval --model vllm --model_args pretrained=<model> --tasks <task> --limit 200
+
+psql -c "SELECT count(*) FROM documents;"
+psql -c "\d documents"                                   # the embedding column's dimension
+psql -c "SELECT id, title, embedding <=> '[...]' AS distance FROM documents ORDER BY distance LIMIT 5;"
+psql -c "CREATE INDEX CONCURRENTLY ON documents USING hnsw (embedding vector_cosine_ops);"
+curl -s $QDRANT/collections/<name> | jq '.result.config.params.vectors, .result.points_count'
+
+curl -s $LLM/v1/chat/completions -H "Content-Type: application/json" -d @request.json | jq '.usage'
+curl -s $LLM/metrics | grep -E "vllm:(prompt|generation)_tokens_total|vllm:num_requests_waiting"
+redis-cli info stats | grep keyspace                    # hit rate of a response cache
+
+./llama-quantize model-f16.gguf model-Q4_K_M.gguf Q4_K_M
+huggingface-cli download <repo> --include "*Q4_K_M*"
+nvidia-smi --query-gpu=memory.used,memory.total,utilization.gpu --format=csv
+```

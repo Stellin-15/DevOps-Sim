@@ -578,7 +578,7 @@ a Writing Lab. What's left is the vendor products themselves.
 
 # Part 8 — MLOps
 
-**Content:** 14 tutorials, 7 incidents.
+**Content:** 18 tutorials, 8 incidents.
 
 ## Covered
 
@@ -619,7 +619,13 @@ and an unreproducible model trained on unversioned data.
   covers *operating* Airflow (import errors, `tasks test`, backfill and
   idempotency, manual triggers). Writing one is **closed** by
   dataeng-tutorial-001 and Writing Lab yaml-049.
-- Evaluation and data-validation tooling (Great Expectations, Evidently).
+- ~~LLM operations~~: **closed** by mlops-tutorial-015 (evaluation suites
+  and model upgrades), 016 (vector search with pgvector: indexes, recall,
+  freshness), 017 (tokens, caching, prompt injection, request logging),
+  and 018 (quantization and GPU cost), with mlops-incident-008 (query and
+  document embeddings from different models). Fine-tuning, agents and
+  tool orchestration, and speculative decoding aren't covered.
+- Data-validation tooling (Great Expectations, Evidently).
 
 ## Readiness verdict
 
@@ -1893,9 +1899,8 @@ employer uses it.
   to 016, security-incident-007, and Writing Labs yaml-046 to 048.
 - ~~**Data engineering**~~: **now a category** (Data Engineering), with
   five tutorials, two incidents, and an Airflow DAG lab.
-- **LLM operations:** evaluation harnesses, prompt and model versioning,
-  retrieval and vector databases, guardrails, quantization, and GPU cost
-  control.
+- ~~**LLM operations**~~: **done** in mlops-tutorial-015 to 018 and
+  mlops-incident-008.
 - **System design depth:** the list under Part 16.
 - ~~**Testing in delivery**~~: **done** in cicd-tutorial-020.
 - ~~**Authoring gaps named in earlier parts**~~: **all done** as Writing
@@ -1957,7 +1962,7 @@ If content is added in the order that helps most people soonest:
 | Networking | 17 | 8 | |
 | CI/CD | 20 | 8 | 4 Writing Labs (Actions, GitLab CI) |
 | Monitoring | 17 | 8 | 5 Writing Labs (alert rules, SLO burn alerts, a dashboard, manual spans) |
-| MLOps | 14 | 7 | |
+| MLOps | 18 | 8 | |
 | AWS | 14 | 7 | 1 Writing Lab (IAM policy), Sandbox (VPC), 4 Mysteries |
 | Azure | 10 | 6 | Sandbox, 3 Mysteries |
 | Google Cloud | 10 | 6 | 1 Writing Lab (firewall), Sandbox, 3 Mysteries |
@@ -1975,7 +1980,7 @@ If content is added in the order that helps most people soonest:
 | Performance | 7 | 3 | |
 | FinOps | 6 | 3 | |
 | Data Engineering | 5 | 2 | 1 Writing Lab (Airflow DAG) |
-| **Total** | **318** | **155** | 49 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
+| **Total** | **322** | **156** | 49 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -1987,7 +1992,7 @@ command beats the alternatives — not just what it does.
 will know the commands, the failure modes, and — most importantly — the
 debugging method** (check the layer before guessing the fix; refused vs
 timeout; verify after every change; revoke before cleaning up; revert
-don't force-push). The 155 incidents are modeled on the kinds of problems
+don't force-push). The 156 incidents are modeled on the kinds of problems
 that genuinely trip up working engineers, and working through them
 builds judgment that command references alone never will.
 

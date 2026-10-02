@@ -1,0 +1,49 @@
+{
+  "id": "mlops-tutorial-016",
+  "type": "tutorial",
+  "category": "mlops",
+  "title": "Operating Retrieval: Vector Search with pgvector",
+  "difficulty": "advanced",
+  "tags": ["rag", "pgvector", "embeddings", "vector-database"],
+  "intro": "Most LLM applications answer from your own documents: each document is turned into a vector (an embedding), stored, and at question time the nearest vectors are fetched and given to the model. This is retrieval-augmented generation, RAG. When answers are wrong, the fault is in retrieval far more often than in the model. This system stores embeddings in PostgreSQL with the pgvector extension, in a table named documents.",
+  "steps": [
+    {
+      "prompt": "Look at the table's structure.",
+      "expected_commands": ["psql -c \"\\d documents\"", "psql -c '\\d documents'"],
+      "fake_output": "                Table \"public.documents\"\n   Column    |           Type           | Nullable\n-------------+--------------------------+----------\n id          | bigint                   | not null\n title       | text                     |\n body        | text                     |\n embedding   | vector(1536)             |\n model       | text                     |\n updated_at  | timestamp with time zone |\nIndexes:\n    \"documents_pkey\" PRIMARY KEY, btree (id)",
+      "explanation": "Each row has an embedding of 1,536 dimensions and records which model produced it. There's no index on the embedding.",
+      "why": "The dimension is fixed by the embedding model: vectors from different models aren't comparable even when the sizes match, and a different size is rejected outright. The 'model' column is good practice, since it lets you tell which rows came from where. With no vector index, every search compares the query against every row."
+    },
+    {
+      "prompt": "See how a search is being executed: run EXPLAIN ANALYZE on a nearest-neighbour query. The query vector is in the psql variable :q, so the statement is: SELECT id FROM documents ORDER BY embedding <=> :q LIMIT 5",
+      "expected_commands": ["psql -v q=\"$Q\" -c \"EXPLAIN ANALYZE SELECT id FROM documents ORDER BY embedding <=> :q LIMIT 5\"", "psql -v q=\"$Q\" -c \"EXPLAIN ANALYZE SELECT id FROM documents ORDER BY embedding <=> :q LIMIT 5;\"", "psql -c \"EXPLAIN ANALYZE SELECT id FROM documents ORDER BY embedding <=> :q LIMIT 5\""],
+      "fake_output": " Limit  (actual time=1904.10..1904.12 rows=5 loops=1)\n   ->  Sort  (actual time=1904.09..1904.10 rows=5 loops=1)\n         Sort Key: ((embedding <=> '[...]'::vector))\n         ->  Seq Scan on documents  (actual time=0.02..1811.40 rows=2204410 loops=1)\n Execution Time: 1904.31 ms",
+      "hint": "psql -v q=\"$Q\" -c \"EXPLAIN ANALYZE SELECT id FROM documents ORDER BY embedding <=> :q LIMIT 5\"",
+      "explanation": "A sequential scan over 2.2 million rows, taking 1.9 seconds, for five results.",
+      "why": "'<=>' is cosine distance. Without an index, PostgreSQL computes the distance to every row and sorts. That's exact, and too slow to sit in front of a chat reply. It's the same lesson as any missing index, with a different kind of index as the fix."
+    },
+    {
+      "prompt": "Create an HNSW index on the embedding column for cosine distance, without blocking writes.",
+      "expected_commands": ["psql -c \"CREATE INDEX CONCURRENTLY ON documents USING hnsw (embedding vector_cosine_ops);\"", "psql -c \"CREATE INDEX CONCURRENTLY ON documents USING hnsw (embedding vector_cosine_ops)\"", "psql -c \"CREATE INDEX CONCURRENTLY documents_embedding_idx ON documents USING hnsw (embedding vector_cosine_ops);\""],
+      "fake_output": "CREATE INDEX",
+      "explanation": "Searches now use the index: about 4 ms instead of 1,900.",
+      "why": "HNSW is an approximate nearest-neighbour index: it finds very close vectors quickly by walking a graph, and may occasionally miss one of the true nearest. The operator class must match the distance you query with: an index built for cosine distance isn't used by a query ordering by Euclidean distance. Building it on millions of rows takes time and memory; do it concurrently."
+    },
+    {
+      "prompt": "An approximate index trades a little accuracy for a lot of speed. What do you measure to know the trade is acceptable?\n  a) Nothing: the index is always right\n  b) Recall: for a sample of queries, the share of the true nearest neighbours (from an exact search) that the index also returns; and tune the index's search setting against latency\n  c) The table's size\n  d) The model's temperature\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "SET hnsw.ef_search = 40;    recall@5 = 0.93   p95 = 4 ms\nSET hnsw.ef_search = 100;   recall@5 = 0.98   p95 = 9 ms\nSET hnsw.ef_search = 400;   recall@5 = 0.996  p95 = 31 ms",
+      "hint": "Compare the index's answers with the exact answers.",
+      "explanation": "Recall against an exact search, traded against latency.",
+      "why": "A retrieval system can get faster and quietly worse. Measuring recall on a fixed query set gives you a number to hold steady while tuning. Above that sits the real test: does the retrieved text contain the answer? That belongs in the evaluation suite from mlops-tutorial-015, since no amount of prompt work fixes missing context."
+    },
+    {
+      "prompt": "The source documents change daily. What keeps the search index from serving outdated answers?\n  a) Nothing is needed\n  b) A pipeline that re-embeds changed documents and deletes removed ones, with monitoring of how stale the index is\n  c) Restarting the database\n  d) A larger model\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "SELECT max(updated_at) FROM documents;          -- when the index last changed\nsource: 41,204 docs   index: 41,180 docs      -- 24 missing or stale\n\nalert when: index lag > 24h, or counts diverge",
+      "hint": "The index is a copy of the source, and copies drift.",
+      "explanation": "Keep the copy in sync, and measure the lag.",
+      "why": "A deleted policy that's still in the index will be quoted confidently to customers. Treat the embedding index like any derived data: an idempotent sync job keyed on document id, deletions handled as well as additions, and freshness monitored. And when the embedding model changes, every vector must be regenerated together (mlops-incident-008 is what happens otherwise)."
+    }
+  ]
+}

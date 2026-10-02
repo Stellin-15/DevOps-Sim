@@ -406,7 +406,7 @@ Current per-category content depth (tutorials / incidents):
 - networking: 17 / 8
 - cicd: 20 / 8 (+4 Writing Labs: GitHub Actions, GitLab CI)
 - monitoring: 17 / 8 (+5 Writing Labs: alert rules, burn-rate alerts, a Grafana dashboard, manual OTel spans)
-- mlops: 14 / 7
+- mlops: 18 / 8
 - aws: 14 / 7 (+1 Writing Lab, AWS VPC sandbox, 4 mysteries)
 - azure: 10 / 6 (+ Azure sandbox, 3 mysteries)
 - gcp: 10 / 6 (+ Google Cloud sandbox, 3 mysteries)
@@ -440,7 +440,7 @@ Current per-category content depth (tutorials / incidents):
 - performance: 7 / 3 (profilers, flame graphs, eBPF tools, JVM and Go runtime inspection, measurement)
 - finops: 6 / 3 (cost allocation, rightsizing, commitments and spot, Kubernetes cost, quiet costs)
 - dataeng: 5 / 2 (+1 Writing Lab): Airflow authoring, dbt, warehouses, Spark on Kubernetes, CDC
-- **total: 318 tutorials, 155 incidents, 49 Writing Labs, 14 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
+- **total: 322 tutorials, 156 incidents, 49 Writing Labs, 14 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with
