@@ -1,0 +1,47 @@
+{
+  "id": "landscape-tutorial-007",
+  "type": "tutorial",
+  "category": "landscape",
+  "title": "Not GitHub: Gerrit, Perforce, and Mercurial",
+  "difficulty": "intermediate",
+  "tags": ["gerrit", "perforce", "mercurial", "version-control", "code-review"],
+  "intro": "Git with pull requests is the default, and it isn't universal. Android, Chromium, and many hardware companies review code in Gerrit. Game studios and chip designers keep enormous binary assets in Perforce. Mercurial survives in a few large codebases. Each makes a different trade, and knowing the first few commands gets you unstuck on day one.",
+  "steps": [
+    {
+      "prompt": "Gerrit sits in front of a Git repository. You don't push to a branch; you push a commit for review to a special ref. Push your current commit for review against main.",
+      "expected_commands": ["git push origin HEAD:refs/for/main"],
+      "fake_output": "remote: Processing changes: new: 1, done\nremote:\nremote: SUCCESS\nremote:\nremote:   https://gerrit.example.com/c/shop/+/41204 fix tax rounding per line [NEW]\nremote:\nTo ssh://gerrit.example.com:29418/shop\n * [new reference]   HEAD -> refs/for/main",
+      "explanation": "Gerrit created change 41204 for your commit and gave you its review link.",
+      "why": "'refs/for/main' is a magic ref: Gerrit intercepts the push and turns each commit into a change to be reviewed, instead of updating a branch. The unit of review is a single commit, not a branch of them, so Gerrit teams work in small, self-contained commits. The 'git review' helper wraps this push."
+    },
+    {
+      "prompt": "A reviewer asks for a fix. In Gerrit you don't add a second commit; you update the same one. What links your new upload to the existing change 41204?\n  a) The branch name\n  b) The Change-Id line in the commit message: amend the commit, keeping that line, and push again; Gerrit adds it as a new patch set on the same change\n  c) The commit hash\n  d) An email to the reviewer\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "fix tax rounding per line\n\nChange-Id: I9f1c2e7a41bb07d2c08e11f47a2d90be0131d2c4\n\n$ git commit --amend        # keep the Change-Id\n$ git push origin HEAD:refs/for/main    -> change 41204, patch set 2",
+      "hint": "The hash changes on every amend, so it can't be the link.",
+      "explanation": "The Change-Id in the message identifies the change across amends.",
+      "why": "A commit hook adds the Change-Id on your first commit. Amending rewrites the commit, giving a new hash, and the unchanged Change-Id tells Gerrit it's a new version of the same change. Reviewers can then compare patch sets. It's the fixup-and-autosquash workflow from git-tutorial-005, made mandatory."
+    },
+    {
+      "prompt": "Perforce is a centralised system: the server holds the history, and you fetch only the files you need. Bring your workspace up to date with the server.",
+      "expected_commands": ["p4 sync"],
+      "fake_output": "//depot/game/src/render/shader.cpp#41 - updating /home/dana/game/src/render/shader.cpp\n//depot/game/assets/level03/terrain.bin#12 - updating /home/dana/game/assets/level03/terrain.bin\n//depot/game/assets/level03/textures.pak#7 - updating /home/dana/game/assets/level03/textures.pak",
+      "explanation": "Three files updated to their latest revisions; '#41' is that file's revision number.",
+      "why": "Perforce versions each file separately and keeps history on the server, so a workspace can hold just one directory of a repository that's terabytes in size. That's why it rules where assets are huge and binary: game art, chip layouts. Git, which copies all history to every clone, can't do that without LFS or partial clones."
+    },
+    {
+      "prompt": "In Perforce you tell the server before editing a file ('p4 edit'), and binary files can be locked so two artists don't both change one. See which files you have open for edit.",
+      "expected_commands": ["p4 opened"],
+      "fake_output": "//depot/game/src/render/shader.cpp#41 - edit default change (text)\n//depot/game/assets/level03/terrain.bin#12 - edit default change (binary+l) *locked*",
+      "explanation": "Two files checked out: a source file, and a binary asset that you hold a lock on.",
+      "why": "Exclusive locking sounds primitive and is essential for files that can't be merged: nobody can reconcile two edited textures. The pending set of open files is a changelist, submitted together with 'p4 submit', which is the commit. Forgetting 'p4 edit' leaves the file read-only on disk, the first thing every newcomer trips over."
+    },
+    {
+      "prompt": "Mercurial is distributed like Git, with a simpler command set. Show the last 5 commits in a Mercurial repository.",
+      "expected_commands": ["hg log -l 5", "hg log --limit 5", "hg log -l5"],
+      "fake_output": "changeset:   4412:9f1c2e7a41bb\ntag:         tip\nuser:        dana\ndate:        Fri Oct 02 14:02:11 2026 +0000\nsummary:     fix tax rounding per line\n\nchangeset:   4411:c08e11f47a2d\nuser:        sam\nsummary:     add saved-for-later list",
+      "explanation": "Commits with both a local revision number (4412) and a hash.",
+      "why": "The commands map almost one to one: hg status, hg commit, hg pull -u, hg push. Mercurial has no staging area, and history is treated as mostly permanent. It lost the popularity contest to Git, and descendants of its ideas run very large monorepos (Meta's Sapling). If you know Git's model, an hour with a cheat sheet is enough."
+    }
+  ]
+}

@@ -7,10 +7,11 @@ what's built, why it's shaped this way, and what's next.
 
 `kube-sim` — a terminal game for learning real DevOps command-line skills
 by typing them, not memorizing them. Originally Kubernetes-only; now a
-multi-category simulator spanning 25 categories (**Kubernetes, Docker,
+multi-category simulator spanning 26 categories (**Kubernetes, Docker,
 Linux, Terraform, Networking, CI/CD, Monitoring, MLOps, AWS, Azure, GCP,
-Security, Servers, SRE, Git, System Design, Databases, and Web Servers
-& Proxies**), plus two modes that cut across
+Security, Servers, SRE, Git, System Design, Databases, Web Servers
+& Proxies, Identity & Secrets, Scripting, Messaging, Serverless,
+Performance, FinOps, Data Engineering, and The Wider Landscape**), plus two modes that cut across
 categories: **YAML Labs** (real manifest-editing practice) and **Career
 Paths** (chaining scenarios across categories into one realistic
 workflow, e.g. provision → containerize → deploy → automate → observe).
@@ -440,7 +441,8 @@ Current per-category content depth (tutorials / incidents):
 - performance: 7 / 3 (profilers, flame graphs, eBPF tools, JVM and Go runtime inspection, measurement)
 - finops: 6 / 3 (cost allocation, rightsizing, commitments and spot, Kubernetes cost, quiet costs)
 - dataeng: 5 / 2 (+1 Writing Lab): Airflow authoring, dbt, warehouses, Spark on Kubernetes, CDC
-- **total: 329 tutorials, 158 incidents, 51 Writing Labs, 14 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
+- landscape: 8 / 0 (tutorials only, no incidents: recognition-level introductions to less common tools; IN PROGRESS, see Likely next work 6b)
+- **total: 337 tutorials, 158 incidents, 51 Writing Labs, 14 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with
@@ -706,18 +708,32 @@ See GAPS.md's final 'Overall' part for the reasoning. In priority order:
    Route 53, Kyverno and Falco, writing Terraform modules and dynamic
    blocks, plus Writing Labs yaml-031 (getopts, `while read`) and
    yaml-032 (a Terraform module).
-6b. **The topic backlog is GAPS.md's Backlog part**, in three tiers, with a
-   suggested build order. ✓ Its first two items are done: the
-   `databases` category (12 tutorials, 6 incidents, path-013) and the
-   `webservers` category (11 tutorials, 6 incidents, 2 nginx Writing
-   Labs, path-014). Next up from it: identity and secrets (Vault,
-   OIDC, JWTs, mTLS, cert-manager), then the Kubernetes ecosystem
-   (Kustomize, Helm authoring, Gateway API), then Jenkins and GitLab
-   CI. A **database sandbox** driving an
-   in-memory SQLite database (standard library, no install) would let
-   players run real SQL instead of matching pre-written statements.
-   Authoring gaps that would each be one Writing Lab: a Kyverno
-   policy, an Airflow DAG, a burn-rate alert rule file.
+6b. **The topic backlog is GAPS.md's Backlog part**, in three tiers.
+   ✓ **Tier A is done** (databases, webservers, identity, the
+   Kubernetes ecosystem, other CI systems, scripting, messaging,
+   serverless, log pipelines and hosted observability, performance,
+   finops). ✓ **Tier B is done** (other IaC tools, advanced
+   networking, storage and DR, multi-cluster and tenancy, platform
+   engineering, compliance, data engineering, LLM operations, system
+   design depth, and every named authoring lab).
+   **Tier C is where work was paused (2026-10-02):** the `landscape`
+   category has tutorials 001-008. Still to write, each as one
+   tutorial, with commands already in `commands/landscape.md`:
+   private cloud and bare metal (OpenStack, Proxmox, vSphere, IPMI),
+   older monitoring (Nagios, Zabbix, SNMP, StatsD), Slurm, mail and
+   DNS hygiene (SPF/DKIM/DMARC/DNSSEC), mobile delivery (Fastlane),
+   and chaos tooling (Litmus, game days; this one fits `sre`). When
+   they're written, strike tier C in GAPS.md's Backlog part, remove
+   "in progress" from the landscape rows, and consider a career path
+   or two over the new categories (none were added after path-014).
+   Then: the README intro and CLAUDE.md "What this is" lists are
+   current, but GAPS.md's Overall part still describes the game as it
+   was before this build-out and deserves a rewrite.
+   A **database sandbox** driving an in-memory SQLite database
+   (standard library, no install) would let players run real SQL
+   instead of matching pre-written statements.
+   Each new category was added with `add_category` from the session's
+   scratch helper; the durable part of that is `tools/sync_docs.py`.
 6c. A **Git sandbox** (a real temp repository the game inspects) is the
    most valuable follow-up for the git category: outputs are
    pre-written today, so rebase todo lists and conflicts are never

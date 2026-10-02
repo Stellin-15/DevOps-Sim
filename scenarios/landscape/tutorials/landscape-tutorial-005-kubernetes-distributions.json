@@ -1,0 +1,47 @@
+{
+  "id": "landscape-tutorial-005",
+  "type": "tutorial",
+  "category": "landscape",
+  "title": "Kubernetes in Other Clothes: OpenShift, k3s, and Bare-Metal Load Balancing",
+  "difficulty": "intermediate",
+  "tags": ["openshift", "k3s", "metallb", "distributions", "edge"],
+  "intro": "Kubernetes is a specification with many packagings. Managed services (EKS, GKE, AKS) are the common ones; enterprises often run OpenShift, small sites and edge devices run k3s, and bare-metal clusters need something to stand in for a cloud load balancer. kubectl still works on all of them. What differs is the extras and the defaults.",
+  "steps": [
+    {
+      "prompt": "OpenShift is Red Hat's distribution, with its own CLI, oc, that includes everything kubectl does. On an OpenShift cluster, check the health of the platform's own components.",
+      "expected_commands": ["oc get clusteroperators", "oc get co", "oc get clusteroperator"],
+      "fake_output": "NAME                    VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE\nauthentication          4.16.12   True        False         False      41d\ningress                 4.16.12   True        False         True       12m\nkube-apiserver          4.16.12   True        False         False      41d\nmonitoring              4.16.12   True        False         False      41d",
+      "explanation": "The ingress operator is available but DEGRADED for the last 12 minutes.",
+      "why": "OpenShift manages itself with operators: each part of the platform, from the API server to ingress to upgrades, is an operator reporting three conditions. This one table is the first thing to read on an unhealthy OpenShift cluster, and 'oc describe co ingress' gives the reason. The whole cluster is upgraded as one versioned unit, which is the product's main appeal."
+    },
+    {
+      "prompt": "OpenShift exposes HTTP services with its own object, older than Ingress. List the routes in the current project.",
+      "expected_commands": ["oc get routes", "oc get route"],
+      "fake_output": "NAME   HOST/PORT                          PATH   SERVICES   PORT   TERMINATION   WILDCARD\nshop   shop-shop.apps.ocp.example.com            shop       8080   edge          None",
+      "explanation": "One route, giving the shop service a hostname with TLS terminated at the edge.",
+      "why": "A Route is OpenShift's Ingress, and a 'project' is a namespace with extra defaults. Ingress objects work too and are translated into Routes. Knowing the vocabulary is most of what it takes to operate OpenShift coming from plain Kubernetes."
+    },
+    {
+      "prompt": "An image that runs fine elsewhere fails on OpenShift with 'permission denied' writing to its own directory. What's different?\n  a) OpenShift doesn't run containers\n  b) Its default security policy (a Security Context Constraint) runs containers as a random, non-root user id, so images that assume root, or a fixed user, can't write to paths they don't own\n  c) The disk is full\n  d) The image is too large\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "$ oc get scc\nNAME               PRIV    RUNASUSER          SELINUX\nrestricted-v2      false   MustRunAsRange     MustRunAs\nanyuid             false   RunAsAny           MustRunAs\nprivileged         true    RunAsAny           RunAsAny",
+      "hint": "OpenShift is strict by default where vanilla Kubernetes is permissive.",
+      "explanation": "The restricted SCC assigns an arbitrary non-root user id.",
+      "why": "This is the most common surprise on OpenShift. The right fix is in the image: make its writable directories group-writable for group 0 and don't depend on a particular user id. Granting the 'anyuid' SCC makes the error go away by removing the protection. It's the same discipline as the non-root Dockerfile lab, enforced by the platform."
+    },
+    {
+      "prompt": "At the other end of the scale, k3s is a complete Kubernetes in one small binary, used for edge sites, small servers, and development. On a k3s host, list the nodes using its built-in kubectl.",
+      "expected_commands": ["sudo k3s kubectl get nodes", "k3s kubectl get nodes", "sudo kubectl get nodes"],
+      "fake_output": "NAME        STATUS   ROLES                  AGE   VERSION\nstore-041   Ready    control-plane,master   88d   v1.30.4+k3s1",
+      "explanation": "A single-node cluster: one machine is both control plane and worker.",
+      "why": "k3s swaps etcd for SQLite by default, bundles an ingress controller and a load balancer, and runs as one systemd service ('systemctl status k3s'). It's fully conformant, so the same manifests work. Its place is where a full cluster would be absurd: a shop, a factory, a vehicle. Fleets of such clusters are managed centrally with GitOps, since nobody can log in to four hundred sites."
+    },
+    {
+      "prompt": "A cluster on bare metal has no cloud to create load balancers, so Services of type LoadBalancer stay 'pending' for ever. MetalLB fills that gap. List the address pools it may hand out.",
+      "expected_commands": ["kubectl get ipaddresspools -n metallb-system", "kubectl get ipaddresspool -n metallb-system", "kubectl get ipaddresspools.metallb.io -n metallb-system"],
+      "fake_output": "NAME         AUTO ASSIGN   AVOID BUGGY IPS   ADDRESSES\nproduction   true          false             [\"10.20.50.10-10.20.50.50\"]",
+      "explanation": "MetalLB can assign addresses from 10.20.50.10 to 10.20.50.50.",
+      "why": "In a cloud, the provider's controller turns a LoadBalancer Service into a real load balancer. On your own hardware nothing does, which confuses people moving from cloud tutorials. MetalLB assigns an address from a pool and announces it to the network, either by answering ARP for it or by BGP to the routers (networking-tutorial-014). kube-vip does the same job for the control plane's own address."
+    }
+  ]
+}

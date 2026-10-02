@@ -1,0 +1,46 @@
+{
+  "id": "landscape-tutorial-001",
+  "type": "tutorial",
+  "category": "landscape",
+  "title": "Not Kubernetes: Nomad and Consul",
+  "difficulty": "intermediate",
+  "tags": ["nomad", "consul", "orchestration", "service-discovery"],
+  "intro": "Some companies run their workloads on HashiCorp's Nomad instead of Kubernetes, usually with Consul for service discovery. Nomad is a much smaller system: one binary that schedules containers, plain executables, and batch jobs. If you know Kubernetes, the concepts map across directly. You've joined a team that runs the shop API as a Nomad job named api.",
+  "steps": [
+    {
+      "prompt": "See the machines in the cluster that can run work.",
+      "expected_commands": ["nomad node status"],
+      "fake_output": "ID        Node Pool  DC   Name      Class    Drain  Eligibility  Status\n9f1c2e7a  default    dc1  client-1  compute  false  eligible     ready\n41bb07d2  default    dc1  client-2  compute  false  eligible     ready\nc08e11f4  default    dc1  client-3  compute  true   ineligible   ready",
+      "explanation": "Three clients; client-3 is being drained and won't receive new work.",
+      "why": "Nomad clients are Kubernetes nodes. 'Drain' and 'eligible' are cordon and drain. The servers that make scheduling decisions are a separate, small Raft cluster, like a control plane ('nomad server members' lists them). The same question, 'what's healthy and schedulable?', comes first on any orchestrator."
+    },
+    {
+      "prompt": "Check the job named api.",
+      "expected_commands": ["nomad job status api"],
+      "fake_output": "ID            = api\nType          = service\nStatus        = running\n\nSummary\nTask Group  Queued  Starting  Running  Failed  Complete  Lost\nweb         0       0         2        4       0         0\n\nLatest Deployment\nStatus      = running\nDescription = Deployment is running\n\nAllocations\nID        Node ID   Task Group  Version  Desired  Status   Created\na1f9c3e2  9f1c2e7a  web         12       run      running  2h ago\n7c2b0d14  41bb07d2  web         12       run      running  2h ago\n4e8a9f2b  9f1c2e7a  web         13       run      failed   3m ago",
+      "explanation": "Two allocations of version 12 are running; allocations of version 13 keep failing.",
+      "why": "The vocabulary: a job is a Deployment, a task group is a pod template, an allocation is a pod. A new version, 13, is being rolled out and its allocations fail, while the old version keeps serving. That's the same picture as a rolling update stuck on a bad image."
+    },
+    {
+      "prompt": "Find out why allocation 4e8a9f2b failed.",
+      "expected_commands": ["nomad alloc status 4e8a9f2b"],
+      "fake_output": "ID                  = 4e8a9f2b\nJob ID              = api\nClient Status       = failed\n\nRecent Events:\nTime                  Type            Description\n2026-10-02T15:41:10Z  Driver Failure  Failed to pull `registry.example.com/shop-api:1.8.4`: manifest unknown\n2026-10-02T15:41:08Z  Task Setup      Building Task Directory\n2026-10-02T15:41:08Z  Received        Task received by client",
+      "explanation": "The image tag 1.8.4 doesn't exist in the registry.",
+      "why": "'alloc status' is 'kubectl describe pod': the event list explains what the scheduler and the driver did. 'manifest unknown' is ImagePullBackOff by another name. 'nomad alloc logs 4e8a9f2b' would be 'kubectl logs', for a task that got far enough to start."
+    },
+    {
+      "prompt": "The job file api.nomad has been fixed. Preview what running it would change.",
+      "expected_commands": ["nomad job plan api.nomad"],
+      "fake_output": "+/- Job: \"api\"\n+/- Task Group: \"web\" (2 create/destroy update)\n  +/- Task: \"api\"\n    +/- Config {\n      +/- image: \"registry.example.com/shop-api:1.8.4\" => \"registry.example.com/shop-api:1.8.3\"\n        }\n\nScheduler dry-run:\n- All tasks successfully allocated.\n\nJob Modify Index: 4412\nTo submit the job with version verification run:\n\nnomad job run -check-index 4412 api.nomad",
+      "explanation": "The image would change to 1.8.3, and the scheduler confirms it has room to place both allocations.",
+      "why": "'job plan' is a real dry run: it shows the diff and asks the scheduler whether the result can be placed. The -check-index number guards against applying a plan when someone else has changed the job in between, the same idea as applying a saved Terraform plan."
+    },
+    {
+      "prompt": "Services find each other through Consul. Ask Consul which nodes are serving the service named api.",
+      "expected_commands": ["consul catalog nodes -service=api", "consul catalog nodes -service api"],
+      "fake_output": "Node      ID        Address    DC\nclient-1  9f1c2e7a  10.0.1.11  dc1\nclient-2  41bb07d2  10.0.1.12  dc1",
+      "explanation": "Two healthy instances are registered.",
+      "why": "Consul keeps a catalog of services and their health, and answers lookups over HTTP or DNS: 'api.service.consul' resolves to the healthy instances. It does the job of Kubernetes Services and endpoints, and it works across virtual machines, containers, and several data centres, which is why it's often found outside Nomad too."
+    }
+  ]
+}

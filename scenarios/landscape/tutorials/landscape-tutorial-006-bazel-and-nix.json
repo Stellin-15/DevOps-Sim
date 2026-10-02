@@ -1,0 +1,47 @@
+{
+  "id": "landscape-tutorial-006",
+  "type": "tutorial",
+  "category": "landscape",
+  "title": "Reproducible Builds: Bazel and Nix",
+  "difficulty": "advanced",
+  "tags": ["bazel", "nix", "build-systems", "monorepo", "reproducibility"],
+  "intro": "Most builds are 'run these commands and hope the machine is set up right'. Two tools take a stricter view: every input to a build is declared, so the same inputs always give the same output, and unchanged parts are never rebuilt. Bazel, from Google, does it for large monorepos. Nix does it for whole development environments and systems. You meet them in big-tech-style codebases.",
+  "steps": [
+    {
+      "prompt": "In a Bazel repository, build everything.",
+      "expected_commands": ["bazel build //...", "bazelisk build //..."],
+      "fake_output": "INFO: Analyzed 412 targets (0 packages loaded, 0 targets configured).\nINFO: Found 412 targets...\nINFO: Elapsed time: 2.104s, Critical Path: 0.41s\nINFO: 9 processes: 7 remote cache hit, 2 linux-sandbox.\nINFO: Build completed successfully, 9 total actions",
+      "explanation": "412 targets, and only 2 actions actually ran; 7 came from the remote cache.",
+      "why": "'//...' means every target in the repository. Bazel knows each action's exact inputs, so it rebuilds only what a change could affect, and fetches results that anyone, including CI, has already built from a shared cache. That's how a repository with millions of lines builds in seconds. The actions that did run were sandboxed, so they could only see their declared inputs: an undeclared dependency fails the build instead of working by accident."
+    },
+    {
+      "prompt": "A build target is addressed by its path and name. Show everything the target //app:server depends on.",
+      "expected_commands": ["bazel query 'deps(//app:server)'", "bazel query \"deps(//app:server)\"", "bazelisk query 'deps(//app:server)'"],
+      "fake_output": "//app:server\n//app:handlers\n//lib/auth:auth\n//lib/db:db\n//third_party/go:grpc\n@io_bazel_rules_go//go:def\n... (212 targets)",
+      "explanation": "The complete dependency graph of that one binary.",
+      "why": "Because dependencies are explicit, the build graph can be queried. 'rdeps' asks the reverse, what depends on this library, which is how CI works out the minimal set of tests to run for a change, and how you find who you'll break. In a monorepo, that query replaces 'run everything and wait'."
+    },
+    {
+      "prompt": "What's the cost of Bazel's guarantees?\n  a) Nothing\n  b) Every dependency and rule must be declared in BUILD files, the tooling is complex, and it fights with language-native tools; it pays off in large multi-language repositories and is heavy for a small one\n  c) It only works on Windows\n  d) It can't build containers\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "small single-language repo : go build / npm / cargo already cache and are simpler\nlarge polyglot monorepo    : one graph, one cache, exact incremental builds and tests",
+      "hint": "Explicitness is work, and someone has to maintain it.",
+      "explanation": "Strictness is paid for in declarations and expertise.",
+      "why": "Bazel replaces each language's own build tool, so editor integration, dependency updates, and newcomers' expectations all need extra care, and many companies have a team just for it. Lighter tools, such as Pants, Nx, and Turborepo, give some of the caching with less ceremony. Know why it's there before judging it: at a certain scale, nothing else works."
+    },
+    {
+      "prompt": "Nix takes the same idea to environments. This repository has a flake.nix describing its tools. Enter the development shell it defines.",
+      "expected_commands": ["nix develop"],
+      "fake_output": "copying path '/nix/store/x7qk2mb9...-go-1.22.7' from 'https://cache.nixos.org'...\ncopying path '/nix/store/m2b9t1uv...-terraform-1.9.5' from 'https://cache.nixos.org'...\n\n(nix-shell) $ go version\ngo version go1.22.7 linux/amd64",
+      "explanation": "A shell with exactly the tool versions the project pins, without installing anything system-wide.",
+      "why": "Every package lives in /nix/store under a hash of all its inputs, so many versions coexist and nothing conflicts. The flake's lock file pins the whole dependency tree, so every developer and the CI system get byte-identical tools: 'works on my machine' is removed at the source. It does for a development environment what a lock file does for libraries."
+    },
+    {
+      "prompt": "The lock file pins every input. Update the pinned inputs to their latest versions.",
+      "expected_commands": ["nix flake update"],
+      "fake_output": "warning: updating lock file '/home/dana/shop/flake.lock':\n• Updated input 'nixpkgs':\n    'github:NixOS/nixpkgs/9f1c2e7a41bb' (2026-09-01)\n  → 'github:NixOS/nixpkgs/c08e11f47a2d' (2026-10-01)",
+      "explanation": "The package set moved from September's snapshot to October's, recorded in flake.lock.",
+      "why": "Upgrades are a deliberate, reviewable change to one file, and reverting the commit restores the old environment exactly. Nix can also build container images and whole machines (NixOS) the same way. The price is a steep learning curve and a language unlike any other; the reward is environments that can't drift."
+    }
+  ]
+}

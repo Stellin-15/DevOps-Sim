@@ -1817,7 +1817,57 @@ they're learned by building pipelines on real data.
 
 ---
 
-# Part 26 — The backlog: everything that isn't in the game yet
+# Part 26 — The Wider Landscape
+
+**Content:** 8 tutorials, 0 incidents.
+
+The tools you meet when a company chose differently from the mainstream,
+or chose ten years ago. The aim is recognition: how to see what's
+running, how to check health, and how each maps to what you already
+know. This part is **in progress**: eight of the planned tutorials
+exist, and there are no incidents.
+
+## Covered
+
+- **Nomad and Consul** as the alternative to Kubernetes.
+- **Puppet, Chef, and Salt:** pull-based configuration management and
+  each tool's dry run.
+- **Podman, Buildah, and Skopeo:** daemonless, rootless containers.
+- **The runtime under Kubernetes:** crictl, containerd, and sandboxed
+  runtimes (gVisor, Kata).
+- **Kubernetes distributions:** OpenShift (operators, Routes, SCCs),
+  k3s, and MetalLB on bare metal.
+- **Build systems:** Bazel and Nix.
+- **Other version control:** Gerrit, Perforce, and Mercurial.
+- **Windows servers:** PowerShell for services, event logs, processes,
+  connectivity, and remoting.
+
+## Still missing
+
+Planned and not yet written, from the Backlog's tier C:
+- private cloud and virtualisation (OpenStack, vSphere, Proxmox) and
+  bare-metal management (IPMI, Redfish, PXE);
+- older monitoring (Nagios, Zabbix, SNMP, StatsD);
+- high-performance computing (Slurm);
+- mail and DNS hygiene (SPF, DKIM, DMARC, DNSSEC);
+- mobile delivery (Fastlane, signing);
+- more chaos tooling (Litmus, game-day design).
+
+`commands/landscape.md` already has the command reference for all of
+these. Never planned at depth: Oracle and IBM clouds, Docker Swarm,
+Active Directory and Group Policy administration, Windows containers,
+WebAssembly workloads, and KubeEdge.
+
+## Readiness verdict
+
+Enough to not be lost on day one with any of the eight covered tool
+families. None of it is depth: each tutorial is an introduction, and a
+job that centres on one of these tools needs that tool's own
+documentation and practice.
+
+---
+
+# Part 27 — The backlog: everything that isn't in the game yet
 
 The parts above each list what's missing *inside* a category. This part
 lists whole topics with no category at all, in three tiers. Nobody needs
@@ -1955,7 +2005,7 @@ If content is added in the order that helps most people soonest:
 
 ---
 
-# Part 27 — Overall: will this make you proficient in DevOps?
+# Part 28 — Overall: will this make you proficient in DevOps?
 
 ## By the numbers
 
@@ -1986,7 +2036,8 @@ If content is added in the order that helps most people soonest:
 | Performance | 7 | 3 | |
 | FinOps | 6 | 3 | |
 | Data Engineering | 5 | 2 | 1 Writing Lab (Airflow DAG) |
-| **Total** | **329** | **158** | 51 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
+| The Wider Landscape | 8 | 0 | in progress |
+| **Total** | **337** | **158** | 51 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that

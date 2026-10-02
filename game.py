@@ -54,6 +54,7 @@ CATEGORY_LABELS = {
     "performance": "Performance",
     "finops": "FinOps",
     "dataeng": "Data Engineering",
+    "landscape": "The Wider Landscape",
 }
 
 

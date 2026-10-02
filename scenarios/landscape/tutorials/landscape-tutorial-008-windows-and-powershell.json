@@ -1,0 +1,48 @@
+{
+  "id": "landscape-tutorial-008",
+  "type": "tutorial",
+  "category": "landscape",
+  "title": "Windows Servers: The PowerShell You Need",
+  "difficulty": "intermediate",
+  "tags": ["windows", "powershell", "iis", "active-directory", "event-log"],
+  "intro": "Plenty of estates include Windows servers: .NET applications on IIS, SQL Server, Active Directory. The troubleshooting questions are the ones you know from Linux; the tool is PowerShell. Its commands are verb-noun pairs, and they pass objects down a pipeline, not text, so you filter on properties instead of parsing columns. You're in a PowerShell session on a web server.",
+  "steps": [
+    {
+      "prompt": "Check the state of the IIS web service, whose service name is W3SVC.",
+      "expected_commands": ["Get-Service -Name W3SVC", "Get-Service W3SVC", "Get-Service -Name w3svc"],
+      "fake_output": "Status   Name               DisplayName\n------   ----               -----------\nStopped  W3SVC              World Wide Web Publishing Service",
+      "explanation": "IIS is stopped.",
+      "why": "Get-Service is 'systemctl status'. Cmdlet names follow Verb-Noun, so they can be guessed: Get-, Start-, Stop-, Restart-Service. 'Get-Command *service*' finds them and 'Get-Help <name> -Examples' is the manual page."
+    },
+    {
+      "prompt": "Find out why. Show the 20 newest errors in the System event log.",
+      "expected_commands": ["Get-EventLog -LogName System -Newest 20 -EntryType Error", "Get-EventLog -LogName System -EntryType Error -Newest 20", "Get-EventLog System -Newest 20 -EntryType Error"],
+      "fake_output": "Index Time          EntryType   Source                 InstanceID Message\n----- ----          ---------   ------                 ---------- -------\n88120 Oct 02 14:02  Error       Service Control Manager      7023 The World Wide Web Publishing Service service terminated with the following error: The dependency service or group failed to start.\n88119 Oct 02 14:02  Error       Service Control Manager      7001 The Windows Process Activation Service depends on the following service: the Net.Pipe Listener Adapter failed to start.\n88104 Oct 02 14:01  Error       Microsoft-Windows-WAS        5005 Windows Process Activation Service (WAS) is stopping because it encountered an error. The data field contains the error number.",
+      "explanation": "IIS stopped because a service it depends on, Windows Process Activation, failed.",
+      "why": "The event log is Windows's journal: System for the operating system and services, Application for programs, Security for logons and audit. Read upward from the symptom to the first failure, as with any log. Get-WinEvent is the newer, faster cmdlet and reaches every log, including the application-specific ones."
+    },
+    {
+      "prompt": "See what's using the CPU: list the top 5 processes by CPU time.",
+      "expected_commands": ["Get-Process | Sort-Object CPU -Descending | Select-Object -First 5", "Get-Process | Sort-Object -Property CPU -Descending | Select-Object -First 5", "Get-Process | Sort-Object CPU -Descending | Select -First 5"],
+      "fake_output": "Handles  NPM(K)    PM(K)      WS(K)     CPU(s)     Id  SI ProcessName\n-------  ------    -----      -----     ------     --  -- -----------\n   2204     120  4120441    3904102  18,204.41   4412   0 sqlservr\n    880      64   412044     388120     310.20   8812   0 w3wp\n    412      31    88120      91204     188.04   1204   0 MsMpEng",
+      "hint": "Get-Process | Sort-Object CPU -Descending | Select-Object -First 5",
+      "explanation": "SQL Server has used the most CPU time; w3wp is an IIS worker process.",
+      "why": "This is the object pipeline at work: Get-Process emits process objects, Sort-Object orders them by a property, Select-Object takes five. No awk, no column counting, and the same three cmdlets work on any kind of object. That one idea is what's worth learning about PowerShell."
+    },
+    {
+      "prompt": "The application can't reach its database. Test whether this server can connect to db-1 on port 1433.",
+      "expected_commands": ["Test-NetConnection db-1 -Port 1433", "Test-NetConnection -ComputerName db-1 -Port 1433", "tnc db-1 -Port 1433"],
+      "fake_output": "ComputerName     : db-1\nRemoteAddress    : 10.0.2.15\nRemotePort       : 1433\nInterfaceAlias   : Ethernet0\nSourceAddress    : 10.0.1.21\nTcpTestSucceeded : False",
+      "explanation": "The name resolves, and the TCP connection to port 1433 fails.",
+      "why": "Test-NetConnection is 'nc -zv' with DNS resolution thrown in: here the name is fine and the port isn't reachable, which sends you to firewalls or the SQL Server service, not to DNS. The refused-versus-timeout reasoning from Networking applies unchanged; add '-InformationLevel Detailed' to see which."
+    },
+    {
+      "prompt": "The same check is needed on all four web servers. Run 'Get-Service W3SVC' on web-1, web-2, web-3, and web-4 at once.",
+      "expected_commands": ["Invoke-Command -ComputerName web-1,web-2,web-3,web-4 -ScriptBlock { Get-Service W3SVC }", "Invoke-Command -ComputerName web-1, web-2, web-3, web-4 -ScriptBlock { Get-Service W3SVC }", "Invoke-Command -ComputerName web-1,web-2,web-3,web-4 -ScriptBlock {Get-Service W3SVC}", "Invoke-Command -ComputerName web-1,web-2,web-3,web-4 { Get-Service W3SVC }"],
+      "fake_output": "Status   Name    DisplayName                        PSComputerName\n------   ----    -----------                        --------------\nStopped  W3SVC   World Wide Web Publishing Service  web-1\nRunning  W3SVC   World Wide Web Publishing Service  web-2\nRunning  W3SVC   World Wide Web Publishing Service  web-3\nRunning  W3SVC   World Wide Web Publishing Service  web-4",
+      "hint": "Invoke-Command -ComputerName web-1,web-2,web-3,web-4 -ScriptBlock { Get-Service W3SVC }",
+      "explanation": "Only web-1 is stopped.",
+      "why": "PowerShell remoting (WinRM) is Windows's SSH: Invoke-Command runs a block on many machines in parallel and labels each result with its source, and Enter-PSSession gives an interactive shell. Knowing it's one server out of four changes the diagnosis from 'a bad deploy' to 'something local to web-1'. Ansible manages Windows hosts through the same channel."
+    }
+  ]
+}

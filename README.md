@@ -5,7 +5,9 @@ typing them, not memorizing them. Started as Kubernetes-only; now spans
 **Kubernetes, Docker, Linux, Terraform, Networking, CI/CD, Monitoring,
 MLOps, AWS, Azure, Google Cloud, Security, Server Fleet Ops, SRE**
 (how large companies run production), **Git, System Design, Databases,
-and Web Servers & Proxies**. Runs entirely locally — no real infrastructure, no network calls,
+Web Servers & Proxies, Identity & Secrets, Scripting, Messaging,
+Serverless, Performance, FinOps, Data Engineering, and The Wider
+Landscape** (less common tools). Runs entirely locally — no real infrastructure, no network calls,
 no backend. Every command output you see is a pre-written simulated
 string.
 
@@ -376,7 +378,8 @@ the engine, loader, sandboxes, yaml_lab, career_path, mystery, or scenario conte
 | Performance | 7 | 3 | perf CPU profiling, flame graphs, py-spy, JVM heap/GC/thread dumps, eBPF tools (execsnoop, biolatency, bpftrace), Go pprof, honest benchmarking and percentiles |
 | FinOps | 6 | 3 | reading the bill by service and team, tags/budgets/anomaly alerts, rightsizing, Savings Plans and spot, Kubernetes cost (OpenCost), storage classes, log retention, and data transfer |
 | Data Engineering | 5 | 2 | writing and testing Airflow DAGs, dbt (models, tests, state-based builds, freshness), warehouse cost and partitions (BigQuery, Snowflake), Spark on Kubernetes, change data capture with Debezium; plus 1 Writing Lab |
-| **Total** | **329** | **158** | + 51 Writing Labs |
+| The Wider Landscape | 8 | 0 | recognising the less common tools: Nomad and Consul, Puppet/Chef/Salt, Podman/Buildah/Skopeo, crictl and sandboxed runtimes, OpenShift/k3s/MetalLB, Bazel and Nix, Gerrit/Perforce/Mercurial, Windows and PowerShell (in progress) |
+| **Total** | **337** | **158** | + 51 Writing Labs |
 
 The three clouds use different names for the same ideas (security group
 vs NSG vs firewall rule; CloudTrail vs Activity Log vs Audit Logs). The

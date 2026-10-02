@@ -1,0 +1,47 @@
+{
+  "id": "landscape-tutorial-004",
+  "type": "tutorial",
+  "category": "landscape",
+  "title": "Under Kubernetes: containerd, crictl, and Sandboxed Runtimes",
+  "difficulty": "advanced",
+  "tags": ["containerd", "crictl", "runtime", "gvisor", "kata"],
+  "intro": "A Kubernetes node hasn't run Docker for years. The kubelet talks to a container runtime, usually containerd, through a standard interface, and the 'docker' command isn't there. When the kubelet or the API server is the thing that's broken, kubectl can't help, and you debug at this level. You're logged in to a worker node.",
+  "steps": [
+    {
+      "prompt": "List the pods the runtime knows about on this node.",
+      "expected_commands": ["sudo crictl pods", "crictl pods"],
+      "fake_output": "POD ID          CREATED       STATE   NAME                       NAMESPACE     ATTEMPT  RUNTIME\n9f1c2e7a41bb0   2 hours ago   Ready   api-6c9d7f5b8-2xkq4        shop          0        (default)\nc08e11f47a2d9   2 hours ago   Ready   coredns-7db6d8ff4d-9xq2l   kube-system   0        (default)\n0be0131d2c441   3 days ago    Ready   kube-proxy-m8n2q           kube-system   0        (default)",
+      "explanation": "Three pod sandboxes on this node, with their Kubernetes names.",
+      "why": "crictl speaks the kubelet's own language to the runtime, so it understands pods, not just containers. It works when the API server is down, which is exactly when you need it: a control-plane node whose static pods won't start can only be debugged from here (tutorial-024)."
+    },
+    {
+      "prompt": "List the running containers.",
+      "expected_commands": ["sudo crictl ps", "crictl ps"],
+      "fake_output": "CONTAINER       IMAGE           CREATED       STATE     NAME        ATTEMPT   POD ID          POD\na1f9c3e2b4d51   4f5a6b7c8d9e0   2 hours ago   Running   api         0         9f1c2e7a41bb0   api-6c9d7f5b8-2xkq4\n7c2b0d144e8a9   2c26b46b68ffc   2 hours ago   Running   coredns     0         c08e11f47a2d9   coredns-7db6d8ff4d-9xq2l\n4e8a9f2b7c1d0   9f86d081884c7   3 days ago    Running   kube-proxy  3         0be0131d2c441   kube-proxy-m8n2q",
+      "explanation": "One container per pod here, and kube-proxy is on its fourth attempt.",
+      "why": "ATTEMPT is the restart count as the runtime sees it. 'crictl ps -a' adds exited containers, which is how you find one that crashed before the kubelet could report it. The commands mirror Docker's on purpose: ps, logs, inspect, exec, images."
+    },
+    {
+      "prompt": "Read the logs of the kube-proxy container, id 4e8a9f2b7c1d0.",
+      "expected_commands": ["sudo crictl logs 4e8a9f2b7c1d0", "crictl logs 4e8a9f2b7c1d0", "sudo crictl logs --tail 20 4e8a9f2b7c1d0"],
+      "fake_output": "I1002 12:14:02.120441       1 server_linux.go:69] \"Using iptables proxy\"\nE1002 12:14:02.204410       1 server.go:1039] \"Failed to retrieve node info\" err=\"Get \\\"https://10.0.0.10:6443/api/v1/nodes/node-2\\\": dial tcp 10.0.0.10:6443: connect: connection refused\"\nI1002 12:14:32.410220       1 server.go:1051] \"Successfully retrieved node info\"",
+      "explanation": "It couldn't reach the API server for a while this afternoon, then recovered.",
+      "why": "The same logs 'kubectl logs' would show, read without the API server in the path. The files themselves are under /var/log/pods on the node. During a control-plane outage this is the only way to see what the system components are saying."
+    },
+    {
+      "prompt": "Why can't you use 'docker ps' here, and what's the nearest equivalent with containerd's own tooling?\n  a) Docker is installed but hidden\n  b) There is no Docker daemon: the kubelet uses containerd directly. 'nerdctl -n k8s.io ps' gives a Docker-like view of the Kubernetes namespace in containerd\n  c) Docker needs a licence\n  d) Containers aren't used any more\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "kubelet --CRI--> containerd --> runc --> container process\n\ncrictl   : the kubelet's view (pods, containers)       <- use this for Kubernetes debugging\nnerdctl  : Docker-compatible CLI for containerd\nctr      : containerd's low-level tool",
+      "hint": "Kubernetes removed its Docker integration in version 1.24.",
+      "explanation": "containerd is the runtime; crictl and nerdctl are the tools.",
+      "why": "Docker was always a wrapper around containerd, and Kubernetes now skips the wrapper. Images built by Docker still run, because the image format is a standard. containerd keeps Kubernetes's containers in a namespace called k8s.io, which is why a plain 'nerdctl ps' shows nothing."
+    },
+    {
+      "prompt": "Some workloads run untrusted code and need stronger isolation than a normal container. Check which alternative runtimes this cluster offers.",
+      "expected_commands": ["kubectl get runtimeclass", "kubectl get runtimeclasses"],
+      "fake_output": "NAME     HANDLER   AGE\ngvisor   runsc     120d\nkata     kata-qemu 120d",
+      "explanation": "Two sandboxed runtimes are available: gVisor and Kata Containers.",
+      "why": "An ordinary container shares the host's kernel, so a kernel bug is a route out. gVisor puts a user-space kernel between the container and the host; Kata runs each pod inside a small virtual machine; Firecracker, behind AWS Lambda and Fargate, is the same idea. A pod opts in with 'runtimeClassName'. They cost some performance and compatibility, so they're used for the workloads that need them: other people's code, build jobs, multi-tenant platforms."
+    }
+  ]
+}

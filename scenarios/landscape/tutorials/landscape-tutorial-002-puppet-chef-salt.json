@@ -1,0 +1,47 @@
+{
+  "id": "landscape-tutorial-002",
+  "type": "tutorial",
+  "category": "landscape",
+  "title": "Not Ansible: Puppet, Chef, and Salt",
+  "difficulty": "intermediate",
+  "tags": ["puppet", "chef", "salt", "configuration-management"],
+  "intro": "The Server Fleet Ops category used Ansible, which pushes changes over SSH when you run it. The older generation of configuration management works the other way: an agent on every server pulls its configuration from a central server on a schedule and corrects any drift. Many large, long-lived fleets still run on Puppet, Chef, or Salt. You're on a server managed by Puppet.",
+  "steps": [
+    {
+      "prompt": "See what Puppet would change on this server right now, without changing anything.",
+      "expected_commands": ["sudo puppet agent --test --noop", "puppet agent --test --noop", "sudo puppet agent -t --noop"],
+      "fake_output": "Info: Applying configuration version '1790950000'\nNotice: /Stage[main]/Nginx/File[/etc/nginx/nginx.conf]/content:\n--- /etc/nginx/nginx.conf\n+++ /tmp/puppet-file20261002\n-worker_connections 8192;\n+worker_connections 768;\nNotice: /Stage[main]/Nginx/File[/etc/nginx/nginx.conf]/content: current_value '{sha256}9f1c...', should be '{sha256}41bb...' (noop)\nNotice: Applied catalog in 4.12 seconds",
+      "explanation": "Puppet would put worker_connections back to 768: someone edited the file by hand to 8192.",
+      "why": "--noop is Ansible's --check: a dry run with a diff. It has just shown the defining behaviour of pull-based tools: the hand edit is drift, and the agent will revert it at its next run, by default every 30 minutes. Fixes made directly on a Puppet-managed server quietly undo themselves, which confuses everyone who hasn't seen it before. The change has to go into the Puppet code."
+    },
+    {
+      "prompt": "Find out which Puppet server this agent takes its configuration from.",
+      "expected_commands": ["puppet config print server", "sudo puppet config print server"],
+      "fake_output": "puppet.internal",
+      "explanation": "The agent's server is puppet.internal.",
+      "why": "The agent sends facts about the machine to the server, which compiles a catalog, the complete desired state for that node, and sends it back. That central server is a dependency of the whole fleet's configuration, and the agents authenticate to it with certificates, which need signing when a new server joins."
+    },
+    {
+      "prompt": "You've edited a manifest, modules/nginx/manifests/init.pp. Check its syntax before committing.",
+      "expected_commands": ["puppet parser validate modules/nginx/manifests/init.pp"],
+      "fake_output": "(no output: the manifest is valid)",
+      "explanation": "The manifest parses.",
+      "why": "Puppet's language is declarative: resources such as file, package, and service, with their desired state, and Puppet works out the order from the dependencies between them. That's a different mental model from an Ansible playbook, which runs top to bottom. Validation and linting belong in CI, with changes tested on a canary group of nodes before the whole fleet."
+    },
+    {
+      "prompt": "Chef works the same way with different words: cookbooks and recipes, written in Ruby, and a chef-client agent. On a Chef-managed node, what does 'sudo chef-client --why-run' do?\n  a) Applies everything immediately\n  b) A dry run: shows what the client would change, without changing it\n  c) Uninstalls Chef\n  d) Uploads the cookbook\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "Puppet : puppet agent --test --noop\nChef   : chef-client --why-run\nSalt   : salt '<target>' state.apply test=True\nAnsible: ansible-playbook --check --diff",
+      "hint": "Every tool in this family has a 'tell me, don't do it' mode.",
+      "explanation": "Chef's dry run.",
+      "why": "Learn each tool's dry-run flag first; it's what makes an unfamiliar system safe to explore. 'knife node list' and 'knife node show' are Chef's way to see the fleet from the server's side."
+    },
+    {
+      "prompt": "Salt keeps a persistent connection from each minion to the master, so it can also run commands across the fleet instantly. On the Salt master, check which minions respond.",
+      "expected_commands": ["sudo salt '*' test.ping", "salt '*' test.ping", "sudo salt \"*\" test.ping"],
+      "fake_output": "web-1:\n    True\nweb-2:\n    True\ndb-1:\n    True\nweb-3:\n    Minion did not return. [No response]",
+      "explanation": "Three minions answer; web-3 doesn't.",
+      "why": "Salt combines state management with fast remote execution: the same targeting works for 'apply this state' and 'run this command now'. That power cuts both ways: the master can run anything as root on every minion, so its compromise is the fleet's. A minion that doesn't return is either down or has lost its connection, and is silently missing every change until someone notices."
+    }
+  ]
+}

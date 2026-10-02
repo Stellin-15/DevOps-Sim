@@ -1,0 +1,46 @@
+{
+  "id": "landscape-tutorial-003",
+  "type": "tutorial",
+  "category": "landscape",
+  "title": "Not Docker: Podman, Buildah, and Skopeo",
+  "difficulty": "intermediate",
+  "tags": ["podman", "buildah", "skopeo", "containers", "rootless"],
+  "intro": "On Red Hat systems, and anywhere a root-owned daemon is unwelcome, Docker is replaced by three tools: Podman runs containers, Buildah builds images, and Skopeo moves them between registries. There's no daemon, and containers run as your own user by default. The commands are deliberately almost identical to Docker's. You're on a RHEL host as the ordinary user dana.",
+  "steps": [
+    {
+      "prompt": "List the running containers.",
+      "expected_commands": ["podman ps"],
+      "fake_output": "CONTAINER ID  IMAGE                               COMMAND     CREATED      STATUS      PORTS                 NAMES\na1f9c3e2b4d5  registry.example.com/shop-api:1.8.3 gunicorn    2 hours ago  Up 2 hours  0.0.0.0:8080->8080/tcp api",
+      "explanation": "One container, started by this user, with no root involved.",
+      "why": "The command line matches Docker's so closely that 'alias docker=podman' works for most uses. The difference is underneath: there's no daemon, each container is an ordinary child process, and by default it runs as you, in a user namespace, so 'root' inside the container is your unprivileged user outside. An escape from the container doesn't hand over the host."
+    },
+    {
+      "prompt": "Without a daemon, nothing restarts containers after a reboot. Generate a systemd unit for the container named api, so that systemd manages it.",
+      "expected_commands": ["podman generate systemd --new --name api", "podman generate systemd --name api --new"],
+      "fake_output": "# container-api.service\n[Unit]\nDescription=Podman container-api.service\nWants=network-online.target\n\n[Service]\nRestart=on-failure\nExecStart=/usr/bin/podman run --cidfile=%t/%n.ctr-id --rm --sdnotify=conmon -d --name api -p 8080:8080 registry.example.com/shop-api:1.8.3\nExecStop=/usr/bin/podman stop --ignore --cidfile=%t/%n.ctr-id\n\n[Install]\nWantedBy=default.target",
+      "explanation": "A unit file that runs the container as a normal systemd service.",
+      "why": "Docker's daemon is what restarts containers; Podman hands that job to the init system that's already there, so containers get the same supervision, logging, and dependency ordering as any other service. Newer versions prefer Quadlet: a short .container file that systemd turns into a unit. A user's services only start at boot if lingering is enabled for that user ('loginctl enable-linger')."
+    },
+    {
+      "prompt": "Build an image from the Containerfile in the current directory with Buildah, tagged shop-api:dev.",
+      "expected_commands": ["buildah bud -t shop-api:dev .", "buildah build -t shop-api:dev .", "podman build -t shop-api:dev ."],
+      "fake_output": "STEP 1/5: FROM registry.access.redhat.com/ubi9/python-312\nSTEP 2/5: WORKDIR /app\nSTEP 3/5: COPY requirements.txt .\nSTEP 4/5: RUN pip install -r requirements.txt\nSTEP 5/5: COPY . .\nCOMMIT shop-api:dev\nSuccessfully tagged localhost/shop-api:dev",
+      "explanation": "An image built without a daemon and without root.",
+      "why": "'bud' is 'build using Dockerfile'; a Containerfile is the same format under a neutral name. Building with no daemon and no privileges is what makes image builds safe inside CI containers, the same need Kaniko meets (cicd-tutorial-016). 'podman build' calls the same code."
+    },
+    {
+      "prompt": "Look at an image in a remote registry without pulling it: inspect docker://registry.example.com/shop-api:1.8.3 with Skopeo.",
+      "expected_commands": ["skopeo inspect docker://registry.example.com/shop-api:1.8.3"],
+      "fake_output": "{\n  \"Name\": \"registry.example.com/shop-api\",\n  \"Digest\": \"sha256:4f5a6b7c8d9e0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293\",\n  \"Created\": \"2026-09-27T16:02:11Z\",\n  \"Architecture\": \"amd64\",\n  \"Os\": \"linux\",\n  \"Layers\": [\"sha256:9f86d081...\", \"sha256:2c26b46b...\"]\n}",
+      "explanation": "The image's digest, creation date, and architecture, read straight from the registry.",
+      "why": "Skopeo works on images where they sit, with no local storage: inspect, copy between registries, sign, and delete. 'skopeo copy docker://staging/... docker://prod/...' is the promote-by-copy step from cicd-tutorial-018. It does what crane does; which one you meet depends on the shop."
+    },
+    {
+      "prompt": "Podman is named for one more feature: it can group containers into a pod, sharing a network, like Kubernetes. List the pods.",
+      "expected_commands": ["podman pod ls", "podman pod list", "podman pod ps"],
+      "fake_output": "POD ID        NAME      STATUS   CREATED      INFRA ID      # OF CONTAINERS\n7c2b0d144e8a  shop-pod  Running  2 hours ago  9d3c1b7a2f6e  3",
+      "explanation": "One pod of three containers (two of yours plus the infra container that holds the network).",
+      "why": "A pod's containers share localhost, so a sidecar setup behaves locally the way it will in Kubernetes. 'podman kube generate' writes Kubernetes YAML from a running pod, and 'podman kube play' runs Kubernetes YAML locally. It's a neat bridge for testing a manifest on one machine."
+    }
+  ]
+}
