@@ -1,0 +1,48 @@
+{
+  "id": "finops-tutorial-006",
+  "type": "tutorial",
+  "category": "finops",
+  "title": "The Quiet Costs: Storage Classes, Log Retention, and Data Transfer",
+  "difficulty": "intermediate",
+  "tags": ["finops", "s3", "cloudwatch-logs", "data-transfer"],
+  "intro": "Compute gets attention because it's the biggest line. Three other costs grow without anyone launching anything: data that's kept for ever at the most expensive rate, logs that never expire, and bytes moving between places. They're cheap to fix and rarely looked at.",
+  "steps": [
+    {
+      "prompt": "Check whether the bucket shop-exports has any rule that moves or expires old objects.",
+      "expected_commands": ["aws s3api get-bucket-lifecycle-configuration --bucket shop-exports"],
+      "fake_output": "An error occurred (NoSuchLifecycleConfiguration) when calling the GetBucketLifecycleConfiguration operation: The lifecycle configuration does not exist",
+      "explanation": "No lifecycle rules: everything ever written stays in the standard storage class for ever.",
+      "why": "Standard storage is priced for data read often. Most data isn't: exports, backups, and logs are written once and almost never read. A lifecycle rule moves objects to cheaper classes as they age and deletes them when they're no longer needed. Infrequent-access classes cost roughly half, archive classes a tenth or less, in exchange for retrieval fees and delay."
+    },
+    {
+      "prompt": "A hidden cost in buckets is uploads that were started and never finished. List the incomplete multipart uploads in shop-exports.",
+      "expected_commands": ["aws s3api list-multipart-uploads --bucket shop-exports"],
+      "fake_output": "{\n  \"Uploads\": [\n    {\"Key\": \"exports/2025/customers-full.csv\", \"UploadId\": \"x7Qk2mB9T1uVwYz0example\", \"Initiated\": \"2025-03-14T02:00:11Z\"},\n    {\"Key\": \"exports/2025/orders-full.csv\", \"UploadId\": \"m2B9T1uVwYz0x7Qkexample\", \"Initiated\": \"2025-06-02T02:00:09Z\"}\n  ]\n}",
+      "explanation": "Two uploads abandoned over a year ago. Their parts are still stored and billed.",
+      "why": "A large upload is sent in parts. If the client dies half-way, the parts stay in the bucket, invisible in a normal listing, and are charged as storage until someone aborts them. A lifecycle rule with 'AbortIncompleteMultipartUpload after 7 days' removes them automatically and belongs on every bucket."
+    },
+    {
+      "prompt": "Find the CloudWatch log groups that keep logs for ever: list those with no retention set, with their stored bytes, as a table.",
+      "expected_commands": ["aws logs describe-log-groups --query 'logGroups[?!retentionInDays].[logGroupName,storedBytes]' --output table", "aws logs describe-log-groups --query \"logGroups[?!retentionInDays].[logGroupName,storedBytes]\" --output table"],
+      "fake_output": "--------------------------------------------------------\n|  /aws/lambda/resize-image           |  412044102204   |\n|  /ecs/api                           |  1904410220441  |\n|  /aws/eks/shop/cluster              |  880120441020   |\n|  /aws/lambda/nightly-report         |  18204410       |\n--------------------------------------------------------",
+      "hint": "aws logs describe-log-groups --query 'logGroups[?!retentionInDays].[logGroupName,storedBytes]' --output table",
+      "explanation": "Four log groups with no expiry. /ecs/api holds 1.9 TB.",
+      "why": "A new log group's default retention is 'never expire', so every log line is stored, and billed monthly, for ever. This is one of the most common avoidable costs in AWS. Retention should be a deliberate setting per group, and ideally set by the same infrastructure code that creates the function or service."
+    },
+    {
+      "prompt": "Set the retention of the log group /ecs/api to 30 days.",
+      "expected_commands": ["aws logs put-retention-policy --log-group-name /ecs/api --retention-in-days 30", "aws logs put-retention-policy --retention-in-days 30 --log-group-name /ecs/api"],
+      "fake_output": "(no output)",
+      "explanation": "Events older than 30 days will be deleted, and storage for this group will fall over the next day or two.",
+      "why": "Thirty days covers nearly every operational need. If something must be kept longer for audit, export it to object storage with an archive class, where a terabyte costs a small fraction of what it does in the log service. Remember that most of a logging bill is usually ingestion, not storage, so the bigger saving is logging less (monitoring-tutorial-016)."
+    },
+    {
+      "prompt": "Data transfer has no resource to look at, which is why it surprises people. Which of these is usually FREE?\n  a) Traffic from your servers out to the internet\n  b) Traffic between two availability zones in the same region\n  c) Traffic through a NAT gateway\n  d) Traffic coming IN to the cloud from the internet\nType the letter.",
+      "expected_commands": ["d"],
+      "fake_output": "in from the internet        : free\nout to the internet         : charged per GB (the largest transfer cost for most)\nbetween availability zones  : charged per GB, in each direction\nthrough a NAT gateway       : charged per GB processed, on top of the above\nbetween regions             : charged per GB\nto S3 in the same region    : free via a gateway endpoint; through NAT, it isn't",
+      "hint": "Clouds make it cheap to bring data in and costly to take it out.",
+      "explanation": "Inbound is free. Nearly every other direction costs per gigabyte.",
+      "why": "This shapes architecture more than people expect. Chatty services spread across zones pay for every call; a cluster that pulls images and reaches S3 through a NAT gateway pays twice (aws-incident-007 is that bill). The fixes are structural: keep heavy traffic within a zone where resilience allows, use VPC endpoints for cloud services, cache and compress, and put a CDN in front of anything served to the internet."
+    }
+  ]
+}

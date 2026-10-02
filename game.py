@@ -52,6 +52,7 @@ CATEGORY_LABELS = {
     "messaging": "Messaging",
     "serverless": "Serverless",
     "performance": "Performance",
+    "finops": "FinOps",
 }
 
 

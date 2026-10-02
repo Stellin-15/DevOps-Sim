@@ -1,0 +1,48 @@
+{
+  "id": "finops-tutorial-004",
+  "type": "tutorial",
+  "category": "finops",
+  "title": "Commitments and Spot: The Two Big Discounts",
+  "difficulty": "intermediate",
+  "tags": ["finops", "savings-plans", "spot", "pricing"],
+  "intro": "On-demand is the most expensive way to buy compute. There are two large discounts: promise to keep spending for one or three years (Savings Plans, reservations, committed-use discounts), or take spare capacity that can be reclaimed at short notice (spot, preemptible). Each fits a different kind of workload. The queries cover September 2026.",
+  "steps": [
+    {
+      "prompt": "See how much of last month's eligible compute spend was covered by Savings Plans.",
+      "expected_commands": ["aws ce get-savings-plans-coverage --time-period Start=2026-09-01,End=2026-10-01", "aws ce get-savings-plans-coverage --time-period \"Start=2026-09-01,End=2026-10-01\""],
+      "fake_output": "{\n  \"Total\": {\n    \"SpendCoveredBySavingsPlans\": \"12410.20\",\n    \"OnDemandCost\": \"28793.90\",\n    \"TotalCost\": \"41204.10\",\n    \"CoveragePercentage\": \"30.1\"\n  }\n}",
+      "explanation": "30% of compute spend got the discounted rate; 70%, $28,794, was billed at full on-demand prices.",
+      "why": "Coverage is the share of your usage that's discounted. Low coverage on a workload that runs steadily all year means paying a premium for flexibility you aren't using. There's no single right number: it depends on how stable your baseline is. Many teams aim to cover the level of usage they never drop below."
+    },
+    {
+      "prompt": "Check the other side: of the commitment already bought, how much was actually used?",
+      "expected_commands": ["aws ce get-savings-plans-utilization --time-period Start=2026-09-01,End=2026-10-01", "aws ce get-savings-plans-utilization --time-period \"Start=2026-09-01,End=2026-10-01\""],
+      "fake_output": "{\n  \"Total\": {\n    \"Utilization\": {\n      \"TotalCommitment\": \"8900.00\",\n      \"UsedCommitment\": \"8900.00\",\n      \"UnusedCommitment\": \"0.00\",\n      \"UtilizationPercentage\": \"100.0\"\n    }\n  }\n}",
+      "explanation": "100% utilisation: every dollar committed was used.",
+      "why": "Coverage and utilisation pull against each other. Utilisation is whether the commitment you bought is being used; unused commitment is money paid for nothing. 100% utilisation with 30% coverage means the commitment is safe and too small: there's room to buy more. Low utilisation means you over-committed, perhaps because a service was shut down or moved after the purchase."
+    },
+    {
+      "prompt": "Which usage is a commitment the right fit for?\n  a) A batch job that runs for one week a year\n  b) The steady baseline that runs around the clock all year: the databases and the minimum number of servers\n  c) A new experiment that may be cancelled next month\n  d) Peak traffic on the busiest day\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "usage over a year:\n  |        ___ peak (on-demand or spot)\n  |   ____/   \\____\n  |__/_____________\\__   variable (autoscaled on-demand, spot where it can be)\n  |__________________   baseline: commit to this",
+      "hint": "You pay for a commitment whether you use it or not.",
+      "explanation": "Commit to the floor, not the ceiling.",
+      "why": "A commitment is a bet that usage stays at least this high for the term. The baseline is the safe bet. Compute Savings Plans are the flexible kind: they follow you across instance families, sizes, regions, and to Fargate and Lambda, so a later rightsizing or a move to ARM doesn't strand them. Instance-specific reservations are cheaper and rigid. Buy in small, staggered purchases so they don't all expire at once."
+    },
+    {
+      "prompt": "Now spot. Look at recent spot prices for the instance type m7g.xlarge running Linux, the last 5 records.",
+      "expected_commands": ["aws ec2 describe-spot-price-history --instance-types m7g.xlarge --product-descriptions \"Linux/UNIX\" --max-items 5", "aws ec2 describe-spot-price-history --instance-types m7g.xlarge --product-descriptions 'Linux/UNIX' --max-items 5", "aws ec2 describe-spot-price-history --instance-types m7g.xlarge --product-descriptions Linux/UNIX --max-items 5"],
+      "fake_output": "{\n  \"SpotPriceHistory\": [\n    {\"AvailabilityZone\": \"us-east-1a\", \"InstanceType\": \"m7g.xlarge\", \"SpotPrice\": \"0.0612\", \"Timestamp\": \"2026-10-01T22:14:02Z\"},\n    {\"AvailabilityZone\": \"us-east-1b\", \"InstanceType\": \"m7g.xlarge\", \"SpotPrice\": \"0.0588\", \"Timestamp\": \"2026-10-01T21:40:11Z\"},\n    {\"AvailabilityZone\": \"us-east-1c\", \"InstanceType\": \"m7g.xlarge\", \"SpotPrice\": \"0.0701\", \"Timestamp\": \"2026-10-01T20:02:44Z\"}\n  ]\n}",
+      "explanation": "About 6 cents an hour, where on-demand is about 16: over 60% off.",
+      "why": "Spot is the cloud selling idle capacity cheaply, with one condition: it can take the instance back with two minutes' warning. Prices vary by instance type and zone, and so does how often capacity is reclaimed. The more instance types and zones a workload can accept, the cheaper and more stable it is, which is why Karpenter and spot fleets are given a list of types and choose among them."
+    },
+    {
+      "prompt": "Which workload should NOT run on spot?\n  a) Stateless web servers behind a load balancer, with several replicas\n  b) CI build agents\n  c) A single primary database with no replica\n  d) Batch jobs that checkpoint their progress\nType the letter.",
+      "expected_commands": ["c"],
+      "fake_output": "good on spot : stateless, replicated, restartable, or checkpointed work\nbad on spot  : anything whose loss with two minutes' notice is an outage or loses data",
+      "hint": "What happens if the machine disappears in two minutes?",
+      "explanation": "A lone database can't tolerate a two-minute eviction.",
+      "why": "Spot fits work that can lose a node without anyone noticing. To use it well: handle the interruption notice (drain the node, finish or checkpoint the job), spread across zones and instance types, and keep a base of on-demand capacity under the spot layer. In Kubernetes this needs PodDisruptionBudgets and graceful shutdown to be right first, which is worth having anyway."
+    }
+  ]
+}

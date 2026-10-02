@@ -1,0 +1,49 @@
+{
+  "id": "finops-tutorial-001",
+  "type": "tutorial",
+  "category": "finops",
+  "title": "Reading the Bill: By Service, by Team, and What Comes Next",
+  "difficulty": "beginner",
+  "tags": ["finops", "cost-explorer", "aws", "allocation"],
+  "intro": "In the cloud, engineers spend money with every deploy, and usually see the result weeks later, if at all. FinOps starts with making the bill readable: what it's spent on, who spent it, and where it's heading. Cost Explorer's API answers all three. The queries are long, so this account keeps them as JSON files: by-service.json and by-team.json query September 2026.",
+  "steps": [
+    {
+      "prompt": "Show last month's cost grouped by service, using the saved query by-service.json.",
+      "expected_commands": ["aws ce get-cost-and-usage --cli-input-json file://by-service.json", "aws ce get-cost-and-usage --cli-input-json file://by-service.json --output table"],
+      "fake_output": "Service                              UnblendedCost (USD)\nAmazon Elastic Compute Cloud          41,204.10\nAmazon Relational Database Service    18,812.44\nEC2 - Other                           14,120.02\nAmazon Simple Storage Service          6,310.88\nAmazonCloudWatch                       5,904.31\nAWS Lambda                               412.20\nTotal                                 86,763.95",
+      "explanation": "$86,764 for September. Compute is the largest line, and 'EC2 - Other' is third.",
+      "why": "'EC2 - Other' is where surprises live: it holds NAT gateway charges, data transfer, and EBS volumes and snapshots, none of which look like 'a server'. CloudWatch at $5,900 is also worth a look: observability often becomes a top-five cost without anyone deciding it should. The saved file holds the full form: 'aws ce get-cost-and-usage --time-period Start=...,End=... --granularity MONTHLY --metrics UnblendedCost --group-by Type=DIMENSION,Key=SERVICE'."
+    },
+    {
+      "prompt": "Now the same month grouped by the 'team' tag, using by-team.json.",
+      "expected_commands": ["aws ce get-cost-and-usage --cli-input-json file://by-team.json", "aws ce get-cost-and-usage --cli-input-json file://by-team.json --output table"],
+      "fake_output": "team                UnblendedCost (USD)\n(no tag)                 33,120.40\nplatform                 21,204.11\npayments                 14,812.02\ndata                     12,410.30\nweb                       5,217.12",
+      "explanation": "The biggest 'team' is no team: 38% of the bill carries no team tag.",
+      "why": "Cost you can't attribute is cost nobody will reduce. This is the normal starting point: a large untagged share, made of resources created by hand, by old automation, or of things that can't be tagged directly (data transfer, support). The first FinOps goal is to shrink that row. A tag only appears here after it's been activated as a cost allocation tag in the billing settings, and only for usage after that date."
+    },
+    {
+      "prompt": "Forecast October's total, from tomorrow to the end of the month.",
+      "expected_commands": ["aws ce get-cost-forecast --time-period Start=2026-10-02,End=2026-11-01 --metric UNBLENDED_COST --granularity MONTHLY", "aws ce get-cost-forecast --metric UNBLENDED_COST --granularity MONTHLY --time-period Start=2026-10-02,End=2026-11-01"],
+      "fake_output": "{\n  \"Total\": {\"Amount\": \"97120.44\", \"Unit\": \"USD\"},\n  \"ForecastResultsByTime\": [{\n    \"MeanValue\": \"97120.44\",\n    \"PredictionIntervalLowerBound\": \"91204.10\",\n    \"PredictionIntervalUpperBound\": \"103410.88\"\n  }]\n}",
+      "hint": "aws ce get-cost-forecast --time-period Start=2026-10-02,End=2026-11-01 --metric UNBLENDED_COST --granularity MONTHLY",
+      "explanation": "About $97,000 forecast for October, up from $86,800.",
+      "why": "A forecast early in the month is when you can still do something about it. A 12% rise is a question to ask now: growth in customers, or something left running? Budgets with alerts on forecast spend, not only actual spend, give the warning in week one instead of on the invoice."
+    },
+    {
+      "prompt": "The bill rose 12% and orders rose 30% in the same period. Is that good or bad?\n  a) Bad: the bill went up\n  b) Good: cost per order fell, which is the number that tells you whether spending is efficient\n  c) Impossible to say anything\n  d) Bad: orders should be free\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "September: $86,764 / 1,204,000 orders = 7.2 cents per order\nOctober:   $97,120 / 1,565,000 orders = 6.2 cents per order",
+      "hint": "Divide the cost by something the business cares about.",
+      "explanation": "Unit cost fell from 7.2 to 6.2 cents per order.",
+      "why": "A total says little: a growing company's bill should grow. Unit economics (cost per order, per active user, per request) separate healthy growth from waste, and give engineers a target they can influence. A flat bill with falling traffic is a problem that a 'the bill didn't go up' report would hide."
+    },
+    {
+      "prompt": "'UnblendedCost' was used in every query. What is it?\n  a) The list price before any discount\n  b) What each usage line actually cost in this account, at the rate applied to it, on the day it was used\n  c) An average across the organisation\n  d) Tax\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "Unblended : the rate each line was actually charged (cash view; discounts land where they were applied)\nAmortized : upfront commitment fees spread across the period they cover (the fair view for team reports)\nBlended   : an organisation-wide average rate (rarely what you want)",
+      "hint": "It's the default, and the 'cash' view.",
+      "explanation": "Unblended is the actual charge per line item.",
+      "why": "The metric changes the story. Unblended shows a huge spike on the day a three-year commitment is bought and then cheap months after. Amortized spreads that purchase over its term, which is what you want when comparing teams or months. Know which one a report uses before drawing conclusions from it."
+    }
+  ]
+}

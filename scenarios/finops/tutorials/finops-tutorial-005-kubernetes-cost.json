@@ -1,0 +1,48 @@
+{
+  "id": "finops-tutorial-005",
+  "type": "tutorial",
+  "category": "finops",
+  "title": "Kubernetes Cost: Who's Paying for the Cluster?",
+  "difficulty": "intermediate",
+  "tags": ["finops", "kubernetes", "opencost", "requests"],
+  "intro": "The cloud bill says 'EKS nodes: $41,000'. It can't say which team's workloads used them, because the cluster is shared. OpenCost (and Kubecost, built on it) divide the nodes' cost among workloads by what each requested and used. This cluster has it installed, with the kubectl cost plugin.",
+  "steps": [
+    {
+      "prompt": "Show the cost of each namespace over the last 7 days, with efficiency figures.",
+      "expected_commands": ["kubectl cost namespace --window 7d --show-efficiency", "kubectl cost namespace --show-efficiency --window 7d", "kubectl cost namespace --window=7d --show-efficiency"],
+      "fake_output": "+-------------+--------------+----------------+-----------------+\n| NAMESPACE   | TOTAL COST   | CPU EFFICIENCY | MEM EFFICIENCY  |\n+-------------+--------------+----------------+-----------------+\n| shop        |   $4,120.40  |      12%       |       31%       |\n| data        |   $2,204.11  |      71%       |       64%       |\n| monitoring  |   $1,410.02  |      44%       |       58%       |\n| kube-system |     $310.20  |      38%       |       41%       |\n| __idle__    |   $1,904.44  |       -        |        -        |\n+-------------+--------------+----------------+-----------------+",
+      "explanation": "shop costs the most and uses 12% of the CPU it asks for. $1,904 of the cluster is idle: paid for and allocated to nobody.",
+      "why": "Efficiency is usage divided by requests. 12% means the shop workloads request eight times the CPU they use, and since the scheduler reserves what's requested, the cluster must have nodes for all of it. '__idle__' is capacity no pod has claimed: the gap between node size and total requests. Both are waste, with different owners: teams fix requests, the platform team fixes idle."
+    },
+    {
+      "prompt": "Find which shop workloads are responsible: cost per deployment in namespace shop over 7 days.",
+      "expected_commands": ["kubectl cost deployment --window 7d -n shop", "kubectl cost deployment -n shop --window 7d", "kubectl cost deployment --window 7d --namespace shop", "kubectl cost deployment --window=7d -n shop"],
+      "fake_output": "+-----------+------------+-----------+---------+---------+\n| NAMESPACE | DEPLOYMENT | COST      | CPU REQ | CPU USE |\n+-----------+------------+-----------+---------+---------+\n| shop      | api        | $3,104.20 | 96      | 7.4     |\n| shop      | worker     |   $604.10 | 12      | 6.1     |\n| shop      | cart       |   $412.10 | 6       | 2.2     |\n+-----------+------------+-----------+---------+---------+",
+      "explanation": "The api deployment requests 96 CPUs and uses 7.4.",
+      "why": "One workload is three quarters of the namespace's cost. 96 CPUs across its replicas is someone's cautious guess, multiplied by the replica count. This is the commonest finding in any cluster cost review, and it comes straight from requests set without measurement."
+    },
+    {
+      "prompt": "See what the api pods actually use: show CPU and memory per container for pods in namespace shop.",
+      "expected_commands": ["kubectl top pods -n shop --containers", "kubectl top pod -n shop --containers", "kubectl top pods --containers -n shop"],
+      "fake_output": "POD                   NAME   CPU(cores)   MEMORY(bytes)\napi-6c9d7f5b8-2xkq4   api    188m         410Mi\napi-6c9d7f5b8-7hm2n   api    204m         398Mi\napi-6c9d7f5b8-b4t9w   api    176m         421Mi\n... (48 pods)",
+      "explanation": "Each api pod uses about 0.2 CPU and 400Mi. Each requests 2 CPUs and 4Gi.",
+      "why": "This is a point-in-time reading; size requests from a week of data including peaks, which is what the VPA's recommendation gives (tutorial-033). A sensible request is near the workload's typical high usage, not ten times it. Lowering these requests frees most of the capacity the cluster autoscaler is paying for."
+    },
+    {
+      "prompt": "If you cut the api's CPU request from 2 to 0.3 and change nothing else, does the cloud bill fall?\n  a) Yes, immediately, by the same proportion\n  b) Only if nodes are then removed: the saving arrives when the cluster autoscaler or Karpenter consolidates the freed capacity into fewer nodes\n  c) No, never\n  d) It rises\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "lower requests  ->  pods fit on fewer nodes  ->  autoscaler removes empty nodes  ->  bill falls\nwithout consolidation: the same nodes, now mostly '__idle__'",
+      "hint": "You pay for nodes, not for requests.",
+      "explanation": "Requests only turn into savings when nodes go away.",
+      "why": "The cloud bills for machines. Rightsizing pods moves cost from the team's row to the idle row unless something then shrinks the node pool. So workload rightsizing and node consolidation have to go together, and the result should be checked on the actual bill, not only in the cost tool."
+    },
+    {
+      "prompt": "Teams should see their own number. What makes a shared cluster's cost attributable to teams?\n  a) One namespace for everything\n  b) Consistent labels and namespaces per team, which the cost tool groups by, plus an agreed rule for splitting shared and idle cost\n  c) A separate cluster for every pod\n  d) Guessing at the end of the quarter\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "allocation key  : namespace, or labels team= and service=\nshared costs    : monitoring, ingress, control plane -> split in proportion to usage\nidle cost       : charged to the platform team, or spread, by agreement\nreport          : weekly, to each team's channel, as cost and as efficiency",
+      "hint": "The same answer as tags for cloud resources.",
+      "explanation": "Labels are to a cluster what tags are to an account.",
+      "why": "Showback (here is what you used) changes behaviour on its own, and is easier to start than chargeback (here is your invoice). The rule for shared and idle cost matters less than having one that everyone accepts. Enforce the labels with an admission policy, as with any required metadata."
+    }
+  ]
+}

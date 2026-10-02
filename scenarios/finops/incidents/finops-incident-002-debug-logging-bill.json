@@ -1,0 +1,49 @@
+{
+  "id": "finops-incident-002",
+  "type": "incident",
+  "category": "finops",
+  "title": "The CloudWatch bill tripled this month and nothing new was launched",
+  "difficulty": "intermediate",
+  "tags": ["finops", "cloudwatch", "logging", "cost"],
+  "intro": "Finance asks why the 'AmazonCloudWatch' line went from $5,900 in September to a forecast of $18,000 for October. No new services were launched. The services run on EKS and send their container logs to CloudWatch Logs. A saved Cost Explorer query, cw-by-usage.json, breaks the CloudWatch cost down by usage type for the last 7 days.",
+  "steps": [
+    {
+      "prompt": "Find which part of CloudWatch is costing the money: run the saved query cw-by-usage.json.",
+      "expected_commands": ["aws ce get-cost-and-usage --cli-input-json file://cw-by-usage.json", "aws ce get-cost-and-usage --cli-input-json file://cw-by-usage.json --output table"],
+      "fake_output": "UsageType                          UnblendedCost (USD)\nUSE1-DataProcessing-Bytes               3,904.10\nUSE1-TimedStorage-ByteHrs                 212.40\nUSE1-CW:MetricMonitorUsage                180.20\nUSE1-CW:AlarmMonitorUsage                  41.00",
+      "hint": "aws ce get-cost-and-usage --cli-input-json file://cw-by-usage.json"
+    },
+    {
+      "prompt": "'DataProcessing-Bytes' is log ingestion: $3,900 in a week, where storage is $212. Something is sending far more log data. Find the biggest log groups: list the top 3 by stored bytes.",
+      "expected_commands": ["aws logs describe-log-groups --query 'sort_by(logGroups,&storedBytes)[-3:].[logGroupName,storedBytes]' --output table", "aws logs describe-log-groups --query \"sort_by(logGroups,&storedBytes)[-3:].[logGroupName,storedBytes]\" --output table", "aws logs describe-log-groups --query 'reverse(sort_by(logGroups,&storedBytes))[:3].[logGroupName,storedBytes]' --output table"],
+      "fake_output": "---------------------------------------------------------\n|  /aws/eks/shop/cluster                |  880120441020   |\n|  /aws/containerinsights/shop/host     |  1204410220441  |\n|  /aws/containerinsights/shop/application  |  9120044102204  |\n---------------------------------------------------------",
+      "hint": "aws logs describe-log-groups --query 'sort_by(logGroups,&storedBytes)[-3:].[logGroupName,storedBytes]' --output table"
+    },
+    {
+      "prompt": "The application log group holds 9 TB. See what's in it: tail it for the last minute and show 5 lines.",
+      "expected_commands": ["aws logs tail /aws/containerinsights/shop/application --since 1m | head -5", "aws logs tail /aws/containerinsights/shop/application --since 1m | head -n 5", "aws logs tail --since 1m /aws/containerinsights/shop/application | head -5"],
+      "fake_output": "{\"level\":\"debug\",\"svc\":\"recommender\",\"msg\":\"candidate scored\",\"item\":88120,\"score\":0.412,\"features\":{...1,904 bytes...}}\n{\"level\":\"debug\",\"svc\":\"recommender\",\"msg\":\"candidate scored\",\"item\":88121,\"score\":0.398,\"features\":{...}}\n{\"level\":\"debug\",\"svc\":\"recommender\",\"msg\":\"candidate scored\",\"item\":88122,\"score\":0.377,\"features\":{...}}\n{\"level\":\"debug\",\"svc\":\"recommender\",\"msg\":\"candidate scored\",\"item\":88123,\"score\":0.371,\"features\":{...}}\n{\"level\":\"debug\",\"svc\":\"recommender\",\"msg\":\"candidate scored\",\"item\":88124,\"score\":0.360,\"features\":{...}}",
+      "hint": "aws logs tail /aws/containerinsights/shop/application --since 1m | head -5"
+    },
+    {
+      "prompt": "The recommender is logging a 2 KB debug line for every candidate it scores: thousands per request. Check how its log level is set: show the deployment's environment variables in namespace shop containing LOG.",
+      "expected_commands": ["kubectl set env deployment/recommender -n shop --list | grep LOG", "kubectl set env deploy/recommender -n shop --list | grep LOG", "kubectl set env deployment/recommender --list -n shop | grep LOG", "kubectl describe deployment recommender -n shop | grep LOG"],
+      "fake_output": "LOG_LEVEL=debug",
+      "hint": "kubectl set env deployment/recommender -n shop --list | grep LOG"
+    },
+    {
+      "prompt": "Debug was turned on three weeks ago to chase a ranking bug and never turned off. Set LOG_LEVEL to info on the deployment.",
+      "expected_commands": ["kubectl set env deployment/recommender -n shop LOG_LEVEL=info", "kubectl set env deploy/recommender -n shop LOG_LEVEL=info", "kubectl set env deployment/recommender LOG_LEVEL=info -n shop"],
+      "fake_output": "deployment.apps/recommender env updated",
+      "hint": "kubectl set env deployment/recommender -n shop LOG_LEVEL=info"
+    },
+    {
+      "prompt": "The ingestion will stop. The 9 TB already stored is billed monthly for as long as it's kept, and this group has no retention set. Keep 14 days.",
+      "expected_commands": ["aws logs put-retention-policy --log-group-name /aws/containerinsights/shop/application --retention-in-days 14", "aws logs put-retention-policy --retention-in-days 14 --log-group-name /aws/containerinsights/shop/application"],
+      "fake_output": "(no output)",
+      "hint": "aws logs put-retention-policy --log-group-name /aws/containerinsights/shop/application --retention-in-days 14"
+    }
+  ],
+  "resolution": "No new service was launched; an existing one was told to talk more. Three weeks ago someone set the recommender's log level to debug to investigate a ranking problem, found the answer, and moved on. Debug stayed on. That service scores thousands of candidates per request and at debug level writes a two-kilobyte line for each, so its log volume went up by a factor of several hundred. CloudWatch Logs charges mainly for ingestion, per gigabyte, at a rate that makes high-volume logging one of the more expensive things you can do with a cloud account. Splitting the CloudWatch cost by usage type showed ingestion dwarfing everything else; the largest log group pointed at the application logs; and one look at the content showed a single repeated debug message. The fix was one environment variable, and a retention policy to stop paying for the backlog indefinitely. The reasons it lasted three weeks are the things to fix. A debug switch that's set in the deployment's configuration persists; one that's set at run time with an expiry (or a feature flag that turns itself off) doesn't. Nobody was watching log volume per service: a simple alert on ingested bytes by source would have fired on day one, and it's the same signal as monitoring-tutorial-016's top producers. The cost anomaly detector could have caught it too, had it been monitoring CloudWatch as a service with an alert that reached the team. And for the heaviest sources, filter in the log pipeline, so that debug lines can be dropped or sampled before they're ingested even when an application misbehaves. Logs are a cost that scales with code paths, not with infrastructure, which is why they surprise people who only watch the instance count.",
+  "real_commands_used": ["aws ce get-cost-and-usage (CloudWatch by usage type)", "aws logs describe-log-groups sorted by storedBytes", "aws logs tail <group> --since 1m", "kubectl set env deployment --list", "kubectl set env deployment LOG_LEVEL=info", "aws logs put-retention-policy"]
+}

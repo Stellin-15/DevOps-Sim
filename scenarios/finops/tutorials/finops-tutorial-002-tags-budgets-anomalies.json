@@ -1,0 +1,48 @@
+{
+  "id": "finops-tutorial-002",
+  "type": "tutorial",
+  "category": "finops",
+  "title": "Tags, Budgets, and Anomaly Alerts: Making Cost Someone's Problem",
+  "difficulty": "intermediate",
+  "tags": ["finops", "tagging", "budgets", "anomaly-detection"],
+  "intro": "A bill only changes when a specific team sees a specific number that's theirs. That needs three things: every resource labelled with an owner, a budget per owner, and an alert when spending departs from normal. The account id is 111122223333.",
+  "steps": [
+    {
+      "prompt": "Find the EC2 instances that have no 'team' tag: list their ARNs.",
+      "expected_commands": ["aws resourcegroupstaggingapi get-resources --resource-type-filters ec2:instance --query 'ResourceTagMappingList[?!(Tags[?Key==`team`])].ResourceARN'", "aws resourcegroupstaggingapi get-resources --resource-type-filters ec2:instance --query \"ResourceTagMappingList[?!(Tags[?Key==`team`])].ResourceARN\""],
+      "fake_output": "[\n  \"arn:aws:ec2:us-east-1:111122223333:instance/i-0a1b2c3d4e5f67890\",\n  \"arn:aws:ec2:us-east-1:111122223333:instance/i-0f9e8d7c6b5a43210\",\n  \"arn:aws:ec2:us-east-1:111122223333:instance/i-01234abcd5678ef90\"\n]",
+      "hint": "aws resourcegroupstaggingapi get-resources --resource-type-filters ec2:instance --query 'ResourceTagMappingList[?!(Tags[?Key==`team`])].ResourceARN'",
+      "explanation": "Three instances with nobody's name on them.",
+      "why": "The tagging API lists resources across services, so one query pattern covers instances, volumes, buckets, and databases. An untagged resource is unowned in practice: nobody will be asked about its cost, and nobody dares delete it. Chase owners through CloudTrail (who created it), then tag."
+    },
+    {
+      "prompt": "The first one belongs to the payments team's production environment. Tag instance i-0a1b2c3d4e5f67890 with team=payments and env=prod.",
+      "expected_commands": ["aws ec2 create-tags --resources i-0a1b2c3d4e5f67890 --tags Key=team,Value=payments Key=env,Value=prod", "aws ec2 create-tags --resources i-0a1b2c3d4e5f67890 --tags Key=env,Value=prod Key=team,Value=payments"],
+      "fake_output": "(no output)",
+      "explanation": "The instance now carries an owner and an environment.",
+      "why": "Tagging by hand fixes one resource. The lasting fix is at the source: default tags in the Terraform provider block, so that everything it creates is tagged without anyone remembering. Tag keys are case-sensitive ('Team' and 'team' are different columns in the bill), so agree a short standard set and spell it one way."
+    },
+    {
+      "prompt": "People forget tags. What actually keeps the untagged share low?\n  a) A wiki page asking everyone to tag things\n  b) Enforcement at creation: default tags in infrastructure code, plus a policy that rejects or flags resources created without the required tags\n  c) A monthly email\n  d) Tagging everything 'misc'\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "provider \"aws\" {\n  default_tags { tags = { team = \"payments\", env = \"prod\", service = \"checkout\" } }\n}\n\n+ an SCP or tag policy: deny ec2:RunInstances unless aws:RequestTag/team is present\n+ a nightly report of anything untagged, sent to the platform team",
+      "hint": "Make the right thing automatic and the wrong thing impossible.",
+      "explanation": "Defaults in code, and a guard rail that enforces them.",
+      "why": "Voluntary tagging decays to about half coverage. Default tags make compliance free for anyone using the pipeline, and a preventive policy catches resources created outside it. Policy-as-code tools check the same rule in pull requests. Start enforcement in report-only mode, as with any policy, so it doesn't block a deploy during an incident."
+    },
+    {
+      "prompt": "List the budgets defined for the account.",
+      "expected_commands": ["aws budgets describe-budgets --account-id 111122223333"],
+      "fake_output": "{\n  \"Budgets\": [\n    {\"BudgetName\": \"total-monthly\", \"BudgetLimit\": {\"Amount\": \"90000\", \"Unit\": \"USD\"},\n     \"CalculatedSpend\": {\"ActualSpend\": {\"Amount\": \"4120.44\"}, \"ForecastedSpend\": {\"Amount\": \"97120.44\"}},\n     \"TimeUnit\": \"MONTHLY\"}\n  ]\n}",
+      "explanation": "One budget for the whole account: $90,000, with a forecast of $97,120 already over it on day two.",
+      "why": "A single account-wide budget tells the finance team something is wrong and tells no engineer what. Budgets belong per team or per service, filtered by tag, with alerts sent to that team's channel at, say, 80% forecast and 100% actual. The alert has to reach the people who can change the spending."
+    },
+    {
+      "prompt": "Budgets catch slow overruns. Check what the anomaly detector found between 20 September and 1 October.",
+      "expected_commands": ["aws ce get-anomalies --date-interval StartDate=2026-09-20,EndDate=2026-10-01", "aws ce get-anomalies --date-interval \"StartDate=2026-09-20,EndDate=2026-10-01\""],
+      "fake_output": "{\n  \"Anomalies\": [{\n    \"AnomalyStartDate\": \"2026-09-26\",\n    \"DimensionValue\": \"Amazon Elastic Compute Cloud - Compute\",\n    \"RootCauses\": [{\"Service\": \"Amazon Elastic Compute Cloud - Compute\", \"Region\": \"us-west-2\", \"UsageType\": \"USW2-BoxUsage:p4d.24xlarge\"}],\n    \"Impact\": {\"TotalImpact\": 9410.20, \"TotalActualSpend\": 9410.20, \"TotalExpectedSpend\": 0.0}\n  }]\n}",
+      "explanation": "$9,410 since 26 September on p4d.24xlarge GPU instances in us-west-2, where the account normally spends nothing.",
+      "why": "Anomaly detection learns each service's normal pattern and flags departures, which catches what a budget can't: a sudden new cost that's small against the monthly total and large against expectation. The root cause names the service, region, and usage type, which is enough to go and find it (finops-incident-001). An anomaly alert that goes to email nobody reads is the usual failure; route it like a production alert."
+    }
+  ]
+}

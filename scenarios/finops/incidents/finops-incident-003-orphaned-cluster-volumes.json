@@ -1,0 +1,49 @@
+{
+  "id": "finops-incident-003",
+  "type": "incident",
+  "category": "finops",
+  "title": "Three clusters were deleted last quarter, and their storage bill wasn't",
+  "difficulty": "intermediate",
+  "tags": ["finops", "ebs", "kubernetes", "persistent-volumes", "orphans"],
+  "intro": "The 'EC2 - Other' line is $6,000 a month higher than a year ago. Last quarter the platform team consolidated four EKS clusters into one and deleted three of them. Compute cost fell as expected. Storage cost didn't move. The remaining cluster is named shop-prod.",
+  "steps": [
+    {
+      "prompt": "Count the EBS volumes that are attached to nothing.",
+      "expected_commands": ["aws ec2 describe-volumes --filters Name=status,Values=available --query 'length(Volumes)'", "aws ec2 describe-volumes --filters Name=status,Values=available --query \"length(Volumes)\"", "aws ec2 describe-volumes --filters Name=status,Values=available --query 'length(Volumes[])'"],
+      "fake_output": "612",
+      "hint": "aws ec2 describe-volumes --filters Name=status,Values=available --query 'length(Volumes)'"
+    },
+    {
+      "prompt": "612 unattached volumes. Add up their size in gigabytes.",
+      "expected_commands": ["aws ec2 describe-volumes --filters Name=status,Values=available --query 'sum(Volumes[].Size)'", "aws ec2 describe-volumes --filters Name=status,Values=available --query \"sum(Volumes[].Size)\""],
+      "fake_output": "74120",
+      "hint": "aws ec2 describe-volumes --filters Name=status,Values=available --query 'sum(Volumes[].Size)'"
+    },
+    {
+      "prompt": "74 TB, at about 8 cents a gigabyte a month: roughly $6,000. See where they came from: show the tags of one of them, the first in the list.",
+      "expected_commands": ["aws ec2 describe-volumes --filters Name=status,Values=available --query 'Volumes[0].Tags'", "aws ec2 describe-volumes --filters Name=status,Values=available --query \"Volumes[0].Tags\"", "aws ec2 describe-volumes --filters Name=status,Values=available --max-items 1"],
+      "fake_output": "[\n  {\"Key\": \"kubernetes.io/cluster/shop-staging-2\", \"Value\": \"owned\"},\n  {\"Key\": \"kubernetes.io/created-for/pvc/name\", \"Value\": \"data-kafka-1\"},\n  {\"Key\": \"kubernetes.io/created-for/pvc/namespace\", \"Value\": \"messaging\"},\n  {\"Key\": \"ebs.csi.aws.com/cluster\", \"Value\": \"true\"}\n]",
+      "hint": "aws ec2 describe-volumes --filters Name=status,Values=available --query 'Volumes[0].Tags'"
+    },
+    {
+      "prompt": "Created by Kubernetes for a PersistentVolumeClaim, in a cluster called shop-staging-2. Check whether that cluster still exists.",
+      "expected_commands": ["aws eks list-clusters"],
+      "fake_output": "{\n  \"clusters\": [\"shop-prod\"]\n}",
+      "hint": "aws eks list-clusters"
+    },
+    {
+      "prompt": "Only shop-prod remains; shop-staging-2 is gone and its volumes aren't. Why did deleting the cluster leave them behind?\n  a) A bug in AWS\n  b) The volumes belonged to PersistentVolumes created by the cluster, and deleting the cluster doesn't delete what its controllers created: the PVCs were never deleted first, so nothing told the storage driver to remove the volumes\n  c) Volumes can't be deleted\n  d) They were snapshots\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "delete PVC (reclaimPolicy: Delete)  ->  CSI driver deletes the EBS volume\ndelete the cluster directly         ->  the driver is gone before it's asked; volumes, load balancers, and DNS records stay",
+      "hint": "Who would have deleted the volume, and was it still running to do so?"
+    },
+    {
+      "prompt": "The owners of the three old clusters confirm nothing on these volumes is needed, and a final snapshot of the two database volumes has been taken. Delete the first orphan, vol-0a1b2c3d4e5f60718, to check permissions before running the rest as a batch.",
+      "expected_commands": ["aws ec2 delete-volume --volume-id vol-0a1b2c3d4e5f60718"],
+      "fake_output": "(no output)",
+      "hint": "aws ec2 delete-volume --volume-id vol-0a1b2c3d4e5f60718"
+    }
+  ],
+  "resolution": "A Kubernetes cluster creates cloud resources on your behalf: an EBS volume for each PersistentVolumeClaim, a load balancer for each Service of that type, DNS records, security groups. They're created by controllers running in the cluster, and they're deleted by those same controllers when the Kubernetes object is deleted. Delete the cluster itself and the controllers go first; nothing is left to clean up after them. The three old clusters were removed by deleting the EKS cluster and its node groups. Their 612 volumes, 74 TB, stayed exactly where they were, in the 'available' state, billed every month and attached to nothing. Compute fell and storage didn't, which was the clue. The volumes' own tags told the story: created for a named claim, in a named cluster that no longer exists. Deletion needed care in proportion to its irreversibility: confirm ownership, snapshot anything that might matter (a snapshot costs far less than the volume and can be deleted later), delete one, then the rest. The lasting fixes are in the teardown procedure. Empty a cluster before deleting it: delete the workloads, PVCs, and LoadBalancer Services, and wait for the cloud resources to disappear, then delete the cluster. If the cluster is built with Terraform, 'destroy' has the same blind spot for anything the cluster created itself. Tag everything with the cluster name (the CSI driver does) so orphans can be found, and run a regular report of unattached volumes, unassociated addresses, load balancers with no targets, and snapshots of deleted volumes. Finally, check a StorageClass's reclaim policy: with 'Retain', even deleting the PVC leaves the volume, by design, for data you'd rather not lose by accident.",
+  "real_commands_used": ["aws ec2 describe-volumes --filters Name=status,Values=available --query 'length(Volumes)'", "--query 'sum(Volumes[].Size)'", "--query 'Volumes[0].Tags'", "aws eks list-clusters", "aws ec2 delete-volume"]
+}

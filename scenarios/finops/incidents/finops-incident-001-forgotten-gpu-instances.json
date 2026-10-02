@@ -1,0 +1,43 @@
+{
+  "id": "finops-incident-001",
+  "type": "incident",
+  "category": "finops",
+  "title": "A cost anomaly: $9,400 in six days, in a region the company doesn't use",
+  "difficulty": "intermediate",
+  "tags": ["finops", "anomaly", "gpu", "cloudtrail", "ec2"],
+  "intro": "The cost anomaly detector flagged $9,410 of p4d.24xlarge usage in us-west-2 since 26 September. The company runs everything in us-east-1. Each of these GPU instances costs about $32 an hour. It could be a forgotten experiment, or a compromised access key being used for crypto-mining, and you need to know which before you touch anything.",
+  "steps": [
+    {
+      "prompt": "Find the instances: list running p4d.24xlarge instances in us-west-2 with their id, launch time, and key name, as a table.",
+      "expected_commands": ["aws ec2 describe-instances --region us-west-2 --filters Name=instance-type,Values=p4d.24xlarge Name=instance-state-name,Values=running --query 'Reservations[].Instances[].[InstanceId,LaunchTime,KeyName]' --output table", "aws ec2 describe-instances --region us-west-2 --filters Name=instance-type,Values=p4d.24xlarge Name=instance-state-name,Values=running --query \"Reservations[].Instances[].[InstanceId,LaunchTime,KeyName]\" --output table", "aws ec2 describe-instances --region us-west-2 --filters Name=instance-type,Values=p4d.24xlarge"],
+      "fake_output": "-------------------------------------------------------------------\n|  i-0d4e5f6a7b8c9d0e1  |  2026-09-26T09:14:02+00:00  |  ml-research  |\n|  i-0e5f6a7b8c9d0e1f2  |  2026-09-26T09:14:03+00:00  |  ml-research  |\n-------------------------------------------------------------------",
+      "hint": "aws ec2 describe-instances --region us-west-2 --filters Name=instance-type,Values=p4d.24xlarge Name=instance-state-name,Values=running --query 'Reservations[].Instances[].[InstanceId,LaunchTime,KeyName]' --output table"
+    },
+    {
+      "prompt": "Two instances, launched together on the 26th, with a key pair named ml-research. Find out who launched them: look up the RunInstances events in us-west-2 in CloudTrail, showing the 3 most recent.",
+      "expected_commands": ["aws cloudtrail lookup-events --region us-west-2 --lookup-attributes AttributeKey=EventName,AttributeValue=RunInstances --max-results 3", "aws cloudtrail lookup-events --region us-west-2 --lookup-attributes AttributeKey=EventName,AttributeValue=RunInstances --max-items 3", "aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,AttributeValue=RunInstances --region us-west-2 --max-results 3"],
+      "fake_output": "{\n  \"Events\": [{\n    \"EventName\": \"RunInstances\",\n    \"EventTime\": \"2026-09-26T09:14:01Z\",\n    \"Username\": \"priya@example.com\",\n    \"Resources\": [{\"ResourceName\": \"i-0d4e5f6a7b8c9d0e1\"}, {\"ResourceName\": \"i-0e5f6a7b8c9d0e1f2\"}],\n    \"CloudTrailEvent\": \"{...\\\"sourceIPAddress\\\":\\\"203.0.113.40\\\",\\\"userAgent\\\":\\\"console.amazonaws.com\\\",\\\"sessionContext\\\":{\\\"attributes\\\":{\\\"mfaAuthenticated\\\":\\\"true\\\"}}...}\"\n  }]\n}",
+      "hint": "aws cloudtrail lookup-events --region us-west-2 --lookup-attributes AttributeKey=EventName,AttributeValue=RunInstances --max-results 3"
+    },
+    {
+      "prompt": "Launched from the console by priya@example.com, from the office's IP address, with MFA. That looks like a colleague, not an intruder. Priya confirms: a training run that finished on the 27th, on capacity that wasn't available in us-east-1; she forgot the instances. Her model checkpoints are on the instances' disks and she needs them. Which action stops the compute charge and keeps the data?\n  a) Terminate the instances\n  b) Stop the instances: the hourly compute charge ends and the EBS volumes, with the data, are kept\n  c) Reboot them\n  d) Leave them running until she has time\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "running    : compute + storage billed\nstopped    : storage only (a few dollars a day, against $1,536 a day running)\nterminated : nothing billed, and the root volumes are deleted",
+      "hint": "One of these is reversible and one isn't."
+    },
+    {
+      "prompt": "Stop both instances.",
+      "expected_commands": ["aws ec2 stop-instances --region us-west-2 --instance-ids i-0d4e5f6a7b8c9d0e1 i-0e5f6a7b8c9d0e1f2", "aws ec2 stop-instances --instance-ids i-0d4e5f6a7b8c9d0e1 i-0e5f6a7b8c9d0e1f2 --region us-west-2", "aws ec2 stop-instances --region us-west-2 --instance-ids i-0e5f6a7b8c9d0e1f2 i-0d4e5f6a7b8c9d0e1"],
+      "fake_output": "{\n  \"StoppingInstances\": [\n    {\"InstanceId\": \"i-0d4e5f6a7b8c9d0e1\", \"CurrentState\": {\"Name\": \"stopping\"}, \"PreviousState\": {\"Name\": \"running\"}},\n    {\"InstanceId\": \"i-0e5f6a7b8c9d0e1f2\", \"CurrentState\": {\"Name\": \"stopping\"}, \"PreviousState\": {\"Name\": \"running\"}}\n  ]\n}",
+      "hint": "aws ec2 stop-instances --region us-west-2 --instance-ids i-0d4e5f6a7b8c9d0e1 i-0e5f6a7b8c9d0e1f2"
+    },
+    {
+      "prompt": "Tag them so the next person knows what they are and when they can go: add owner=priya and delete-after=2026-10-09 to both.",
+      "expected_commands": ["aws ec2 create-tags --region us-west-2 --resources i-0d4e5f6a7b8c9d0e1 i-0e5f6a7b8c9d0e1f2 --tags Key=owner,Value=priya Key=delete-after,Value=2026-10-09", "aws ec2 create-tags --resources i-0d4e5f6a7b8c9d0e1 i-0e5f6a7b8c9d0e1f2 --tags Key=owner,Value=priya Key=delete-after,Value=2026-10-09 --region us-west-2", "aws ec2 create-tags --region us-west-2 --resources i-0d4e5f6a7b8c9d0e1 i-0e5f6a7b8c9d0e1f2 --tags Key=delete-after,Value=2026-10-09 Key=owner,Value=priya"],
+      "fake_output": "(no output)",
+      "hint": "aws ec2 create-tags --region us-west-2 --resources i-0d4e5f6a7b8c9d0e1 i-0e5f6a7b8c9d0e1f2 --tags Key=owner,Value=priya Key=delete-after,Value=2026-10-09"
+    }
+  ],
+  "resolution": "Two GPU instances at $32 an hour each ran for six days after the job they were launched for had finished: about $9,400 for nothing, and it would have been $46,000 by the end of the month. Nothing was broken and nobody did anything unreasonable. A researcher needed capacity that wasn't available in the usual region, launched it by hand in another, and when the training run ended there was nothing to remind her: no dashboard she looked at covered us-west-2, and the instances had no tags. The order of the investigation matters. Expensive compute appearing in an unused region is also the classic sign of a stolen access key being used for mining (aws-incident-004), and the response to that is entirely different: revoke credentials and preserve evidence. CloudTrail settled it quickly: who, from where, by what means, with MFA. A console session from the office is a colleague; an access key from an unfamiliar country would have been an incident. Stopping, not terminating, ended the charge and kept the data, and an expiry tag recorded the decision. What to change so this costs minutes, not days. Anomaly alerts must go somewhere watched and fire on a daily evaluation; this one took six days to reach anybody. Budget alerts per team would have shown the research budget spent in two days. Regions the company doesn't use should be disabled, or blocked by a service control policy, so that both forgotten resources and intruders are confined to regions you monitor. Expensive instance types can require an approval or a mandatory expiry tag enforced by automation. And training jobs should shut their own machines down when they finish: a job that leaves its hardware running is half-finished.",
+  "real_commands_used": ["aws ec2 describe-instances --region <r> --filters Name=instance-type,Values=<type>", "aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,AttributeValue=RunInstances", "aws ec2 stop-instances", "aws ec2 create-tags (owner, delete-after)"]
+}

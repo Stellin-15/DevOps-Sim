@@ -1668,7 +1668,60 @@ something healthy first, so you know what normal looks like.
 
 ---
 
-# Part 24 — The backlog: everything that isn't in the game yet
+# Part 24 — FinOps
+
+**Content:** 6 tutorials, 3 incidents.
+
+Making cloud cost visible to the engineers who cause it. AWS (Part 9)
+has one tutorial on finding waste; this part covers the practice around
+it. AWS is the example; the ideas hold on every cloud.
+
+## Covered
+
+Every section of `commands/finops.md`:
+- **Reading the bill:** cost by service and by team tag, the untagged
+  share, forecasts, unit cost, and unblended vs amortized.
+- **Ownership:** finding untagged resources, enforcing tags at creation,
+  budgets per team, and anomaly detection.
+- **Rightsizing:** Compute Optimizer and its blind spot for memory, old
+  snapshots, forgotten instances, and the order to work in.
+- **Discounts:** Savings Plans coverage and utilisation, what to commit
+  to, spot prices, and what spot suits.
+- **Kubernetes:** cost and efficiency per namespace and deployment,
+  requests against usage, and why savings need nodes to go away.
+- **Quiet costs:** lifecycle rules, abandoned multipart uploads, log
+  groups that never expire, and what data transfer charges for.
+
+Incidents:
+- GPU instances left running in an unused region, and telling a
+  forgotten experiment from a stolen key;
+- a logging bill tripled by a debug level left on;
+- 74 TB of volumes orphaned by deleting clusters before emptying them.
+
+## Still missing
+
+- **A real bill.** Numbers here are invented and tidy. Real cost data is
+  messy: credits, taxes, shared costs, and delayed line items.
+- Azure Cost Management and Google Cloud billing exports in practice.
+- Cost in infrastructure code review (Infracost) and policies that
+  block expensive changes.
+- Chargeback models, forecasting methods, and negotiating enterprise
+  agreements and private pricing.
+- The Cost and Usage Report queried with SQL (Athena, BigQuery).
+- SaaS and licence cost, which is often larger than the cloud bill.
+- Carbon and sustainability reporting.
+
+## Readiness verdict
+
+Enough to be the engineer who can explain the bill and cut it without
+breaking anything: find what's unowned, remove what's unused, size what
+remains, and commit to the baseline, in that order. FinOps as a
+discipline is mostly organisational, getting teams to own a number, and
+that part is learned by doing it with real people and a real budget.
+
+---
+
+# Part 25 — The backlog: everything that isn't in the game yet
 
 The parts above each list what's missing *inside* a category. This part
 lists whole topics with no category at all, in three tiers. Nobody needs
@@ -1722,9 +1775,10 @@ employer uses it.
     perf, flame graphs, py-spy, the JVM, eBPF tools, Go pprof, and
     measurement. Memory profiling and network tuning are under that
     part's "Still missing".
-11. **FinOps.** Cost allocation by tag, rightsizing, commitments (Savings
-    Plans, committed use), spot and preemptible capacity, Kubecost or
-    OpenCost, and data-transfer costs.
+11. ~~**FinOps**~~: **now a category** (FinOps): allocation, budgets and
+    anomalies, rightsizing, commitments and spot, Kubernetes cost, and
+    storage, log, and transfer costs. Azure and Google Cloud billing
+    and cost in code review are under that part's "Still missing".
 12. ~~**Hosted observability**~~: **mostly done** inside Monitoring
     (monitoring-tutorial-017 for Datadog and Sentry; Writing Lab
     yaml-042 for Grafana dashboards). New Relic and CloudWatch in depth
@@ -1803,7 +1857,7 @@ If content is added in the order that helps most people soonest:
 
 ---
 
-# Part 25 — Overall: will this make you proficient in DevOps?
+# Part 26 — Overall: will this make you proficient in DevOps?
 
 ## By the numbers
 
@@ -1832,7 +1886,8 @@ If content is added in the order that helps most people soonest:
 | Messaging | 7 | 4 | |
 | Serverless | 7 | 4 | |
 | Performance | 7 | 3 | |
-| **Total** | **284** | **145** | 44 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
+| FinOps | 6 | 3 | |
+| **Total** | **290** | **148** | 44 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -1844,7 +1899,7 @@ command beats the alternatives — not just what it does.
 will know the commands, the failure modes, and — most importantly — the
 debugging method** (check the layer before guessing the fix; refused vs
 timeout; verify after every change; revoke before cleaning up; revert
-don't force-push). The 145 incidents are modeled on the kinds of problems
+don't force-push). The 148 incidents are modeled on the kinds of problems
 that genuinely trip up working engineers, and working through them
 builds judgment that command references alone never will.
 

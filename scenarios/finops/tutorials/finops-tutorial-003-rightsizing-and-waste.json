@@ -1,0 +1,51 @@
+{
+  "id": "finops-tutorial-003",
+  "type": "tutorial",
+  "category": "finops",
+  "title": "Rightsizing: Paying for What You Use, Not What You Guessed",
+  "difficulty": "intermediate",
+  "tags": ["finops", "rightsizing", "compute-optimizer", "waste"],
+  "intro": "Most cloud waste isn't dramatic. It's instances two sizes too big because someone guessed on launch day, and resources left behind when the thing they served was deleted. aws-tutorial-011 found unattached volumes and addresses. This goes after the bigger numbers: oversized compute and forgotten snapshots.",
+  "steps": [
+    {
+      "prompt": "Ask Compute Optimizer for its instance recommendations (the subcommand is get-ec2-instance-recommendations) as a table: the ARN, the finding, the current type, and the top recommended type.",
+      "expected_commands": ["aws compute-optimizer get-ec2-instance-recommendations --query 'instanceRecommendations[].[instanceArn,finding,currentInstanceType,recommendationOptions[0].instanceType]' --output table", "aws compute-optimizer get-ec2-instance-recommendations --query \"instanceRecommendations[].[instanceArn,finding,currentInstanceType,recommendationOptions[0].instanceType]\" --output table", "aws compute-optimizer get-ec2-instance-recommendations"],
+      "fake_output": "-------------------------------------------------------------------------------\n|  .../i-0a1b2c3d4e5f67890  |  OVER_PROVISIONED   |  m6i.4xlarge  |  m7g.xlarge  |\n|  .../i-0f9e8d7c6b5a43210  |  OVER_PROVISIONED   |  r6i.2xlarge  |  r7g.large   |\n|  .../i-01234abcd5678ef90  |  OPTIMIZED          |  c7g.2xlarge  |  c7g.2xlarge |\n|  .../i-0aa11bb22cc33dd44  |  UNDER_PROVISIONED  |  t3.medium    |  m7g.large   |\n-------------------------------------------------------------------------------",
+      "hint": "aws compute-optimizer get-ec2-instance-recommendations --query 'instanceRecommendations[].[instanceArn,finding,currentInstanceType,recommendationOptions[0].instanceType]' --output table",
+      "explanation": "Two instances are far too big, one is right, and one is too small.",
+      "why": "The recommendations come from two weeks of real utilisation. An m6i.4xlarge that could be an m7g.xlarge is a quarter of the size on a cheaper processor family: roughly 80% off that line. Note the under-provisioned one as well: rightsizing means matching, and sometimes that's bigger (it's the throttled server from performance-incident-002)."
+    },
+    {
+      "prompt": "By default Compute Optimizer sees CPU and network, not memory. Why does that matter before you act on 'over-provisioned'?\n  a) It doesn't\n  b) An instance can have idle CPU and nearly full memory: without the CloudWatch agent's memory metric, a downsizing recommendation may be wrong\n  c) Memory is free\n  d) Recommendations are always safe\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "r6i.2xlarge (64 GB):  CPU 6% average,  memory 58 GB in use   <- a cache server: CPU-idle, memory-bound\nrecommendation without memory data: r7g.large (16 GB)     <- would fall over",
+      "hint": "The hypervisor can't see inside the guest's memory.",
+      "explanation": "Without memory data, memory-heavy workloads look oversized.",
+      "why": "CPU is visible from outside the virtual machine; memory use isn't, so it needs an agent. Install the CloudWatch agent (or enable the external metrics integration) before trusting recommendations for databases, caches, and JVM services. And apply any resize the way you'd apply any change: one instance, in a maintenance window, with a rollback."
+    },
+    {
+      "prompt": "Find old snapshots: list those you own that were created on or before 1 October 2025, as a table of id, size, and start time.",
+      "expected_commands": ["aws ec2 describe-snapshots --owner-ids self --query 'Snapshots[?StartTime<=`2025-10-01`].[SnapshotId,VolumeSize,StartTime]' --output table", "aws ec2 describe-snapshots --owner-ids self --query \"Snapshots[?StartTime<=`2025-10-01`].[SnapshotId,VolumeSize,StartTime]\" --output table"],
+      "fake_output": "---------------------------------------------------------------\n|  snap-0a1b2c3d4e5f60718  |  500  |  2023-03-14T02:00:11.000Z  |\n|  snap-0b2c3d4e5f6071829  |  500  |  2023-03-15T02:00:09.000Z  |\n|  snap-0c3d4e5f607182930  |  2000 |  2022-11-02T09:41:00.000Z  |\n|  ... 1,204 more                                              |\n---------------------------------------------------------------",
+      "hint": "aws ec2 describe-snapshots --owner-ids self --query 'Snapshots[?StartTime<=`2025-10-01`].[SnapshotId,VolumeSize,StartTime]' --output table",
+      "explanation": "Over 1,200 snapshots more than a year old, some from 2022.",
+      "why": "A nightly snapshot job with no expiry creates 365 snapshots a year per volume, for ever. Snapshots are incremental, so the cost isn't size times count, but it adds up and nobody reviews it. Deleting volumes doesn't delete their snapshots. Use Data Lifecycle Manager or AWS Backup with a retention rule, so that expiry is part of the schedule. Before deleting old ones, check none backs a registered machine image."
+    },
+    {
+      "prompt": "Find instances that may simply have been forgotten: list running instances with their type, launch time, and Name tag as a table.",
+      "expected_commands": ["aws ec2 describe-instances --filters Name=instance-state-name,Values=running --query 'Reservations[].Instances[].[InstanceId,InstanceType,LaunchTime,Tags[?Key==`Name`]|[0].Value]' --output table", "aws ec2 describe-instances --filters Name=instance-state-name,Values=running --query \"Reservations[].Instances[].[InstanceId,InstanceType,LaunchTime,Tags[?Key==`Name`]|[0].Value]\" --output table"],
+      "fake_output": "--------------------------------------------------------------------------------------\n|  i-0a1b2c3d4e5f67890  |  m6i.4xlarge  |  2024-02-11T10:02:00+00:00  |  shop-api-prod      |\n|  i-0aa11bb22cc33dd44  |  t3.medium    |  2025-06-01T08:00:00+00:00  |  reporting          |\n|  i-0bb22cc33dd44ee55  |  m6i.8xlarge  |  2025-11-20T16:41:00+00:00  |  sam-loadtest-tmp   |\n|  i-0cc33dd44ee55ff66  |  c6i.4xlarge  |  2026-01-09T11:15:00+00:00  |  migration-test-2   |\n--------------------------------------------------------------------------------------",
+      "hint": "aws ec2 describe-instances --filters Name=instance-state-name,Values=running --query 'Reservations[].Instances[].[InstanceId,InstanceType,LaunchTime,Tags[?Key==`Name`]|[0].Value]' --output table",
+      "explanation": "'sam-loadtest-tmp' has been running an 8xlarge since November, and 'migration-test-2' since January.",
+      "why": "Launch time plus a name containing tmp, test, or a person's name finds most abandoned compute. An m6i.8xlarge is about $1,100 a month, for eleven months. Temporary resources should be created with an expiry tag that an automated job enforces, and development environments should shut down outside working hours, which alone cuts their cost by about two thirds."
+    },
+    {
+      "prompt": "Which change usually saves the most with the least risk, and so should come first?\n  a) Rewriting the application for efficiency\n  b) Turning off what nobody uses, then rightsizing what's left, then buying commitments for the steady remainder\n  c) Buying a three-year commitment today\n  d) Moving to another cloud\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "1. eliminate  : idle and abandoned resources              (100% saving on each, near-zero risk)\n2. rightsize  : match size to measured use                (30-70% on each)\n3. commit     : savings plans for the stable baseline     (up to ~50%, but locks you in)\n4. re-architect: only where the numbers justify it",
+      "hint": "Order matters: a commitment locks in whatever you're running when you buy it.",
+      "explanation": "Remove, then resize, then commit.",
+      "why": "Commit before cleaning up and you've promised to pay for the waste for one to three years. Each step is cheaper and safer than the next, so do them in order. Re-architecture comes last because it costs engineering time, which is the most expensive resource a company has."
+    }
+  ]
+}
