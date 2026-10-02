@@ -148,3 +148,21 @@ journalctl --disk-usage
 sudo journalctl --vacuum-size=500M
 systemctl list-timers
 ```
+
+## Shared and Distributed Storage: NFS and Ceph
+
+```
+showmount -e <server>
+sudo mount -t nfs <server>:/export/data /mnt/data
+sudo mount -t nfs -o soft,timeo=50,retrans=3 <server>:/export/data /mnt/data
+mount | grep nfs          nfsstat -m          cat /etc/exports
+sudo exportfs -ra         sudo exportfs -v
+sudo umount -f -l /mnt/data
+
+ceph status               ceph health detail
+ceph osd tree             ceph osd df
+ceph df                   ceph pg stat
+ceph osd out <id>         ceph osd in <id>
+kubectl -n rook-ceph get cephcluster
+kubectl -n rook-ceph exec deploy/rook-ceph-tools -- ceph status
+```

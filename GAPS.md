@@ -173,6 +173,11 @@ plane being the actual outage).
   HTTPRoute with a canary split). Not covered: external-dns, writing
   chart templates in depth (helpers, hooks, library charts), Cluster
   API, and CKAD/CKS-specific passes.
+- ~~Backup, fleets, and tenancy~~: **done** in tutorial-036 (Velero and
+  CSI snapshots, with a restore test), tutorial-037 (Cluster API and
+  ApplicationSets), tutorial-038 (quotas, limit ranges, network and API
+  isolation, virtual clusters), and incident-018 (a restore that came
+  back with no data).
 - Kubeflow at an operator level now lives in the MLOps category (Part 8);
   deep Kubeflow Pipelines authoring remains out of scope
 
@@ -914,7 +919,7 @@ It is not a security-engineer or penetration-testing curriculum.
 
 # Part 13 — Server Fleet Operations
 
-**Content:** 11 tutorials, 6 incidents.
+**Content:** 13 tutorials, 7 incidents.
 
 ## Covered
 
@@ -972,7 +977,7 @@ real VMs.
 
 # Part 14 — SRE: How Large Companies Run Production
 
-**Content:** 10 tutorials, 6 incidents.
+**Content:** 11 tutorials, 6 incidents.
 
 **What's taught, honestly:** Google's and Meta's internal tools (Borg,
 Borgmon, Tupperware, and the internal deploy and config systems) aren't
@@ -1810,11 +1815,13 @@ employer uses it.
 - ~~**Advanced networking**~~: **done** in networking-tutorial-013 to
   017, networking-incident-008, and aws-tutorial-014. Still open:
   IPsec, DNSSEC, Calico, and BGP design.
-- **Storage and disaster recovery:** Ceph and Rook, NFS, CSI snapshots,
-  Velero cluster backups, and DR drills against real RPO and RTO
-  targets.
-- **Multi-cluster and multi-tenancy:** Cluster API, Argo CD
-  ApplicationSets, vCluster, tenant isolation.
+- ~~**Storage and disaster recovery**~~: **done** in servers-tutorial-012
+  (NFS), servers-tutorial-013 (Ceph health), tutorial-036 (Velero and
+  CSI snapshots), sre-tutorial-011 (a DR drill against RPO and RTO),
+  with servers-incident-007 and incident-018. Operating Rook, and
+  object storage design, are still open.
+- ~~**Multi-cluster and multi-tenancy**~~: **done** in tutorial-037 and
+  tutorial-038. Karmada and cluster mesh aren't covered.
 - **Platform engineering:** Backstage, internal developer platforms,
   golden paths, and DORA metrics.
 - **Compliance and governance:** SOC 2, ISO 27001, PCI-DSS, and HIPAA
@@ -1880,7 +1887,7 @@ If content is added in the order that helps most people soonest:
 
 | Category | Tutorials | Incidents | Extra |
 |---|---|---|---|
-| Kubernetes | 35 | 17 | 11 Writing Labs, 2 Sandboxes (explore, and fixable), 5 Mysteries |
+| Kubernetes | 38 | 18 | 11 Writing Labs, 2 Sandboxes (explore, and fixable), 5 Mysteries |
 | Docker | 11 | 5 | 3 Writing Labs (Dockerfile, Compose), Sandbox, 2 Mysteries |
 | Linux | 15 | 6 | 4 Writing Labs (bash), interactive Sandbox, 4 Mysteries |
 | Terraform | 16 | 7 | 5 Writing Labs (HCL, including a module) |
@@ -1892,8 +1899,8 @@ If content is added in the order that helps most people soonest:
 | Azure | 10 | 6 | Sandbox, 3 Mysteries |
 | Google Cloud | 10 | 6 | 1 Writing Lab (firewall), Sandbox, 3 Mysteries |
 | Security | 11 | 6 | 2 hacked-server Mysteries (Linux sandbox) |
-| Server Fleet Ops | 11 | 6 | 1 Writing Lab (Ansible) |
-| SRE | 10 | 6 | 1 Writing Lab (postmortem) |
+| Server Fleet Ops | 13 | 7 | 1 Writing Lab (Ansible) |
+| SRE | 11 | 6 | 1 Writing Lab (postmortem) |
 | Git | 11 | 6 | |
 | System Design | 11 | 6 | 2 Writing Labs (design documents) |
 | Databases | 12 | 6 | |
@@ -1904,7 +1911,7 @@ If content is added in the order that helps most people soonest:
 | Serverless | 7 | 4 | |
 | Performance | 7 | 3 | |
 | FinOps | 6 | 3 | |
-| **Total** | **300** | **150** | 44 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
+| **Total** | **306** | **152** | 44 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -1916,7 +1923,7 @@ command beats the alternatives — not just what it does.
 will know the commands, the failure modes, and — most importantly — the
 debugging method** (check the layer before guessing the fix; refused vs
 timeout; verify after every change; revoke before cleaning up; revert
-don't force-push). The 150 incidents are modeled on the kinds of problems
+don't force-push). The 152 incidents are modeled on the kinds of problems
 that genuinely trip up working engineers, and working through them
 builds judgment that command references alone never will.
 

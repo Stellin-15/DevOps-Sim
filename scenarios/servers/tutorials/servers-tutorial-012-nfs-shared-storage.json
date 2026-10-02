@@ -1,0 +1,47 @@
+{
+  "id": "servers-tutorial-012",
+  "type": "tutorial",
+  "category": "servers",
+  "title": "NFS: Shared Filesystems and How They Hang",
+  "difficulty": "intermediate",
+  "tags": ["nfs", "storage", "mounts", "fleet"],
+  "intro": "NFS lets many servers mount the same directory over the network. It's old, simple, and everywhere: shared uploads, home directories, and the 'ReadWriteMany' volumes in Kubernetes. Its failure mode is distinctive: when the server goes away, clients don't get an error, they freeze. The NFS server is nfs-1; you're on a client, web-1.",
+  "steps": [
+    {
+      "prompt": "See which directories nfs-1 offers, and to whom.",
+      "expected_commands": ["showmount -e nfs-1"],
+      "fake_output": "Export list for nfs-1:\n/export/uploads 10.0.1.0/24\n/export/home    10.0.0.0/16\n/export/scratch *",
+      "explanation": "Three exports: two limited to private ranges, and /export/scratch offered to everyone.",
+      "why": "An export is a directory plus a list of clients allowed to mount it. The '*' on scratch means any host that can reach the server. NFS (version 3 especially) trusts the client's address and the user ids it claims, so the export list and the network firewall are the access control. A world-readable export is one of the commonest findings in internal security scans."
+    },
+    {
+      "prompt": "Mount the uploads export at /mnt/uploads.",
+      "expected_commands": ["sudo mount -t nfs nfs-1:/export/uploads /mnt/uploads", "mount -t nfs nfs-1:/export/uploads /mnt/uploads", "sudo mount nfs-1:/export/uploads /mnt/uploads"],
+      "fake_output": "(no output)",
+      "explanation": "The remote directory now appears as a local path.",
+      "why": "A mount made by hand is gone after a reboot. Permanent mounts go in /etc/fstab or a systemd mount unit, with the '_netdev' option so the system waits for the network, and 'nofail' so that an unreachable NFS server doesn't stop the machine booting. An fstab line without those can leave a server stuck at start-up."
+    },
+    {
+      "prompt": "Check the options the mount is actually using.",
+      "expected_commands": ["nfsstat -m", "mount | grep nfs", "findmnt -t nfs,nfs4", "findmnt /mnt/uploads"],
+      "fake_output": "/mnt/uploads from nfs-1:/export/uploads\n Flags: rw,relatime,vers=4.2,rsize=1048576,wsize=1048576,hard,proto=tcp,timeo=600,retrans=2,sec=sys,local_lock=none",
+      "explanation": "NFS version 4.2, over TCP, and 'hard'.",
+      "why": "'hard' is the default and the important one. If the server stops answering, a hard mount retries for ever: every process that touches the mount blocks, uninterruptibly, until the server returns. That protects data (a write is never silently lost) and it's why an NFS outage looks like a frozen fleet rather than an error (servers-incident-007). 'soft' gives up with an I/O error instead, which is safer for availability and risks corrupting files being written."
+    },
+    {
+      "prompt": "On the server side, the exports file was edited to restrict /export/scratch. Apply the change without restarting the NFS service. (You're now on nfs-1.)",
+      "expected_commands": ["sudo exportfs -ra", "exportfs -ra", "sudo exportfs -r"],
+      "fake_output": "(no output)",
+      "explanation": "The server re-read /etc/exports and updated what it offers.",
+      "why": "'exportfs -ra' re-exports everything from the file, live, with no interruption to existing clients. 'exportfs -v' shows the result with every option in force, which is worth checking: a space in the wrong place in /etc/exports ('host (rw)' instead of 'host(rw)') silently grants read-write to the whole world."
+    },
+    {
+      "prompt": "An export has the option root_squash, the default. What does it do?\n  a) Compresses files owned by root\n  b) Maps requests made as root on a client to an unprivileged user on the server, so that being root on a client doesn't make you root over the shared files\n  c) Blocks root from mounting\n  d) Deletes root's files\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "root_squash    : client uid 0 -> server 'nobody'   (default, keep it)\nno_root_squash : client uid 0 -> server uid 0      (any client's root owns everything)",
+      "hint": "The server only sees a user id number that the client claims.",
+      "explanation": "Client root is demoted on the server.",
+      "why": "With classic NFS security the server believes the user id the client sends. root_squash at least stops a compromised or careless client's root from reading and changing every file on the share. It's also why containers running as root often 'can't write' to an NFS volume: they've been squashed to nobody. no_root_squash fixes that symptom by removing the protection; the better fix is the right ownership on the export. For real authentication NFSv4 uses Kerberos."
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "id": "sre-tutorial-011",
+  "type": "tutorial",
+  "category": "sre",
+  "title": "Running a Disaster Recovery Drill",
+  "difficulty": "advanced",
+  "tags": ["disaster-recovery", "rpo", "rto", "game-day", "failover"],
+  "intro": "Every company has a disaster recovery plan. Few have run it. A plan that's never been executed is a document describing what someone once hoped would work. A drill replaces hope with two measured numbers: how much data you lost, and how long you were down. Today's drill: the primary region, us-east-1, is declared lost, and the shop must be served from eu-west-1. The targets are an RPO of 5 minutes and an RTO of 60 minutes.",
+  "steps": [
+    {
+      "prompt": "Before starting, be clear on the two targets. A recovery point objective (RPO) of 5 minutes means:\n  a) Recovery must take at most 5 minutes\n  b) At most 5 minutes of data may be lost: the recovered system may be up to 5 minutes behind the moment of failure\n  c) Backups are taken every 5 days\n  d) The drill lasts 5 minutes\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "RPO: how much data you can afford to lose   -> set by replication lag and backup frequency\nRTO: how long you can afford to be down     -> set by how fast you can detect, decide, and rebuild",
+      "hint": "Point: a point in time you recover to.",
+      "explanation": "RPO is data loss, measured in time. RTO is downtime.",
+      "why": "They're business decisions with engineering prices. An RPO of zero needs synchronous replication across regions, which slows every write. An RTO of minutes needs a second environment already running. Nightly backups alone give an RPO of 24 hours and an RTO of however long a restore takes. The drill checks whether what you built matches what was promised."
+    },
+    {
+      "prompt": "Measure the RPO you actually have right now. The database has a cross-region replica in eu-west-1 named shop-db-replica-eu. Show its replication lag metric over the last 10 minutes (a saved query is in replica-lag.json).",
+      "expected_commands": ["aws cloudwatch get-metric-statistics --cli-input-json file://replica-lag.json", "aws cloudwatch get-metric-statistics --cli-input-json file://replica-lag.json --region eu-west-1"],
+      "fake_output": "{\n  \"Label\": \"ReplicaLag\",\n  \"Datapoints\": [\n    {\"Timestamp\": \"2026-10-02T14:20:00Z\", \"Maximum\": 2.0, \"Unit\": \"Seconds\"},\n    {\"Timestamp\": \"2026-10-02T14:25:00Z\", \"Maximum\": 412.0, \"Unit\": \"Seconds\"}\n  ]\n}",
+      "explanation": "Lag is normally 2 seconds, and reached 412 seconds, nearly 7 minutes, in the last interval.",
+      "why": "Asynchronous replication is always behind by some amount, and that amount is your RPO at any instant. A peak of 412 seconds breaks a 5-minute target, and peaks happen during heavy writes, which is exactly when failures are likeliest. Report the worst case, not the average, and alert on lag exceeding the RPO."
+    },
+    {
+      "prompt": "Start the clock and fail over. Promote the replica shop-db-replica-eu in eu-west-1 to a standalone, writable database.",
+      "expected_commands": ["aws rds promote-read-replica --db-instance-identifier shop-db-replica-eu --region eu-west-1", "aws rds promote-read-replica --region eu-west-1 --db-instance-identifier shop-db-replica-eu"],
+      "fake_output": "{\n  \"DBInstance\": {\n    \"DBInstanceIdentifier\": \"shop-db-replica-eu\",\n    \"DBInstanceStatus\": \"modifying\"\n  }\n}",
+      "explanation": "The replica is being promoted. It will take several minutes and can't be undone.",
+      "why": "Promotion cuts the replica loose from the primary: it becomes the new source of truth, and whatever hadn't replicated is gone. This is the irreversible step, which is why real failovers hesitate here, and why a drill is valuable: it makes the decision and the command familiar. Afterwards, the old primary must never be allowed to accept writes again, or you have two diverging databases."
+    },
+    {
+      "prompt": "The application stack in eu-west-1 is scaled up and healthy. Now send users there: apply the prepared DNS change failover-to-eu.json to the hosted zone Z0123456789ABCDEFGHIJ.",
+      "expected_commands": ["aws route53 change-resource-record-sets --hosted-zone-id Z0123456789ABCDEFGHIJ --change-batch file://failover-to-eu.json", "aws route53 change-resource-record-sets --change-batch file://failover-to-eu.json --hosted-zone-id Z0123456789ABCDEFGHIJ"],
+      "fake_output": "{\n  \"ChangeInfo\": {\"Id\": \"/change/C0445566778899AABBCC\", \"Status\": \"PENDING\"}\n}",
+      "explanation": "The record now points at the load balancer in eu-west-1.",
+      "why": "Users only move as their cached DNS answers expire, so the record's TTL is part of your RTO: a 24-hour TTL makes a 60-minute target impossible, whatever else you do (aws-tutorial-013). Health-checked failover records can make this switch automatic, though many teams keep the decision to fail over a human one, because failing over on a false alarm is itself an outage."
+    },
+    {
+      "prompt": "The drill is done: service was restored in eu-west-1 after 94 minutes, and 7 minutes of orders were missing. Against an RTO of 60 and an RPO of 5, what's the right conclusion?\n  a) The drill failed and shouldn't be repeated\n  b) The drill succeeded at its job: it found that the real numbers miss the targets, and each minute over is a specific, fixable finding\n  c) The targets should be hidden\n  d) Nothing needs to change\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "timeline:\n  0-18 min   deciding whether to fail over; nobody was sure who could authorise it\n  18-31 min  promoting the replica\n  31-66 min  scaling eu-west-1: instance quota too low, request raised by hand\n  66-94 min  DNS TTL was 1800s; secrets for the EU stack were out of date\n\nactions: name the decision-maker, raise the quota now, lower the TTL, sync secrets continuously, alert on replica lag",
+      "hint": "What is a drill for?",
+      "explanation": "A drill that finds gaps has worked. The gaps are the result.",
+      "why": "Notice where the time went: a third of it was a decision, and most of the rest was things that are only discovered by doing it, a quota, a stale secret, a TTL. None would have shown up in a document review. Write it up like an incident, fix the findings, and run it again; the number that matters is the trend. Then run the part people forget: failing back."
+    }
+  ]
+}

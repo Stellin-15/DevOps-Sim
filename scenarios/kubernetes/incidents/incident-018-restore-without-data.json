@@ -1,0 +1,49 @@
+{
+  "id": "incident-018",
+  "type": "incident",
+  "category": "kubernetes",
+  "title": "The namespace was restored from backup, and the database came back empty",
+  "difficulty": "advanced",
+  "tags": ["velero", "backup", "restore", "persistent-volumes"],
+  "intro": "Someone ran 'kubectl delete namespace reports' against production instead of staging. The team has nightly Velero backups and restored the namespace from last night's, reports-nightly-20261001. Every pod is Running. The reports application shows no data: its PostgreSQL started with an empty data directory. The backup's status was Completed.",
+  "steps": [
+    {
+      "prompt": "The backup said Completed, so check what it actually contains. Describe it in detail.",
+      "expected_commands": ["velero backup describe reports-nightly-20261001 --details", "velero backup describe reports-nightly-20261001", "velero describe backup reports-nightly-20261001 --details"],
+      "fake_output": "Name:         reports-nightly-20261001\nPhase:        Completed\nNamespaces:\n  Included:  reports\n\nSnapshot Move Data:  false\nBackup Item Operations:  0\n\nTotal items to be backed up:  61\nItems backed up:              61\n\nBackup Volumes:\n  Velero-Native Snapshots: <none included>\n  CSI Snapshots: <none included>\n  Pod Volume Backups: <none included>",
+      "hint": "velero backup describe reports-nightly-20261001 --details"
+    },
+    {
+      "prompt": "61 objects, and under 'Backup Volumes' nothing at all: no snapshots, no file copies. The manifests were saved; the data never was. See how the schedule is configured: show the schedule reports-nightly as YAML.",
+      "expected_commands": ["velero schedule get reports-nightly -o yaml", "kubectl get schedule reports-nightly -n velero -o yaml", "velero get schedule reports-nightly -o yaml", "velero schedule describe reports-nightly"],
+      "fake_output": "spec:\n  schedule: 0 2 * * *\n  template:\n    includedNamespaces:\n    - reports\n    snapshotVolumes: false\n    ttl: 720h0m0s",
+      "hint": "velero schedule get reports-nightly -o yaml"
+    },
+    {
+      "prompt": "snapshotVolumes: false. Every backup for months has been manifests only. The restore re-created the PersistentVolumeClaim, and the cluster provisioned a brand-new empty volume for it. Is the old data anywhere? The deleted PVC's volume used a StorageClass; check its reclaim policy: show the storage classes.",
+      "expected_commands": ["kubectl get storageclass", "kubectl get sc", "kubectl get storageclasses"],
+      "fake_output": "NAME            PROVISIONER       RECLAIMPOLICY   VOLUMEBINDINGMODE      AGE\ngp3 (default)   ebs.csi.aws.com   Delete          WaitForFirstConsumer   200d\ngp3-retain      ebs.csi.aws.com   Retain          WaitForFirstConsumer   200d",
+      "hint": "kubectl get storageclass"
+    },
+    {
+      "prompt": "The database used the default class, gp3, with reclaim policy Delete: when the namespace was deleted, the volume was deleted with it. One more place to look: the cloud's own snapshots. List EBS snapshots tagged for the PVC data-postgres-0, newest last.",
+      "expected_commands": ["aws ec2 describe-snapshots --owner-ids self --filters Name=tag:kubernetes.io/created-for/pvc/name,Values=data-postgres-0 --query 'sort_by(Snapshots,&StartTime)[].[SnapshotId,StartTime,VolumeSize]' --output table", "aws ec2 describe-snapshots --owner-ids self --filters Name=tag:kubernetes.io/created-for/pvc/name,Values=data-postgres-0", "aws ec2 describe-snapshots --owner-ids self --filters \"Name=tag:kubernetes.io/created-for/pvc/name,Values=data-postgres-0\" --query 'sort_by(Snapshots,&StartTime)[].[SnapshotId,StartTime,VolumeSize]' --output table"],
+      "fake_output": "---------------------------------------------------------------\n|  snap-0a1b2c3d4e5f60718  |  2026-09-27T03:00:11.000Z  |  100  |\n---------------------------------------------------------------",
+      "hint": "aws ec2 describe-snapshots --owner-ids self --filters Name=tag:kubernetes.io/created-for/pvc/name,Values=data-postgres-0"
+    },
+    {
+      "prompt": "One snapshot, from 27 September: a weekly AWS Backup job nobody remembered. Five days old, and the only copy of the data. A manifest restore-from-snapshot.yaml has been prepared: it creates a volume from that snapshot and binds the PVC data-postgres-0 to it. Scale the database down before swapping its volume: scale statefulset postgres in namespace reports to 0.",
+      "expected_commands": ["kubectl scale statefulset postgres --replicas=0 -n reports", "kubectl scale statefulset/postgres --replicas=0 -n reports", "kubectl scale sts postgres --replicas=0 -n reports", "kubectl scale statefulset postgres -n reports --replicas=0"],
+      "fake_output": "statefulset.apps/postgres scaled",
+      "hint": "kubectl scale statefulset postgres --replicas=0 -n reports"
+    },
+    {
+      "prompt": "Apply the prepared manifest, then the statefulset will be scaled back up.",
+      "expected_commands": ["kubectl apply -f restore-from-snapshot.yaml", "kubectl apply -f restore-from-snapshot.yaml -n reports"],
+      "fake_output": "persistentvolume/reports-pg-restored created\npersistentvolumeclaim/data-postgres-0 configured",
+      "hint": "kubectl apply -f restore-from-snapshot.yaml"
+    }
+  ],
+  "resolution": "The team had backups, a schedule, a retention period, and a green status every night. What they didn't have was the data. The schedule had been created with snapshotVolumes set to false, perhaps to make an early test run faster, and never changed. So each backup held the namespace's 61 Kubernetes objects and nothing from any volume. 'Completed' was accurate: it completed what it was asked to do. Restoring re-created the PersistentVolumeClaim; with no data to attach, the storage driver provisioned a new, empty disk, and PostgreSQL initialised a fresh database on it. Meanwhile the original volume was gone, because the default StorageClass's reclaim policy is Delete: removing the claim removes the disk. The data survived only by accident, in a five-day-old snapshot from an unrelated backup job. Five days of reports were lost. Every safeguard here existed and none had been tested. The first restore test would have shown an empty database in a scratch namespace on a quiet afternoon. Lessons, in order of value. Test restores, regularly, and check the data, not the pod status (tutorial-036 shows how to do it safely with namespace mapping). Read what a backup contains: 'velero backup describe --details' lists the volumes, and 'none included' is the line to look for. Use a StorageClass with reclaim policy Retain for anything you can't afford to lose, so that deleting a claim, or a namespace, leaves the disk behind. Back databases up with their own tools as well, since a volume snapshot is only crash-consistent. And make the original mistake harder: production and staging contexts should look different in the prompt, and deleting a production namespace should need more than one command.",
+  "real_commands_used": ["velero backup describe --details (Backup Volumes: none included)", "velero schedule get -o yaml (snapshotVolumes: false)", "kubectl get storageclass (RECLAIMPOLICY)", "aws ec2 describe-snapshots --filters Name=tag:kubernetes.io/created-for/pvc/name", "kubectl scale statefulset --replicas=0", "kubectl apply -f"]
+}

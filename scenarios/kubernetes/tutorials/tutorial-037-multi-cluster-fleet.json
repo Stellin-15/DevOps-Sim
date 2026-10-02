@@ -1,0 +1,47 @@
+{
+  "id": "tutorial-037",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Many Clusters: Cluster API and Argo CD ApplicationSets",
+  "difficulty": "advanced",
+  "tags": ["cluster-api", "argocd", "applicationset", "multi-cluster", "fleet"],
+  "intro": "tutorial-020 switched between clusters by hand. An organisation with twenty of them needs two things automated: creating and upgrading the clusters themselves, and putting the same baseline of software on every one. Cluster API does the first by treating a cluster as a Kubernetes object; Argo CD's ApplicationSets do the second. You're connected to the management cluster.",
+  "steps": [
+    {
+      "prompt": "List the workload clusters this management cluster knows about, in all namespaces.",
+      "expected_commands": ["kubectl get clusters -A", "kubectl get clusters --all-namespaces", "kubectl get cluster -A"],
+      "fake_output": "NAMESPACE   NAME         CLUSTERCLASS   PHASE         AGE    VERSION\nfleet       prod-eu-1    standard       Provisioned   200d   v1.30.4\nfleet       prod-us-1    standard       Provisioned   200d   v1.30.4\nfleet       staging-1    standard       Provisioned   90d    v1.31.1\nfleet       dev-sam      standard       Provisioning  4m     v1.31.1",
+      "explanation": "Four clusters, described as objects: three running, one being created.",
+      "why": "With Cluster API a cluster is declared in YAML and a controller builds it: the control plane, the machines, the network. So clusters are created, upgraded, and deleted through the same GitOps flow as applications, and they come out identical, because they share a ClusterClass. Staging is one version ahead of production, which is the usual, deliberate order for upgrades."
+    },
+    {
+      "prompt": "Look at the health of one cluster's parts: describe the cluster prod-eu-1 in namespace fleet with clusterctl.",
+      "expected_commands": ["clusterctl describe cluster prod-eu-1 -n fleet", "clusterctl describe cluster prod-eu-1 --namespace fleet", "clusterctl -n fleet describe cluster prod-eu-1"],
+      "fake_output": "NAME                                                   READY  SEVERITY  REASON\nCluster/prod-eu-1                                      True\n├─ClusterInfrastructure - AWSCluster/prod-eu-1         True\n├─ControlPlane - KubeadmControlPlane/prod-eu-1-cp      True\n│ └─3 Machines...                                      True\n└─Workers\n  └─MachineDeployment/prod-eu-1-md-0                   False  Warning   WaitingForAvailableMachines\n    ├─5 Machines...                                    True\n    └─Machine/prod-eu-1-md-0-x7k2m                     False  Warning   NodeStartupTimeout",
+      "explanation": "The control plane is healthy. One worker machine never joined the cluster.",
+      "why": "A MachineDeployment manages machines the way a Deployment manages pods: a desired count, rolling replacement, and health checks that delete and re-create a machine that never becomes a node. That's also how upgrades work: change the version on the object and the controller replaces machines one at a time. A machine stuck at start-up usually means a bad image, a quota, or a network problem in that cloud account."
+    },
+    {
+      "prompt": "Every cluster needs the same add-ons: ingress, cert-manager, monitoring. List the ApplicationSets in the argocd namespace.",
+      "expected_commands": ["kubectl get applicationsets -n argocd", "kubectl get applicationset -n argocd", "kubectl get appset -n argocd"],
+      "fake_output": "NAME               AGE\ncluster-baseline   200d\nshop-per-region    90d",
+      "explanation": "Two ApplicationSets: one for the baseline every cluster gets, and one that deploys the shop per region.",
+      "why": "An ApplicationSet is a template plus a generator. The generator produces a list (every registered cluster, every directory in a repository, every pull request), and one Argo CD Application is created from the template for each item. One object replaces twenty hand-written Applications that would drift apart."
+    },
+    {
+      "prompt": "With a cluster generator, what happens when a new cluster is registered with Argo CD?\n  a) Nothing until someone writes Applications for it\n  b) The ApplicationSet creates the Applications for it automatically, so the new cluster receives the baseline without any manual step\n  c) The cluster is deleted\n  d) All other clusters are redeployed\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "generators:\n  - clusters:\n      selector:\n        matchLabels:\n          env: prod\ntemplate:\n  metadata: { name: 'baseline-{{name}}' }\n  spec:\n    destination: { server: '{{server}}' }",
+      "hint": "The list of clusters is the generator's output, recomputed continuously.",
+      "explanation": "A new cluster matching the selector gets everything, with nothing to remember.",
+      "why": "This is what makes a fleet manageable: adding a cluster is one registration, and the standard set of software arrives by itself. The label selector lets you roll a change through environments: point it at staging clusters first, then production. Be careful with the reverse: removing a cluster from the generator deletes its Applications, and with them the workloads, unless the policy says to keep them."
+    },
+    {
+      "prompt": "Confirm which clusters Argo CD can deploy to.",
+      "expected_commands": ["argocd cluster list"],
+      "fake_output": "SERVER                               NAME        VERSION  STATUS      MESSAGE\nhttps://kubernetes.default.svc       in-cluster  1.30     Successful\nhttps://prod-eu-1.k8s.example.com    prod-eu-1   1.30     Successful\nhttps://prod-us-1.k8s.example.com    prod-us-1   1.30     Successful\nhttps://staging-1.k8s.example.com    staging-1   1.31     Successful\nhttps://dev-sam.k8s.example.com      dev-sam              Unknown     cluster has no applications and is not being monitored",
+      "explanation": "Four reachable clusters and one just registered, with nothing deployed yet.",
+      "why": "This one Argo CD holds credentials to deploy into every cluster, which makes the management cluster the most sensitive system you run: compromise it and you have them all. Limit what each registration can do, keep the management cluster small and separate, and consider the pull model (an agent in each cluster, as Flux does by default) where that risk is unacceptable."
+    }
+  ]
+}

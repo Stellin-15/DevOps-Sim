@@ -1,0 +1,49 @@
+{
+  "id": "servers-incident-007",
+  "type": "incident",
+  "category": "servers",
+  "title": "Twenty web servers froze at once, and none of them is out of CPU",
+  "difficulty": "intermediate",
+  "tags": ["nfs", "hang", "load-average", "mounts"],
+  "intro": "At 11:02 every web server stopped answering requests. SSH logins take a minute or hang entirely. On the one server where you have a shell, web-1, the load average is 180 and CPU use is 3%. All the web servers mount a shared uploads directory from nfs-1 at /mnt/uploads.",
+  "steps": [
+    {
+      "prompt": "A load average of 180 with idle CPUs means processes are waiting, not working. List the processes in uninterruptible sleep (state D), showing their state, pid, and command, first 5.",
+      "expected_commands": ["ps -eo state,pid,cmd | grep '^D' | head -5", "ps -eo state,pid,cmd | grep \"^D\" | head -5", "ps -eo state,pid,cmd | awk '$1==\"D\"' | head -5", "ps -eo state,pid,cmd | grep '^D' | head -n 5"],
+      "fake_output": "D   41204 nginx: worker process\nD   41205 nginx: worker process\nD   52110 php-fpm: pool www\nD   52111 php-fpm: pool www\nD   60112 ls --color=auto /mnt/uploads",
+      "hint": "ps -eo state,pid,cmd | grep '^D' | head -5"
+    },
+    {
+      "prompt": "nginx workers, PHP workers, and somebody's 'ls /mnt/uploads' are all stuck in D state. That's a hang on I/O, and the common factor is the NFS mount. Check what the kernel says about it: search the kernel log for nfs.",
+      "expected_commands": ["sudo dmesg -T | grep -i nfs | tail -3", "dmesg -T | grep -i nfs | tail -3", "sudo dmesg | grep -i nfs | tail -3", "sudo journalctl -k | grep -i nfs | tail -3", "sudo dmesg -T | grep -i nfs"],
+      "fake_output": "[Fri Oct  2 11:02:14 2026] nfs: server nfs-1 not responding, still trying\n[Fri Oct  2 11:04:14 2026] nfs: server nfs-1 not responding, still trying\n[Fri Oct  2 11:06:14 2026] nfs: server nfs-1 not responding, still trying",
+      "hint": "sudo dmesg -T | grep -i nfs | tail -3"
+    },
+    {
+      "prompt": "'not responding, still trying': the mount is 'hard', so every process touching it waits for ever. Confirm the server is unreachable without touching the mount yourself: check whether nfs-1's NFS port, 2049, answers, with a 3-second timeout.",
+      "expected_commands": ["nc -zv -w 3 nfs-1 2049", "nc -z -v -w 3 nfs-1 2049", "nc -zv -w3 nfs-1 2049", "timeout 3 nc -zv nfs-1 2049"],
+      "fake_output": "nc: connect to nfs-1 port 2049 (tcp) timed out: Operation now in progress",
+      "hint": "nc -zv -w 3 nfs-1 2049"
+    },
+    {
+      "prompt": "nfs-1 is down. Its team says the hardware has failed and it will be at least an hour. The site can run without uploads: pages only need them for product photos, which are also on the CDN. Detach the dead mount so that processes stop blocking on it: force a lazy unmount of /mnt/uploads.",
+      "expected_commands": ["sudo umount -f -l /mnt/uploads", "sudo umount -fl /mnt/uploads", "sudo umount -l -f /mnt/uploads", "umount -f -l /mnt/uploads"],
+      "fake_output": "(no output)",
+      "hint": "sudo umount -f -l /mnt/uploads"
+    },
+    {
+      "prompt": "The stuck workers still hold handles to the dead mount. Restart the services so they start clean: restart nginx and php8.3-fpm.",
+      "expected_commands": ["sudo systemctl restart nginx php8.3-fpm", "sudo systemctl restart php8.3-fpm nginx", "systemctl restart nginx php8.3-fpm"],
+      "fake_output": "(no output)",
+      "hint": "sudo systemctl restart nginx php8.3-fpm"
+    },
+    {
+      "prompt": "Check the load is falling.",
+      "expected_commands": ["uptime", "cat /proc/loadavg", "w"],
+      "fake_output": " 11:24:10 up 41 days,  2:14,  1 user,  load average: 2.10, 88.40, 141.20",
+      "hint": "uptime"
+    }
+  ],
+  "resolution": "One file server failed, and twenty servers that only read product photos from it stopped serving the whole site. The mechanism is NFS's default behaviour. A 'hard' mount never gives up: when the server stops answering, any process that touches a file on the mount blocks in the kernel, in a state that can't be interrupted, until the server returns. Each nginx and PHP worker that handled a request involving /mnt/uploads got stuck that way, one after another, until none were left. Linux counts those blocked processes in the load average, which is why load was 180 on a machine doing nothing: load measures things waiting to run or waiting on I/O, not CPU use. Even logging in hung, because the shell's start-up scripts and people's 'ls' and 'df' walked into the same mount. That combination, enormous load, idle CPU, processes in state D, and commands like df freezing, is the signature of a dead network filesystem. The kernel log said so plainly. A lazy forced unmount detached the mount point so new processes no longer touched it, and restarting the services replaced the stuck workers. Notice the test of the server was done with a port check, not by listing the directory: touching the mount to see whether it's broken adds you to the casualties. The real problem is architectural: a single NFS server was a hard dependency of every request, for content the site could have lived without. Options, in increasing order of effort: mount it 'soft' with short timeouts so that failures return errors the application can handle; serve uploads from object storage and a CDN and drop the shared mount altogether; or make the NFS service highly available. And any fleet-wide mount belongs in the dependency list that the readiness review asks about (sre-tutorial-010).",
+  "real_commands_used": ["ps -eo state,pid,cmd | grep '^D'", "dmesg -T | grep -i nfs", "nc -zv -w 3 <server> 2049", "umount -f -l <mountpoint>", "systemctl restart <services>", "uptime"]
+}

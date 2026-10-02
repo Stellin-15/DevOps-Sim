@@ -1,0 +1,47 @@
+{
+  "id": "tutorial-038",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Multi-Tenancy: Sharing a Cluster Without Sharing the Blast Radius",
+  "difficulty": "advanced",
+  "tags": ["multi-tenancy", "quotas", "network-policy", "rbac", "vcluster"],
+  "intro": "Giving every team its own cluster is expensive and slow; putting them all in one is cheap and risky. A namespace is only a name: without limits, any team's workload can starve the others, reach their services, or read their secrets. Tenancy is the set of fences you add. Team payments has the namespace payments.",
+  "steps": [
+    {
+      "prompt": "Check what the payments namespace is allowed to consume.",
+      "expected_commands": ["kubectl describe resourcequota -n payments", "kubectl describe quota -n payments", "kubectl get resourcequota -n payments -o yaml"],
+      "fake_output": "Name:            team-quota\nNamespace:       payments\nResource         Used    Hard\n--------         ----    ----\nlimits.memory    118Gi   128Gi\nrequests.cpu     38      40\nrequests.memory  61Gi    64Gi\npods             94      150\npersistentvolumeclaims  12  20",
+      "explanation": "The team is at 38 of 40 CPUs requested, and 61 of 64Gi of memory.",
+      "why": "A ResourceQuota caps the total a namespace can request, so one team can't take the cluster. It's enforced at admission: when the quota is reached, new pods are rejected with a clear 'exceeded quota' error, which shows up as a Deployment that won't scale. With a quota on CPU or memory, every pod in the namespace must declare requests and limits, or it's rejected."
+    },
+    {
+      "prompt": "See what defaults and bounds apply to individual containers in the namespace.",
+      "expected_commands": ["kubectl describe limitrange -n payments", "kubectl describe limits -n payments", "kubectl get limitrange -n payments -o yaml"],
+      "fake_output": "Name:       container-defaults\nNamespace:  payments\nType        Resource  Min    Max   Default Request  Default Limit\n----        --------  ---    ---   ---------------  -------------\nContainer   cpu       50m    4     100m             500m\nContainer   memory    64Mi   8Gi   128Mi            512Mi",
+      "explanation": "A container with no settings gets 100m CPU and 128Mi requested; nothing may ask for more than 4 CPUs or 8Gi.",
+      "why": "A quota limits the namespace; a LimitRange limits each container, and fills in defaults for those that declare nothing. Together they close two gaps: a single huge pod, and pods with no requests at all, which the scheduler treats as needing nothing and packs onto any node. The defaults are a guess, so workloads should still set their own."
+    },
+    {
+      "prompt": "Quotas separate resources. Check what separates network traffic: list the network policies in the namespace.",
+      "expected_commands": ["kubectl get networkpolicy -n payments", "kubectl get netpol -n payments", "kubectl get networkpolicies -n payments"],
+      "fake_output": "No resources found in payments namespace.",
+      "explanation": "None. Every pod in the cluster can connect to every pod in payments.",
+      "why": "Kubernetes networking is open by default: namespaces don't isolate traffic at all. Any pod in any team's namespace can reach the payments database port directly. Tenancy needs a default-deny policy in each namespace, plus explicit allows for DNS, the ingress controller, and the callers that are meant to connect (networking-tutorial-017 shows how to find those first)."
+    },
+    {
+      "prompt": "Check what a workload in the namespace is allowed to do through the API: list the permissions of the service account api in namespace payments.",
+      "expected_commands": ["kubectl auth can-i --list --as=system:serviceaccount:payments:api -n payments", "kubectl auth can-i --list --as system:serviceaccount:payments:api -n payments", "kubectl auth can-i --list -n payments --as=system:serviceaccount:payments:api"],
+      "fake_output": "Resources          Non-Resource URLs   Resource Names   Verbs\nsecrets            []                  []               [get list watch]\nconfigmaps         []                  []               [get list watch]\npods               []                  []               [get list watch create delete]\n*.*                []                  []               [get list]",
+      "explanation": "It can read every Secret in the namespace, create and delete pods, and read everything else.",
+      "why": "Far too much for an API server. Being able to list Secrets means one compromised pod yields every credential the team has. Being able to create pods is, in effect, the ability to run as any service account in the namespace. Tenancy between teams starts with least privilege inside each team: most workloads need no API access at all, and should have token mounting turned off."
+    },
+    {
+      "prompt": "A team needs to install its own CRDs and cluster-wide operators, which a namespace can't allow without affecting everyone. What fits?\n  a) Give them cluster-admin on the shared cluster\n  b) A virtual cluster (vCluster): its own API server and control plane running inside a namespace of the host cluster, so they have 'cluster-admin' over something that isn't shared\n  c) Refuse\n  d) Put the CRDs in the default namespace\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "$ vcluster list\nNAME        NAMESPACE     STATUS    CONNECTED   AGE\nteam-data   vc-team-data  Running               41d\n\nisolation, weakest to strongest:  namespace  <  virtual cluster  <  separate cluster  <  separate account",
+      "hint": "CRDs and cluster roles are cluster-scoped; a namespace can't contain them.",
+      "explanation": "A virtual control plane: admin rights without a shared API server.",
+      "why": "Namespaces share one API server, one set of CRDs, and one set of nodes. A virtual cluster separates the control plane cheaply, while the pods still run on the host's nodes, so the kernel is still shared. For tenants you don't trust (other companies, arbitrary code) even that isn't enough: use separate nodes with sandboxed runtimes, or separate clusters. Choose the weakest isolation that meets the actual risk."
+    }
+  ]
+}

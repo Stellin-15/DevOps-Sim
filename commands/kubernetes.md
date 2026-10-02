@@ -439,6 +439,28 @@ linkerd viz edges deployment -n <ns>
 linkerd viz tap deploy/<name> -n <ns>
 ```
 
+## Backup, Multi-Cluster, and Multi-Tenancy
+
+```
+velero backup create <name> --include-namespaces <ns>
+velero backup describe <name> --details
+velero backup get                      velero schedule get
+velero restore create --from-backup <name>
+velero restore describe <name>
+kubectl get volumesnapshot -n <ns>     kubectl get volumesnapshotclass
+
+kubectl get clusters -A                kubectl get machines -A          # Cluster API
+clusterctl describe cluster <name>
+kubectl get applicationsets -n argocd
+argocd cluster list
+
+kubectl describe resourcequota -n <ns>
+kubectl describe limitrange -n <ns>
+kubectl get networkpolicy -n <ns>
+kubectl auth can-i --list --as=system:serviceaccount:<ns>:<sa> -n <ns>
+vcluster list                          vcluster connect <name> -n <ns>
+```
+
 ---
 
 *This file is a reference for writing scenario JSON — pull `expected_commands` values from here so the game teaches syntax that actually matches real kubectl.*

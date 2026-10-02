@@ -1,0 +1,47 @@
+{
+  "id": "servers-tutorial-013",
+  "type": "tutorial",
+  "category": "servers",
+  "title": "Ceph: Reading the Health of a Storage Cluster",
+  "difficulty": "advanced",
+  "tags": ["ceph", "rook", "storage", "distributed"],
+  "intro": "Ceph spreads data across many disks on many servers and keeps several copies, so that losing a disk or a whole host loses nothing. It backs private clouds and, through Rook, Kubernetes clusters on bare metal. You rarely fix Ceph by hand, since it heals itself; the skill is reading its status and knowing when it's safe to touch something. You're on an admin node of a 3-host cluster.",
+  "steps": [
+    {
+      "prompt": "Get the cluster's overall status.",
+      "expected_commands": ["ceph status", "ceph -s", "sudo ceph status", "sudo ceph -s"],
+      "fake_output": "  cluster:\n    health: HEALTH_WARN\n            1 osds down\n            Degraded data redundancy: 41204/1236120 objects degraded (3.333%), 88 pgs degraded\n\n  services:\n    mon: 3 daemons, quorum ceph-1,ceph-2,ceph-3\n    mgr: ceph-1(active), standbys: ceph-2\n    osd: 12 osds: 11 up, 12 in\n\n  data:\n    pools:   3 pools, 256 pgs\n    objects: 412.04k objects, 1.5 TiB\n    usage:   4.6 TiB used, 39 TiB / 44 TiB avail\n    pgs:     168 active+clean\n             88  active+undersized+degraded",
+      "explanation": "A warning: one of 12 disks (OSDs) is down, and 3.3% of objects have fewer copies than they should.",
+      "why": "HEALTH_WARN means reduced safety, not data loss: every object still has at least one good copy, and clients carry on. 'active' in a placement group's state means it's serving I/O. The words after it say what's wrong: 'degraded' means some copies are missing, 'undersized' means fewer copies than configured. HEALTH_ERR, or groups that are 'inactive' or 'down', is when I/O actually stops."
+    },
+    {
+      "prompt": "Get the specifics behind the warning.",
+      "expected_commands": ["ceph health detail", "sudo ceph health detail"],
+      "fake_output": "HEALTH_WARN 1 osds down; Degraded data redundancy: 41204/1236120 objects degraded (3.333%), 88 pgs degraded\n[WRN] OSD_DOWN: 1 osds down\n    osd.7 (root=default,host=ceph-3) is down\n[WRN] PG_DEGRADED: Degraded data redundancy: 88 pgs degraded\n    pg 2.1a is active+undersized+degraded, acting [2,10]",
+      "explanation": "The down disk is osd.7, on host ceph-3.",
+      "why": "'health detail' names the daemon and the host, which turns a cluster warning into a job on one machine: look at that disk and that service ('systemctl status ceph-osd@7', and the kernel log for disk errors). 'acting [2,10]' shows a placement group currently living on two OSDs where it should have three."
+    },
+    {
+      "prompt": "See how the disks are arranged across hosts, and each one's state.",
+      "expected_commands": ["ceph osd tree", "sudo ceph osd tree"],
+      "fake_output": "ID  CLASS  WEIGHT    TYPE NAME        STATUS  REWEIGHT\n-1         43.66   root default\n-3         14.55       host ceph-1\n 0    hdd   3.64           osd.0        up   1.00000\n 1    hdd   3.64           osd.1        up   1.00000\n 2    hdd   3.64           osd.2        up   1.00000\n 3    hdd   3.64           osd.3        up   1.00000\n-5         14.55       host ceph-2\n 4    hdd   3.64           osd.4        up   1.00000\n ...\n-7         14.55       host ceph-3\n 7    hdd   3.64           osd.7      down   1.00000\n 8    hdd   3.64           osd.8        up   1.00000",
+      "explanation": "Four disks on each of three hosts, with osd.7 on ceph-3 down.",
+      "why": "The tree is Ceph's map of failure domains. With three copies and the default rule 'one copy per host', the cluster survives losing any one whole host. That's why layout matters more than disk count: twelve disks in a single server would give no host-level safety at all."
+    },
+    {
+      "prompt": "The disk behind osd.7 has failed and will be replaced tomorrow. Ceph will mark it 'out' by itself after ten minutes and re-create its copies elsewhere. What must be true for that to be safe?\n  a) Nothing: it's always safe\n  b) The remaining disks need enough free space to take the extra copies; a cluster that's nearly full can fill up during recovery and stop accepting writes\n  c) The cluster must be restarted first\n  d) All clients must disconnect\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "usage: 4.6 TiB used of 44 TiB (10%)  -> plenty of room to rebuild\n\nnearfull ratio 85%, full ratio 95%: at 'full', the cluster blocks writes to protect itself",
+      "hint": "The data on the dead disk has to be rebuilt somewhere.",
+      "explanation": "Recovery needs headroom.",
+      "why": "Self-healing uses capacity: the copies that were on the failed disk are re-created on the others. A cluster run at 85% has no room to heal, and reaching the full ratio stops all writes, which for a cluster backing virtual machines or Kubernetes volumes is a total outage. Keep usage low enough to lose your largest failure domain and still rebuild; 'ceph osd df' shows the fill of each disk."
+    },
+    {
+      "prompt": "You're about to reboot host ceph-2 for a kernel patch, for five minutes. You don't want Ceph to start copying terabytes around for a host that will be back shortly. Set the flag that stops OSDs being marked out.",
+      "expected_commands": ["ceph osd set noout", "sudo ceph osd set noout"],
+      "fake_output": "noout is set",
+      "explanation": "Ceph will tolerate OSDs being down without starting to rebalance.",
+      "why": "This is the standard routine for planned maintenance: set noout, reboot one host, wait for the status to return to all groups 'active+clean', then unset it ('ceph osd unset noout'). Forgetting to unset it leaves the cluster unable to heal from a real failure, so it shows as a health warning while set. And only ever take one failure domain down at a time: check the status is clean before starting the next host."
+    }
+  ]
+}

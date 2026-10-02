@@ -1,0 +1,47 @@
+{
+  "id": "tutorial-036",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Backing Up a Cluster: Velero and Volume Snapshots",
+  "difficulty": "advanced",
+  "tags": ["velero", "backup", "disaster-recovery", "snapshots"],
+  "intro": "tutorial-023 backed up etcd, which restores the cluster's own state in place. It doesn't let you restore one deleted namespace, move workloads to a new cluster, or bring back the data in persistent volumes. Velero does: it saves Kubernetes objects to object storage and snapshots the volumes. The namespace to protect is shop.",
+  "steps": [
+    {
+      "prompt": "Take a backup of the namespace shop, named shop-manual-1.",
+      "expected_commands": ["velero backup create shop-manual-1 --include-namespaces shop", "velero backup create shop-manual-1 --include-namespaces=shop", "velero create backup shop-manual-1 --include-namespaces shop"],
+      "fake_output": "Backup request \"shop-manual-1\" submitted successfully.\nRun `velero backup describe shop-manual-1` or `velero backup logs shop-manual-1` for more details.",
+      "explanation": "The request is accepted; the backup runs in the background.",
+      "why": "'Submitted' isn't 'succeeded'. Velero is a controller: the command creates a Backup object and the server works on it. Always check the result, which is the next step. A backup can be scoped by namespace, by label, or cover the whole cluster, and cluster-scoped objects such as CRDs and StorageClasses have to be included deliberately."
+    },
+    {
+      "prompt": "Check the backup's result in detail.",
+      "expected_commands": ["velero backup describe shop-manual-1 --details", "velero backup describe shop-manual-1", "velero describe backup shop-manual-1 --details"],
+      "fake_output": "Name:         shop-manual-1\nPhase:        PartiallyFailed (run `velero backup logs shop-manual-1` for more information)\nErrors:    1\nWarnings:  0\n\nTotal items to be backed up:  212\nItems backed up:              212\n\nBackup Volumes:\n  CSI Snapshots:\n    shop/data-postgres-0:  Snapshot: snapcontent-0a1b2c3d  Result: succeeded\n    shop/reports-cache:    Result: failed (no VolumeSnapshotClass with label velero.io/csi-volumesnapshot-class found for driver nfs.csi.k8s.io)",
+      "explanation": "All 212 objects were saved. One volume snapshot succeeded and one failed.",
+      "why": "'PartiallyFailed' is the phase to watch for: the manifests are safe and some data isn't. Here the NFS-backed volume couldn't be snapshotted because its driver has no snapshot class. A backup that's quietly missing a volume looks fine until you restore it and the pod starts with an empty disk (incident-018). Alert on any phase other than Completed."
+    },
+    {
+      "prompt": "See the volume snapshots that exist in namespace shop.",
+      "expected_commands": ["kubectl get volumesnapshot -n shop", "kubectl get volumesnapshots -n shop", "kubectl get vs -n shop"],
+      "fake_output": "NAME                         READYTOUSE   SOURCEPVC         RESTORESIZE   SNAPSHOTCLASS   AGE\nvelero-data-postgres-0-x7k2  true         data-postgres-0   100Gi         csi-aws-vsc     2m",
+      "explanation": "One snapshot, of the Postgres volume, ready to use.",
+      "why": "A VolumeSnapshot is the Kubernetes API for the storage system's own snapshot (an EBS snapshot here). It's quick and crash-consistent: the disk as it was at one instant, as if the power had been cut. For a database that's recoverable but not ideal; use the database's own backup for consistency (Databases covers that) and treat volume snapshots as the fast, coarse layer. For volumes with no snapshot support, Velero can copy the files instead, which is slower."
+    },
+    {
+      "prompt": "Backups by hand don't happen. List the scheduled backups.",
+      "expected_commands": ["velero schedule get", "velero get schedules", "velero schedule get -o wide"],
+      "fake_output": "NAME          STATUS    CREATED                         SCHEDULE    BACKUP TTL   LAST BACKUP   SELECTOR\nshop-nightly  Enabled   2026-03-01 09:00:00 +0000 UTC   0 2 * * *   720h0m0s     12h ago       <none>",
+      "explanation": "A nightly backup at 02:00, each kept for 720 hours (30 days), last run 12 hours ago.",
+      "why": "A schedule plus a TTL is the whole backup policy: how often, and how long each is kept. 'LAST BACKUP' is worth monitoring: a schedule that stopped running weeks ago looks 'Enabled'. Store the backups in a different account or region from the cluster, or the failure that takes the cluster takes its backups too."
+    },
+    {
+      "prompt": "Prove the backup restores: restore shop-manual-1 into a scratch namespace, shop-restore-test, without touching the original.",
+      "expected_commands": ["velero restore create --from-backup shop-manual-1 --namespace-mappings shop:shop-restore-test", "velero restore create --namespace-mappings shop:shop-restore-test --from-backup shop-manual-1", "velero create restore --from-backup shop-manual-1 --namespace-mappings shop:shop-restore-test"],
+      "fake_output": "Restore request \"shop-manual-1-20261002142011\" submitted successfully.\nRun `velero restore describe shop-manual-1-20261002142011` or `velero restore logs shop-manual-1-20261002142011` for more details.",
+      "hint": "velero restore create --from-backup shop-manual-1 --namespace-mappings shop:shop-restore-test",
+      "explanation": "The namespace is being re-created under another name, alongside the live one.",
+      "why": "Namespace mapping makes a restore test safe to run in the production cluster, and regularly. Check that pods start and that the data is there, then delete the scratch namespace. By default a restore doesn't overwrite objects that already exist, so restoring into a live namespace repairs what's missing and leaves the rest. The same backup restored into a different cluster is a migration."
+    }
+  ]
+}
