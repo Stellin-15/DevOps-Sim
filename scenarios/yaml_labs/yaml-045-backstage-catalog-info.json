@@ -1,0 +1,38 @@
+{
+  "id": "yaml-045",
+  "type": "yaml_lab",
+  "category": "sre",
+  "title": "Register a Service in the Catalog: Write catalog-info.yaml",
+  "difficulty": "beginner",
+  "tags": ["backstage", "service-catalog", "platform-engineering", "ownership"],
+  "intro": "sre-tutorial-012 queried the service catalog. The entries come from a small file in each repository. Write the one for the checkout service, so that anyone who finds it at 3 a.m. can see who owns it, what it depends on, and where its repository and on-call rota are.",
+  "steps": [
+    {
+      "file": "catalog-info.yaml",
+      "starter_content": "",
+      "prompt": "Write catalog-info.yaml:\n- apiVersion backstage.io/v1alpha1, kind Component\n- metadata.name: checkout\n- metadata.description: a short sentence\n- metadata.annotations:\n    github.com/project-slug: acme/checkout\n    pagerduty.com/service-id: PCHECK01\n- metadata.tags: a list containing payments\n- spec.type: service\n- spec.lifecycle: production\n- spec.owner: team-payments\n- spec.system: shop\n- spec.dependsOn: component:default/inventory and resource:default/shop-db\n- spec.providesApis: checkout-api",
+      "apply_commands": ["npx @backstage/cli repo lint", "check"],
+      "validate": {
+        "kind": "Component",
+        "fields": {
+          "apiVersion": "backstage.io/v1alpha1",
+          "metadata.name": "checkout",
+          "metadata.description": "ANY",
+          "metadata.annotations": {"contains": ["github.com/project-slug", "acme/checkout", "pagerduty.com/service-id", "PCHECK01"]},
+          "metadata.tags[*]": "payments",
+          "spec.type": "service",
+          "spec.lifecycle": "production",
+          "spec.owner": "team-payments",
+          "spec.system": "shop",
+          "spec.dependsOn[*]": ["component:default/inventory", "resource:default/shop-db"],
+          "spec.providesApis[*]": "checkout-api"
+        }
+      },
+      "hint": "apiVersion: backstage.io/v1alpha1\nkind: Component\nmetadata:\n  name: checkout\n  description: ...\n  annotations:\n    github.com/project-slug: acme/checkout\n    pagerduty.com/service-id: PCHECK01\n  tags:\n    - payments\nspec:\n  type: service\n  lifecycle: production\n  owner: team-payments\n  system: shop\n  dependsOn:\n    - component:default/inventory\n    - resource:default/shop-db\n  providesApis:\n    - checkout-api",
+      "solution": "apiVersion: backstage.io/v1alpha1\nkind: Component\nmetadata:\n  name: checkout\n  description: Takes a cart to a paid order.\n  annotations:\n    github.com/project-slug: acme/checkout\n    pagerduty.com/service-id: PCHECK01\n  tags:\n    - payments\nspec:\n  type: service\n  lifecycle: production\n  owner: team-payments\n  system: shop\n  dependsOn:\n    - component:default/inventory\n    - resource:default/shop-db\n  providesApis:\n    - checkout-api\n",
+      "fake_output": "Checked 1 entity: catalog-info.yaml is valid.",
+      "explanation": "The service is now findable, with an owner, an on-call link, and its dependencies declared.",
+      "why": "Each field answers a question someone will ask under pressure. 'owner' is a team, so it survives people leaving, and it should match the group that's actually paged. The annotations are how the portal joins this entry to other systems: the repository, the on-call service, dashboards, cost reports. 'lifecycle' separates production services from experiments, which matters when deciding how urgent a problem is. 'dependsOn' is what lets someone ask 'what's affected if the shop database is down?'. Because the file sits in the repository, it's updated by the same pull request that changes the service; a catalog kept anywhere else goes stale within a quarter. Service templates should generate this file, so that a new service is registered from its first commit."
+    }
+  ]
+}

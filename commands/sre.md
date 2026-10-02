@@ -104,3 +104,20 @@ promtool check rules <slo-rules>.yml
 promtool test rules <slo-tests>.yml
 sloth generate -i <slo-spec>.yml
 ```
+
+## Platform Engineering and Delivery Metrics
+
+```
+curl -s $BACKSTAGE_URL/api/catalog/entities?filter=kind=component | jq length
+curl -s "$BACKSTAGE_URL/api/catalog/entities?filter=kind=component" | jq -r '.[] | select(.spec.owner == null or .spec.owner == "unknown") | .metadata.name'
+curl -s $BACKSTAGE_URL/api/catalog/entities/by-name/component/default/<name> | jq '.spec'
+npx @techdocs/cli generate --no-docker
+npx @backstage/cli repo lint
+
+gh run list --workflow deploy.yml --status success --created ">2026-09-01" --json createdAt | jq length
+gh pr list --state merged --search "merged:>2026-09-01" --json createdAt,mergedAt --limit 200
+git log --merges --since="30 days ago" --oneline | wc -l
+```
+
+DORA's four keys: deployment frequency, lead time for changes, change
+failure rate, and time to restore service.

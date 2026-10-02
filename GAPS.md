@@ -977,7 +977,7 @@ real VMs.
 
 # Part 14 — SRE: How Large Companies Run Production
 
-**Content:** 11 tutorials, 6 incidents.
+**Content:** 13 tutorials, 6 incidents.
 
 **What's taught, honestly:** Google's and Meta's internal tools (Borg,
 Borgmon, Tupperware, and the internal deploy and config systems) aren't
@@ -1822,8 +1822,11 @@ employer uses it.
   object storage design, are still open.
 - ~~**Multi-cluster and multi-tenancy**~~: **done** in tutorial-037 and
   tutorial-038. Karmada and cluster mesh aren't covered.
-- **Platform engineering:** Backstage, internal developer platforms,
-  golden paths, and DORA metrics.
+- ~~**Platform engineering**~~: **done** in sre-tutorial-012 (the service
+  catalog, ownership, golden paths, measuring a platform),
+  sre-tutorial-013 (the four DORA metrics from real data), and Writing
+  Lab yaml-045 (a catalog-info.yaml). Building Backstage plugins and
+  software templates isn't covered.
 - **Compliance and governance:** SOC 2, ISO 27001, PCI-DSS, and HIPAA
   basics; collecting audit evidence; cloud posture tools (Prowler,
   ScoutSuite); threat modelling; SIEM detection rules; zero-trust
@@ -1900,7 +1903,7 @@ If content is added in the order that helps most people soonest:
 | Google Cloud | 10 | 6 | 1 Writing Lab (firewall), Sandbox, 3 Mysteries |
 | Security | 11 | 6 | 2 hacked-server Mysteries (Linux sandbox) |
 | Server Fleet Ops | 13 | 7 | 1 Writing Lab (Ansible) |
-| SRE | 11 | 6 | 1 Writing Lab (postmortem) |
+| SRE | 13 | 6 | 2 Writing Labs (postmortem, catalog entry) |
 | Git | 11 | 6 | |
 | System Design | 11 | 6 | 2 Writing Labs (design documents) |
 | Databases | 12 | 6 | |
@@ -1911,7 +1914,7 @@ If content is added in the order that helps most people soonest:
 | Serverless | 7 | 4 | |
 | Performance | 7 | 3 | |
 | FinOps | 6 | 3 | |
-| **Total** | **306** | **152** | 44 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
+| **Total** | **308** | **152** | 45 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -1930,7 +1933,7 @@ builds judgment that command references alone never will.
 **It will not, on its own, make you fully proficient**, for four reasons
 that no amount of additional scenario content can fully close:
 
-1. **Authoring vs. operating.** Largely addressed: 44 Writing Labs now
+1. **Authoring vs. operating.** Largely addressed: 45 Writing Labs now
    have you write real Kubernetes manifests, GitHub Actions workflows,
    Prometheus alert rules, Compose files, Dockerfiles, Terraform (AWS
    VPCs and security groups, GCP firewalls), IAM policies, Ansible

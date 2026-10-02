@@ -34,7 +34,7 @@ string.
   The game writes a real file to `workspace/`, tells you what to build or
   fix, and you edit it in your actual editor (vim, nano, VS Code —
   whatever you'd really use). Typing the apply command reads your real
-  file and checks it field by field. 44 labs across thirteen formats:
+  file and checks it field by field. 45 labs across thirteen formats:
   Kubernetes manifests, GitHub Actions workflows, Prometheus alert rules,
   Docker Compose files, Dockerfiles, Terraform (AWS VPCs, security
   groups, GCP firewalls, a reusable module), AWS IAM policies, Ansible
@@ -364,7 +364,7 @@ the engine, loader, sandboxes, yaml_lab, career_path, mystery, or scenario conte
 | Google Cloud | 10 | 6 | configurations/projects/APIs, Compute Engine filters, IAP SSH/serial console, global VPCs, tag-based firewalls, Cloud NAT, IAM without keys/impersonation, Cloud Storage, logging/quotas, GKE/Workload Identity |
 | Security | 11 | 6 | nmap discovery/TLS checks, Trivy/kube-bench, Lynis/OpenSCAP CIS audits, SSH hardening, fail2ban, auditd, osquery/AIDE, secrets scanning, compromise triage, Kubernetes admission policy (Kyverno) and runtime detection (Falco); plus 2 hacked-server mysteries |
 | Server Fleet Ops | 13 | 7 | Ansible (inventories, safe playbook runs, rolling serial updates, Vault/lint), Debian and RHEL patching with rollback, kernels and reboots, SSM Patch Manager, chrony, LVM growth, backups with real restore tests, NFS, Ceph health |
-| SRE | 11 | 6 | incident first ten minutes, Argo Rollouts canaries, Istio resilience, capacity planning, load testing (k6/vegeta), chaos engineering, feature flags/kill switches, postmortem timelines, graceful degradation, production readiness reviews |
+| SRE | 13 | 6 | incident first ten minutes, Argo Rollouts canaries, Istio resilience, capacity planning, load testing (k6/vegeta), chaos engineering, feature flags/kill switches, postmortem timelines, graceful degradation, production readiness reviews, disaster recovery drills, service catalogs and golden paths, DORA metrics |
 | Git | 11 | 6 | objects/refs/HEAD, precise staging, branches, merge conflicts, rebase (autosquash, --onto), the undo matrix and reflog, searching history, remotes and forks, stash/worktrees, config/attributes/hooks, shallow and partial clones, submodules, LFS, signing |
 | System Design | 11 | 6 | estimation, load balancing, caching, indexes and query plans, replication, sharding, queues, consistency and quorums, rate limiting and idempotency, CDNs, a worked URL shortener; real commands plus multiple-choice trade-off questions; plus 2 design-document Writing Labs |
 | Databases | 12 | 6 | psql, on-call SQL (joins, GROUP BY, window functions), transactions and isolation, roles and privileges, pg_stat_activity and lock chains, slow queries (pg_stat_statements, EXPLAIN), vacuum and wraparound, pg_dump/pg_restore, point-in-time recovery (pgBackRest), Patroni failover, MySQL, Redis operations |
@@ -375,7 +375,7 @@ the engine, loader, sandboxes, yaml_lab, career_path, mystery, or scenario conte
 | Serverless | 7 | 4 | Lambda (invoke and logs, cold starts and concurrency, versions/aliases/canaries, event retries and failure destinations), API Gateway limits, ECS on Fargate, Cloud Run revisions and traffic, Azure Functions |
 | Performance | 7 | 3 | perf CPU profiling, flame graphs, py-spy, JVM heap/GC/thread dumps, eBPF tools (execsnoop, biolatency, bpftrace), Go pprof, honest benchmarking and percentiles |
 | FinOps | 6 | 3 | reading the bill by service and team, tags/budgets/anomaly alerts, rightsizing, Savings Plans and spot, Kubernetes cost (OpenCost), storage classes, log retention, and data transfer |
-| **Total** | **306** | **152** | + 44 Writing Labs |
+| **Total** | **308** | **152** | + 45 Writing Labs |
 
 The three clouds use different names for the same ideas (security group
 vs NSG vs firewall rule; CloudTrail vs Activity Log vs Audit Logs). The

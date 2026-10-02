@@ -1,0 +1,50 @@
+{
+  "id": "sre-tutorial-013",
+  "type": "tutorial",
+  "category": "sre",
+  "title": "DORA Metrics: Measuring How Well You Deliver",
+  "difficulty": "intermediate",
+  "tags": ["dora", "metrics", "delivery", "lead-time"],
+  "intro": "Years of research across thousands of teams (the DORA programme) found four measures that track how well a team delivers software, and found that speed and stability go together: good teams have both. Two measure throughput and two measure stability. You can compute rough versions from data you already have. You're in the checkout service's repository; deploys are done by the workflow deploy.yml.",
+  "steps": [
+    {
+      "prompt": "Deployment frequency: count the successful runs of the deploy.yml workflow since 1 September 2026.",
+      "expected_commands": ["gh run list --workflow deploy.yml --status success --created \">2026-09-01\" --json createdAt | jq length", "gh run list --workflow deploy.yml --status success --created '>2026-09-01' --json createdAt | jq length", "gh run list --workflow deploy.yml --status success --created \">2026-09-01\" --json createdAt --limit 500 | jq length", "gh run list --workflow=deploy.yml --status=success --created=\">2026-09-01\" --json createdAt | jq length"],
+      "fake_output": "62",
+      "hint": "gh run list --workflow deploy.yml --status success --created \">2026-09-01\" --json createdAt | jq length",
+      "explanation": "62 production deploys in about a month: roughly three per working day.",
+      "why": "Deployment frequency measures batch size indirectly. Deploying often means each deploy is small, and a small change is easier to review, test, and roll back, and is easier to blame when something breaks. Teams that deploy rarely aren't being careful; they're shipping big, risky bundles."
+    },
+    {
+      "prompt": "Lead time for changes: fetch the creation and merge times of pull requests merged since 1 September 2026, up to 200 of them.",
+      "expected_commands": ["gh pr list --state merged --search \"merged:>2026-09-01\" --json createdAt,mergedAt --limit 200", "gh pr list --state merged --search 'merged:>2026-09-01' --json createdAt,mergedAt --limit 200", "gh pr list --state merged --limit 200 --search \"merged:>2026-09-01\" --json createdAt,mergedAt"],
+      "fake_output": "[\n  {\"createdAt\": \"2026-09-29T09:12:00Z\", \"mergedAt\": \"2026-09-29T14:40:00Z\"},\n  {\"createdAt\": \"2026-09-28T10:01:00Z\", \"mergedAt\": \"2026-09-30T11:15:00Z\"},\n  {\"createdAt\": \"2026-09-22T16:30:00Z\", \"mergedAt\": \"2026-09-30T09:02:00Z\"},\n  ... 118 more\n]\n\n(median createdAt -> mergedAt: 21 hours; 90th percentile: 6 days)",
+      "explanation": "Half of changes merge within 21 hours; one in ten waits six days or more.",
+      "why": "Lead time is from a change being written to it running in production. The gap between median and 90th percentile is where to look: those slow changes are usually waiting for review, or are large. Measure to production, not just to merge, if deploys aren't automatic: a merged change that waits a week for a release train has a week of lead time."
+    },
+    {
+      "prompt": "Change failure rate. Of the 62 deploys, 5 were followed by a rollback or a hotfix. What's the change failure rate, and is it a concern?\n  a) 5%, excellent\n  b) About 8%, which is in the healthy range; the aim isn't zero, it's cheap and fast recovery\n  c) 62%, terrible\n  d) It can't be calculated\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "5 failed / 62 deploys = 8.1%\n\na rate of 0% over a long period usually means: very few deploys, or failures that aren't being recorded",
+      "hint": "5 divided by 62.",
+      "explanation": "8%: a few deploys in every hundred need fixing.",
+      "why": "Some changes will fail; a team that never has a failed change is either barely changing anything or not counting. What matters is that failures are small and quickly undone, which is the fourth metric. Count honestly: a rollback, a hotfix, or an incident caused by a deploy all count, and people have to feel safe reporting them."
+    },
+    {
+      "prompt": "Time to restore service: how long from a failure starting to users being served again. Which of these most reduces it?\n  a) A longer approval process before each deploy\n  b) Fast detection and a rollback that's one tested, routine action\n  c) Deploying only on Tuesdays\n  d) Larger releases\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "time to restore = time to detect + time to decide + time to roll back\n  detect   : alerts on user-facing symptoms          (minutes, not a customer email)\n  decide   : 'roll back first, diagnose after'       (no meeting)\n  roll back: automated, practised on every deploy    (seconds to minutes)",
+      "hint": "Break the time into its parts.",
+      "explanation": "See it quickly, and have an undo that always works.",
+      "why": "Approval gates add lead time and, according to the same research, don't reduce failures; they increase batch size, which makes failures worse. The teams that recover in minutes are the ones that can roll back without thinking. This is where the two halves meet: small frequent deploys are what make fast recovery possible."
+    },
+    {
+      "prompt": "Management wants to set each team a target for these four numbers and rank the teams. What's the risk?\n  a) None: targets improve everything\n  b) A measure that becomes a target gets gamed: tiny meaningless deploys to raise frequency, failures left unrecorded. Use the metrics for a team to see its own trend, not to rank teams\n  c) The numbers are secret\n  d) Teams will deploy less\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "useful   : 'our lead time doubled this quarter: why?'   (a team reading its own trend)\nharmful  : 'team A deploys 3x more than team B'          (different systems, incentive to game)",
+      "hint": "Goodhart's law.",
+      "explanation": "Use them as a mirror for each team, not a league table.",
+      "why": "The four metrics are symptoms of how work flows; pushing on the numbers directly bends the reporting instead of the work. A payments system and a marketing site shouldn't have the same deployment frequency. Used well, they point a team at its own bottleneck, review queues, slow tests, a manual release step, and show whether fixing it helped."
+    }
+  ]
+}

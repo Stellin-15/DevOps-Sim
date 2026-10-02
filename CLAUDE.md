@@ -411,7 +411,7 @@ Current per-category content depth (tutorials / incidents):
 - gcp: 10 / 6 (+ Google Cloud sandbox, 3 mysteries)
 - security: 11 / 6 (+ 2 hacked-server mysteries on the Linux sandbox)
 - servers: 13 / 7 (fleet ops: Ansible, patching, time, LVM, backups)
-- sre: 11 / 6 (big-tech practices, via public tools)
+- sre: 13 / 6 (big-tech practices, via public tools; +2 Writing Labs)
 - git: 11 / 6 (Git in its own right; everyday workflow, revert vs
   reset, and bisect stay in cicd)
 - systemdesign: 11 / 6 (+2 design-document Writing Labs; mixes real
@@ -438,7 +438,7 @@ Current per-category content depth (tutorials / incidents):
 - serverless: 7 / 4 (Lambda, API Gateway, ECS on Fargate, Cloud Run, Azure Functions)
 - performance: 7 / 3 (profilers, flame graphs, eBPF tools, JVM and Go runtime inspection, measurement)
 - finops: 6 / 3 (cost allocation, rightsizing, commitments and spot, Kubernetes cost, quiet costs)
-- **total: 306 tutorials, 152 incidents, 44 Writing Labs, 14 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
+- **total: 308 tutorials, 152 incidents, 45 Writing Labs, 14 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with

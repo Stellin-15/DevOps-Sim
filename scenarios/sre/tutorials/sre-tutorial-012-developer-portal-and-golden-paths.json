@@ -1,0 +1,49 @@
+{
+  "id": "sre-tutorial-012",
+  "type": "tutorial",
+  "category": "sre",
+  "title": "Platform Engineering: The Service Catalog and Golden Paths",
+  "difficulty": "intermediate",
+  "tags": ["platform-engineering", "backstage", "service-catalog", "golden-paths"],
+  "intro": "Past a few dozen services, nobody knows what exists, who owns it, or how to start a new one correctly. Platform engineering treats that as a product problem: an internal platform, with a catalog of everything and paved routes for the common tasks. Backstage, open-sourced by Spotify, is the usual portal. Its API address is in BACKSTAGE_URL.",
+  "steps": [
+    {
+      "prompt": "Count the components (services, websites, libraries) registered in the catalog.",
+      "expected_commands": ["curl -s $BACKSTAGE_URL/api/catalog/entities?filter=kind=component | jq length", "curl -s \"$BACKSTAGE_URL/api/catalog/entities?filter=kind=component\" | jq length", "curl -s $BACKSTAGE_URL/api/catalog/entities?filter=kind=component | jq 'length'"],
+      "fake_output": "214",
+      "explanation": "214 components are registered.",
+      "why": "The catalog is built from small YAML files, catalog-info.yaml, that live in each repository and are discovered automatically. Because the description sits next to the code and changes by pull request, it stays truer than any wiki or spreadsheet. Everything else in the portal hangs off these entries: docs, dashboards, on-call, costs."
+    },
+    {
+      "prompt": "The most useful question a catalog answers during an incident is 'who owns this?'. List the names of components with no owner, or an owner of 'unknown'.",
+      "expected_commands": ["curl -s \"$BACKSTAGE_URL/api/catalog/entities?filter=kind=component\" | jq -r '.[] | select(.spec.owner == null or .spec.owner == \"unknown\") | .metadata.name'", "curl -s $BACKSTAGE_URL/api/catalog/entities?filter=kind=component | jq -r '.[] | select(.spec.owner == null or .spec.owner == \"unknown\") | .metadata.name'"],
+      "fake_output": "legacy-invoice-export\nimage-proxy\npromo-banner-service\nold-search-indexer",
+      "hint": "curl -s \"$BACKSTAGE_URL/api/catalog/entities?filter=kind=component\" | jq -r '.[] | select(.spec.owner == null or .spec.owner == \"unknown\") | .metadata.name'",
+      "explanation": "Four services that nobody claims.",
+      "why": "Ownerless services are where incidents go to die: nobody is paged, nobody patches them, and nobody dares turn them off. Finding them before they break is one of the catalog's best uses. Every component should have a team as owner (not a person, who may leave), and that team should be reachable through the on-call system."
+    },
+    {
+      "prompt": "Look at one component's metadata: show the spec of the component named checkout in the default namespace.",
+      "expected_commands": ["curl -s $BACKSTAGE_URL/api/catalog/entities/by-name/component/default/checkout | jq '.spec'", "curl -s $BACKSTAGE_URL/api/catalog/entities/by-name/component/default/checkout | jq .spec", "curl -s \"$BACKSTAGE_URL/api/catalog/entities/by-name/component/default/checkout\" | jq '.spec'"],
+      "fake_output": "{\n  \"type\": \"service\",\n  \"lifecycle\": \"production\",\n  \"owner\": \"team-payments\",\n  \"system\": \"shop\",\n  \"dependsOn\": [\"component:default/inventory\", \"resource:default/shop-db\"],\n  \"providesApis\": [\"checkout-api\"]\n}",
+      "explanation": "A production service owned by team-payments, part of the shop system, depending on inventory and the shop database.",
+      "why": "The dependency fields turn the catalog into a map: 'what breaks if the database is down?' and 'who do I tell before changing this API?' become queries. That map is also what a readiness review, an incident commander, and a security audit all need, and nobody can keep it in their head."
+    },
+    {
+      "prompt": "A 'golden path' is the platform's supported way to do a common task, such as creating a new service from a template that comes with CI, deployment, dashboards, and alerts already wired. What makes one succeed?\n  a) Forbidding every other way\n  b) Being the easiest way: so much less work than doing it yourself that teams choose it, while staying free to leave it when they need to\n  c) Being documented in a long wiki page\n  d) Requiring a ticket to the platform team\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "new service by hand     : days; repo, pipeline, IaC, secrets, dashboards, alerts, on-call, each done slightly differently\nnew service from template: minutes; all of it created, consistent, and registered in the catalog",
+      "hint": "Paved roads are used because they're smoother, not because they're compulsory.",
+      "explanation": "A golden path wins by being easier, not by being mandatory.",
+      "why": "Mandates produce workarounds; convenience produces adoption. If the paved road is good, standards (security scanning, tagging, SLOs) arrive for free because they're built into the template. The platform team's customers are the other engineers, so it should behave like a product team: talk to users, measure adoption, and treat a team leaving the path as feedback."
+    },
+    {
+      "prompt": "What should a platform team measure to know whether its platform is working?\n  a) The number of tools it has installed\n  b) Outcomes for its users: time to a first deploy for a new service, share of teams on the golden path, and the delivery metrics of the teams using it\n  c) Lines of YAML written\n  d) The number of tickets it closes\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "time from 'new service' to first production deploy:  9 days  ->  40 minutes\nservices on the standard pipeline:                    31%     ->  84%\ntickets to the platform team per deploy:              2.1     ->  0.1",
+      "hint": "Tickets closed is a measure of how much the platform fails to be self-service.",
+      "explanation": "Measure what the platform's users can now do, and how fast.",
+      "why": "A platform exists to reduce the load on product teams, so its success shows up in their numbers, not its own activity. Fewer tickets is good news: every ticket is something users couldn't do themselves. The next tutorial covers the delivery metrics that most organisations use for this."
+    }
+  ]
+}
