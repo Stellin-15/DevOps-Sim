@@ -1,0 +1,48 @@
+{
+  "id": "terraform-tutorial-014",
+  "type": "tutorial",
+  "category": "terraform",
+  "title": "Policy as Code: Catching Bad Infrastructure Before It's Applied",
+  "difficulty": "intermediate",
+  "tags": ["checkov", "conftest", "opa", "policy", "security"],
+  "intro": "A reviewer can't remember every rule: encrypt this, never open that port, tag everything. Policy-as-code tools check Terraform automatically in the pull request, so a public bucket is a failed check instead of an incident. There are two kinds: scanners with built-in rules, and engines where you write your own. You're in a Terraform directory.",
+  "steps": [
+    {
+      "prompt": "Scan the Terraform in the current directory with Checkov.",
+      "expected_commands": ["checkov -d . --framework terraform", "checkov -d .", "checkov --directory . --framework terraform"],
+      "fake_output": "Passed checks: 41, Failed checks: 3, Skipped checks: 0\n\nCheck: CKV_AWS_24: \"Ensure no security groups allow ingress from 0.0.0.0:0 to port 22\"\n\tFAILED for resource: aws_security_group.bastion\n\tFile: /network.tf:14-26\n\nCheck: CKV_AWS_145: \"Ensure that S3 buckets are encrypted with KMS by default\"\n\tFAILED for resource: aws_s3_bucket.exports\n\tFile: /storage.tf:1-4\n\nCheck: CKV_AWS_16: \"Ensure all data stored in the RDS is securely encrypted at rest\"\n\tFAILED for resource: aws_db_instance.shop\n\tFile: /database.tf:1-18",
+      "explanation": "Three failures: SSH open to the world, an unencrypted bucket, and an unencrypted database.",
+      "why": "Scanners such as Checkov, Trivy ('trivy config .'), and tfsec ship hundreds of rules drawn from security benchmarks, so you get value in minutes. They read the code, not the cloud, so they run on a pull request before anything exists. The database finding is the urgent one: encryption at rest can't be turned on later without rebuilding the instance."
+    },
+    {
+      "prompt": "The bastion's open SSH is deliberate for now and has a ticket. How should that be recorded?\n  a) Turn the check off for the whole repository\n  b) Suppress it on that one resource with an inline comment that states the reason, so that it's visible in review and searchable later\n  c) Ignore the scanner's output\n  d) Delete the scanner from CI\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "resource \"aws_security_group\" \"bastion\" {\n  # checkov:skip=CKV_AWS_24: temporary, replaced by SSM in SHOP-4410\n  ...\n}",
+      "hint": "The exception should be as narrow as the reason for it.",
+      "explanation": "A scoped, explained, reviewable exception.",
+      "why": "Disabling a rule everywhere to silence one finding removes the protection from every future resource. An inline skip is specific, travels with the code, and shows up in the diff where a reviewer can question it. Review the list of skips periodically; exceptions with no ticket or date become permanent."
+    },
+    {
+      "prompt": "Built-in rules can't know your own rules. Those are checked against the plan. First export the saved plan plan.out as JSON into plan.json.",
+      "expected_commands": ["terraform show -json plan.out > plan.json", "tofu show -json plan.out > plan.json"],
+      "fake_output": "(no output: plan.json written)",
+      "explanation": "The plan in machine-readable form: every resource change, with before and after values.",
+      "why": "Checking the plan is more accurate than checking the source: variables are resolved, modules are expanded, and you see what will actually change, including deletions. This JSON is the input for every custom-policy tool."
+    },
+    {
+      "prompt": "Test plan.json against the organisation's Rego policies in the policy/ directory with Conftest.",
+      "expected_commands": ["conftest test plan.json --policy policy/", "conftest test plan.json -p policy/", "conftest test --policy policy/ plan.json", "conftest test plan.json --policy policy"],
+      "fake_output": "FAIL - plan.json - main - aws_instance.reports: instance type m6i.8xlarge is not in the approved list\nFAIL - plan.json - main - aws_db_instance.shop: deleting a database requires the label 'approved-destroy'\nWARN - plan.json - main - aws_s3_bucket.exports: missing required tag 'team'\n\n12 tests, 9 passed, 1 warning, 2 failures",
+      "explanation": "Two company rules failed: an unapproved instance size, and a plan that would delete a database.",
+      "why": "Rego, the language of Open Policy Agent, expresses rules over JSON, so the same engine can police Terraform plans, Kubernetes manifests, and CI configs. These rules are the ones a scanner can't ship: your cost limits, your tag standard, your 'never delete a database without sign-off'. That last rule alone justifies the tool."
+    },
+    {
+      "prompt": "Where should these checks run to be effective?\n  a) Once a quarter, by the security team\n  b) Automatically on every pull request, with failures blocking the merge, and the same policies enforced again at apply time\n  c) Only after an incident\n  d) On developers' laptops, if they remember\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "PR opened  -> fmt, validate, checkov, plan, conftest   (seconds; failures block merge)\napply      -> same policy check against the applied plan  (can't be skipped by a direct apply)\ncloud      -> preventive controls (SCPs, Azure Policy) for anything created outside Terraform",
+      "hint": "Feedback is cheapest at the moment the code is written.",
+      "explanation": "In the pull request, as a required check, and again at apply.",
+      "why": "A finding in a PR costs a minute; the same finding in an audit costs a migration. Layer it: fast feedback in the PR, enforcement at apply so it can't be bypassed, and cloud-side guard rails for anything made by hand. Roll new policies out as warnings first, then make them blocking."
+    }
+  ]
+}

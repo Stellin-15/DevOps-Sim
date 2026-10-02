@@ -1,0 +1,48 @@
+{
+  "id": "terraform-tutorial-013",
+  "type": "tutorial",
+  "category": "terraform",
+  "title": "Terraform at Team Scale: OpenTofu, Terragrunt, and Atlantis",
+  "difficulty": "intermediate",
+  "tags": ["opentofu", "terragrunt", "atlantis", "workflow"],
+  "intro": "One person running terraform from a laptop is the easy case. A team with dozens of state files and a review process needs more: a fork to know about, a tool for keeping many configurations consistent, and a way to run plans and applies from pull requests. You're in a repository laid out as live/prod/vpc, live/prod/eks, live/prod/rds, each its own root module with a terragrunt.hcl.",
+  "steps": [
+    {
+      "prompt": "This repository uses OpenTofu. Initialise the current directory with it.",
+      "expected_commands": ["tofu init"],
+      "fake_output": "Initializing the backend...\nInitializing provider plugins...\n- Installing hashicorp/aws v5.70.0...\n\nOpenTofu has been successfully initialized!",
+      "explanation": "The same workflow as terraform init, with the tofu binary.",
+      "why": "OpenTofu is the open-source fork made after Terraform's licence changed in 2023. Commands, HCL, state, and providers are compatible, so everything in this category applies to both. They are diverging slowly: OpenTofu added state encryption and early variable evaluation; Terraform has its own additions. Pick one per repository, pin its version, and don't alternate binaries against the same state."
+    },
+    {
+      "prompt": "Production is split into several root modules so that a mistake in one can't touch the others. Plan all of them, in dependency order, with Terragrunt.",
+      "expected_commands": ["terragrunt run-all plan", "terragrunt run --all plan", "terragrunt plan-all"],
+      "fake_output": "Group 1\n- Module live/prod/vpc\nGroup 2\n- Module live/prod/eks\n- Module live/prod/rds\n\n[live/prod/vpc] No changes. Your infrastructure matches the configuration.\n[live/prod/eks] Plan: 0 to add, 1 to change, 0 to destroy.\n[live/prod/rds] No changes.",
+      "explanation": "Three separate states planned in order: the VPC first, then the two that depend on it.",
+      "why": "Small states limit the blast radius and keep plans fast, at the price of repeated backend and provider configuration in every directory. Terragrunt removes that repetition: a parent file defines the backend and common inputs once, 'dependency' blocks pass outputs between modules, and run-all walks the graph. Never 'run-all apply' on production without reading every plan."
+    },
+    {
+      "prompt": "Why split one big state into several small ones at all?\n  a) Terraform can't handle more than 100 resources\n  b) Blast radius and speed: a plan touches only its own state, a mistake or a corrupted state affects one component, and teams don't block each other on a single lock\n  c) It's required by AWS\n  d) To use more disk\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "one state : every plan refreshes everything; one lock; one typo can plan to destroy the database\nper layer : network / cluster / data / apps, each with its own state, lock, and reviewers",
+      "hint": "What can a mistake in the DNS module destroy, in each layout?",
+      "explanation": "Isolation and speed.",
+      "why": "Split along lines of change frequency and ownership: networks change rarely and are owned by the platform team; application resources change daily. The cost is wiring between states (remote state data sources, or Terragrunt dependencies), so don't split further than those lines justify."
+    },
+    {
+      "prompt": "This team applies through pull requests with Atlantis. A PR is open and reviewed; its plan was posted automatically as a comment. What do you type as a PR comment to apply it?",
+      "expected_commands": ["atlantis apply"],
+      "fake_output": "Ran Apply for dir: live/prod/eks workspace: default\n\nApply complete! Resources: 0 added, 1 changed, 0 destroyed.\n\nLocks and plans deleted for the projects and workspaces modified in this pull request.",
+      "explanation": "Atlantis applied the exact plan that was reviewed, and posted the result on the pull request.",
+      "why": "The apply runs on a server with the cloud credentials, so no engineer needs production credentials on a laptop. The plan and the apply are recorded next to the code review, and Atlantis locks the directory while the PR is open so two changes can't interleave. Terraform Cloud, Spacelift, env0, and plain CI pipelines offer the same pattern: plan on PR, apply on approval."
+    },
+    {
+      "prompt": "With apply-on-merge automation, when should the plan that gets applied be produced?\n  a) Freshly at apply time, whatever it says\n  b) The reviewed plan file should be the one applied: if the world has changed since, the apply should stop and a new plan be reviewed\n  c) It doesn't matter\n  d) Never plan; just apply\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "terraform plan -out=tfplan      # reviewed\nterraform apply tfplan          # applies exactly that; errors with 'Saved plan is stale' if state moved on",
+      "hint": "A reviewer approved a specific set of changes.",
+      "explanation": "Apply the saved plan that was reviewed.",
+      "why": "A fresh plan at apply time can contain changes nobody saw, because the infrastructure or another merge moved underneath it. Applying a saved plan file guarantees that what runs is what was approved, and a stale plan fails safely. This is the same principle as promoting a tested artifact instead of rebuilding it."
+    }
+  ]
+}

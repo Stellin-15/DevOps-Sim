@@ -1,0 +1,48 @@
+{
+  "id": "terraform-tutorial-015",
+  "type": "tutorial",
+  "category": "terraform",
+  "title": "Packer: Building Machine Images as Code",
+  "difficulty": "intermediate",
+  "tags": ["packer", "images", "ami", "immutable-infrastructure"],
+  "intro": "Terraform launches servers; something has to decide what's on them. Installing software at boot is slow and can fail differently every time. Packer builds a machine image once, with everything installed, and every server launched from it is identical. Its templates are HCL, like Terraform's. You're in a directory with a template, web.pkr.hcl.",
+  "steps": [
+    {
+      "prompt": "Download the plugins the template needs.",
+      "expected_commands": ["packer init .", "packer init web.pkr.hcl"],
+      "fake_output": "Installed plugin github.com/hashicorp/amazon v1.3.3 in \"/home/dana/.config/packer/plugins/github.com/hashicorp/amazon/packer-plugin-amazon_v1.3.3_x5.0_linux_amd64\"",
+      "explanation": "The Amazon builder plugin is installed.",
+      "why": "Like 'terraform init': builders for each platform (AWS, Azure, Google Cloud, VMware, Docker) are plugins, pinned in a required_plugins block. Pin the versions so the image build is repeatable."
+    },
+    {
+      "prompt": "Check the template is valid.",
+      "expected_commands": ["packer validate .", "packer validate web.pkr.hcl"],
+      "fake_output": "The configuration is valid.",
+      "explanation": "The template parses and its references resolve.",
+      "why": "A build launches a real instance and takes minutes, so catch syntax errors first. 'packer fmt' is the formatter. Both belong in CI, as with Terraform."
+    },
+    {
+      "prompt": "Build the image.",
+      "expected_commands": ["packer build .", "packer build web.pkr.hcl"],
+      "fake_output": "amazon-ebs.web: Launching a source AWS instance...\namazon-ebs.web: Waiting for SSH to become available...\namazon-ebs.web: Provisioning with shell script: scripts/install.sh\namazon-ebs.web: Provisioning with Ansible...\namazon-ebs.web: Stopping the source instance...\namazon-ebs.web: Creating AMI web-2026-10-02-1412 from instance i-0a1b2c3d4e5f67890\namazon-ebs.web: Terminating the source instance...\n\n==> Builds finished. The artifacts of successful builds are:\n--> amazon-ebs.web: AMIs were created:\nus-east-1: ami-0a1b2c3d4e5f67890",
+      "explanation": "Packer launched a temporary instance, configured it, saved it as an image, and cleaned up.",
+      "why": "That's the whole model: a temporary machine, provisioners (shell scripts, Ansible) run against it, a snapshot becomes the image, and the machine is destroyed. The image has an id you can reference from Terraform, promote between environments, and roll back to. The provisioning that used to run on every boot now runs once, in a pipeline, where a failure blocks a build instead of breaking a scale-out."
+    },
+    {
+      "prompt": "What's the main advantage of launching servers from a pre-built image over installing everything when each server boots?\n  a) Images are smaller\n  b) Servers start fast and identically: nothing is downloaded or installed at boot, so scale-out doesn't depend on package mirrors or a script succeeding under load\n  c) It avoids using Terraform\n  d) Images never need updating\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "install at boot : 6-10 min to ready; depends on apt mirrors, pip, GitHub being up, at the worst moment\nbaked image     : ~40 s to ready; the same bytes every time",
+      "hint": "Think about an autoscaling event during an outage of a package repository.",
+      "explanation": "Speed and sameness, with no external dependencies at boot.",
+      "why": "This is immutable infrastructure: servers aren't patched in place, they're replaced by ones built from a newer image. The trade is that every change, including a security patch, means building and rolling out a new image, so the pipeline has to be quick and routine. Keep only what must differ per environment (config, secrets) for boot time."
+    },
+    {
+      "prompt": "Images go stale. How does a Terraform configuration pick up the newest image without someone editing an id by hand?\n  a) It can't\n  b) A data source that looks the image up by name pattern or tag and takes the most recent, ideally filtered to images marked as approved\n  c) By using the tag 'latest'\n  d) By rebuilding Terraform\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "data \"aws_ami\" \"web\" {\n  most_recent = true\n  owners      = [\"self\"]\n  filter { name = \"name\"            values = [\"web-*\"] }\n  filter { name = \"tag:approved\"    values = [\"true\"] }\n}",
+      "hint": "terraform-tutorial-011 covered data sources.",
+      "explanation": "A data source selects the latest approved image.",
+      "why": "The 'approved' tag matters: without it, any freshly built image, tested or not, reaches production on the next apply. Build, test the image, tag it approved, and let the lookup follow. Restrict 'owners' to your own account: an unfiltered 'most recent' lookup by name can match a public image published by someone else."
+    }
+  ]
+}

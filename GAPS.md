@@ -307,7 +307,7 @@ real scripts to finish the job.
 
 # Part 4 — Terraform
 
-**Content:** 12 tutorials, 6 incidents, 5 Writing Labs (the VPC and
+**Content:** 16 tutorials, 7 incidents, 5 Writing Labs (the VPC and
 security-group labs are described under AWS, Part 9).
 
 ## Covered
@@ -350,7 +350,15 @@ state file.
   only as useful as your understanding of what it's creating.
   **Now partly covered** by the AWS category (Part 9) and its VPC
   sandbox.
-- Terraform Cloud / Atlantis / OpenTofu workflows, Terragrunt.
+- ~~Team workflows and neighbouring tools~~: **closed** by
+  terraform-tutorial-013 (OpenTofu, Terragrunt, Atlantis, state
+  splitting), terraform-tutorial-014 (Checkov, plan JSON, Conftest and
+  Rego, where checks run), terraform-tutorial-015 (Packer images), and
+  terraform-tutorial-016 (CloudFormation change sets, Bicep what-if,
+  Pulumi preview, Crossplane), with terraform-incident-007 (a stack
+  stuck in UPDATE_ROLLBACK_FAILED). Writing Rego, Pulumi programs,
+  CloudFormation or Bicep templates, and Crossplane compositions isn't
+  practised; nor are Terraform Cloud, Spacelift, or Infracost.
 
 ## Readiness verdict
 
@@ -1786,9 +1794,9 @@ employer uses it.
 
 ## Tier B: valuable, depends on the role
 
-- **Other infrastructure-as-code tools:** Pulumi, CloudFormation and
-  CDK, Bicep, Crossplane, OpenTofu, Terragrunt, Atlantis and Terraform
-  Cloud. Packer image builds. Policy as code (OPA/Rego, Checkov, tfsec).
+- ~~**Other infrastructure-as-code tools**~~: **done** inside Terraform
+  (terraform-tutorial-013 to 016, one incident), at the level of
+  operating and recognising them. Authoring in each tool is still open.
 - **Advanced networking:** BGP basics, VPNs (WireGuard, IPsec), Transit
   Gateway, peering and PrivateLink, running DNS servers, L4 vs L7 load
   balancer internals, CNI internals (Cilium, Calico), HTTP/2, HTTP/3,
@@ -1866,7 +1874,7 @@ If content is added in the order that helps most people soonest:
 | Kubernetes | 35 | 17 | 11 Writing Labs, 2 Sandboxes (explore, and fixable), 5 Mysteries |
 | Docker | 11 | 5 | 3 Writing Labs (Dockerfile, Compose), Sandbox, 2 Mysteries |
 | Linux | 15 | 6 | 4 Writing Labs (bash), interactive Sandbox, 4 Mysteries |
-| Terraform | 12 | 6 | 5 Writing Labs (HCL, including a module) |
+| Terraform | 16 | 7 | 5 Writing Labs (HCL, including a module) |
 | Networking | 12 | 7 | |
 | CI/CD | 20 | 8 | 4 Writing Labs (Actions, GitLab CI) |
 | Monitoring | 17 | 8 | 5 Writing Labs (alert rules, SLO burn alerts, a dashboard, manual spans) |
@@ -1887,7 +1895,7 @@ If content is added in the order that helps most people soonest:
 | Serverless | 7 | 4 | |
 | Performance | 7 | 3 | |
 | FinOps | 6 | 3 | |
-| **Total** | **290** | **148** | 44 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
+| **Total** | **294** | **149** | 44 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -1899,7 +1907,7 @@ command beats the alternatives — not just what it does.
 will know the commands, the failure modes, and — most importantly — the
 debugging method** (check the layer before guessing the fix; refused vs
 timeout; verify after every change; revoke before cleaning up; revert
-don't force-push). The 148 incidents are modeled on the kinds of problems
+don't force-push). The 149 incidents are modeled on the kinds of problems
 that genuinely trip up working engineers, and working through them
 builds judgment that command references alone never will.
 

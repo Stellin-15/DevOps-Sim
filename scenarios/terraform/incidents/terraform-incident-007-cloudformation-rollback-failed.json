@@ -1,0 +1,49 @@
+{
+  "id": "terraform-incident-007",
+  "type": "incident",
+  "category": "terraform",
+  "title": "The stack is stuck in UPDATE_ROLLBACK_FAILED and refuses every change",
+  "difficulty": "advanced",
+  "tags": ["cloudformation", "rollback", "drift", "iac"],
+  "intro": "A routine CloudFormation update to the stack shop-app failed, and its automatic rollback failed too. The stack now sits in UPDATE_ROLLBACK_FAILED. Every further update is rejected, including the fix. The application is still running. Last week someone 'tidied up' in the console and deleted a security group that looked unused.",
+  "steps": [
+    {
+      "prompt": "Confirm the stack's status.",
+      "expected_commands": ["aws cloudformation describe-stacks --stack-name shop-app --query 'Stacks[0].StackStatus'", "aws cloudformation describe-stacks --stack-name shop-app --query \"Stacks[0].StackStatus\"", "aws cloudformation describe-stacks --stack-name shop-app"],
+      "fake_output": "\"UPDATE_ROLLBACK_FAILED\"",
+      "hint": "aws cloudformation describe-stacks --stack-name shop-app --query 'Stacks[0].StackStatus'"
+    },
+    {
+      "prompt": "Find out what failed: show the stack's 10 most recent events.",
+      "expected_commands": ["aws cloudformation describe-stack-events --stack-name shop-app --max-items 10", "aws cloudformation describe-stack-events --stack-name shop-app --max-items 10 --output table", "aws cloudformation describe-stack-events --max-items 10 --stack-name shop-app"],
+      "fake_output": "LogicalResourceId   ResourceStatus            ResourceStatusReason\nshop-app            UPDATE_ROLLBACK_FAILED    The following resource(s) failed to update: [LegacyWorkerSG].\nLegacyWorkerSG      UPDATE_FAILED             The security group 'sg-0f1e2d3c4b5a69788' does not exist\nshop-app            UPDATE_ROLLBACK_IN_PROGRESS  The following resource(s) failed to update: [ApiTaskDefinition].\nApiTaskDefinition   UPDATE_FAILED             Invalid request provided: container memory must be at least 4 MiB\nshop-app            UPDATE_IN_PROGRESS        User Initiated",
+      "hint": "aws cloudformation describe-stack-events --stack-name shop-app --max-items 10"
+    },
+    {
+      "prompt": "Read it from the bottom. The update failed on a typo in a task definition, so CloudFormation began rolling back. The rollback then failed on LegacyWorkerSG: it tried to restore a security group that no longer exists, the one deleted by hand last week. Check how far the stack has drifted from reality: start a drift detection.",
+      "expected_commands": ["aws cloudformation detect-stack-drift --stack-name shop-app"],
+      "fake_output": "{\n  \"StackDriftDetectionId\": \"c1d2e3f4-0000-4a5b-8c7d-example00001\"\n}",
+      "hint": "aws cloudformation detect-stack-drift --stack-name shop-app"
+    },
+    {
+      "prompt": "See which resources have drifted: list the stack's resource drifts that aren't IN_SYNC.",
+      "expected_commands": ["aws cloudformation describe-stack-resource-drifts --stack-name shop-app --stack-resource-drift-status-filters MODIFIED DELETED", "aws cloudformation describe-stack-resource-drifts --stack-name shop-app", "aws cloudformation describe-stack-resource-drifts --stack-name shop-app --stack-resource-drift-status-filters DELETED MODIFIED"],
+      "fake_output": "{\n  \"StackResourceDrifts\": [\n    {\"LogicalResourceId\": \"LegacyWorkerSG\", \"ResourceType\": \"AWS::EC2::SecurityGroup\", \"StackResourceDriftStatus\": \"DELETED\"}\n  ]\n}",
+      "hint": "aws cloudformation describe-stack-resource-drifts --stack-name shop-app --stack-resource-drift-status-filters MODIFIED DELETED"
+    },
+    {
+      "prompt": "Only that one resource, and it's gone. The stack can't finish rolling back because it's trying to fix something that doesn't exist. Tell CloudFormation to continue the rollback and skip that resource.",
+      "expected_commands": ["aws cloudformation continue-update-rollback --stack-name shop-app --resources-to-skip LegacyWorkerSG", "aws cloudformation continue-update-rollback --resources-to-skip LegacyWorkerSG --stack-name shop-app"],
+      "fake_output": "(no output)",
+      "hint": "aws cloudformation continue-update-rollback --stack-name shop-app --resources-to-skip LegacyWorkerSG"
+    },
+    {
+      "prompt": "Check the status again.",
+      "expected_commands": ["aws cloudformation describe-stacks --stack-name shop-app --query 'Stacks[0].StackStatus'", "aws cloudformation describe-stacks --stack-name shop-app --query \"Stacks[0].StackStatus\"", "aws cloudformation describe-stacks --stack-name shop-app"],
+      "fake_output": "\"UPDATE_ROLLBACK_COMPLETE\"",
+      "hint": "The same command as the first step."
+    }
+  ],
+  "resolution": "Two unrelated mistakes had to meet for this. The update itself failed on a typo, which is ordinary: CloudFormation then rolls the stack back to its previous state, and normally that's the end of it. But the previous state included a security group that someone had deleted in the console a week earlier. CloudFormation still believed it owned that resource. During rollback it tried to put the group back the way it was, found nothing there, and failed. A stack in UPDATE_ROLLBACK_FAILED is neither the old version nor the new one, and it rejects every update, so the fix for the typo couldn't be applied either. The events, read from oldest to newest, gave the sequence; drift detection confirmed that exactly one resource no longer matched. The way out is continue-update-rollback with that resource skipped: CloudFormation marks it as rolled back without touching it and completes. The skipped resource is then inconsistent by definition, so the next change should remove it from the template (or re-create it) to bring the stack and reality back together. This is the general hazard of every infrastructure-as-code tool, in CloudFormation's dialect: the tool's record and the real world must agree, and a manual change breaks that silently until the next update. In Terraform the same deletion would show as a resource to re-create at the next plan, which is noisier and safer. Prevention: remove the console's write access to managed resources, or at least tag them 'managed-by' so people know; run drift detection on a schedule and alert on it; and delete resources by removing them from the template, never by hand. Don't reach for 'delete the stack and start again' on a stack that holds a database.",
+  "real_commands_used": ["aws cloudformation describe-stacks --query 'Stacks[0].StackStatus'", "aws cloudformation describe-stack-events", "aws cloudformation detect-stack-drift", "aws cloudformation describe-stack-resource-drifts", "aws cloudformation continue-update-rollback --resources-to-skip"]
+}

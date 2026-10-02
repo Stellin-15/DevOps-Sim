@@ -1,0 +1,46 @@
+{
+  "id": "terraform-tutorial-016",
+  "type": "tutorial",
+  "category": "terraform",
+  "title": "The Other IaC Tools: CloudFormation, Bicep, Pulumi, and Crossplane",
+  "difficulty": "intermediate",
+  "tags": ["cloudformation", "bicep", "pulumi", "crossplane", "iac"],
+  "intro": "Terraform is the most common infrastructure-as-code tool, not the only one. Each cloud has its own, some teams prefer a real programming language, and some manage infrastructure from inside Kubernetes. The idea is always the same: declare the desired state, preview the difference, apply. This tutorial asks each tool for its preview.",
+  "steps": [
+    {
+      "prompt": "CloudFormation is AWS's native tool, and a stack is its unit. Look at the stack named shop-network.",
+      "expected_commands": ["aws cloudformation describe-stacks --stack-name shop-network"],
+      "fake_output": "{\n  \"Stacks\": [{\n    \"StackName\": \"shop-network\",\n    \"StackStatus\": \"UPDATE_COMPLETE\",\n    \"LastUpdatedTime\": \"2026-09-21T09:14:02Z\",\n    \"DriftInformation\": {\"StackDriftStatus\": \"NOT_CHECKED\"},\n    \"Outputs\": [{\"OutputKey\": \"VpcId\", \"OutputValue\": \"vpc-0123456789abcdef0\"}]\n  }]\n}",
+      "explanation": "The stack's last update succeeded, and drift has never been checked.",
+      "why": "CloudFormation keeps the state for you, inside AWS: there's no state file to store, lock, or lose, which is its main advantage over Terraform. The status is the thing to read: anything ending in _COMPLETE is settled, _IN_PROGRESS is working, and _FAILED or ROLLBACK states need attention (terraform-incident-007)."
+    },
+    {
+      "prompt": "CloudFormation's 'plan' is a change set. One named add-subnet has been created for the stack shop-network. Show what it would change.",
+      "expected_commands": ["aws cloudformation describe-change-set --stack-name shop-network --change-set-name add-subnet", "aws cloudformation describe-change-set --change-set-name add-subnet --stack-name shop-network"],
+      "fake_output": "{\n  \"Status\": \"CREATE_COMPLETE\",\n  \"Changes\": [\n    {\"ResourceChange\": {\"Action\": \"Add\", \"LogicalResourceId\": \"PrivateSubnetC\", \"ResourceType\": \"AWS::EC2::Subnet\"}},\n    {\"ResourceChange\": {\"Action\": \"Modify\", \"LogicalResourceId\": \"PrivateRouteTable\", \"ResourceType\": \"AWS::EC2::RouteTable\", \"Replacement\": \"False\"}},\n    {\"ResourceChange\": {\"Action\": \"Modify\", \"LogicalResourceId\": \"NatGateway\", \"ResourceType\": \"AWS::EC2::NatGateway\", \"Replacement\": \"True\"}}\n  ]\n}",
+      "explanation": "One addition, one in-place change, and one modification that requires replacing the NAT gateway.",
+      "why": "'Replacement: True' is the line to look for: the resource will be deleted and recreated, the same as Terraform's 'must be replaced'. For a NAT gateway that's a few minutes without outbound internet. Updating a stack directly, without a change set, applies with no preview; always create and read the change set first."
+    },
+    {
+      "prompt": "Bicep is Azure's native language. Preview what deploying main.bicep to the resource group shop-rg would change.",
+      "expected_commands": ["az deployment group what-if -g shop-rg -f main.bicep", "az deployment group what-if --resource-group shop-rg --template-file main.bicep", "az deployment group what-if -f main.bicep -g shop-rg"],
+      "fake_output": "Resource and property changes are indicated with these symbols:\n  + Create\n  ~ Modify\n\n  ~ Microsoft.Network/networkSecurityGroups/nsg-web\n    ~ properties.securityRules: [\n      + 0: name: \"allow-https\"  priority: 110  destinationPortRange: \"443\"\n      ]\n  + Microsoft.Storage/storageAccounts/shopexports2026\n\nResource changes: 1 to create, 1 to modify.",
+      "explanation": "One security rule to add and one storage account to create.",
+      "why": "what-if is Azure's plan. Like CloudFormation, Azure keeps the deployment state itself. By default a deployment is incremental: resources removed from the template are left in place, which surprises people coming from Terraform. 'Complete' mode deletes anything not in the template, and should be used with great care."
+    },
+    {
+      "prompt": "Pulumi defines infrastructure in a general-purpose language (Python, TypeScript, Go). Preview the changes for the current stack.",
+      "expected_commands": ["pulumi preview", "pulumi preview --diff"],
+      "fake_output": "Previewing update (prod)\n\n     Type                 Name            Plan\n     pulumi:pulumi:Stack  shop-prod\n +   ├─ aws:s3:Bucket     exports-2026    create\n ~   └─ aws:ec2:Instance  reports         update     [diff: ~instanceType]\n\nResources:\n    + 1 to create\n    ~ 1 to update\n    3 unchanged",
+      "explanation": "The same kind of plan, produced by running a program.",
+      "why": "Pulumi's appeal is real loops, functions, types, and unit tests, where HCL has its own limited constructs. The cost is that infrastructure code can become as complicated as any program. The engine underneath is the same model: desired state, a state backend, a diff. AWS's CDK is the same idea compiled down to CloudFormation."
+    },
+    {
+      "prompt": "Crossplane manages cloud resources as Kubernetes objects, reconciled continuously. List the managed resources in the cluster.",
+      "expected_commands": ["kubectl get managed"],
+      "fake_output": "NAME                                              READY   SYNCED   EXTERNAL-NAME          AGE\nbucket.s3.aws.upbound.io/shop-exports             True    True     shop-exports           41d\ninstance.rds.aws.upbound.io/shop-db               True    True     shop-db                41d\nsecuritygroup.ec2.aws.upbound.io/shop-db-sg       True    False    sg-0f1e2d3c4b5a69788   41d",
+      "explanation": "Three cloud resources represented as Kubernetes objects. One isn't in sync.",
+      "why": "The difference from Terraform is the loop: there's no 'apply'. A controller compares the cloud to the object every minute and corrects drift, so a manual console change is reverted without anyone running anything. SYNCED False means the last reconcile failed, and 'kubectl describe' on the object gives the cloud's error. It fits teams already running everything through Kubernetes and GitOps; it also makes the cluster a critical dependency of your infrastructure."
+    }
+  ]
+}

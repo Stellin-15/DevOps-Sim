@@ -125,3 +125,32 @@ module "vpc" {
 - `terraform plan` before every `apply` — never skip this in shared environments
 - Remote state (S3 + DynamoDB lock, or Terraform Cloud) is essential for team use — local state files cause conflicts
 - `terraform destroy` is irreversible — always double check the plan output, especially `-target`
+
+## Around and Beyond Terraform
+
+```
+tofu init        tofu plan        tofu apply              # OpenTofu: the open-source fork, same workflow
+terragrunt run-all plan                                   # many root modules, shared config, in dependency order
+terragrunt hclfmt
+atlantis plan / atlantis apply                            # typed as pull-request comments
+
+checkov -d . --framework terraform
+checkov -d . --check CKV_AWS_20
+trivy config .
+terraform show -json plan.out > plan.json
+conftest test plan.json --policy policy/
+infracost breakdown --path .
+
+packer init .        packer validate .        packer build .
+packer build -var 'region=us-east-1' web.pkr.hcl
+
+aws cloudformation describe-stacks --stack-name <name>
+aws cloudformation describe-stack-events --stack-name <name> --max-items 10
+aws cloudformation create-change-set --stack-name <name> --change-set-name <cs> --template-body file://t.yaml
+aws cloudformation describe-change-set --stack-name <name> --change-set-name <cs>
+aws cloudformation detect-stack-drift --stack-name <name>
+aws cloudformation continue-update-rollback --stack-name <name> --resources-to-skip <LogicalId>
+pulumi preview       pulumi up       pulumi stack ls
+az deployment group what-if -g <rg> -f main.bicep
+kubectl get managed          kubectl get claim -A           # Crossplane
+```
