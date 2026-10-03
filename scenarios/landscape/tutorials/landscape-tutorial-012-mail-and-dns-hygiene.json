@@ -1,0 +1,47 @@
+{
+  "id": "landscape-tutorial-012",
+  "type": "tutorial",
+  "category": "landscape",
+  "title": "Mail and DNS Hygiene: SPF, DKIM, DMARC, and DNSSEC",
+  "difficulty": "intermediate",
+  "tags": ["email", "spf", "dkim", "dmarc", "dnssec"],
+  "intro": "Order confirmations going to spam, or someone sending phishing emails as your domain, are both DNS problems. Three DNS records decide whether receiving mail servers trust mail from your domain, and DNSSEC protects the DNS answers themselves. These are the checks to run when 'our emails aren't arriving'. The domain is example.com.",
+  "steps": [
+    {
+      "prompt": "Check the domain's SPF record: the TXT record listing which servers may send its mail.",
+      "expected_commands": ["dig TXT example.com +short", "dig +short TXT example.com", "dig example.com TXT +short"],
+      "fake_output": "\"v=spf1 include:_spf.google.com include:sendgrid.net ~all\"\n\"google-site-verification=x7Qk2mB9T1uVwYz0\"",
+      "explanation": "Mail may come from Google Workspace and SendGrid; anything else is marked suspicious ('~all', a soft fail).",
+      "why": "SPF lets receivers check whether the sending server is authorised for the domain. The usual failure is a new sender (a marketing tool, a ticketing system) added without updating this record, so its mail fails SPF. The record is limited to 10 DNS lookups in total, and nested includes count, so long lists break silently."
+    },
+    {
+      "prompt": "Check the DKIM public key the mail provider publishes for the selector s1.",
+      "expected_commands": ["dig TXT s1._domainkey.example.com +short", "dig +short TXT s1._domainkey.example.com", "dig s1._domainkey.example.com TXT +short"],
+      "fake_output": "\"v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxample...\"",
+      "explanation": "A public key: receivers use it to verify the signature that mail from this domain carries.",
+      "why": "DKIM signs each message's headers and body with a private key held by the sender; the matching public key lives in DNS under a 'selector'. A valid signature proves the message came from someone holding the key and wasn't altered. Each sending service gets its own selector, so keys can be rotated or revoked per service."
+    },
+    {
+      "prompt": "Check the domain's DMARC policy.",
+      "expected_commands": ["dig TXT _dmarc.example.com +short", "dig +short TXT _dmarc.example.com", "dig _dmarc.example.com TXT +short"],
+      "fake_output": "\"v=DMARC1; p=none; rua=mailto:dmarc-reports@example.com\"",
+      "explanation": "A DMARC policy of 'none': failures are reported but not acted on.",
+      "why": "DMARC ties SPF and DKIM to the visible From address and tells receivers what to do when both fail: 'none' (just report), 'quarantine' (spam folder), or 'reject'. With p=none, anyone can still send mail that appears to be from example.com and it will be delivered. The path is to read the aggregate reports sent to the 'rua' address, fix every legitimate sender, then move to quarantine and finally reject. Large mailbox providers now require DMARC from bulk senders."
+    },
+    {
+      "prompt": "Customers report that receipts go to spam. The receipts are sent by a new service whose headers show it sends from mail.receipts-vendor.net. What's the most likely cause given the records above?\n  a) The receipts are too long\n  b) The new service isn't in the SPF record and isn't signing with a DKIM key for example.com, so its mail fails both checks and DMARC\n  c) DNSSEC is off\n  d) The MX record is wrong\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "Authentication-Results: mx.google.com;\n   spf=softfail (domain of example.com does not designate 203.0.113.41 as permitted sender)\n   dkim=none\n   dmarc=fail (p=NONE) header.from=example.com",
+      "hint": "Compare the sender with the list of authorised senders.",
+      "explanation": "An unauthorised sender for the domain.",
+      "why": "The fix is configuration on both sides: add the vendor to SPF (or better, have it send from a subdomain with its own records) and publish the vendor's DKIM key under its selector. Then test by sending to a mailbox and reading the 'Authentication-Results' header, which states each check's result. Every new service that sends mail as you needs this, so make it part of the onboarding checklist."
+    },
+    {
+      "prompt": "DNSSEC signs DNS answers so they can't be forged. Check whether example.com's answers are signed: query its SOA with DNSSEC records.",
+      "expected_commands": ["dig +dnssec example.com SOA", "dig example.com SOA +dnssec", "dig +dnssec SOA example.com"],
+      "fake_output": ";; flags: qr rd ra ad; QUERY: 1, ANSWER: 2, AUTHORITY: 0, ADDITIONAL: 1\n\n;; ANSWER SECTION:\nexample.com.  3600  IN  SOA    ns1.dnshost.example. hostmaster.example.com. 2026100301 7200 900 1209600 3600\nexample.com.  3600  IN  RRSIG  SOA 13 2 3600 20261017000000 20261003000000 41204 example.com. x7Qk2mB9...",
+      "explanation": "An RRSIG signature accompanies the answer, and the resolver set the 'ad' (authenticated data) flag.",
+      "why": "'ad' means the resolver validated the chain of signatures from the root down. DNSSEC stops an attacker forging answers in transit or poisoning a resolver's cache. Its operational risk is real: signatures expire (note the dates in the RRSIG), and a botched key rollover makes the whole domain fail to resolve for every validating resolver, which is an outage. If you run it, automate signing and monitor signature expiry like a certificate."
+    }
+  ]
+}

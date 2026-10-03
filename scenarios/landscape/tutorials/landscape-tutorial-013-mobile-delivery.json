@@ -1,0 +1,47 @@
+{
+  "id": "landscape-tutorial-013",
+  "type": "tutorial",
+  "category": "landscape",
+  "title": "Shipping Mobile Apps: Signing, Store Review, and Fastlane",
+  "difficulty": "intermediate",
+  "tags": ["mobile", "fastlane", "code-signing", "ios", "android"],
+  "intro": "Mobile delivery breaks most habits from web delivery. Every build must be signed with keys the stores trust, every release passes through Apple's or Google's review, and there's no rollback: an installed version stays on users' phones until they update. Fastlane is the common tool for automating builds, signing, and uploads. You're in the shop app's repository.",
+  "steps": [
+    {
+      "prompt": "See which automated workflows ('lanes') this project defines.",
+      "expected_commands": ["fastlane lanes", "bundle exec fastlane lanes"],
+      "fake_output": "--------- ios---------\n----- fastlane ios test\nRun unit and UI tests\n----- fastlane ios beta\nBuild, sign, and upload to TestFlight\n----- fastlane ios release\nSubmit the TestFlight build for App Store review\n\n--------- android---------\n----- fastlane android beta\nBuild an app bundle and upload to the internal testing track\n----- fastlane android deploy\nPromote the internal build to production with a staged rollout",
+      "explanation": "Test, beta, and release lanes for each platform.",
+      "why": "A lane is a named pipeline of steps, defined in the project's Fastfile and run identically on a laptop or in CI. The same principle as a Makefile for mobile: one definition of 'how we ship', so releases don't depend on whoever has the right Xcode setup."
+    },
+    {
+      "prompt": "iOS signing needs certificates and provisioning profiles, which are notorious for breaking builds. Fetch the App Store signing identity from the team's shared, encrypted store, without creating anything new.",
+      "expected_commands": ["fastlane match appstore --readonly", "bundle exec fastlane match appstore --readonly", "fastlane match appstore --readonly true"],
+      "fake_output": "[✔] Successfully decrypted certificates repo\n[✔] Installing certificate...\n[✔] Installing provisioning profile...\nAll required keys, certificates and provisioning profiles are installed 🙌",
+      "explanation": "The shared distribution certificate and profile were installed from the encrypted repository.",
+      "why": "Without 'match', each developer creates their own certificates and they invalidate each other. 'match' keeps one set, encrypted, in a repository or bucket, and every machine and CI runner installs the same set. '--readonly' matters in CI: a pipeline should never create or revoke signing material. The signing keys are among the most valuable secrets a company has, since they're what makes users' phones trust an update."
+    },
+    {
+      "prompt": "Build and upload a beta for Android testers.",
+      "expected_commands": ["fastlane android beta", "bundle exec fastlane android beta"],
+      "fake_output": "[11:02:41]: Running gradle task bundleRelease\n[11:05:12]: Signing app bundle with upload key\n[11:05:40]: Uploading to Google Play internal testing track\n[11:06:02]: Successfully finished the upload to Google Play\n\nfastlane.tools finished successfully 🎉",
+      "explanation": "A signed app bundle is on the internal testing track.",
+      "why": "The Android app is signed with an upload key, and Google re-signs it with the app signing key it holds, which means a leaked upload key can be reset while users' trust in the app survives. Losing the key that signs the installed app, in the older scheme, meant never being able to update that app again."
+    },
+    {
+      "prompt": "A web service can be rolled back in seconds. A mobile release can't be: the old version stays installed until each user updates. What's the main safety mechanism instead?\n  a) Releasing to everyone at once and hoping\n  b) Staged rollouts (a small percentage of users first, halted on rising crash rates) plus server-side feature flags that can turn new behaviour off without a new release\n  c) Asking users to uninstall\n  d) Skipping review\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "Play staged rollout   : 1% -> 5% -> 20% -> 100%, halt if crash-free users < 99.5%\nApp Store phased release : 7-day automatic ramp, pausable\nfeature flags         : ship code dark; turn it on remotely; turn it off without a release",
+      "hint": "If you can't take a version back, limit who gets it and what it can do.",
+      "explanation": "Release gradually, and keep the off switch on the server.",
+      "why": "This is canary deployment adapted to software you don't control once shipped. Because users run old versions for months, the backend must stay compatible with every version still in use: API changes are additive, and a minimum-supported-version check lets you force an update when you truly must. Crash reporting per version (Crashlytics, Sentry) is the signal that halts a rollout."
+    },
+    {
+      "prompt": "Submit the TestFlight build for App Store review.",
+      "expected_commands": ["fastlane ios release", "bundle exec fastlane ios release"],
+      "fake_output": "[14:12:01]: Selecting build 4.18.0 (412)\n[14:12:22]: Submitting for review with phased release enabled\n[14:12:31]: Successfully submitted the app for review!",
+      "explanation": "Submitted, with a phased release that ramps up over a week once approved.",
+      "why": "Review takes from hours to days, so mobile releases are planned rather than continuous: teams cut a release on a schedule and keep the next one moving behind it. That waiting time is exactly why server-driven features and flags matter: they let you change behaviour without passing through review again."
+    }
+  ]
+}

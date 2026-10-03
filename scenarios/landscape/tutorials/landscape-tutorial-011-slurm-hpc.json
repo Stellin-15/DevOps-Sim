@@ -1,0 +1,47 @@
+{
+  "id": "landscape-tutorial-011",
+  "type": "tutorial",
+  "category": "landscape",
+  "title": "HPC Clusters: Running Jobs with Slurm",
+  "difficulty": "intermediate",
+  "tags": ["slurm", "hpc", "batch", "gpu", "scheduling"],
+  "intro": "Universities, research labs, and many AI teams run work on Slurm, a batch scheduler for high-performance computing clusters. It predates Kubernetes and is built for a different shape of work: big jobs that need many nodes at once, queued fairly among many users. GPU training clusters often use it today. You're logged in to the cluster's login node as dana.",
+  "steps": [
+    {
+      "prompt": "See the cluster's partitions (queues) and the state of their nodes.",
+      "expected_commands": ["sinfo"],
+      "fake_output": "PARTITION  AVAIL  TIMELIMIT  NODES  STATE  NODELIST\ncpu*          up 2-00:00:00     40   idle  cpu[001-040]\ngpu           up 1-00:00:00     14  alloc  gpu[01-14]\ngpu           up 1-00:00:00      2  drain  gpu[15-16]",
+      "explanation": "The CPU partition is idle; every working GPU node is allocated; two GPU nodes are drained.",
+      "why": "A partition is a queue with its own nodes and limits: here, GPU jobs may run at most one day. 'drain' means an administrator took the node out of service, often for a hardware fault ('sinfo -R' shows the reason). Never run real work on the login node: it's shared by everyone for editing and submitting."
+    },
+    {
+      "prompt": "Submit the batch script train.sh.",
+      "expected_commands": ["sbatch train.sh"],
+      "fake_output": "Submitted batch job 412044",
+      "explanation": "Job 412044 is in the queue.",
+      "why": "A batch script is an ordinary shell script with '#SBATCH' lines at the top stating what it needs: partition, nodes, GPUs, memory, and a time limit. The scheduler places it when those resources are free. Asking for less time than the partition's maximum helps your job start sooner, because the scheduler can fit it into gaps (backfill)."
+    },
+    {
+      "prompt": "See your jobs in the queue.",
+      "expected_commands": ["squeue -u dana", "squeue -u $USER", "squeue --me"],
+      "fake_output": "  JOBID PARTITION     NAME   USER ST       TIME  NODES NODELIST(REASON)\n 412044       gpu    train   dana PD       0:00      4 (Resources)\n 411980       cpu  prepro   dana  R    1:41:02      1 cpu012",
+      "explanation": "The training job is pending (PD) waiting for resources; an earlier job is running (R).",
+      "why": "The reason in brackets explains every wait: 'Resources' means the nodes aren't free yet, 'Priority' means other jobs are ahead by fair-share, 'QOSMaxGRESPerUser' means you've hit your GPU allowance. Read the reason before asking an administrator why a job won't start."
+    },
+    {
+      "prompt": "A job finished yesterday and you want to know how it used its resources. Show job 411204's state, elapsed time, and peak memory.",
+      "expected_commands": ["sacct -j 411204 --format=JobID,State,Elapsed,MaxRSS", "sacct -j 411204 --format JobID,State,Elapsed,MaxRSS", "sacct --format=JobID,State,Elapsed,MaxRSS -j 411204"],
+      "fake_output": "JobID           State    Elapsed     MaxRSS\n------------ ---------- ---------- ----------\n411204       OUT_OF_ME+   03:12:44\n411204.batch OUT_OF_ME+   03:12:44   61.9G",
+      "explanation": "It ran out of memory after three hours, peaking at about 62 GB.",
+      "why": "'OUT_OF_MEMORY' is Slurm's OOMKilled, enforced by cgroups as in containers. The accounting record is the only place this shows once the job is gone. Request memory from measured peaks with some headroom, and checkpoint long jobs, so that a failure after three hours costs minutes of rework and not three hours."
+    },
+    {
+      "prompt": "Teams increasingly weigh Slurm against Kubernetes for GPU work. What does Slurm do natively that a plain Kubernetes cluster doesn't?\n  a) Nothing\n  b) Gang scheduling and fair-share queueing: a 32-GPU job starts only when all 32 are free together, and users' priority is balanced by their recent usage\n  c) Run containers\n  d) Use GPUs at all\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "Kubernetes default scheduler: places pods one at a time -> a 32-GPU job can hold 20 GPUs and wait for ever\nSlurm                        : all-or-nothing allocation, queues, fair-share, time limits, backfill\nKubernetes + Kueue/Volcano   : adds queueing and gang scheduling",
+      "hint": "mlops-tutorial-013 mentioned all-or-nothing scheduling.",
+      "explanation": "Slurm was built for large jobs shared fairly among many users.",
+      "why": "Neither is simply better. Slurm excels at queues of big batch jobs on fixed hardware; Kubernetes excels at services and elastic, mixed workloads. Kubernetes gains batch features through add-ons (Kueue, Volcano), and some sites run Slurm on Kubernetes. Knowing why each exists stops the debate becoming a matter of taste."
+    }
+  ]
+}

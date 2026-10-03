@@ -991,7 +991,7 @@ real VMs.
 
 # Part 14 — SRE: How Large Companies Run Production
 
-**Content:** 13 tutorials, 6 incidents.
+**Content:** 14 tutorials, 6 incidents.
 
 **What's taught, honestly:** Google's and Meta's internal tools (Borg,
 Borgmon, Tupperware, and the internal deploy and config systems) aren't
@@ -1015,7 +1015,8 @@ that descend from or implement them:
   N+1, growth and lead time);
 - load testing (k6 thresholds, vegeta open-model constant rate, finding the
   bottleneck, histograms);
-- chaos engineering (tc netem, Chaos Mesh, hypothesis, abort, and cleanup);
+- chaos engineering (tc netem, Chaos Mesh, hypothesis, abort, and cleanup),
+  then LitmusChaos experiments and results, and designing game days;
 - feature flags and kill switches;
 - rebuilding a postmortem timeline from git, ReplicaSets, metrics, and alerts;
 - graceful degradation and load shedding;
@@ -1819,13 +1820,13 @@ they're learned by building pipelines on real data.
 
 # Part 26 — The Wider Landscape
 
-**Content:** 8 tutorials, 0 incidents.
+**Content:** 13 tutorials, 0 incidents.
 
 The tools you meet when a company chose differently from the mainstream,
 or chose ten years ago. The aim is recognition: how to see what's
 running, how to check health, and how each maps to what you already
-know. This part is **in progress**: eight of the planned tutorials
-exist, and there are no incidents.
+know. It is tutorials only: recognition doesn't need incidents, and
+the incidents worth having belong to the mainstream categories.
 
 ## Covered
 
@@ -1841,26 +1842,28 @@ exist, and there are no incidents.
 - **Other version control:** Gerrit, Perforce, and Mercurial.
 - **Windows servers:** PowerShell for services, event logs, processes,
   connectivity, and remoting.
+- **Private cloud and bare metal:** OpenStack servers and hypervisor
+  capacity, Proxmox, and a BMC through ipmitool (Redfish and PXE named).
+- **Older monitoring:** Nagios plugins and the exit-code contract,
+  SNMP walks, Zabbix items, and StatsD over UDP.
+- **High-performance computing:** Slurm partitions, sbatch, squeue
+  reasons, sacct, and gang scheduling compared with Kubernetes.
+- **Mail and DNS hygiene:** SPF, DKIM, DMARC, and DNSSEC with dig.
+- **Mobile delivery:** Fastlane lanes, match for signing, staged
+  rollouts, and store review.
+
+Chaos tooling (Litmus and game-day design) went to SRE instead
+(sre-tutorial-014).
 
 ## Still missing
 
-Planned and not yet written, from the Backlog's tier C:
-- private cloud and virtualisation (OpenStack, vSphere, Proxmox) and
-  bare-metal management (IPMI, Redfish, PXE);
-- older monitoring (Nagios, Zabbix, SNMP, StatsD);
-- high-performance computing (Slurm);
-- mail and DNS hygiene (SPF, DKIM, DMARC, DNSSEC);
-- mobile delivery (Fastlane, signing);
-- more chaos tooling (Litmus, game-day design).
-
-`commands/landscape.md` already has the command reference for all of
-these. Never planned at depth: Oracle and IBM clouds, Docker Swarm,
+No incidents, by design. Never planned at depth: Oracle and IBM clouds, Docker Swarm,
 Active Directory and Group Policy administration, Windows containers,
 WebAssembly workloads, and KubeEdge.
 
 ## Readiness verdict
 
-Enough to not be lost on day one with any of the eight covered tool
+Enough to not be lost on day one with any of the covered tool
 families. None of it is depth: each tutorial is an introduction, and a
 job that centres on one of these tools needs that tool's own
 documentation and practice.
@@ -1966,6 +1969,10 @@ employer uses it.
 
 ## Tier C: less popular, legacy, or niche
 
+**Done** as The Wider Landscape category (recognition-level
+tutorials, one per family) plus sre-tutorial-014 for chaos tooling.
+What remains unwritten is listed in that part's 'Still missing'.
+
 - **Other orchestrators:** Nomad, Docker Swarm, Consul for service
   discovery.
 - **Other configuration management:** Puppet, Chef, SaltStack.
@@ -2024,7 +2031,7 @@ If content is added in the order that helps most people soonest:
 | Google Cloud | 10 | 6 | 1 Writing Lab (firewall), Sandbox, 3 Mysteries |
 | Security | 16 | 7 | 3 Writing Labs (Sigma, Kyverno, Falco), 2 hacked-server Mysteries (Linux sandbox) |
 | Server Fleet Ops | 13 | 7 | 1 Writing Lab (Ansible) |
-| SRE | 13 | 6 | 2 Writing Labs (postmortem, catalog entry) |
+| SRE | 14 | 6 | 2 Writing Labs (postmortem, catalog entry) |
 | Git | 11 | 6 | |
 | System Design | 18 | 8 | 4 Writing Labs (design documents) |
 | Databases | 12 | 6 | |
@@ -2036,8 +2043,8 @@ If content is added in the order that helps most people soonest:
 | Performance | 7 | 3 | |
 | FinOps | 6 | 3 | |
 | Data Engineering | 5 | 2 | 1 Writing Lab (Airflow DAG) |
-| The Wider Landscape | 8 | 0 | in progress |
-| **Total** | **337** | **158** | 51 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
+| The Wider Landscape | 13 | 0 | tutorials only (recognition level) |
+| **Total** | **343** | **158** | 51 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that

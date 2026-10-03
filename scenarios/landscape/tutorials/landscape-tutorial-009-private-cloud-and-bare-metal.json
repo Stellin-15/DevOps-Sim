@@ -1,0 +1,48 @@
+{
+  "id": "landscape-tutorial-009",
+  "type": "tutorial",
+  "category": "landscape",
+  "title": "Not a Public Cloud: OpenStack, Proxmox, vSphere, and Bare Metal",
+  "difficulty": "intermediate",
+  "tags": ["openstack", "proxmox", "vsphere", "ipmi", "bare-metal"],
+  "intro": "Plenty of infrastructure runs in a company's own data centre: a private cloud on OpenStack, virtual machines on VMware vSphere or Proxmox, or physical servers with no virtualisation at all. The questions are the ones you ask in AWS: what's running, where, and is the host healthy. The difference is that nobody else replaces the hardware. You're on an admin host for the private estate.",
+  "steps": [
+    {
+      "prompt": "OpenStack is the open-source private cloud, with an API much like a public cloud's. List the servers in your project.",
+      "expected_commands": ["openstack server list"],
+      "fake_output": "+--------------------------------------+---------+---------+------------------------+-----------+\n| ID                                   | Name    | Status  | Networks               | Flavor    |\n+--------------------------------------+---------+---------+------------------------+-----------+\n| 9f1c2e7a-41bb-4c08-8e11-f47a2d90be01 | web-1   | ACTIVE  | internal=10.40.0.11    | m1.large  |\n| c08e11f4-7a2d-490b-be01-31d2c4412041 | web-2   | ERROR   |                        | m1.large  |\n| 0be0131d-2c44-4120-41b2-04410220441a | db-1    | ACTIVE  | internal=10.40.0.21    | m1.xlarge |\n+--------------------------------------+---------+---------+------------------------+-----------+",
+      "explanation": "Two servers active; web-2 is in ERROR with no network.",
+      "why": "A 'flavor' is an instance type, a 'project' is an account, and Nova, Neutron, and Cinder are compute, network, and block storage. If you know EC2 you know the shape. ERROR at creation usually means the scheduler found no host with enough room, or the network couldn't be attached: 'openstack server show web-2' gives the fault message."
+    },
+    {
+      "prompt": "In a private cloud, capacity is finite and yours to manage. See the hypervisors' combined use.",
+      "expected_commands": ["openstack hypervisor stats show"],
+      "fake_output": "+----------------------+--------+\n| Field                | Value  |\n+----------------------+--------+\n| count                | 12     |\n| vcpus                | 576    |\n| vcpus_used           | 560    |\n| memory_mb            | 3145728|\n| memory_mb_used       | 3014656|\n| running_vms          | 412    |\n+----------------------+--------+",
+      "explanation": "560 of 576 virtual CPUs and 96% of memory are allocated across 12 hosts.",
+      "why": "This is why web-2 failed: there's no room. In a public cloud more capacity is an API call; here it's a purchase order and weeks of lead time. Capacity planning (sre-tutorial-004) stops being optional, and so does reclaiming idle machines (finops-tutorial-003): every forgotten VM blocks a real one."
+    },
+    {
+      "prompt": "Proxmox is a popular open-source virtualisation platform for smaller estates. On a Proxmox host, list the virtual machines.",
+      "expected_commands": ["qm list", "sudo qm list"],
+      "fake_output": "      VMID NAME                 STATUS     MEM(MB)    BOOTDISK(GB) PID\n       101 gitlab               running    16384            200.00 4120\n       102 build-runner-1       running     8192             80.00 4188\n       103 old-jenkins          stopped     8192            120.00 0",
+      "explanation": "Three VMs; old-jenkins is stopped but still holds its disk.",
+      "why": "Each VM has a numeric id, used by every other command ('qm status 101', 'qm start 103'). 'pvecm status' shows the cluster's quorum, the same majority rule as etcd: a two-node Proxmox cluster loses quorum with one node down, which is why small clusters add a lightweight third vote. vSphere's equivalent views come from 'govc' or PowerCLI."
+    },
+    {
+      "prompt": "A physical server stopped answering on the network. Its baseboard management controller (BMC), a small separate computer on the motherboard, is at 10.99.0.11. Check the chassis power state through it with ipmitool, as user admin with the password in $BMC_PASS.",
+      "expected_commands": ["ipmitool -H 10.99.0.11 -U admin -P $BMC_PASS chassis status", "ipmitool -I lanplus -H 10.99.0.11 -U admin -P $BMC_PASS chassis status", "ipmitool -H 10.99.0.11 -U admin -P \"$BMC_PASS\" chassis status"],
+      "fake_output": "System Power         : on\nPower Overload       : false\nMain Power Fault     : false\nPower Control Fault  : false\nDrive Fault          : false\nCooling/Fan Fault    : true\nFront-Panel Lockout  : inactive",
+      "hint": "ipmitool -H 10.99.0.11 -U admin -P $BMC_PASS chassis status",
+      "explanation": "The server is powered on and reports a cooling fault: it's probably overheated and hung.",
+      "why": "The BMC works even when the operating system is dead, which makes it the remote hands of a data centre: power state, sensors, a remote console ('sol activate'), and power cycling. Redfish is the modern HTTPS API for the same job. BMCs are also notoriously insecure, so they belong on an isolated management network, never the internet, with default passwords changed."
+    },
+    {
+      "prompt": "The fan fault means a power cycle will just reproduce the hang. What's the right course of action?\n  a) Power-cycle it every hour\n  b) Take it out of service, drain its workloads elsewhere, and raise a hardware ticket; bring it back only after the fan is replaced and it passes a burn-in\n  c) Ignore the fault flag\n  d) Turn off the BMC\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "cloud     : terminate the instance; a new one appears on healthy hardware\nbare metal: you are the provider. Drain, ticket, repair, test, return to the pool.",
+      "hint": "In a public cloud this is someone else's job.",
+      "explanation": "Hardware faults are handled as a process, not a reboot.",
+      "why": "Running your own hardware means owning the whole life cycle: spares, failed disks, firmware updates, fans. The habits that make it work are the cloud's habits brought in-house: treat servers as replaceable, provision them automatically (PXE boot, MAAS, Tinkerbell), and keep enough spare capacity that losing a machine is routine."
+    }
+  ]
+}

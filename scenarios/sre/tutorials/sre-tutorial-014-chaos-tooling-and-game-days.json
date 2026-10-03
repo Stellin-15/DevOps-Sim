@@ -1,0 +1,49 @@
+{
+  "id": "sre-tutorial-014",
+  "type": "tutorial",
+  "category": "sre",
+  "title": "Chaos Experiments with Litmus, and Designing a Game Day",
+  "difficulty": "advanced",
+  "tags": ["chaos-engineering", "litmus", "game-day", "resilience"],
+  "intro": "sre-tutorial-006 injected faults by hand with tc and stress-ng. Chaos platforms make experiments repeatable: declared in YAML, with a hypothesis that's checked automatically and an abort if things go worse than expected. A game day is the human side: a planned exercise where a team handles a failure on purpose. The cluster runs LitmusChaos; the target is the checkout deployment in namespace shop.",
+  "steps": [
+    {
+      "prompt": "Every experiment starts with a hypothesis about steady state. Which is a good one for 'kill one of checkout's three pods'?\n  a) 'Nothing bad will happen'\n  b) 'Checkout's success rate stays above 99.5% and p99 latency below 800 ms while one pod is killed every 30 seconds for five minutes'\n  c) 'The pod will die'\n  d) 'We'll see what happens'\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "steady state   : measured from the user's side (SLIs), with thresholds\nexperiment     : the fault, its scope, its duration\nabort condition: success rate < 98% -> stop and restore at once",
+      "hint": "A hypothesis you can't fail isn't a test.",
+      "explanation": "A measurable statement about what users experience.",
+      "why": "The point of an experiment is to find out whether the system really tolerates the fault, so the hypothesis must be checkable against SLIs and could turn out false. The abort condition protects users: experiments in production need a blast radius small enough, and a stop quick enough, that being wrong costs little."
+    },
+    {
+      "prompt": "Check which chaos experiments are installed in namespace shop.",
+      "expected_commands": ["kubectl get chaosexperiments -n shop", "kubectl get chaosexperiment -n shop"],
+      "fake_output": "NAME             AGE\npod-delete       41d\npod-network-latency  41d\npod-cpu-hog      41d\nnode-drain       41d",
+      "explanation": "Four fault types are available.",
+      "why": "Experiments are reusable definitions of a fault; a ChaosEngine applies one to a target with parameters. Because they're Kubernetes objects, they can be reviewed in Git and run from a pipeline, which turns a one-off test into a regression test for resilience: run pod-delete against every release in staging, for example."
+    },
+    {
+      "prompt": "The ChaosEngine checkout-pod-delete, which runs pod-delete against checkout with the hypothesis above built in as probes, has been applied. Check its result.",
+      "expected_commands": ["kubectl get chaosresult -n shop", "kubectl get chaosresults -n shop", "kubectl describe chaosresult checkout-pod-delete-pod-delete -n shop"],
+      "fake_output": "NAME                                VERDICT   PHASE       PROBE SUCCESS PERCENTAGE\ncheckout-pod-delete-pod-delete      Fail      Completed   50",
+      "explanation": "The experiment completed and the verdict is Fail: half the probes failed.",
+      "why": "A failed experiment is a successful finding. 'kubectl describe' on the result shows which probe failed: here, the success-rate probe dropped below 99.5% each time a pod was killed. Likely causes are no preStop delay, so the load balancer keeps sending to a terminating pod, or a readiness probe too slow to remove it. That's a real bug found in daylight instead of during a node failure."
+    },
+    {
+      "prompt": "A game day exercises people and process, not just software. Which plan is sound?\n  a) Surprise the on-call engineer at 3 a.m. with a real production outage\n  b) A scheduled session with a clear scenario, a small blast radius, someone ready to stop it, observers taking notes, and a debrief that produces actions\n  c) Break as much as possible to see what happens\n  d) Run it only in a document\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "before : scenario, hypothesis, scope, abort criteria, who's in the room, customers notified if needed\nduring : responders work as in a real incident; a facilitator injects the fault and can stop it\nafter  : blameless debrief -> what was slow, missing, or wrong -> tickets with owners",
+      "hint": "The goal is learning, safely.",
+      "explanation": "Planned, bounded, observed, and followed up.",
+      "why": "Game days find what no automated experiment can: a runbook that's out of date, an alert that goes to the wrong team, a dashboard nobody can find, a permission someone lacks. The disaster recovery drill in sre-tutorial-011 is one kind. Surprise drills have their place in mature teams, but the first ones should be announced; the aim is practice, not a trap."
+    },
+    {
+      "prompt": "After a few successful game days, what should happen to the scenarios?\n  a) Retire them\n  b) Automate what can be automated as recurring experiments (so regressions are caught), and move the human exercises to harder scenarios\n  c) Run the same one every week by hand\n  d) Publish them and stop\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "game day 1: pod failure (manual)        -> now a nightly Litmus run in staging\ngame day 2: zone failure (manual)       -> quarterly, automated injection, human response\ngame day 3: dependency outage + comms   -> next",
+      "hint": "Resilience decays as systems change.",
+      "explanation": "Turn proven scenarios into automated checks, and keep raising the bar.",
+      "why": "A fix verified once can be undone by any later change, so a resilience property that matters should be tested continuously, like any other. Moving people on to harder scenarios keeps the exercise valuable. Gremlin and AWS Fault Injection Service offer the same model as managed services."
+    }
+  ]
+}

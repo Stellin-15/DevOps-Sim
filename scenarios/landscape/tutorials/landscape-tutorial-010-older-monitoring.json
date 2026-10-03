@@ -1,0 +1,48 @@
+{
+  "id": "landscape-tutorial-010",
+  "type": "tutorial",
+  "category": "landscape",
+  "title": "Monitoring Before Prometheus: Nagios, Zabbix, SNMP, and StatsD",
+  "difficulty": "intermediate",
+  "tags": ["nagios", "zabbix", "snmp", "statsd", "monitoring"],
+  "intro": "Prometheus and Grafana are recent. Many estates are still watched by older systems: Nagios and its descendants (Icinga) run checks that say OK, WARNING, or CRITICAL; Zabbix collects through its own agents; network gear speaks SNMP; and applications emit StatsD counters. The ideas carry over; the shapes differ. You're on a monitoring host.",
+  "steps": [
+    {
+      "prompt": "A Nagios check is a small program that prints a line and exits with a code. Run the HTTP check against web-1 for the path /health, warning above 1 second and critical above 3.",
+      "expected_commands": ["/usr/lib/nagios/plugins/check_http -H web-1 -u /health -w 1 -c 3", "/usr/lib/nagios/plugins/check_http -H web-1 -u /health -w 1 -c 3; echo $?"],
+      "fake_output": "HTTP WARNING: HTTP/1.1 200 OK - 412 bytes in 1.904 second response time |time=1.904000s;1.000000;3.000000;0.000000 size=412B;;;0",
+      "explanation": "The page loads, slowly: WARNING. The part after '|' is performance data.",
+      "why": "The plugin contract is the whole system: exit 0 is OK, 1 WARNING, 2 CRITICAL, 3 UNKNOWN, plus one line of text. Any script that follows it is a check, which is why thousands exist and why Nagios-style checks are everywhere. They answer 'is this OK right now?' well and 'how has it changed?' badly; that second question is what time-series systems were built for."
+    },
+    {
+      "prompt": "Before reloading Nagios after editing its configuration, verify it.",
+      "expected_commands": ["sudo nagios -v /etc/nagios4/nagios.cfg", "nagios -v /etc/nagios4/nagios.cfg", "sudo nagios4 -v /etc/nagios4/nagios.cfg"],
+      "fake_output": "Running pre-flight check on configuration data...\nChecking services...\n\tChecked 412 services.\nChecking hosts...\nWarning: Host 'old-jenkins' has no services associated with it!\n\tChecked 41 hosts.\n\nTotal Warnings: 1\nTotal Errors:   0\n\nThings look okay - No serious problems were detected during the pre-flight check",
+      "explanation": "Valid, with one warning: a host with nothing checked on it.",
+      "why": "The same test-before-reload discipline as nginx, Prometheus, and HAProxy. A Nagios configuration with an error stops the whole monitoring system on restart, and a monitoring system that's down is silent, which looks exactly like everything being fine."
+    },
+    {
+      "prompt": "Switches, routers, printers, and UPS units report through SNMP. Walk the interface names of the switch sw-core-1 using SNMP v2c with the community string in $SNMP_COMMUNITY (the interface-description table is OID 1.3.6.1.2.1.2.2.1.2).",
+      "expected_commands": ["snmpwalk -v2c -c $SNMP_COMMUNITY sw-core-1 1.3.6.1.2.1.2.2.1.2", "snmpwalk -v 2c -c $SNMP_COMMUNITY sw-core-1 1.3.6.1.2.1.2.2.1.2", "snmpwalk -v2c -c \"$SNMP_COMMUNITY\" sw-core-1 1.3.6.1.2.1.2.2.1.2"],
+      "fake_output": "IF-MIB::ifDescr.1 = STRING: GigabitEthernet1/0/1\nIF-MIB::ifDescr.2 = STRING: GigabitEthernet1/0/2\nIF-MIB::ifDescr.48 = STRING: TenGigabitEthernet1/1/1\nIF-MIB::ifDescr.49 = STRING: Vlan10",
+      "hint": "snmpwalk -v2c -c $SNMP_COMMUNITY sw-core-1 1.3.6.1.2.1.2.2.1.2",
+      "explanation": "The switch's interfaces, each with an index used by the other tables (traffic, errors, status).",
+      "why": "SNMP organises everything in a tree of numbered identifiers, described by MIB files that give them names. It's the lingua franca of network hardware and isn't going away. Version 2c's 'community string' is a password sent in clear text, which is why v2c belongs on a management network only and SNMPv3, with authentication and encryption, is preferred. Prometheus reads SNMP through the snmp_exporter."
+    },
+    {
+      "prompt": "Ask a Zabbix agent on db-1 for its one-minute load average directly.",
+      "expected_commands": ["zabbix_get -s db-1 -k system.cpu.load[all,avg1]", "zabbix_get -s db-1 -k 'system.cpu.load[all,avg1]'", "zabbix_get -s db-1 -k \"system.cpu.load[all,avg1]\""],
+      "fake_output": "3.410000",
+      "explanation": "The agent answered with the load average.",
+      "why": "Zabbix polls agents for items, identified by keys like this one, stores them as time series, and evaluates triggers against them: it's a full monitoring system in one product, common in enterprises and among hosting providers. 'zabbix_get' tests one item by hand, the way 'curl /metrics' tests an exporter: the first step when a graph has gone empty."
+    },
+    {
+      "prompt": "An application sends metrics in the StatsD protocol: plain text over UDP. Send one count of the metric shop.orders.placed to a StatsD agent on localhost port 8125.",
+      "expected_commands": ["echo \"shop.orders.placed:1|c\" | nc -u -w0 127.0.0.1 8125", "echo 'shop.orders.placed:1|c' | nc -u -w0 127.0.0.1 8125", "echo \"shop.orders.placed:1|c\" | nc -u -w0 localhost 8125"],
+      "fake_output": "(no output: UDP sends and doesn't wait for a reply)",
+      "hint": "echo \"shop.orders.placed:1|c\" | nc -u -w0 127.0.0.1 8125",
+      "explanation": "One increment sent; the agent aggregates and flushes totals every few seconds.",
+      "why": "StatsD's design is push, fire-and-forget over UDP: sending a metric can never slow or break the application, and if the agent is down the numbers simply vanish. '|c' is a counter, '|ms' a timing, '|g' a gauge. Datadog's agent speaks it (DogStatsD), and Prometheus's statsd_exporter translates it, which is how older applications keep working when the backend changes."
+    }
+  ]
+}

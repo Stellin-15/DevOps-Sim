@@ -413,7 +413,7 @@ Current per-category content depth (tutorials / incidents):
 - gcp: 10 / 6 (+ Google Cloud sandbox, 3 mysteries)
 - security: 16 / 7 (+3 Writing Labs, 2 hacked-server mysteries on the Linux sandbox)
 - servers: 13 / 7 (fleet ops: Ansible, patching, time, LVM, backups)
-- sre: 13 / 6 (big-tech practices, via public tools; +2 Writing Labs)
+- sre: 14 / 6 (big-tech practices, via public tools; +2 Writing Labs)
 - git: 11 / 6 (Git in its own right; everyday workflow, revert vs
   reset, and bisect stay in cicd)
 - systemdesign: 18 / 8 (+4 design-document Writing Labs; mixes real
@@ -441,8 +441,8 @@ Current per-category content depth (tutorials / incidents):
 - performance: 7 / 3 (profilers, flame graphs, eBPF tools, JVM and Go runtime inspection, measurement)
 - finops: 6 / 3 (cost allocation, rightsizing, commitments and spot, Kubernetes cost, quiet costs)
 - dataeng: 5 / 2 (+1 Writing Lab): Airflow authoring, dbt, warehouses, Spark on Kubernetes, CDC
-- landscape: 8 / 0 (tutorials only, no incidents: recognition-level introductions to less common tools; IN PROGRESS, see Likely next work 6b)
-- **total: 337 tutorials, 158 incidents, 51 Writing Labs, 14 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
+- landscape: 13 / 0 (tutorials only, no incidents: recognition-level introductions to less common tools, one per tool family)
+- **total: 343 tutorials, 158 incidents, 51 Writing Labs, 14 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with
@@ -716,19 +716,10 @@ See GAPS.md's final 'Overall' part for the reasoning. In priority order:
    networking, storage and DR, multi-cluster and tenancy, platform
    engineering, compliance, data engineering, LLM operations, system
    design depth, and every named authoring lab).
-   **Tier C is where work was paused (2026-10-02):** the `landscape`
-   category has tutorials 001-008. Still to write, each as one
-   tutorial, with commands already in `commands/landscape.md`:
-   private cloud and bare metal (OpenStack, Proxmox, vSphere, IPMI),
-   older monitoring (Nagios, Zabbix, SNMP, StatsD), Slurm, mail and
-   DNS hygiene (SPF/DKIM/DMARC/DNSSEC), mobile delivery (Fastlane),
-   and chaos tooling (Litmus, game days; this one fits `sre`). When
-   they're written, strike tier C in GAPS.md's Backlog part, remove
-   "in progress" from the landscape rows, and consider a career path
-   or two over the new categories (none were added after path-014).
-   Then: the README intro and CLAUDE.md "What this is" lists are
-   current, but GAPS.md's Overall part still describes the game as it
-   was before this build-out and deserves a rewrite.
+   ✓ **Tier C is done** (the `landscape` category, tutorials 001-013,
+   plus sre-tutorial-014 for Litmus and game days). Consider a career
+   path or two over the newer categories (none were added after
+   path-014).
    A **database sandbox** driving an in-memory SQLite database
    (standard library, no install) would let players run real SQL
    instead of matching pre-written statements.
