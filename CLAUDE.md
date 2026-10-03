@@ -297,9 +297,40 @@ Don't duplicate content from these files elsewhere — link to them.
   - Goals: `query_uses_index` (a SEARCH, not a SCAN, even one USING
     INDEX), `no_duplicates`, `unique_guard`, `no_orphans`,
     `addresses_restored`, `committed`, and a generic `sql_equals`.
+- **git_sandbox.py** — the Git sandbox (kind `git`): **the real git
+  binary on a real repository**, the one sandbox that runs an external
+  tool. Needs git installed; `run_sandbox` says so if it isn't, and
+  `tests/conftest.py` skips its tests.
+  - **Repositories** live in `WORK_ROOT` (`workspace/git-sandbox/<key>/
+    shop-api`, gitignored). Each problem set is built once with
+    `git fast-import` (fixed authors and timestamps, so hashes are
+    stable) into `.templates/` and copied per state, because a git
+    process costs ~0.2s on Windows. `_prune` removes repos older than
+    six hours unless a saved state points at them. A state whose repo
+    has gone is rebuilt on the next command.
+  - **Problems** (one per repo): wrong_branch, leaked_secret,
+    merge_conflict, lost_commits (real commits, then a real `reset
+    --hard`, so the reflog is genuine), and bad_commit (pushed, so a
+    rewrite is collateral). `origin/main` is a plain ref standing for
+    what's been pushed; there is no remote.
+  - **Safety**: no shell (argument lists only); global and system
+    config are ignored (`GIT_CONFIG_NOSYSTEM`, an empty
+    `GIT_CONFIG_GLOBAL`); remote subcommands, `-C`/`-c`, `--help`,
+    `bisect run`, `rebase --exec`, `filter-branch`, `worktree`, output
+    files, and config keys that run programs are refused (`_refusal`);
+    `cat`/`ls`/`sed` stay inside the repo and `sed` won't touch `.git`.
+  - **Editors**: `GIT_EDITOR` and `GIT_SEQUENCE_EDITOR` are
+    `tools/git_editor.py`, which names the file and waits for Enter. A
+    command that may open one runs with the real terminal when stdin
+    is a TTY; otherwise the editor returns at once and the output is
+    prefixed with a note. Mystery solutions therefore use
+    non-interactive forms (`rebase --onto`, `commit --no-edit`).
+  - Goals: `problem_fixed` (with `problem`) and `history_kept`.
+    Collateral: origin/main no longer in main, a deleted tag, or a
+    deleted branch.
 - **mystery.py** — Mystery Incidents: a symptom and a seeded sandbox
   state (`scenarios/mysteries/*.json`). `sandbox` picks linux, docker,
-  aws, azure, gcp, kube or db, and `mystery.build_state` calls that module's
+  aws, azure, gcp, kube, db or git, and `mystery.build_state` calls that module's
   `generate_state(**setup)`.
 
   Mysteries are **sandbox-agnostic**: each sandbox module supplies three
@@ -441,7 +472,8 @@ Current per-category content depth (tutorials / incidents):
 - servers: 13 / 7 (fleet ops: Ansible, patching, time, LVM, backups)
 - sre: 14 / 6 (big-tech practices, via public tools; +2 Writing Labs)
 - git: 11 / 6 (Git in its own right; everyday workflow, revert vs
-  reset, and bisect stay in cicd)
+  reset, and bisect stay in cicd), plus the real-git sandbox
+  (git_sandbox.py) and 5 mysteries on it
 - systemdesign: 18 / 8 (+4 design-document Writing Labs; mixes real
   commands with multiple-choice decision steps)
 - databases: 12 / 6 (operator's side: psql, on-call SQL, roles,
@@ -469,7 +501,7 @@ Current per-category content depth (tutorials / incidents):
 - finops: 6 / 3 (cost allocation, rightsizing, commitments and spot, Kubernetes cost, quiet costs)
 - dataeng: 5 / 2 (+1 Writing Lab): Airflow authoring, dbt, warehouses, Spark on Kubernetes, CDC
 - landscape: 13 / 0 (tutorials only, no incidents: recognition-level introductions to less common tools, one per tool family)
-- **total: 343 tutorials, 158 incidents, 51 Writing Labs, 18 career paths, 27 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security, 4 databases)**
+- **total: 343 tutorials, 158 incidents, 51 Writing Labs, 18 career paths, 32 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security, 4 databases, 5 git)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with
@@ -666,6 +698,12 @@ python -m pytest
   the AWS tests, plus each cloud's own rules: NSG priority order and
   NIC-level NSGs; target tags, deny-beats-allow, regional NAT, and IAP
   SSH sessions
+- `test_git_sandbox.py` — with the real git: each problem starts
+  unfixed, the real fix clears it, the tempting wrong fixes (a new
+  commit deleting the key, `checkout --ours`, committing the markers,
+  resetting a pushed commit away) don't, and every refused command
+  is refused. `conftest.py` points the sandbox at a temp directory
+  and skips these (and git mysteries) without git.
 - `test_db_sandbox.py` — each seeded problem visible through real SQL,
   each real fix clears it, the classic wrong fixes (INSERT OR REPLACE,
   swapping in the backup, a unique index on loaded_at) don't,
@@ -697,8 +735,11 @@ exercise something the generic checks don't cover.
 
 ## Conventions / constraints to keep honoring
 
-- No real kubectl/cluster connection anywhere — every "output" is a
-  pre-written string, never a live command execution.
+- No real kubectl/cluster connection and no network anywhere. Scenario
+  output is always a pre-written string. The two exceptions run
+  locally and are contained: the database sandbox (SQLite in memory,
+  in-process) and the Git sandbox (the real git on a throwaway repo,
+  with every command that could leave it refused).
 - Command validation is pattern/fuzzy-based, never exact string equality.
 - `sandbox_data/`, `progress.json`, and `workspace/` are gitignored —
   they're local per-player state, not project content.
@@ -757,8 +798,5 @@ See GAPS.md's final 'Overall' part for the reasoning. In priority order:
    ✓ **Database sandbox** (db_sandbox.py) with mysteries db-001 to 004.
    Each new category was added with `add_category` from the session's
    scratch helper; the durable part of that is `tools/sync_docs.py`.
-6c. A **Git sandbox** (a real temp repository the game inspects) is the
-   most valuable follow-up for the git category: outputs are
-   pre-written today, so rebase todo lists and conflicts are never
-   edited for real.
+6c. ✓ **Git sandbox** (git_sandbox.py) with mysteries git-001 to 005.
 7. Keep GAPS.md current: every content pass should update its part.

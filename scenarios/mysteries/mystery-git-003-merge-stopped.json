@@ -1,0 +1,37 @@
+{
+  "id": "mystery-git-003",
+  "type": "mystery",
+  "category": "git",
+  "sandbox": "git",
+  "title": "The Merge That Stopped Halfway",
+  "difficulty": "intermediate",
+  "tags": ["git", "merge", "conflicts"],
+  "setup": {"seed": 33, "problems": ["merge_conflict"]},
+  "symptom": "A colleague started merging feature/pricing into main before going on leave, and the terminal is still sitting where they stopped. The release needs both the discount work already on main and the work from feature/pricing. Finish the merge properly.",
+  "goals": [
+    {"check": "problem_fixed", "problem": "merge_conflict", "description": "The merge is committed, both features are in the file, no conflict markers remain, and the working tree is clean"}
+  ],
+  "evidence": [
+    {"description": "which file conflicts", "seen_any": ["both modified"]},
+    {"description": "what each side changed", "seen_any": ["<<<<<<< HEAD"]}
+  ],
+  "question": {
+    "prompt": "Why did these two changes conflict, and what was the right resolution?",
+    "options": [
+      "One branch was corrupt; aborting was right",
+      "Both branches added different code at the same place in app/pricing.py, so git couldn't order them; keeping both functions and removing the markers was right",
+      "The file was deleted on one branch",
+      "Taking feature/pricing's version was right because it's newer"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 5,
+  "solution_commands": [
+    "git status",
+    "git diff",
+    "sed -i '/^<<<<<<<\\|^=======\\|^>>>>>>>/d' app/pricing.py",
+    "git add app/pricing.py",
+    "git commit --no-edit"
+  ],
+  "debrief": "'git status' shows a merge in progress and the unmerged file; 'git diff' during a conflict shows both sides between the markers: <<<<<<< HEAD (what main has), ======= and >>>>>>> feature/pricing (what's coming in). Here each branch appended a different function at the end of the file. Git can't know which goes first, so it asks, but the right answer is both. Removing the three marker lines keeps both functions; in a real conflict you'd usually do that in your editor and read the result, because sometimes the two sides change the same line and you must write a combination. 'git add' marks the file resolved and 'git commit' records the merge with both parents. Taking one side with 'git checkout --ours' or '--theirs' silently drops the other feature, and committing with the markers still in the file ships code that doesn't run, which is why CI should fail on '<<<<<<<'."
+}

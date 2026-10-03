@@ -1102,10 +1102,14 @@ Incidents, each one a real "I've lost my work" moment:
 
 ## Still missing
 
-- **A real repository.** Outputs are pre-written, so you never edit a
-  rebase todo list or resolve a conflict in your own editor. A Git
-  sandbox (a real temp repo the game inspects) would close this, and it's
-  the most valuable next step for this category.
+- **Real repositories, partly.** The tutorials and incidents match
+  pre-written output. The Git sandbox and its five mysteries run the real
+  git on a real repository: moving commits to the right branch, removing
+  a key from unpushed history, finishing a conflicted merge, recovering
+  from the reflog, and reverting a pushed commit. Still not practised
+  for real: anything with a remote (push, fetch, force-push and its
+  aftermath), interactive rebase beyond what a terminal session allows,
+  and history large enough to need bisect.
 - Code-review practice: pull-request etiquette, stacked changes, Gerrit.
 - Branching strategies compared in depth (trunk-based vs GitFlow vs
   release branches). CI/CD touches this; neither part drills it.
@@ -2033,7 +2037,7 @@ If content is added in the order that helps most people soonest:
 | Security | 16 | 7 | 3 Writing Labs (Sigma, Kyverno, Falco), 2 hacked-server Mysteries (Linux sandbox) |
 | Server Fleet Ops | 13 | 7 | 1 Writing Lab (Ansible) |
 | SRE | 14 | 6 | 2 Writing Labs (postmortem, catalog entry) |
-| Git | 11 | 6 | |
+| Git | 11 | 6 | real-git Sandbox, 5 Mysteries |
 | System Design | 18 | 8 | 4 Writing Labs (design documents) |
 | Databases | 12 | 6 | real-SQL Sandbox, 4 Mysteries |
 | Web Servers & Proxies | 11 | 6 | 2 Writing Labs (nginx configuration) |
@@ -2045,7 +2049,7 @@ If content is added in the order that helps most people soonest:
 | FinOps | 6 | 3 | |
 | Data Engineering | 5 | 2 | 1 Writing Lab (Airflow DAG) |
 | The Wider Landscape | 13 | 0 | tutorials only (recognition level) |
-| **Total** | **343** | **158** | 51 Writing Labs, 18 career paths, 8 sandboxes, 27 Mystery Incidents, Exam Mode, Stats |
+| **Total** | **343** | **158** | 51 Writing Labs, 18 career paths, 9 sandboxes, 32 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -2096,11 +2100,11 @@ that more scenario content can narrow but not close:
    here was written in advance. **Partly addressed** by Mystery
    Incidents: only a symptom and a live sandbox, any path you like,
    fixes that really change the state, collateral damage that costs
-   points, and a root cause you must name. The database sandbox runs
-   real SQL on a real engine. But 27 mysteries on eight sandboxes are a
-   start, not real on-call, and the Git category still matches
-   pre-written output rather than running real git. Pair this game with a homelab (kind or minikube, a
-   free-tier cloud account) where things break for real.
+   points, and a root cause you must name. The database and Git
+   sandboxes go further and run the real engine and the real git. But
+   32 mysteries on nine sandboxes are a start, not real on-call. Pair
+   this game with a homelab (kind or minikube, a free-tier cloud
+   account) where things break for real.
 3. **Scale and money.** Cloud networking, IAM, serverless, and cost
    are taught in all three clouds, with sandboxes for the networking.
    What a game can't give you is the weight of a real account: a bill

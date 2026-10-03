@@ -1,0 +1,36 @@
+{
+  "id": "mystery-git-005",
+  "type": "mystery",
+  "category": "git",
+  "sandbox": "git",
+  "title": "Every Request Times Out Since v1.5",
+  "difficulty": "intermediate",
+  "tags": ["git", "pickaxe", "bisect", "revert"],
+  "setup": {"seed": 35, "problems": ["bad_commit"]},
+  "symptom": "Since release v1.5, every outbound HTTP call from shop-api fails at once with a timeout, as if no wait were allowed at all. v1.4 was fine. Six commits went into v1.5, all already pushed and pulled by the whole team, and none of their messages mention timeouts. Undo the cause.",
+  "goals": [
+    {"check": "problem_fixed", "problem": "bad_commit", "description": "The setting is back to its working value on main, the bad commit is undone without rewriting pushed history, and the tree is clean"}
+  ],
+  "evidence": [
+    {"description": "the commit that changed it", "seen_any": ["config: tidy formatting"]},
+    {"description": "the change itself", "seen_any": ["+TIMEOUT_SECONDS = 0"]}
+  ],
+  "question": {
+    "prompt": "Why was 'git revert' the right way to undo it?",
+    "options": [
+      "It's faster than reset",
+      "The commit was already pushed and pulled by others, so the fix had to be a new commit that undoes it; resetting or rebasing it away would rewrite history everyone else has",
+      "Revert also deletes the commit from history",
+      "Reset can't undo configuration changes"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 4,
+  "solution_commands": [
+    "git log --oneline v1.4..v1.5",
+    "git log -S \"TIMEOUT_SECONDS = 0\" --oneline",
+    "git show {bad_commit}",
+    "git revert --no-edit {bad_commit}"
+  ],
+  "debrief": "'git log v1.4..v1.5' lists exactly what the release added. The commit messages were no help, since the change hid in a 'tidy formatting' commit, so the pickaxe went straight to it: 'git log -S \"TIMEOUT_SECONDS = 0\"' finds the commit that introduced that text. When you don't know what text to look for, 'git bisect' does the same job by halving the range: mark v1.5 bad and v1.4 good, test each commit it checks out, and six commits take three tests. 'git show' confirmed it: a formatting tidy-up that also turned a 30-second timeout into zero. Because v1.5 was pushed and pulled, the undo had to be a new commit: 'git revert' adds one that reverses the change, and everyone gets it with a normal pull. Two habits would have caught it: reviewing configuration diffs as carefully as code, and not mixing a formatting change with a value change in one commit."
+}

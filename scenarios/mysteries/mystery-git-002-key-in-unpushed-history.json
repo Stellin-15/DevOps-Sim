@@ -1,0 +1,35 @@
+{
+  "id": "mystery-git-002",
+  "type": "mystery",
+  "category": "git",
+  "sandbox": "git",
+  "title": "A Payment Key in the Commits You Haven't Pushed",
+  "difficulty": "intermediate",
+  "tags": ["git", "secrets", "rebase", "history"],
+  "setup": {"seed": 32, "problems": ["leaked_secret"]},
+  "symptom": "The pre-push secret scanner blocked your push: one of your local commits contains a payment API key. You have three unpushed commits on main, and the other two are work you need. Get the key out of every commit before pushing.",
+  "goals": [
+    {"check": "problem_fixed", "problem": "leaked_secret", "description": "No commit on main contains the key, and your other two commits are still there"}
+  ],
+  "evidence": [
+    {"description": "which commit added the key", "seen_any": ["config: payment key for local testing"]}
+  ],
+  "question": {
+    "prompt": "Why wasn't a new commit that deletes the key enough?",
+    "options": [
+      "It was enough; the scanner is wrong",
+      "Every commit is a complete snapshot, so the commit that added the key would still be pushed and readable; the commit itself had to be removed from history, which is safe only because it wasn't pushed yet",
+      "Git can't delete lines from files",
+      "The key would be removed automatically by garbage collection"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 4,
+  "solution_commands": [
+    "git log --oneline origin/main..main",
+    "git log -S pk-test-0000-not-a-real-key --oneline",
+    "git rebase --onto {leak_commit}^ {leak_commit}",
+    "git log -S pk-test-0000-not-a-real-key --oneline main"
+  ],
+  "debrief": "'git log -S <text>' (the pickaxe) lists every commit that added or removed a string: the fastest way to find where a secret came in. Deleting the line in a new commit leaves the key in the earlier commit, which a push would publish. Because the commits weren't pushed, rewriting them is safe: 'git rebase --onto X^ X' replays everything after commit X onto X's parent, dropping X. An interactive rebase (git rebase -i, then 'drop' or 'edit' on that line) does the same with a todo list, and 'edit' is the choice when the commit also held changes you want to keep. Run the pickaxe again afterwards: no output means no commit on main contains the key. Two caveats. The old commit survives in your reflog until it expires, which is harmless locally. And had it been pushed, rewriting would not be enough: rotate the key first, because anyone could already have copied it (security-tutorial-009)."
+}

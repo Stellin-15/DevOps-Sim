@@ -1,0 +1,36 @@
+{
+  "id": "mystery-git-001",
+  "type": "mystery",
+  "category": "git",
+  "sandbox": "git",
+  "title": "Two Commits on the Wrong Branch",
+  "difficulty": "beginner",
+  "tags": ["git", "branches", "reset"],
+  "setup": {"seed": 31, "problems": ["wrong_branch"]},
+  "symptom": "You spent the morning on the search feature and were about to open a pull request from feature/search, but GitHub says that branch has nothing new on it. Nothing has been pushed yet. Put the work where it belongs and leave main as everyone else has it.",
+  "goals": [
+    {"check": "problem_fixed", "problem": "wrong_branch", "description": "The search commits are on feature/search, and main matches origin/main again"}
+  ],
+  "evidence": [
+    {"description": "where the commits went", "seen_any": ["ahead of 'origin/main' by 2", "search: add query parser"]}
+  ],
+  "question": {
+    "prompt": "What happened, and why was the fix safe?",
+    "options": [
+      "The commits were lost; they had to be rewritten",
+      "They were committed on main because feature/search was never checked out; moving the branch pointer and resetting main is safe because neither was pushed",
+      "Git put them on the wrong branch by mistake",
+      "They were pushed to main and must be reverted"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 5,
+  "solution_commands": [
+    "git status",
+    "git log --oneline -3",
+    "git branch -f feature/search main",
+    "git reset --hard origin/main",
+    "git log --oneline -3 feature/search"
+  ],
+  "debrief": "'Your branch is ahead of origin/main by 2 commits' said it all: the work was on main, because the branch was created but never switched to. A branch is only a pointer to a commit, so the fix is moving pointers, not copying work: point feature/search at the commits (git branch -f, or switch to it and git reset --hard main), then put main back where origin/main is. Both are safe here only because nothing was pushed; once commits are shared, you revert instead of moving pointers backwards. If feature/search had commits of its own, git cherry-pick would have copied the two commits across instead. Checking 'git status' before the first commit of a task is the habit that prevents this."
+}

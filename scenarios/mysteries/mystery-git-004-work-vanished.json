@@ -1,0 +1,35 @@
+{
+  "id": "mystery-git-004",
+  "type": "mystery",
+  "category": "git",
+  "sandbox": "git",
+  "title": "Yesterday's Work Is Gone",
+  "difficulty": "intermediate",
+  "tags": ["git", "reflog", "recovery"],
+  "setup": {"seed": 34, "problems": ["lost_commits"]},
+  "symptom": "Dana committed the retry work yesterday afternoon but never pushed it. This morning it isn't in 'git log', the files aren't in the working tree, and Dana remembers 'tidying up' the branch before leaving. Get the work back.",
+  "goals": [
+    {"check": "problem_fixed", "problem": "lost_commits", "description": "Both retry commits are back on main, with a clean working tree"}
+  ],
+  "evidence": [
+    {"description": "what happened to main", "seen_any": ["reset: moving to HEAD~2"]}
+  ],
+  "question": {
+    "prompt": "Why could the commits be recovered?",
+    "options": [
+      "Git keeps a backup of every branch on the server",
+      "A reset only moves the branch pointer; the commits still existed, and the reflog recorded where HEAD had been, including the lost tip",
+      "The files were in the recycle bin",
+      "They couldn't; they were rewritten from memory"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 4,
+  "solution_commands": [
+    "git log --oneline -3",
+    "git reflog -5",
+    "git reset --hard HEAD@{{1}}",
+    "git log --oneline -3"
+  ],
+  "debrief": "The reflog is a local diary of every position HEAD has had: commits, checkouts, rebases, and resets. It showed 'reset: moving to HEAD~2' with the two retry commits just before it. 'git reset --hard' only moved main's pointer back; the commits stayed in the repository, unreachable but intact, so pointing main at HEAD@{1} (or at the commit's hash, or creating a branch there with 'git branch rescue <hash>') brought them back. Unreachable commits are kept for at least 30 days by default before garbage collection, so most 'lost' work is recoverable if you look soon. The reflog is local only: work that existed on nobody's machine but a deleted clone is gone, which is the real argument for pushing work in progress to a branch."
+}
