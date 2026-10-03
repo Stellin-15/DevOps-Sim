@@ -1,0 +1,53 @@
+{
+  "id": "terraform-tutorial-018",
+  "type": "tutorial",
+  "category": "terraform",
+  "title": "Expressions and Functions in terraform console",
+  "difficulty": "intermediate",
+  "tags": ["terraform", "hcl", "functions", "expressions", "terraform-associate"],
+  "intro": "The Terraform Associate expects you to read and write HCL expressions: for expressions, splats, conditionals, locals, and the common built-in functions. 'terraform console' evaluates them against your real configuration and state, which makes it the best way to learn them and to debug them. You've started 'terraform console' in the network stack; type each expression at its prompt.",
+  "steps": [
+    {
+      "prompt": "Work out the third /24 subnet (index 2) inside the VPC range 10.0.0.0/16 with cidrsubnet.",
+      "expected_commands": ["cidrsubnet(\"10.0.0.0/16\", 8, 2)", "cidrsubnet(\"10.0.0.0/16\",8,2)", "cidrsubnet(\"10.0.0.0/16\", 8,2)"],
+      "fake_output": "\"10.0.2.0/24\"",
+      "explanation": "8 extra bits turn a /16 into /24 networks; index 2 is the third of them.",
+      "why": "Computing subnets with cidrsubnet (often inside a for expression over availability zones) avoids hand-typed CIDRs that overlap or skip a range. The console lets you check the arithmetic before it's in a plan."
+    },
+    {
+      "prompt": "var.subnets is a list of objects with name, cidr, and public. Get the CIDRs of only the public ones with a for expression.",
+      "expected_commands": ["[for s in var.subnets : s.cidr if s.public]", "[for s in var.subnets: s.cidr if s.public]"],
+      "fake_output": "[\n  \"10.0.0.0/24\",\n  \"10.0.1.0/24\",\n]",
+      "explanation": "A for expression with a filter: brackets build a list, braces would build a map.",
+      "why": "For expressions are how you reshape inputs for for_each, which needs a map or a set: { for s in var.subnets : s.name => s } turns the list into a map keyed by name, so adding a subnet doesn't renumber the others the way count would."
+    },
+    {
+      "prompt": "There are three aws_instance.worker instances created with count. List all their private IPs with a splat expression.",
+      "expected_commands": ["aws_instance.worker[*].private_ip"],
+      "fake_output": "[\n  \"10.0.10.14\",\n  \"10.0.11.37\",\n  \"10.0.12.9\",\n]",
+      "explanation": "[*] applies the attribute to every element.",
+      "why": "A splat is shorthand for [for w in aws_instance.worker : w.private_ip]. It works on lists (count); a resource made with for_each is a map, so you use values(aws_instance.worker)[*].private_ip or a for expression."
+    },
+    {
+      "prompt": "var.instance_types maps environment names to instance types. Look up the type for \"prod\", falling back to \"t3.micro\" if the key is missing.",
+      "expected_commands": ["lookup(var.instance_types, \"prod\", \"t3.micro\")", "lookup(var.instance_types,\"prod\",\"t3.micro\")"],
+      "fake_output": "\"m6i.large\"",
+      "explanation": "The map had a prod entry.",
+      "why": "Indexing (var.instance_types[\"prod\"]) fails if the key is absent; lookup with a default doesn't. try(...) is the general version: it returns the first argument that evaluates without an error."
+    },
+    {
+      "prompt": "The configuration defines local.name_prefix as \"${var.project}-${terraform.workspace}\". Show its value.",
+      "expected_commands": ["local.name_prefix"],
+      "fake_output": "\"shop-staging\"",
+      "explanation": "The project name and the current workspace, joined.",
+      "why": "Locals name an expression once and reuse it, so a naming rule lives in one place. Note the reference is 'local.' (singular) while the block is 'locals'; mixing them up is a classic exam distractor."
+    },
+    {
+      "prompt": "Render the startup script template user_data.sh.tftpl with the port set to 8080, using templatefile.",
+      "expected_commands": ["templatefile(\"user_data.sh.tftpl\", { port = 8080 })", "templatefile(\"user_data.sh.tftpl\", {port = 8080})", "templatefile(\"user_data.sh.tftpl\", { port=8080 })"],
+      "fake_output": "<<EOT\n#!/bin/bash\necho \"PORT=8080\" >> /etc/shop.env\nsystemctl restart shop\n\nEOT",
+      "explanation": "The template's ${port} was filled in.",
+      "why": "templatefile keeps scripts and config files as real files with variables, instead of long heredocs inside HCL. Conditional expressions (condition ? a : b) and these functions are evaluated during plan, which is why the console, which uses the same engine, gives the same answers."
+    }
+  ]
+}

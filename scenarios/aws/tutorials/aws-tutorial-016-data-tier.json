@@ -1,0 +1,48 @@
+{
+  "id": "aws-tutorial-016",
+  "type": "tutorial",
+  "category": "aws",
+  "title": "The Data Tier: Multi-AZ, Read Replicas, Aurora, DynamoDB, and Caching",
+  "difficulty": "intermediate",
+  "tags": ["aws", "rds", "aurora", "dynamodb", "elasticache", "solutions-architect"],
+  "intro": "Most Solutions Architect questions about databases turn on a few distinctions: availability versus read scaling, relational versus key-value, and when to cache. The shop runs PostgreSQL on RDS as shop-db, and a sessions table in DynamoDB.",
+  "steps": [
+    {
+      "prompt": "Check whether the RDS instance shop-db is deployed Multi-AZ.",
+      "expected_commands": ["aws rds describe-db-instances --db-instance-identifier shop-db --query \"DBInstances[0].MultiAZ\"", "aws rds describe-db-instances --db-instance-identifier shop-db --query 'DBInstances[0].MultiAZ'", "aws rds describe-db-instances --db-instance-identifier shop-db"],
+      "fake_output": "true",
+      "explanation": "A synchronous standby runs in a second Availability Zone.",
+      "why": "Multi-AZ is for availability: if the primary or its AZ fails, RDS fails over to the standby, usually in one to two minutes, with the same endpoint name. The standby of a classic Multi-AZ instance can't serve reads, which is the most common trap in these questions."
+    },
+    {
+      "prompt": "Reporting queries are slowing checkout. Which helps?\n  a) Turn on Multi-AZ\n  b) Add a read replica and point the reporting queries at its endpoint\n  c) Double the storage\n  d) Take more snapshots\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "Multi-AZ        : synchronous standby, automatic failover, no reads (availability)\nread replica    : asynchronous copy, readable, own endpoint, can be in another region (scaling, DR)\nMulti-AZ cluster: two readable standbys, faster failover",
+      "hint": "Which one can you send queries to?",
+      "explanation": "A read replica takes read traffic off the primary.",
+      "why": "Replicas are asynchronous, so reports may lag by seconds, which is fine for reporting and wrong for reading your own just-written order. A cross-region read replica also serves as disaster recovery: it can be promoted to a standalone primary."
+    },
+    {
+      "prompt": "Create a read replica called shop-db-replica from shop-db.",
+      "expected_commands": ["aws rds create-db-instance-read-replica --db-instance-identifier shop-db-replica --source-db-instance-identifier shop-db"],
+      "fake_output": "{\n    \"DBInstance\": {\n        \"DBInstanceIdentifier\": \"shop-db-replica\",\n        \"DBInstanceStatus\": \"creating\",\n        \"ReadReplicaSourceDBInstanceIdentifier\": \"shop-db\"\n    }\n}",
+      "explanation": "The replica is being built from a snapshot of the primary and will then stream changes.",
+      "why": "Aurora changes the picture: its storage is shared and replicated six ways across three AZs, up to 15 replicas read from the same volume with little lag, and one of them is promoted on failure, typically in under a minute. 'Aurora Global Database' is the usual answer for cross-region reads with about a second of replication lag."
+    },
+    {
+      "prompt": "Look at the DynamoDB table sessions.",
+      "expected_commands": ["aws dynamodb describe-table --table-name sessions"],
+      "fake_output": "{\n    \"Table\": {\n        \"TableName\": \"sessions\",\n        \"KeySchema\": [{\"AttributeName\": \"session_id\", \"KeyType\": \"HASH\"}],\n        \"BillingModeSummary\": {\"BillingMode\": \"PAY_PER_REQUEST\"},\n        \"TimeToLiveDescription\": {\"TimeToLiveStatus\": \"ENABLED\", \"AttributeName\": \"expires_at\"},\n        \"ItemCount\": 1840211\n    }\n}",
+      "explanation": "Keyed by session id, on-demand billing, and items expire on their own through TTL.",
+      "why": "DynamoDB fits access by key at any scale with single-digit-millisecond latency, which is why sessions, carts, and device state are classic answers for it. On-demand billing suits spiky or unknown traffic; provisioned capacity with auto scaling is cheaper when traffic is steady. A partition key with few distinct values creates hot partitions."
+    },
+    {
+      "prompt": "The product catalogue is read thousands of times per second, changes a few times a day, and RDS CPU is high from those reads. Which is the most effective change?\n  a) A bigger RDS instance\n  b) An ElastiCache (Redis or Valkey) cache in front of the catalogue reads, with a TTL\n  c) Move the catalogue to Glacier\n  d) Multi-AZ\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "cache hit  : ~0.5 ms from memory, no database work\ncache miss : read RDS, store with a TTL of 300s\nresult     : RDS reads fall by ~95%",
+      "hint": "Read-heavy, rarely changing.",
+      "explanation": "A cache absorbs repeated reads of slowly changing data.",
+      "why": "Read replicas also scale reads, but each still runs the query; a cache answers from memory. The costs are staleness (bounded by the TTL or by invalidating on write) and one more system to run. DynamoDB has its own cache for the same purpose, DAX."
+    }
+  ]
+}

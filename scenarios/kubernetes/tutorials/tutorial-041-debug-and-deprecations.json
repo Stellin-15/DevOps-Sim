@@ -1,0 +1,54 @@
+{
+  "id": "tutorial-041",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Debugging Running Pods, Probes, and API Deprecations",
+  "difficulty": "intermediate",
+  "tags": ["kubernetes", "ckad", "debugging", "probes", "api-versions"],
+  "intro": "Two CKAD topics the earlier tutorials only touched: debugging a pod whose image has no shell, and dealing with manifests written for API versions the cluster no longer serves. The api Deployment in namespace shop runs a distroless image (no shell, no tools), and one of its pods, api-7d9f8c6b5-x2k4p, restarted twice in the last hour.",
+  "steps": [
+    {
+      "prompt": "Read the logs of the crashed container in pod api-7d9f8c6b5-x2k4p, from before its last restart.",
+      "expected_commands": ["kubectl logs api-7d9f8c6b5-x2k4p --previous", "kubectl logs api-7d9f8c6b5-x2k4p -p", "kubectl logs pod/api-7d9f8c6b5-x2k4p --previous"],
+      "fake_output": "2026-10-03T08:41:12Z INFO  listening on :8080\n2026-10-03T08:52:40Z ERROR upstream payments: dial tcp: lookup payments on 10.96.0.10:53: no such host\n2026-10-03T08:52:40Z FATAL exiting after 3 failed dependency checks",
+      "explanation": "The previous container exited because it couldn't resolve the payments service.",
+      "why": "Without --previous you read the current, freshly restarted container, whose logs usually look fine. The crash is in the one before."
+    },
+    {
+      "prompt": "You want to test DNS from inside that pod, but the image has no shell. Attach an ephemeral debugging container to pod api-7d9f8c6b5-x2k4p, using image busybox:1.36, interactively, sharing the process namespace of its container named api.",
+      "expected_commands": ["kubectl debug -it api-7d9f8c6b5-x2k4p --image=busybox:1.36 --target=api", "kubectl debug api-7d9f8c6b5-x2k4p -it --image=busybox:1.36 --target=api"],
+      "fake_output": "Targeting container \"api\". If you don't see processes from this container it may be because the container runtime doesn't support this feature.\nDefaulting debug container name to debugger-k2x7p.\nIf you don't see a command prompt, try pressing enter.\n/ # nslookup payments\nServer:    10.96.0.10\n** server can't find payments.shop.svc.cluster.local: NXDOMAIN",
+      "explanation": "A busybox container joined the running pod, with its network and the api process visible; the payments Service doesn't exist in this namespace.",
+      "why": "An ephemeral container is added to the running pod without restarting it, so you debug the real failing instance, in its own network namespace, with tools the production image rightly leaves out. 'kubectl debug --copy-to' makes a modified copy instead, and 'kubectl debug node/<name>' gives a shell on a node."
+    },
+    {
+      "prompt": "A different pod of the same app shows Running but READY 0/1, and the Service has no endpoints for it. Which probe is failing?\n  a) The liveness probe\n  b) The readiness probe: it removes the pod from Service endpoints without restarting it\n  c) The startup probe has passed, so none\n  d) The image pull\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "Events:\n  Warning  Unhealthy  12s (x9 over 2m)  kubelet  Readiness probe failed: HTTP probe failed with statuscode: 503",
+      "hint": "Running but not Ready, and not restarting.",
+      "explanation": "Readiness failures take a pod out of rotation; liveness failures restart it.",
+      "why": "Telling them apart from the symptoms is a CKAD staple: restarts and CrashLoopBackOff point at liveness (or a crash); 0/1 with no restarts points at readiness; a slow-starting app killed before it's up needs a startupProbe, which holds the other probes off until it passes."
+    },
+    {
+      "prompt": "An old manifest, old-ingress.yaml, fails to apply. Apply it to see the error.",
+      "expected_commands": ["kubectl apply -f old-ingress.yaml"],
+      "fake_output": "error: resource mapping not found for name: \"web\" namespace: \"shop\" from \"old-ingress.yaml\": no matches for kind \"Ingress\" in version \"networking.k8s.io/v1beta1\"\nensure CRDs are installed first",
+      "explanation": "The manifest uses an Ingress API version that was removed in Kubernetes 1.22.",
+      "why": "Kubernetes deprecates API versions and later removes them, and a removed version fails exactly like this. The CKAD includes 'understand API deprecations'; upgrades in real clusters break on the same thing."
+    },
+    {
+      "prompt": "Check which versions of the networking.k8s.io API group this cluster serves.",
+      "expected_commands": ["kubectl api-versions | grep networking", "kubectl api-versions | grep networking.k8s.io"],
+      "fake_output": "networking.k8s.io/v1",
+      "explanation": "Only v1 is served.",
+      "why": "'kubectl api-resources' shows the version for each kind, and 'kubectl explain ingress' prints the version it documents. Tools like kubent or pluto scan a cluster or a chart for deprecated versions before an upgrade."
+    },
+    {
+      "prompt": "Rewrite old-ingress.yaml to the served version networking.k8s.io/v1 with the kubectl convert plugin, printing the result.",
+      "expected_commands": ["kubectl convert -f old-ingress.yaml --output-version networking.k8s.io/v1", "kubectl convert -f old-ingress.yaml --output-version=networking.k8s.io/v1", "kubectl-convert -f old-ingress.yaml --output-version networking.k8s.io/v1"],
+      "fake_output": "apiVersion: networking.k8s.io/v1\nkind: Ingress\nmetadata:\n  name: web\n  namespace: shop\nspec:\n  rules:\n  - host: shop.example.com\n    http:\n      paths:\n      - backend:\n          service:\n            name: web\n            port:\n              number: 80\n        path: /\n        pathType: ImplementationSpecific",
+      "explanation": "The same Ingress in v1 form, including v1's backend.service shape.",
+      "why": "The conversion isn't only a version string: v1 renamed backend.serviceName and servicePort into backend.service.name and port.number and requires pathType. Convert, review the diff, and commit the new file, so the repository never holds manifests the cluster can't accept."
+    }
+  ]
+}

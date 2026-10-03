@@ -172,7 +172,7 @@ plane being the actual outage).
   Writing Labs yaml-037 (a Kustomize overlay) and yaml-038 (an
   HTTPRoute with a canary split). Not covered: external-dns, writing
   chart templates in depth (helpers, hooks, library charts), Cluster
-  API, and CKAD/CKS-specific passes.
+  API, and a CKS-specific pass (the CKAD pass is below).
 - ~~Backup, fleets, and tenancy~~: **done** in tutorial-036 (Velero and
   CSI snapshots, with a restore test), tutorial-037 (Cluster API and
   ApplicationSets), tutorial-038 (quotas, limit ranges, network and API
@@ -180,6 +180,26 @@ plane being the actual outage).
   back with no data).
 - Kubeflow at an operator level now lives in the MLOps category (Part 8);
   deep Kubeflow Pipelines authoring remains out of scope
+
+## Exam pass: CKAD
+
+The CKAD's domains mapped to the content, after a pass that added
+tutorial-039 to 041:
+
+| CKAD domain (approx. weight) | Covered by |
+|---|---|
+| Application Design and Build (~20%) | tutorial-008/009 (workload kinds, Jobs, CronJobs), tutorial-022 (multi-container and init), storage in tutorial-011, image building in Docker; generating Jobs fast in tutorial-039 |
+| Application Deployment (~20%) | tutorial-004 (rolling updates), tutorial-019 and 031 (Helm), tutorial-030 (Kustomize); **blue/green and canary with plain Deployments and a Service selector in tutorial-040** |
+| Application Observability and Maintenance (~15%) | tutorial-021 (probes), tutorial-006 and 016 (logs, events, explain); **`kubectl debug` ephemeral containers, readiness vs liveness from symptoms, and API deprecations (`api-versions`, `kubectl convert`) in tutorial-041** |
+| Application Environment, Configuration and Security (~25%) | tutorial-005 (ConfigMaps, Secrets), tutorial-012 (RBAC, ServiceAccounts), tutorial-013 and 038 (requests, limits, quotas, LimitRanges), tutorial-027 (SecurityContext), tutorial-018 and 029 (CRDs, operators), admission in incident-014 |
+| Services and Networking (~20%) | tutorial-003 (Services), tutorial-010 (Ingress, NetworkPolicy), tutorial-032 (Gateway API); **imperative Ingress and port-forward in tutorial-039** |
+
+Speed is the CKAD's real test, and tutorial-039 drills the habit that
+gives it (`--dry-run=client -o yaml`, `kubectl explain`, `set env`).
+Still missing for the CKAD: timed practice in a real cluster (the
+Writing Labs give real YAML editing, but not two hours against the
+clock), and Helm chart *consumption* under exam constraints. The CKS
+has not had a pass.
 
 ---
 
@@ -312,7 +332,7 @@ real scripts to finish the job.
 
 # Part 4 — Terraform
 
-**Content:** 16 tutorials, 7 incidents, 5 Writing Labs (the VPC and
+**Content:** 19 tutorials, 7 incidents, 5 Writing Labs (the VPC and
 security-group labs are described under AWS, Part 9).
 
 ## Covered
@@ -363,7 +383,29 @@ state file.
   Pulumi preview, Crossplane), with terraform-incident-007 (a stack
   stuck in UPDATE_ROLLBACK_FAILED). Writing Rego, Pulumi programs,
   CloudFormation or Bicep templates, and Crossplane compositions isn't
-  practised; nor are Terraform Cloud, Spacelift, or Infracost.
+  practised; nor are Spacelift or Infracost (HCP Terraform is covered by
+  terraform-tutorial-019, below).
+
+## Exam pass: Terraform Associate
+
+The Terraform Associate's objectives mapped to the content, after a pass
+that added terraform-tutorial-017 to 019:
+
+| Objective | Covered by |
+|---|---|
+| IaC concepts and Terraform's purpose | tutorial-001, 016 (other IaC tools) |
+| Terraform basics: providers, version constraints, the lock file | tutorial-008, incident-005 |
+| Core workflow: init, validate, plan, apply, destroy, fmt | tutorial-001, 002 |
+| Outside the core workflow: import, state commands, TF_LOG | tutorial-004, 005, 010, incident-004 |
+| Modules: sources, versions, inputs, outputs | tutorial-008, 011, 012, Writing Lab yaml-032 |
+| State: backends, locking, drift | tutorial-007, incident-001, 002; **`-refresh-only` in tutorial-017** |
+| Configuration: variables, outputs, sensitive values, resources and data sources, dependencies, dynamic blocks, validation | tutorial-003, 011, 012; **lifecycle arguments, `removed` blocks, preconditions, postconditions, and check blocks in tutorial-017; expressions and functions (cidrsubnet, for, splat, lookup, locals, templatefile) in tutorial-018** |
+| HCP Terraform: workspaces, remote runs, variable sets, policies, registry, sharing outputs | **tutorial-019** |
+
+Still missing for the exam: hands-on HCP Terraform (it needs a real
+account; the free tier is enough), and the many small facts the exam
+checks that a game teaches less well than reading the docs, such as the
+exact variable precedence order.
 
 ## Readiness verdict
 
@@ -640,7 +682,7 @@ current MLOps roles ask for.
 
 # Part 9 — AWS
 
-**Content:** 14 tutorials, 7 incidents, an interactive AWS Sandbox, and
+**Content:** 17 tutorials, 7 incidents, an interactive AWS Sandbox, and
 4 Mystery Incidents on it.
 
 The sandbox is a fake account with one production VPC:
@@ -699,7 +741,8 @@ route, a security group missing 443, and a stateless NACL dropping replies.
 - ~~RDS operations~~: **closed** by aws-tutorial-012 (Multi-AZ, backup
   retention, manual snapshots, point-in-time restore, pending
   modifications). Aurora, parameter groups, DynamoDB capacity, and
-  Lambda/serverless debugging are still missing.
+  Lambda/serverless debugging are still missing. (Aurora, DynamoDB, and
+  caching decisions: aws-tutorial-016; Lambda: the Serverless category.)
 - ~~Route 53~~: **closed** by aws-tutorial-013 (public vs private zones,
   alias records, lowering the TTL before a migration, `get-change`, and
   querying the authoritative servers). Health-check failover routing is
@@ -708,9 +751,29 @@ route, a security group missing 443, and a stateless NACL dropping replies.
   and its non-transitivity, Transit Gateway routes and black holes,
   PrivateLink).
 - CloudFormation/CDK (Terraform is used as the infrastructure-as-code representative).
-- KMS key policies, and Secrets Manager rotation.
-- The AWS Certified Solutions Architect / SysOps exam breadth: this is an
-  operator's toolkit, not an exam pass.
+- KMS key policies in depth, and Secrets Manager rotation (rotation and
+  envelope encryption: aws-tutorial-017).
+
+## Exam pass: Solutions Architect Associate
+
+The SAA is a design exam: most questions describe requirements and ask
+which service or configuration fits. The category was built for
+operators, so this pass added aws-tutorial-015 to 017, which mix real
+CLI steps with multiple-choice design decisions:
+
+| SAA domain (approx. weight) | Covered by |
+|---|---|
+| Secure architectures (~30%) | tutorial-001 and 006 (identity, IAM roles and policies), tutorial-005 (security groups vs NACLs), tutorial-007 (S3 security), tutorial-008 (CloudTrail), incidents 001-007; **KMS rotation and envelope encryption, CloudFront with Origin Access Control in tutorial-017** |
+| Resilient architectures (~26%) | tutorial-004 (VPC design), tutorial-009 (load balancers, Auto Scaling), tutorial-012 (RDS), tutorial-013 (Route 53), tutorial-014 (multi-VPC); **Multi-AZ vs read replicas, Aurora, DynamoDB in tutorial-016**; SQS decoupling in Messaging |
+| High-performing architectures (~24%) | **storage classes, EFS vs EBS vs FSx in tutorial-015; caching with ElastiCache in tutorial-016; Global Accelerator vs CloudFront and target tracking in tutorial-017**; Lambda and Fargate in Serverless |
+| Cost-optimised architectures (~20%) | tutorial-011 (cost and governance), the FinOps category (commitments, Spot, rightsizing, storage tiers); **lifecycle rules and Intelligent-Tiering in tutorial-015** |
+
+Still missing for the SAA: the long tail (Kinesis variants, Storage
+Gateway, Snow Family, Direct Connect versus VPN in depth, AWS Backup,
+Organizations and SCP design beyond tutorial-011), and practice at the
+exam's question style, where two answers both work and the requirement
+wording picks one. Practice exams are the right tool for that last part.
+SysOps and the professional-level exams have not had a pass.
 
 ## Readiness verdict
 
@@ -1916,8 +1979,8 @@ employer uses it.
 7. ~~**The Kubernetes ecosystem**~~: **done** inside the Kubernetes
    category (tutorial-030 to 035, two incidents, two labs): Kustomize,
    Helm chart authoring, Gateway API, VPA/KEDA/Karpenter, Flux, and
-   Linkerd; cert-manager is in Identity and Secrets. Still open:
-   external-dns, and CKAD and CKS exam passes.
+   Linkerd; cert-manager is in Identity and Secrets. The CKAD pass is
+   done (Part 1). Still open: external-dns, and a CKS pass.
 8. ~~**Serverless and managed compute**~~: **now a category**
    (Serverless): Lambda, API Gateway, ECS on Fargate, Cloud Run, and
    Azure Functions. Step Functions, DynamoDB, and serverless
@@ -2023,15 +2086,15 @@ If content is added in the order that helps most people soonest:
 
 | Category | Tutorials | Incidents | Extra |
 |---|---|---|---|
-| Kubernetes | 38 | 18 | 11 Writing Labs, 2 Sandboxes (explore, and fixable), 5 Mysteries |
+| Kubernetes | 41 | 18 | 11 Writing Labs, 2 Sandboxes (explore, and fixable), 5 Mysteries |
 | Docker | 11 | 5 | 3 Writing Labs (Dockerfile, Compose), Sandbox, 2 Mysteries |
 | Linux | 15 | 6 | 4 Writing Labs (bash), interactive Sandbox, 4 Mysteries |
-| Terraform | 16 | 7 | 5 Writing Labs (HCL, including a module) |
+| Terraform | 19 | 7 | 5 Writing Labs (HCL, including a module) |
 | Networking | 17 | 8 | |
 | CI/CD | 20 | 8 | 4 Writing Labs (Actions, GitLab CI) |
 | Monitoring | 17 | 8 | 5 Writing Labs (alert rules, SLO burn alerts, a dashboard, manual spans) |
 | MLOps | 18 | 8 | |
-| AWS | 14 | 7 | 1 Writing Lab (IAM policy), Sandbox (VPC), 4 Mysteries |
+| AWS | 17 | 7 | 1 Writing Lab (IAM policy), Sandbox (VPC), 4 Mysteries |
 | Azure | 10 | 6 | Sandbox, 3 Mysteries |
 | Google Cloud | 10 | 6 | 1 Writing Lab (firewall), Sandbox, 3 Mysteries |
 | Security | 16 | 7 | 3 Writing Labs (Sigma, Kyverno, Falco), 2 hacked-server Mysteries (Linux sandbox) |
@@ -2049,7 +2112,7 @@ If content is added in the order that helps most people soonest:
 | FinOps | 6 | 3 | |
 | Data Engineering | 5 | 2 | 1 Writing Lab (Airflow DAG) |
 | The Wider Landscape | 13 | 0 | tutorials only (recognition level) |
-| **Total** | **343** | **158** | 51 Writing Labs, 18 career paths, 9 sandboxes, 32 Mystery Incidents, Exam Mode, Stats |
+| **Total** | **352** | **158** | 51 Writing Labs, 18 career paths, 9 sandboxes, 32 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -2143,6 +2206,8 @@ that more scenario content can narrow but not close:
    Dockerfile, a Terraform module, a pipeline, alert rules, and a
    deploy script.
 10. Take the specialisms (MLOps, Data Engineering, Messaging) and The
-    Wider Landscape when a job calls for them. For certifications, see
-    Part 1 (CKA); exam-specific gap passes for other certifications
-    (Terraform Associate, AWS, CKAD) haven't been done yet.
+    Wider Landscape when a job calls for them. For certifications, each
+    exam with a pass has a mapping of its domains to content: the CKA
+    and CKAD (Part 1), the Terraform Associate (Terraform part), and the
+    AWS Solutions Architect Associate (AWS part). The CKS, Azure and
+    Google Cloud exams, and the professional levels haven't had one.

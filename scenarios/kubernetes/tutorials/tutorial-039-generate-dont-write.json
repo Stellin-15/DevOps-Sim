@@ -1,0 +1,54 @@
+{
+  "id": "tutorial-039",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Speed for the CKAD: Generate Manifests, Don't Type Them",
+  "difficulty": "intermediate",
+  "tags": ["kubernetes", "ckad", "imperative", "kubectl"],
+  "intro": "The CKAD gives you about two hours for 15 to 20 tasks in a real cluster, so the skill it rewards is getting correct YAML fast. Writing manifests from memory is slow and error-prone; experienced candidates generate them with kubectl, edit what's left, and use the API's own documentation instead of searching. You're in namespace shop.",
+  "steps": [
+    {
+      "prompt": "Generate (don't create) a Deployment called web using image nginx:1.27 with 3 replicas, and save the YAML to web.yaml.",
+      "expected_commands": ["kubectl create deployment web --image=nginx:1.27 --replicas=3 --dry-run=client -o yaml > web.yaml", "kubectl create deploy web --image=nginx:1.27 --replicas=3 --dry-run=client -o yaml > web.yaml", "kubectl create deployment web --image=nginx:1.27 --replicas=3 -o yaml --dry-run=client > web.yaml"],
+      "fake_output": "(web.yaml written: apiVersion apps/v1, kind Deployment, 3 replicas, selector app=web)",
+      "hint": "kubectl create deployment ... --dry-run=client -o yaml > web.yaml",
+      "explanation": "A complete, valid manifest with labels and selector already matching, ready to edit.",
+      "why": "'--dry-run=client -o yaml' turns any imperative command into a starting manifest, so you only add what the task asks (a probe, resources, a volume) instead of typing apiVersion, selectors, and labels and risking a mismatch. Setting export do='--dry-run=client -o yaml' at the start of the exam saves typing it every time."
+    },
+    {
+      "prompt": "You need to add a rolling-update setting and can't remember the field names. Ask the API for the documentation of deployment.spec.strategy.rollingUpdate.",
+      "expected_commands": ["kubectl explain deployment.spec.strategy.rollingUpdate", "kubectl explain deploy.spec.strategy.rollingUpdate"],
+      "fake_output": "GROUP:      apps\nKIND:       Deployment\nVERSION:    v1\n\nFIELD: rollingUpdate <RollingUpdateDeployment>\n\nFIELDS:\n  maxSurge\t<IntOrString>\n    The maximum number of pods that can be scheduled above the desired number of pods...\n  maxUnavailable\t<IntOrString>\n    The maximum number of pods that can be unavailable during the update...",
+      "explanation": "Field names, types, and descriptions, straight from the cluster's API.",
+      "why": "kubectl explain works offline from the cluster you're on and matches its exact version, which the docs website may not. '--recursive' prints the whole tree of a field, useful for finding where something like securityContext lives."
+    },
+    {
+      "prompt": "Create a one-off Job called smoke that runs image busybox:1.36 with the command: echo ok.",
+      "expected_commands": ["kubectl create job smoke --image=busybox:1.36 -- echo ok"],
+      "fake_output": "job.batch/smoke created",
+      "explanation": "Everything after -- is the container's command.",
+      "why": "The same pattern works for 'kubectl create cronjob NAME --image=... --schedule=\"*/5 * * * *\" -- cmd', and 'kubectl run' does it for a bare pod. The '--' separator matters: without it kubectl tries to read 'echo' as one of its own arguments."
+    },
+    {
+      "prompt": "Add the environment variable LOG_LEVEL=debug to the web Deployment without editing YAML.",
+      "expected_commands": ["kubectl set env deployment/web LOG_LEVEL=debug", "kubectl set env deploy/web LOG_LEVEL=debug", "kubectl set env deployment web LOG_LEVEL=debug"],
+      "fake_output": "deployment.apps/web env updated",
+      "explanation": "The pod template changed, so a rolling update starts.",
+      "why": "'kubectl set env', 'set image', and 'set resources' change one thing in the template and trigger the rollout, which is quicker and safer under time pressure than 'kubectl edit'. 'kubectl set env deployment/web --from=configmap/app-config' imports a whole ConfigMap."
+    },
+    {
+      "prompt": "Expose web through an Ingress called web with a rule sending every path on shop.example.com to the web Service on port 80.",
+      "expected_commands": ["kubectl create ingress web --rule=\"shop.example.com/*=web:80\"", "kubectl create ingress web --rule=shop.example.com/*=web:80", "kubectl create ing web --rule=\"shop.example.com/*=web:80\""],
+      "fake_output": "ingress.networking.k8s.io/web created",
+      "explanation": "host/path=service:port; the trailing * makes the path type Prefix.",
+      "why": "Ingress YAML is among the most mistyped in the exam (pathType, backend.service.port.number). The imperative form gets the shape right; add --class=nginx when the cluster has more than one ingress controller, and annotations or TLS afterwards in the generated YAML."
+    },
+    {
+      "prompt": "Check the web Service from your own machine by forwarding local port 8080 to the Service's port 80.",
+      "expected_commands": ["kubectl port-forward svc/web 8080:80", "kubectl port-forward service/web 8080:80"],
+      "fake_output": "Forwarding from 127.0.0.1:8080 -> 80\nForwarding from [::1]:8080 -> 80\nHandling connection for 8080",
+      "explanation": "localhost:8080 now reaches one of the Service's pods.",
+      "why": "Port-forwarding tests the pod and Service without an Ingress, DNS, or a load balancer in the way, so a failure here points at the app, and success points at whatever sits in front. In the exam, 'kubectl run tmp --rm -it --image=busybox:1.36 -- wget -qO- web' tests from inside the cluster instead."
+    }
+  ]
+}

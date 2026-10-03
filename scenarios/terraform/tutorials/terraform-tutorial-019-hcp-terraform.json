@@ -1,0 +1,56 @@
+{
+  "id": "terraform-tutorial-019",
+  "type": "tutorial",
+  "category": "terraform",
+  "title": "HCP Terraform: Remote Runs, Variable Sets, Policies, and Shared Outputs",
+  "difficulty": "intermediate",
+  "tags": ["terraform", "hcp-terraform", "terraform-cloud", "terraform-associate"],
+  "intro": "HCP Terraform (formerly Terraform Cloud) runs plans and applies on HashiCorp's infrastructure, stores state, and adds team features: variable sets, policies, a private module registry, and run history. The Terraform Associate has a whole objective on it. Your team is moving the network stack, which currently keeps state in a local file, to an HCP Terraform workspace called network-prod in the organisation shop.",
+  "steps": [
+    {
+      "prompt": "Authenticate the CLI to HCP Terraform.",
+      "expected_commands": ["terraform login"],
+      "fake_output": "Terraform will request an API token for app.terraform.io using your browser.\n\nToken for app.terraform.io: ********\n\nRetrieved token for user dana\n\nSuccess! Logged in to HCP Terraform as dana",
+      "explanation": "An API token is stored in the CLI credentials file.",
+      "why": "The token lives in ~/.terraform.d/credentials.tfrc.json, not in the configuration. In CI you'd use a team token in an environment variable (TF_TOKEN_app_terraform_io) instead of logging in interactively."
+    },
+    {
+      "prompt": "You've added a cloud block naming organization \"shop\" and workspace \"network-prod\". Initialise, which offers to migrate the existing local state.",
+      "expected_commands": ["terraform init"],
+      "fake_output": "Initializing HCP Terraform...\nDo you wish to proceed?\n  As part of migrating to HCP Terraform, Terraform can optionally copy your\n  current workspace state to the configured HCP Terraform workspace.\n\n  Enter a value: yes\n\nInitialization complete! Now that your workspace is configured for HCP Terraform...",
+      "explanation": "State is now stored in the network-prod workspace.",
+      "why": "The cloud block replaces a backend block for HCP Terraform. State moves into the workspace, which also provides locking, versioned state history, and encryption at rest, the things a team would otherwise build with S3 and DynamoDB."
+    },
+    {
+      "prompt": "Run a plan.",
+      "expected_commands": ["terraform plan"],
+      "fake_output": "Running plan in HCP Terraform. Output will stream here. Pressing Ctrl-C\nwill stop streaming the logs, but will not stop the plan running remotely.\n\nPreparing the remote plan...\n\nTo view this run in a browser, visit:\nhttps://app.terraform.io/app/shop/network-prod/runs/run-x7Qk2mB9T1uVwYz0\n\nNo changes. Your infrastructure matches the configuration.",
+      "explanation": "The plan ran remotely and streamed back.",
+      "why": "With remote execution the plan runs with the workspace's variables and credentials, not your laptop's, so everyone's plans see the same inputs. Workspaces here are different from CLI workspaces (terraform-tutorial-006): each HCP Terraform workspace has its own state, variables, permissions, and run history."
+    },
+    {
+      "prompt": "Every workspace needs AWS credentials. Where should they come from?\n  a) A terraform.tfvars file committed to the repository\n  b) Ideally dynamic provider credentials (HCP Terraform requests short-lived AWS credentials through OIDC on each run); otherwise sensitive environment variables in a variable set shared by the workspaces\n  c) Hard-coded in the provider block\n  d) Each engineer's laptop\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "variable set 'aws-prod' (applied to: network-prod, app-prod, data-prod)\n  TFC_AWS_PROVIDER_AUTH = true        (environment)\n  TFC_AWS_RUN_ROLE_ARN  = arn:aws:iam::<account>:role/hcp-terraform-prod  (environment)",
+      "hint": "Short-lived beats long-lived; shared beats copied.",
+      "explanation": "Variable sets share values across workspaces; dynamic credentials remove the stored secret entirely.",
+      "why": "Variable precedence matters on the exam too: workspace-specific variables override variable sets, and Terraform variables differ from environment variables (credentials are usually the latter). Marking a value sensitive hides it in the UI and logs, but it's still stored in state when a resource uses it."
+    },
+    {
+      "prompt": "Security wants every apply blocked when the plan would create an S3 bucket without encryption, across all workspaces. Which HCP Terraform feature?\n  a) A README asking people to check\n  b) A policy set (Sentinel or OPA) attached to the workspaces, with mandatory enforcement, evaluated between plan and apply\n  c) A variable validation block\n  d) A run trigger\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "Policy check: require-bucket-encryption (Sentinel, hard-mandatory) .... FAILED\n  aws_s3_bucket_server_side_encryption_configuration missing for aws_s3_bucket.exports\nRun status: Errored (policy override not allowed)",
+      "hint": "Organisation-wide, enforced, between plan and apply.",
+      "explanation": "Policies are checked against the plan and can block the apply.",
+      "why": "Sentinel levels are an exam staple: advisory (warn), soft-mandatory (an authorised person can override), hard-mandatory (no override). Run triggers are different: they queue a run in one workspace when another applies. Checkov or conftest in CI (terraform-tutorial-014) are the self-hosted equivalents."
+    },
+    {
+      "prompt": "The app-prod workspace needs the VPC id that network-prod outputs. Which is the better way to read it?\n  a) Copy the id into app-prod's variables by hand\n  b) The tfe_outputs data source, which reads only the outputs of network-prod (terraform_remote_state also works but needs access to the whole state)\n  c) Run both stacks in one workspace\n  d) Query the AWS console\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "data \"tfe_outputs\" \"network\" {\n  organization = \"shop\"\n  workspace    = \"network-prod\"\n}\n\nvpc_id = data.tfe_outputs.network.nonsensitive_values.vpc_id",
+      "hint": "Share the least you can.",
+      "explanation": "Outputs only, with the producer's permission.",
+      "why": "terraform_remote_state reads the other workspace's entire state, secrets included, so granting it is broader than it looks. Splitting stacks by lifecycle (network changes rarely, apps often) and passing outputs between them limits the blast radius of each apply. A private module registry (sources like app.terraform.io/shop/vpc/aws) is the sharing mechanism for code rather than values."
+    }
+  ]
+}

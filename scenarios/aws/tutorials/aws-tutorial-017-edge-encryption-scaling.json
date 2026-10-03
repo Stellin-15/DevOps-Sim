@@ -1,0 +1,56 @@
+{
+  "id": "aws-tutorial-017",
+  "type": "tutorial",
+  "category": "aws",
+  "title": "Encryption, the Edge, and Scaling Policies: KMS, CloudFront, and Auto Scaling",
+  "difficulty": "intermediate",
+  "tags": ["aws", "kms", "cloudfront", "auto-scaling", "global-accelerator", "solutions-architect"],
+  "intro": "Three more areas the Solutions Architect exam leans on: how data is encrypted with KMS, how content gets close to users, and how capacity follows demand. The shop's data is encrypted with the KMS key whose alias is alias/shop-data, its site sits behind a CloudFront distribution, and its web tier is the Auto Scaling group web-asg.",
+  "steps": [
+    {
+      "prompt": "Check whether automatic yearly rotation is turned on for the KMS key alias/shop-data.",
+      "expected_commands": ["aws kms get-key-rotation-status --key-id alias/shop-data"],
+      "fake_output": "{\n    \"KeyRotationEnabled\": true,\n    \"KeyId\": \"arn:aws:kms:eu-west-1:<account>:key/<key-id>\",\n    \"RotationPeriodInDays\": 365\n}",
+      "explanation": "Rotation is on: new key material every year, old material kept to decrypt older data.",
+      "why": "Rotation doesn't re-encrypt anything and doesn't change the key id, so nothing breaks. A customer managed key (versus an AWS managed one) is what gives you control over rotation, the key policy, and cross-account use, which is why questions about 'control' or 'audit who used the key' point to it."
+    },
+    {
+      "prompt": "An application must encrypt 200 MB files with KMS. How does that work, given KMS encrypts at most 4 KB directly?\n  a) Split each file into 4 KB pieces and call KMS for each\n  b) Envelope encryption: ask KMS for a data key, encrypt the file locally with it, and store the data key encrypted by KMS next to the file\n  c) Use a bigger KMS key\n  d) Upload the file to KMS\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "GenerateDataKey -> plaintext data key + the same key encrypted under alias/shop-data\nencrypt file locally with the plaintext key, then discard it\nstore: file.enc + encrypted data key\ndecrypt: KMS Decrypt(encrypted data key) -> decrypt file locally",
+      "hint": "KMS protects keys, not bulk data.",
+      "explanation": "KMS only ever handles the small data key.",
+      "why": "This is how S3, EBS, and RDS encryption work underneath. The master key never leaves KMS, every Decrypt call is logged in CloudTrail, and revoking access to the key makes the data unreadable without touching the data."
+    },
+    {
+      "prompt": "A new homepage was deployed, but users still get the old one from the CloudFront distribution E2QWRUHAPOMQZL. Invalidate /index.html.",
+      "expected_commands": ["aws cloudfront create-invalidation --distribution-id E2QWRUHAPOMQZL --paths \"/index.html\"", "aws cloudfront create-invalidation --distribution-id E2QWRUHAPOMQZL --paths /index.html"],
+      "fake_output": "{\n    \"Invalidation\": {\n        \"Id\": \"I2J0I21PCUYOIK\",\n        \"Status\": \"InProgress\",\n        \"InvalidationBatch\": {\"Paths\": {\"Quantity\": 1, \"Items\": [\"/index.html\"]}}\n    }\n}",
+      "explanation": "Edge locations drop their cached copy and fetch the new one on the next request.",
+      "why": "Invalidations take minutes and cost money beyond a monthly allowance, so the better pattern is versioned asset names (app.4f2c.js) with long cache times, and invalidating only the small HTML entry points."
+    },
+    {
+      "prompt": "The site's origin is an S3 bucket. How should you stop people reading the bucket directly and bypassing CloudFront?\n  a) Make the bucket public and hope\n  b) Keep the bucket private and use Origin Access Control: a bucket policy that allows reads only from that CloudFront distribution\n  c) Use a hard-to-guess bucket name\n  d) Put the bucket in a private subnet\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "bucket policy: Allow s3:GetObject\n  Principal: cloudfront.amazonaws.com\n  Condition: AWS:SourceArn = arn:aws:cloudfront::<account>:distribution/E2QWRUHAPOMQZL\nBlock Public Access: on",
+      "hint": "S3 buckets aren't in subnets.",
+      "explanation": "OAC lets only your distribution read the bucket.",
+      "why": "OAC replaces the older Origin Access Identity. Together with Block Public Access it means every request goes through CloudFront, where you get caching, WAF rules, TLS, and geographic restrictions in one place."
+    },
+    {
+      "prompt": "Make web-asg keep average CPU near 50%: put a target tracking scaling policy named cpu50 on it, with the configuration in cpu50.json.",
+      "expected_commands": ["aws autoscaling put-scaling-policy --auto-scaling-group-name web-asg --policy-name cpu50 --policy-type TargetTrackingScaling --target-tracking-configuration file://cpu50.json"],
+      "fake_output": "{\n    \"PolicyARN\": \"arn:aws:autoscaling:eu-west-1:<account>:scalingPolicy:<id>:autoScalingGroupName/web-asg:policyName/cpu50\",\n    \"Alarms\": [\n        {\"AlarmName\": \"TargetTracking-web-asg-AlarmHigh-<id>\"},\n        {\"AlarmName\": \"TargetTracking-web-asg-AlarmLow-<id>\"}\n    ]\n}",
+      "explanation": "AWS created the alarms and will add or remove instances to hold CPU near the target.",
+      "why": "Target tracking is the default answer for 'keep a metric at a level'. Step scaling reacts in bands you define, scheduled scaling handles known peaks (a sale at 09:00), and predictive scaling learns daily patterns. Requests per target from the load balancer is often a better metric than CPU for web tiers."
+    },
+    {
+      "prompt": "A multiplayer game needs low latency worldwide over UDP, with two static IP addresses customers can allow-list. Which service?\n  a) CloudFront\n  b) AWS Global Accelerator: anycast static IPs that carry TCP and UDP over the AWS backbone to regional endpoints\n  c) Route 53 latency routing alone\n  d) A bigger instance\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "CloudFront         : caches HTTP(S) content at the edge\nGlobal Accelerator : no caching; 2 static anycast IPs; TCP/UDP; fast regional failover\nRoute 53 latency   : DNS answer per region; subject to client DNS caching",
+      "hint": "UDP and static IPs.",
+      "explanation": "Global Accelerator accelerates non-HTTP traffic and gives fixed IPs.",
+      "why": "The distinction in exam questions: cacheable HTTP content means CloudFront; UDP, static IPs, or fast failover between regions without waiting for DNS TTLs means Global Accelerator."
+    }
+  ]
+}

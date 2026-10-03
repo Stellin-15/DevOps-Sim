@@ -1,0 +1,56 @@
+{
+  "id": "tutorial-040",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "Blue/Green and Canary with Plain Deployments and a Service",
+  "difficulty": "intermediate",
+  "tags": ["kubernetes", "ckad", "deployment-strategies", "services", "labels"],
+  "intro": "The CKAD expects you to run blue/green and canary releases with nothing but Deployments, labels, and a Service: no Argo Rollouts, no service mesh. The trick in both is that a Service sends traffic to every Ready pod its selector matches. In namespace shop there are two Deployments: shop-blue (the current release) and shop-green (the new one, already running but not receiving traffic).",
+  "steps": [
+    {
+      "prompt": "List the Deployments labelled app=shop, with their version label shown as a column.",
+      "expected_commands": ["kubectl get deployments -l app=shop -L version", "kubectl get deploy -l app=shop -L version", "kubectl get deployment -l app=shop -L version"],
+      "fake_output": "NAME         READY   UP-TO-DATE   AVAILABLE   AGE    VERSION\nshop-blue    3/3     3            3           12d    blue\nshop-green   3/3     3            3           20m    green",
+      "explanation": "Both versions are running at full size; their pods carry version=blue and version=green.",
+      "why": "'-L' adds a label as a column, the quickest way to see which version is which. In blue/green both versions run at once, which costs double capacity for a while, and that cost buys an instant switch and an instant switch back."
+    },
+    {
+      "prompt": "See which pods the shop Service currently selects: print just its selector with jsonpath.",
+      "expected_commands": ["kubectl get svc shop -o jsonpath='{.spec.selector}'", "kubectl get service shop -o jsonpath='{.spec.selector}'", "kubectl get svc shop -o jsonpath=\"{.spec.selector}\""],
+      "fake_output": "{\"app\":\"shop\",\"version\":\"blue\"}",
+      "explanation": "Traffic goes only to pods labelled app=shop and version=blue.",
+      "why": "The version label in the selector is what keeps green out of production while it's tested (through its own Service, or a port-forward). Without it, the Service would split traffic across both versions as soon as green's pods were Ready."
+    },
+    {
+      "prompt": "Green has been tested. Switch production traffic to it by patching the shop Service's selector to app=shop, version=green.",
+      "expected_commands": ["kubectl patch svc shop -p '{\"spec\":{\"selector\":{\"app\":\"shop\",\"version\":\"green\"}}}'", "kubectl patch service shop -p '{\"spec\":{\"selector\":{\"app\":\"shop\",\"version\":\"green\"}}}'"],
+      "fake_output": "service/shop patched",
+      "hint": "kubectl patch svc shop -p '{\"spec\":{\"selector\":{\"app\":\"shop\",\"version\":\"green\"}}}'",
+      "explanation": "The Service's endpoints change to green's pods at once.",
+      "why": "One small change moves all traffic, and 'kubectl edit svc shop' or 'kubectl set selector' do the same. Existing connections to blue finish on blue; new ones go to green."
+    },
+    {
+      "prompt": "Ten minutes later, errors climb on green. What's the fastest safe rollback?\n  a) kubectl rollout undo deployment/shop-green\n  b) Patch the Service's selector back to version=blue, which is still running at full size\n  c) Delete shop-green\n  d) Scale shop-blue up from zero\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "kubectl patch svc shop -p '{\"spec\":{\"selector\":{\"app\":\"shop\",\"version\":\"blue\"}}}'\nservice/shop patched\n(traffic back on blue within seconds; green kept for debugging)",
+      "hint": "Blue never went away.",
+      "explanation": "Rollback is the same one-line switch, because blue is still warm.",
+      "why": "That's the reason to keep the old version running until the new one has proven itself. 'rollout undo' rolls a single Deployment back through its own history, which is the rolling-update model, not blue/green. Only scale blue down once green has run cleanly for a while."
+    },
+    {
+      "prompt": "For the next release, try a canary instead. shop-stable runs 9 replicas and the Service selects only app=shop. A Deployment called shop-canary, with the same app=shop label, is at 0 replicas. Scale shop-canary to 1 replica.",
+      "expected_commands": ["kubectl scale deployment shop-canary --replicas=1", "kubectl scale deploy shop-canary --replicas=1", "kubectl scale deployment/shop-canary --replicas=1", "kubectl scale deploy/shop-canary --replicas=1"],
+      "fake_output": "deployment.apps/shop-canary scaled\n\n$ kubectl get endpoints shop\nNAME   ENDPOINTS                                                  AGE\nshop   10.244.1.12:8080,10.244.1.13:8080,10.244.2.7:8080 + 7 more...   40d",
+      "explanation": "10 Ready pods behind the Service, one of them the canary: roughly 10% of requests.",
+      "why": "The canary's share is its fraction of the Ready pods, so the ratio is the only control. If the canary looks healthy, scale it up and stable down step by step; if not, scale it to zero."
+    },
+    {
+      "prompt": "Product wants the new version on exactly 1% of traffic first. Why can't this setup do that well?\n  a) It can: scale the canary to 0.1 replicas\n  b) Splitting by pod count needs about 99 stable pods per canary pod; a precise split needs weights at the routing layer (an Ingress controller's canary weights, Gateway API weights, or a service mesh)\n  c) Services can't send traffic to two Deployments\n  d) Canaries require StatefulSets\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "replica ratio: 1 canary / 10 total = 10%      (coarse, costs pods)\nweighted route: canary weight 1, stable weight 99 (exact, independent of pod counts)",
+      "hint": "What else would have to change to get 1 in 100 by counting pods?",
+      "explanation": "Pod-count canaries are coarse; weighted routing is precise.",
+      "why": "The plain-Deployment canary is what the CKAD asks for and it's enough for many teams. Precise percentages, header-based routing (send only internal users), and automatic analysis are what Gateway API weights and Argo Rollouts (sre-tutorial-002) add."
+    }
+  ]
+}

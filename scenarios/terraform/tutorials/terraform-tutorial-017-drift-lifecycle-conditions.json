@@ -1,0 +1,56 @@
+{
+  "id": "terraform-tutorial-017",
+  "type": "tutorial",
+  "category": "terraform",
+  "title": "Drift, Lifecycle Rules, and Conditions",
+  "difficulty": "intermediate",
+  "tags": ["terraform", "drift", "lifecycle", "conditions", "terraform-associate"],
+  "intro": "Real infrastructure changes outside Terraform: someone edits a tag in the console, an autoscaler changes a count. And some resources need rules beyond 'make it match the code'. This tutorial covers the Terraform Associate objectives around drift, lifecycle arguments, removing resources from management, and the three kinds of conditions. You're in the web stack's directory.",
+  "steps": [
+    {
+      "prompt": "Someone changed the web instance's tags in the console. See what changed in the real infrastructure, without Terraform proposing to change anything back.",
+      "expected_commands": ["terraform plan -refresh-only"],
+      "fake_output": "aws_instance.web: Refreshing state... [id=i-0c41d2a7f3b9e5108]\n\nNote: Objects have changed outside of Terraform\n\n  # aws_instance.web has changed\n  ~ resource \"aws_instance\" \"web\" {\n        id   = \"i-0c41d2a7f3b9e5108\"\n      ~ tags = {\n          + \"CostCenter\" = \"retail\"\n        }\n    }\n\nThis is a refresh-only plan, so Terraform will not take any actions to undo these.",
+      "explanation": "A CostCenter tag was added in the console; the plan only reports it.",
+      "why": "A normal plan would show the same drift as a change to undo, mixed in with your own changes. '-refresh-only' answers just 'what drifted?'. It replaces the old 'terraform refresh', which updated state silently with no chance to review."
+    },
+    {
+      "prompt": "The tag is wanted. Accept the drift into state (you'll add it to the code afterwards).",
+      "expected_commands": ["terraform apply -refresh-only", "terraform apply -refresh-only -auto-approve"],
+      "fake_output": "Would you like to update the Terraform state to reflect these detected changes?\n  Only 'yes' will be accepted to confirm.\n\n  Enter a value: yes\n\nApply complete! Resources: 0 added, 0 changed, 0 destroyed.",
+      "explanation": "State now records the tag; no infrastructure changed.",
+      "why": "Accepting drift into state is half the job: until the tag is also in the code, the next normal plan proposes removing it. The opposite choice is a normal apply, which puts the infrastructure back the way the code says."
+    },
+    {
+      "prompt": "The web Auto Scaling group's desired_capacity is changed by scaling policies all day, and every plan wants to reset it to the value in the code. What's the fix?\n  a) Run apply less often\n  b) Add lifecycle { ignore_changes = [desired_capacity] } to the aws_autoscaling_group resource\n  c) Remove desired_capacity and hope\n  d) Add prevent_destroy = true\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "resource \"aws_autoscaling_group\" \"web\" {\n  desired_capacity = 3\n  ...\n  lifecycle {\n    ignore_changes = [desired_capacity]\n  }\n}",
+      "hint": "Tell Terraform this attribute is owned by something else.",
+      "explanation": "ignore_changes makes Terraform set the value on creation and then leave it alone.",
+      "why": "The other lifecycle arguments are exam favourites too: create_before_destroy builds the replacement before deleting the old one (no gap, but names must not collide), prevent_destroy makes any plan that would delete the resource fail, and replace_triggered_by replaces a resource when another one changes."
+    },
+    {
+      "prompt": "The S3 bucket aws_s3_bucket.legacy should stay in AWS, but stop being managed by this configuration, and the change should go through code review. What do you write?\n  a) Run terraform state rm on your laptop\n  b) Delete the resource block and add: removed { from = aws_s3_bucket.legacy  lifecycle { destroy = false } }\n  c) Delete the resource block only\n  d) Add prevent_destroy to it\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "  # aws_s3_bucket.legacy will no longer be managed by Terraform\n  . resource \"aws_s3_bucket\" \"legacy\" {\n        id = \"shop-legacy-assets\"\n    }\n\nPlan: 0 to add, 0 to change, 0 to destroy, 1 to forget.",
+      "hint": "Deleting the block alone means 'destroy it'.",
+      "explanation": "A removed block (Terraform 1.7+) forgets the resource in a reviewed, planned change.",
+      "why": "'terraform state rm' does the same thing, but out of band, from one person's machine, with no plan in the pull request. The config-driven forms (moved, import, and removed blocks) bring state surgery into normal review, which is why newer exam versions favour them."
+    },
+    {
+      "prompt": "A precondition on aws_instance.web requires the chosen AMI to be x86_64. Someone set the AMI variable to an ARM image. Run a plan.",
+      "expected_commands": ["terraform plan"],
+      "fake_output": "data.aws_ami.selected: Reading...\n\nError: Resource precondition failed\n\n  on main.tf line 22, in resource \"aws_instance\" \"web\":\n  22:       condition     = data.aws_ami.selected.architecture == \"x86_64\"\n    ├────────────────\n    │ data.aws_ami.selected.architecture is \"arm64\"\n\nThe web tier's instance type is x86 only; choose an x86_64 AMI.",
+      "explanation": "The plan stopped with the author's message before anything was created.",
+      "why": "A precondition checks assumptions before a resource is created or changed; a postcondition checks the result afterwards (for example, that an instance got a public IP). Variable validation only sees the variable itself, so it can't check facts about a looked-up AMI."
+    },
+    {
+      "prompt": "You want Terraform to report when the public health endpoint stops answering, as a warning on every plan and apply, without blocking anything. Which feature?\n  a) Variable validation\n  b) A precondition\n  c) A check block with an assert (and an optional scoped data source)\n  d) A postcondition\nType the letter.",
+      "expected_commands": ["c"],
+      "fake_output": "check \"health\" {\n  data \"http\" \"site\" { url = \"https://shop.example.com/healthz\" }\n  assert {\n    condition     = data.http.site.status_code == 200\n    error_message = \"The site's health check isn't returning 200.\"\n  }\n}\n\nWarning: Check block assertion failed",
+      "hint": "Only one of these warns instead of failing.",
+      "explanation": "Check blocks validate infrastructure as a whole and only warn.",
+      "why": "Validation, preconditions, and postconditions stop the run; check blocks (Terraform 1.5+) report and carry on, which suits continuous checks of things Terraform doesn't own. Knowing which ones block is exactly what the exam asks."
+    }
+  ]
+}

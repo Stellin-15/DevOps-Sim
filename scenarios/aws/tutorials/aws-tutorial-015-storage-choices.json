@@ -1,0 +1,48 @@
+{
+  "id": "aws-tutorial-015",
+  "type": "tutorial",
+  "category": "aws",
+  "title": "Storage Choices: S3 Classes and Lifecycle, EBS, and EFS",
+  "difficulty": "intermediate",
+  "tags": ["aws", "s3", "efs", "ebs", "storage", "solutions-architect"],
+  "intro": "The Solutions Architect Associate asks, again and again, which storage fits a requirement: how often data is read, how fast it must come back, how many machines share it, and what it costs. The shop keeps application logs in the bucket shop-logs and needs a shared directory for its rendering fleet.",
+  "steps": [
+    {
+      "prompt": "Logs are read often for a month, rarely after that, and must be kept for a year. lifecycle.json moves objects to Standard-IA after 30 days and Glacier Flexible Retrieval after 90, and deletes them after 365. Apply it to the bucket shop-logs.",
+      "expected_commands": ["aws s3api put-bucket-lifecycle-configuration --bucket shop-logs --lifecycle-configuration file://lifecycle.json"],
+      "fake_output": "(no output: the configuration was accepted)",
+      "explanation": "S3 will now move and expire objects on that schedule by itself.",
+      "why": "Lifecycle rules turn 'remember to clean up' into a property of the bucket. Two costs the exam likes: the infrequent-access classes charge per GB retrieved and have a 30-day minimum storage charge, and the Glacier classes have minimums of 90 or 180 days, so moving short-lived objects can cost more than leaving them."
+    },
+    {
+      "prompt": "Read the bucket's lifecycle configuration back to check it.",
+      "expected_commands": ["aws s3api get-bucket-lifecycle-configuration --bucket shop-logs"],
+      "fake_output": "{\n    \"Rules\": [\n        {\n            \"ID\": \"logs-tiering\",\n            \"Filter\": {\"Prefix\": \"\"},\n            \"Status\": \"Enabled\",\n            \"Transitions\": [\n                {\"Days\": 30, \"StorageClass\": \"STANDARD_IA\"},\n                {\"Days\": 90, \"StorageClass\": \"GLACIER\"}\n            ],\n            \"Expiration\": {\"Days\": 365}\n        }\n    ]\n}",
+      "explanation": "One enabled rule with two transitions and an expiry.",
+      "why": "GLACIER in the API means Glacier Flexible Retrieval (minutes to hours to restore); GLACIER_IR is Instant Retrieval (milliseconds, for archives read occasionally); DEEP_ARCHIVE is cheapest and takes up to 12 hours. Matching retrieval time to the requirement is how most of these questions are answered."
+    },
+    {
+      "prompt": "Product images are read unpredictably: some daily, many never, and nobody can say which. Which storage class fits best?\n  a) S3 Standard for everything\n  b) S3 Intelligent-Tiering, which moves each object between access tiers based on its own access pattern\n  c) S3 One Zone-IA\n  d) Glacier Deep Archive\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "Intelligent-Tiering: frequent -> infrequent after 30 days without access -> archive instant after 90\n                     no retrieval fees; a small monitoring fee per object",
+      "hint": "Unknown or changing access patterns.",
+      "explanation": "Intelligent-Tiering decides per object, with no retrieval charges.",
+      "why": "One Zone-IA keeps a single copy in one Availability Zone, so it suits data you can recreate (thumbnails), not originals. 'Unknown access pattern' in a question almost always means Intelligent-Tiering."
+    },
+    {
+      "prompt": "Six rendering instances across two Availability Zones must read and write the same files at the same time with normal file-system semantics. Which storage?\n  a) One EBS gp3 volume attached to all six\n  b) Amazon EFS, a managed NFS file system with a mount target in each Availability Zone\n  c) S3 mounted as a disk\n  d) Instance store\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "EBS     : block storage for one instance in one AZ (io2 Multi-Attach: same AZ, cluster-aware apps only)\nEFS     : NFS shared by many instances across AZs, grows and shrinks by itself\nFSx     : Windows (SMB), Lustre (HPC), NetApp ONTAP, OpenZFS\ninstance store: fast, lost when the instance stops",
+      "hint": "Many machines, several AZs, shared files.",
+      "explanation": "EFS is the shared, multi-AZ file system.",
+      "why": "EBS is for one instance's disk (databases, boot volumes) and lives in one AZ; snapshots go to S3 and can be copied across regions. FSx for Windows is the answer when the requirement says SMB or Active Directory, and FSx for Lustre when it says high-performance computing."
+    },
+    {
+      "prompt": "The rendering file system is fs-0a1b2c3d. Check that it has a mount target in each Availability Zone the fleet uses.",
+      "expected_commands": ["aws efs describe-mount-targets --file-system-id fs-0a1b2c3d"],
+      "fake_output": "{\n    \"MountTargets\": [\n        {\"MountTargetId\": \"fsmt-0f1e2d3c\", \"AvailabilityZoneName\": \"eu-west-1a\", \"SubnetId\": \"subnet-0aa11\", \"IpAddress\": \"10.0.10.21\", \"LifeCycleState\": \"available\"},\n        {\"MountTargetId\": \"fsmt-0c3d4e5f\", \"AvailabilityZoneName\": \"eu-west-1b\", \"SubnetId\": \"subnet-0bb22\", \"IpAddress\": \"10.0.11.21\", \"LifeCycleState\": \"available\"}\n    ]\n}",
+      "explanation": "One available mount target per AZ.",
+      "why": "Instances mount the target in their own AZ through its IP; a missing target means instances in that AZ cross zones (cost and a dependency on the other zone) or can't mount at all. The mount target's security group must allow NFS (TCP 2049) from the instances, which is the usual reason a mount hangs."
+    }
+  ]
+}
