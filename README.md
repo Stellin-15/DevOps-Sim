@@ -53,7 +53,7 @@ string.
   part that tells you whether it stuck.
 - **Mystery Incidents**: real on-call conditions. You get only a
   symptom ("postgres just dies, nothing in its logs") and a live Linux,
-  Docker, AWS, Azure, or Google Cloud sandbox. There are no steps and no hints, and any command
+  Docker, AWS, Azure, Google Cloud, or database sandbox. There are no steps and no hints, and any command
   works in any order.
   - **Solving it.** When you think you've fixed it, type `solve`. The
     game checks three things:
@@ -171,6 +171,15 @@ restart <svc>`, `journalctl -u <svc> | -p err`, `dmesg -T`, `ss -tulnp`,
 `truncate -s 0 <file>`. Two things are wrong each time — you're done when
 both are fixed and `systemctl --failed` and `df -h` look healthy.
 
+**Database sandbox:** a real SQL database (SQLite, in memory, from
+Python's standard library), not pre-written output. Any SQL works, one
+statement per line, with explicit `BEGIN`/`COMMIT`/`ROLLBACK` as in
+psql, plus `EXPLAIN QUERY PLAN`, `.tables`, `.schema`, `.indexes`,
+and psql-style `\dt`, `\d <table>`, `\di`. Two of four data problems
+are seeded each time (a dropped index, a double-loaded day, orphaned
+rows, and deleted rows with a backup table that's older than the live
+data); `check` shows which reports are fixed.
+
 **Kubernetes sandbox:**
 
 ```
@@ -244,6 +253,7 @@ linux_sandbox.py    Linux sandbox (random broken server; reacts to fixes)
 aws_sandbox.py      AWS sandbox (a VPC with real layer-by-layer reachability)
 azure_sandbox.py    Azure sandbox (NSG priorities, NIC NSGs, routes to a firewall)
 gcp_sandbox.py      Google Cloud sandbox (tag-based firewalls, IAP SSH, Cloud NAT)
+db_sandbox.py       database sandbox (real SQL on an in-memory SQLite shop database)
 sandbox_common.py   shared sandbox loop, pipes, tables, save/discard
 yaml_lab.py         Writing Labs runner: real file editing + validation
 lab_formats.py      parsers for YAML/JSON, Dockerfile, HCL, bash, Ansible,
@@ -314,8 +324,9 @@ needed — just a sensible ordering of ids that already exist, spanning at
 least two categories.
 
 **Mystery incident**: drop a JSON file into `scenarios/mysteries/` with
-`type: "mystery"`, a `sandbox` (`linux` or `docker`), and `setup` (a
-`seed` plus forced `problems` for linux or `assignments` for docker). It
+`type: "mystery"`, a `sandbox` (`linux`, `docker`, `kube`, `aws`,
+`azure`, `gcp`, or `db`), and `setup` (a `seed` plus forced `problems`,
+or `assignments` for docker). It
 also needs:
 - a `symptom`;
 - `goals` (state checks such as `service_active`, `disk_below`, and
@@ -369,7 +380,7 @@ the engine, loader, sandboxes, yaml_lab, career_path, mystery, or scenario conte
 | SRE | 14 | 6 | incident first ten minutes, Argo Rollouts canaries, Istio resilience, capacity planning, load testing (k6/vegeta), chaos engineering, feature flags/kill switches, postmortem timelines, graceful degradation, production readiness reviews, disaster recovery drills, service catalogs and golden paths, DORA metrics, LitmusChaos and game days |
 | Git | 11 | 6 | objects/refs/HEAD, precise staging, branches, merge conflicts, rebase (autosquash, --onto), the undo matrix and reflog, searching history, remotes and forks, stash/worktrees, config/attributes/hooks, shallow and partial clones, submodules, LFS, signing |
 | System Design | 18 | 8 | estimation, load balancing, caching, indexes and query plans, replication, sharding, queues, consistency and quorums, rate limiting and idempotency, CDNs, distributed transactions (outbox, sagas), CQRS, multi-region, consensus and quorum, HyperLogLog and Bloom filters, real-time delivery, worked designs (URL shortener, chat); real commands plus multiple-choice trade-off questions; plus 4 design-document Writing Labs |
-| Databases | 12 | 6 | psql, on-call SQL (joins, GROUP BY, window functions), transactions and isolation, roles and privileges, pg_stat_activity and lock chains, slow queries (pg_stat_statements, EXPLAIN), vacuum and wraparound, pg_dump/pg_restore, point-in-time recovery (pgBackRest), Patroni failover, MySQL, Redis operations |
+| Databases | 12 | 6 | psql, on-call SQL (joins, GROUP BY, window functions), transactions and isolation, roles and privileges, pg_stat_activity and lock chains, slow queries (pg_stat_statements, EXPLAIN), vacuum and wraparound, pg_dump/pg_restore, point-in-time recovery (pgBackRest), Patroni failover, MySQL, Redis operations; plus a real-SQL Sandbox and 4 Mysteries |
 | Web Servers & Proxies | 11 | 6 | nginx (test and reload, server blocks and locations, reverse proxying, TLS with certbot, access-log analysis, reading 502/503/504, rate and body limits, caching and gzip, connection and file-descriptor capacity), HAProxy draining, and recognising Envoy, Caddy, Traefik, and Apache; plus 2 nginx Writing Labs |
 | Identity & Secrets | 9 | 5 | reading JWTs, OAuth 2.0 and OIDC flows, Kubernetes workload identity, Vault (KV, policies, dynamic database credentials), External Secrets Operator, SOPS and Sealed Secrets, PKI and mutual TLS, cert-manager; plus 2 Writing Labs |
 | Scripting | 8 | 4 | Python environments and pinned dependencies, running and debugging scripts, pytest/ruff/mypy, jq in depth, yq, regular expressions, Makefiles, building and testing Go tools; plus 2 Python Writing Labs |
@@ -403,9 +414,17 @@ Plus **18 Career Paths** chaining scenarios across categories:
 - own the database (live activity → slow queries → migrations and the
   lock queue → backups → a WAL-filled disk → recovering a deleted table);
 - the front door (HTTP and TLS → nginx → load balancing → certificates →
-  gateway errors → three proxy incidents).
+  gateway errors → three proxy incidents);
+- secrets done right (a leaked key → Vault → dynamic credentials →
+  workload identity → mTLS → two rotation outages);
+- the event-driven backend (API Gateway → Lambda → queues and Kafka →
+  three incidents in the joins → budgets);
+- faster and cheaper (measure → profile → rightsize → autoscale →
+  Kubernetes cost);
+- database to dashboard (on-call SQL → change data capture → Airflow →
+  dbt → the warehouse → two quiet data bugs).
 
-Plus **23 Mystery Incidents**, symptom only:
+Plus **27 Mystery Incidents**, symptom only:
 - Kubernetes: 503s while every pod is Running, a deploy that never
   finishes, workers that fail and then fail differently, the morning
   after node maintenance, and pods that are Running but not Ready.
@@ -425,6 +444,10 @@ Plus **23 Mystery Incidents**, symptom only:
   comes back until you find its cron job), and a 3am login (a
   brute-forced root password, a hidden UID-0 account, and a planted SSH
   key).
+- Databases, in real SQL: a 'My orders' page that got slow after a
+  migration, a revenue day that doubled, saved addresses to restore
+  from a backup that's older than the live data, and an export that
+  can't find its orders.
 
 Every tutorial step explains not just what the command does but *why*
 it beats the alternatives. Every incident ends with a debrief of the real

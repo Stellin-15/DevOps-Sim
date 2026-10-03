@@ -12,6 +12,7 @@ efficiency (commands used vs an expert's count), and collateral damage
 
 import aws_sandbox
 import azure_sandbox
+import db_sandbox
 import docker_sandbox
 import gcp_sandbox
 import kube_sandbox
@@ -30,6 +31,7 @@ SANDBOXES = {
     "azure": azure_sandbox,
     "gcp": gcp_sandbox,
     "kube": kube_sandbox,
+    "db": db_sandbox,
 }
 
 MAX_ANSWER_ATTEMPTS = 2

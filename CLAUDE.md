@@ -140,7 +140,7 @@ Don't duplicate content from these files elsewhere — link to them.
   Python, `bash` resolved to a launcher that hung indefinitely. The
   trade-off (documented in GAPS.md): checks confirm the right shape, not
   that `docker build`/`terraform validate`/shellcheck would pass.
-- **sandbox_common.py** — shared by all six sandboxes: `render_table`,
+- **sandbox_common.py** — shared by every sandbox: `render_table`,
   shell-style pipes (`split_pipes` respects quotes; `apply_pipe` supports
   grep [-i -v -c -A/-B/-C N], head/tail [-n N | -N], wc -l, sort [-r]),
   `parse_flags` (long flags, short aliases such as `-g`, boolean flags,
@@ -271,9 +271,35 @@ Don't duplicate content from these files elsewhere — link to them.
     35.235.240.0/20; it opens a session like AWS SSM, or runs one
     command with `--command`.
   - 6 problems, 2 per project.
+- **db_sandbox.py** — the database sandbox (kind `db`): **real SQL**,
+  not pre-written output. `generate_state` builds an in-memory SQLite
+  shop database (customers, addresses, products, orders, order_items,
+  daily_sales, and the app's job_runs, schema_migrations, and
+  query_stats tables, which hold the evidence) with 2 of 4 problems:
+  missing_index, duplicate_load, orphaned_items, and deleted_addresses
+  (a backup table older than the live data, so INSERT OR REPLACE and a
+  table swap are wrong fixes).
+  - **State vs connection:** states must be JSON-saveable, so the state
+    holds `dump` (iterdump of committed data only) and `db_key`; the
+    live connection is in the module-level `_CONNS`, rebuilt from the
+    dump when a saved state is loaded or the dict is a different object.
+  - Autocommit connection (`isolation_level=None`), so BEGIN, COMMIT,
+    and ROLLBACK are explicit like psql. Collateral is judged on
+    committed data: inside a transaction the last verdict stands, so
+    BEGIN; DELETE; ROLLBACK costs nothing. Every mystery has a
+    `committed` goal.
+  - Input is raw (never `engine.normalize`d: string literals are
+    case-sensitive), one statement per line. Dot-commands and psql-style
+    `\dt`/`\d`/`\di` are emulated; ATTACH and VACUUM INTO are blocked
+    because they write files. `check` reports which problems are fixed.
+  - `split_pipes` keeps `||` as text (SQL concatenation, shell OR), so
+    pipes still work on SQL output.
+  - Goals: `query_uses_index` (a SEARCH, not a SCAN, even one USING
+    INDEX), `no_duplicates`, `unique_guard`, `no_orphans`,
+    `addresses_restored`, `committed`, and a generic `sql_equals`.
 - **mystery.py** — Mystery Incidents: a symptom and a seeded sandbox
   state (`scenarios/mysteries/*.json`). `sandbox` picks linux, docker,
-  aws, azure, gcp or kube, and `mystery.build_state` calls that module's
+  aws, azure, gcp, kube or db, and `mystery.build_state` calls that module's
   `generate_state(**setup)`.
 
   Mysteries are **sandbox-agnostic**: each sandbox module supplies three
@@ -423,7 +449,8 @@ Current per-category content depth (tutorials / incidents):
   recovery, Patroni, MySQL, Redis). SQL steps are matched like any
   command (exact token set), so each prompt names the exact columns
   and the expected list carries with- and without-semicolon variants.
-  Design topics stay in systemdesign and migrations in cicd.
+  Design topics stay in systemdesign and migrations in cicd. Also the
+  real-SQL database sandbox (db_sandbox.py) and 4 mysteries on it.
 - webservers: 11 / 6 (+2 Writing Labs in the `nginx` format): nginx
   operations, TLS with certbot, access-log analysis, gateway errors,
   limits, caching, capacity, HAProxy, and recognising Envoy, Caddy,
@@ -442,7 +469,7 @@ Current per-category content depth (tutorials / incidents):
 - finops: 6 / 3 (cost allocation, rightsizing, commitments and spot, Kubernetes cost, quiet costs)
 - dataeng: 5 / 2 (+1 Writing Lab): Airflow authoring, dbt, warehouses, Spark on Kubernetes, CDC
 - landscape: 13 / 0 (tutorials only, no incidents: recognition-level introductions to less common tools, one per tool family)
-- **total: 343 tutorials, 158 incidents, 51 Writing Labs, 18 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
+- **total: 343 tutorials, 158 incidents, 51 Writing Labs, 18 career paths, 27 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security, 4 databases)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with
@@ -639,6 +666,10 @@ python -m pytest
   the AWS tests, plus each cloud's own rules: NSG priority order and
   NIC-level NSGs; target tags, deny-beats-allow, regional NAT, and IAP
   SSH sessions
+- `test_db_sandbox.py` — each seeded problem visible through real SQL,
+  each real fix clears it, the classic wrong fixes (INSERT OR REPLACE,
+  swapping in the backup, a unique index on loaded_at) don't,
+  ROLLBACK costs no collateral, and uncommitted work isn't saved
 - `test_aws_sandbox.py` — each problem breaks exactly its paths; each
   real fix restores them; NACL statelessness; SSM session enter and exit;
   describe filters; AWS-style errors; collateral detection
@@ -723,9 +754,7 @@ See GAPS.md's final 'Overall' part for the reasoning. In priority order:
    ✓ **Tier C is done** (the `landscape` category, tutorials 001-013,
    plus sre-tutorial-014 for Litmus and game days), followed by career
    paths 015-018 over the newer categories.
-   A **database sandbox** driving an in-memory SQLite database
-   (standard library, no install) would let players run real SQL
-   instead of matching pre-written statements.
+   ✓ **Database sandbox** (db_sandbox.py) with mysteries db-001 to 004.
    Each new category was added with `add_category` from the session's
    scratch helper; the durable part of that is `tools/sync_docs.py`.
 6c. A **Git sandbox** (a real temp repository the game inspects) is the

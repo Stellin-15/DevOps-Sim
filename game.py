@@ -10,6 +10,7 @@ import mystery
 import progress as progress_module
 import aws_sandbox
 import azure_sandbox
+import db_sandbox
 import docker_sandbox
 import gcp_sandbox
 import kube_sandbox
@@ -199,6 +200,7 @@ SANDBOXES = [
     ("AWS — a VPC where two network layers are broken (routes, NACLs, security groups...)", aws_sandbox.run_sandbox),
     ("Azure — NSG priorities, NIC-level NSGs, and a route to a firewall that may not exist", azure_sandbox.run_sandbox),
     ("Google Cloud — tag-based firewall rules, IAP SSH, and Cloud NAT", gcp_sandbox.run_sandbox),
+    ("Database — a real SQL database with bad data, a lost index, and a backup to restore from", db_sandbox.run_sandbox),
 ]
 
 
@@ -231,7 +233,7 @@ def main_menu_loop() -> None:
         print("  3. Writing Labs (write real config files and scripts in your own editor)")
         print("  4. Exam Mode (timed, no hints, scored)")
         print("  5. Mystery Incidents (just a symptom — find and fix it your way)")
-        print("  6. Sandbox (Kubernetes, Docker, Linux, AWS, Azure, or Google Cloud — explore freely)")
+        print("  6. Sandbox (Kubernetes, Docker, Linux, AWS, Azure, Google Cloud, or a real SQL database — explore freely)")
         print("  7. Stats (your progress, exam scores, and what to do next)")
         print("  q. Quit")
 

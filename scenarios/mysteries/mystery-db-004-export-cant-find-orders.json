@@ -1,0 +1,38 @@
+{
+  "id": "mystery-db-004",
+  "type": "mystery",
+  "category": "databases",
+  "sandbox": "db",
+  "title": "The Export Can't Find the Orders Its Items Belong To",
+  "difficulty": "intermediate",
+  "tags": ["databases", "referential-integrity", "foreign-keys", "data-quality"],
+  "setup": {"seed": 24, "problems": ["orphaned_items"]},
+  "symptom": "The nightly order-items export to the warehouse failed this morning with 'order not found for item'. Yesterday's export ran cleanly, no code has been deployed since, and the export only reads order_items and orders.",
+  "goals": [
+    {"check": "no_orphans", "description": "Every order item belongs to an existing order, and no real order's items were removed"},
+    {"check": "committed", "description": "No transaction left open"}
+  ],
+  "evidence": [
+    {"description": "what changed overnight", "seen_any": ["cleanup_cancelled_orders"]},
+    {"description": "why the database allowed it", "seen_any": ["foreign_keys"]}
+  ],
+  "question": {
+    "prompt": "What was the root cause?",
+    "options": [
+      "The export program has a bug",
+      "Someone deleted order items by hand",
+      "A cleanup job deleted cancelled orders without their items, and foreign-key enforcement was off, so the database let the items point at orders that no longer exist",
+      "The orders table was restored from an old backup"
+    ],
+    "answer": 2
+  },
+  "expert_commands": 5,
+  "solution_commands": [
+    "SELECT * FROM job_runs ORDER BY started_at DESC LIMIT 3",
+    "SELECT count(*) FROM order_items WHERE order_id NOT IN (SELECT id FROM orders)",
+    "PRAGMA foreign_keys",
+    "DELETE FROM order_items WHERE order_id NOT IN (SELECT id FROM orders)",
+    "PRAGMA foreign_keys = ON"
+  ],
+  "debrief": "The schema declares order_items.order_id REFERENCES orders(id), but a declaration is only a promise if something enforces it. SQLite enforces foreign keys only on connections that turn them on (PRAGMA foreign_keys = ON), and the cleanup job's connection didn't, so deleting cancelled orders left their items behind pointing at nothing. The anti-join (items whose order_id isn't in orders) finds them; deleting exactly those is safe because their orders are gone for good. In PostgreSQL the constraint is always enforced, and the design choice is what a delete should do: ON DELETE CASCADE removes the items with the order, the default refuses the delete. Either is better than what happened here. Integrity belongs in the database, because every script, job, and person with a SQL prompt goes around the application."
+}

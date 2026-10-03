@@ -1,0 +1,40 @@
+{
+  "id": "mystery-db-003",
+  "type": "mystery",
+  "category": "databases",
+  "sandbox": "db",
+  "title": "Saved Addresses Vanished, and There's a Backup",
+  "difficulty": "advanced",
+  "tags": ["databases", "restore", "backups", "transactions"],
+  "setup": {"seed": 23, "problems": ["deleted_addresses"]},
+  "symptom": "At 09:15 support ran a script to remove addresses belonging to inactive customers. Since then, active customers report that their saved addresses are missing at checkout. Customers have been using the site all morning. Last night's copy of the table is in addresses_backup_20261002. Put back what was lost without losing anything else.",
+  "goals": [
+    {"check": "addresses_restored", "description": "Every deleted address is back, and every address added or edited this morning is still as the customer left it"},
+    {"check": "committed", "description": "No transaction left open"}
+  ],
+  "evidence": [
+    {"description": "what the script did", "seen_any": ["support_cleanup_addresses", "removed 40 addresses"]},
+    {"description": "what changed in the table after the backup was taken", "seen_any": ["2026-10-02 08:12:40", "2026-10-02 08:30:00"]}
+  ],
+  "question": {
+    "prompt": "Which restore was correct, and why?",
+    "options": [
+      "Drop addresses and rename the backup into its place, because the backup is complete",
+      "Copy back only the rows whose id is missing (INSERT ... WHERE NOT EXISTS, or INSERT OR IGNORE), because the live table has rows added and edited after the backup that a full replace would destroy",
+      "INSERT OR REPLACE every backup row, because the backup is the source of truth",
+      "Ask the affected customers to re-enter their addresses"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 7,
+  "solution_commands": [
+    "SELECT * FROM job_runs WHERE job LIKE 'support%'",
+    "SELECT count(*) FROM addresses_backup_20261002 b WHERE NOT EXISTS (SELECT 1 FROM addresses a WHERE a.id = b.id)",
+    "SELECT * FROM addresses WHERE updated_at > '2026-10-02'",
+    "BEGIN",
+    "INSERT INTO addresses SELECT * FROM addresses_backup_20261002 b WHERE NOT EXISTS (SELECT 1 FROM addresses a WHERE a.id = b.id)",
+    "SELECT count(*) FROM addresses",
+    "COMMIT"
+  ],
+  "debrief": "The backup is from last night, but the live table kept changing until the script ran: three new addresses were added and one was edited this morning. Swapping in the backup would delete the new ones; INSERT OR REPLACE would quietly turn the edited address back to last night's city, so a parcel goes to the old flat. A plain INSERT of the whole backup fails on the first id that still exists, and does nothing. The safe restore is the difference: rows in the backup whose id is no longer in the live table, inserted inside a transaction so the count can be checked (it should rise by exactly the 40 the script reported) before COMMIT. In PostgreSQL the same idea is INSERT ... SELECT ... ON CONFLICT (id) DO NOTHING, and for a real loss you'd restore the backup to a separate database and copy the difference across, never over the top of production. And the script that caused it should have run in a transaction, printing its count, before anyone committed."
+}

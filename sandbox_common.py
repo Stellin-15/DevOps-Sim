@@ -14,7 +14,7 @@ from engine import normalize, read_input
 
 BASE_DIR = Path(__file__).parent
 SANDBOX_ROOT = BASE_DIR / "sandbox_data"
-SANDBOX_TITLES = {"aws": "AWS", "gcp": "Google Cloud", "kube": "Kubernetes (fixable)"}  # kinds whose .title() would read wrong
+SANDBOX_TITLES = {"aws": "AWS", "gcp": "Google Cloud", "kube": "Kubernetes (fixable)", "db": "Database (real SQL)"}  # kinds whose .title() would read wrong
 
 
 def render_table(headers: list, rows: list, prefix: str = "") -> str:
@@ -47,9 +47,13 @@ def render_table(headers: list, rows: list, prefix: str = "") -> str:
 # ------------------------------------------------------------------ pipes
 
 def split_pipes(raw: str) -> list:
-    """Split on | outside quotes: 'ps aux | grep "a|b"' -> 2 segments."""
+    """Split on | outside quotes: 'ps aux | grep "a|b"' -> 2 segments.
+    A doubled || is kept as text, never treated as a pipe."""
     segments, current, quote = [], [], None
-    for c in raw:
+    i = 0
+    while i < len(raw):
+        c = raw[i]
+        i += 1
         if quote:
             if c == quote:
                 quote = None
@@ -57,6 +61,10 @@ def split_pipes(raw: str) -> list:
         elif c in ("'", '"'):
             quote = c
             current.append(c)
+        elif c == "|" and raw[i:i + 1] == "|":
+            # '||' is never a pipe: shell OR, or SQL string concatenation
+            current.append("||")
+            i += 1
         elif c == "|":
             segments.append("".join(current).strip())
             current = []

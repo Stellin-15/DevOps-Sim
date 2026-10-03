@@ -1,0 +1,41 @@
+{
+  "id": "mystery-db-002",
+  "type": "mystery",
+  "category": "databases",
+  "sandbox": "db",
+  "title": "October 1st Was the Best Day of the Quarter (It Wasn't)",
+  "difficulty": "intermediate",
+  "tags": ["databases", "data-quality", "idempotency", "constraints"],
+  "setup": {"seed": 22, "problems": ["duplicate_load"]},
+  "symptom": "Finance's revenue dashboard shows October 1st at almost twice a normal day. The warehouse team says order volume that day looked ordinary, and no promotion ran. The dashboard reads the daily_sales table, which a nightly job fills.",
+  "goals": [
+    {"check": "no_duplicates", "description": "daily_sales holds each order exactly once, and no good rows were lost"},
+    {"check": "unique_guard", "description": "daily_sales itself rejects the same order being loaded twice"},
+    {"check": "committed", "description": "No transaction left open"}
+  ],
+  "evidence": [
+    {"description": "what happened to the load for that day", "seen_any": ["manual re-run"]},
+    {"description": "the duplicate rows themselves", "seen_any": ["2026-10-02 09:41:07"]}
+  ],
+  "question": {
+    "prompt": "What was the root cause?",
+    "options": [
+      "A real sales spike that nobody noticed",
+      "The scheduled load finished but reported failure, it was re-run by hand, and because the load only appends and nothing enforces one row per order, the day was loaded twice",
+      "The dashboard's SUM query is wrong",
+      "Clock skew put September 30th's orders on October 1st"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 7,
+  "solution_commands": [
+    "SELECT sale_date, count(*), sum(amount_cents) FROM daily_sales GROUP BY sale_date",
+    "SELECT * FROM job_runs WHERE run_for = '2026-10-01'",
+    "SELECT * FROM daily_sales WHERE order_id IN (SELECT order_id FROM daily_sales GROUP BY order_id HAVING count(*) > 1) ORDER BY order_id LIMIT 4",
+    "BEGIN",
+    "DELETE FROM daily_sales WHERE rowid NOT IN (SELECT min(rowid) FROM daily_sales GROUP BY order_id)",
+    "CREATE UNIQUE INDEX uq_daily_sales_order ON daily_sales(order_id)",
+    "COMMIT"
+  ],
+  "debrief": "Counting rows per day showed October 1st with twice the rows, not bigger orders. The job history told the story: the scheduled load inserted everything and then timed out notifying finance, so it was marked failed, and someone re-ran it at 09:41. The load is a plain INSERT, so the re-run appended a second copy, which the loaded_at timestamps on the duplicate rows confirm. Deleting all but the first copy of each order fixes the numbers; doing it inside BEGIN ... COMMIT lets you check the counts before it's final. The unique index is the real fix: with it, the re-run would have failed loudly instead of doubling revenue quietly. Better still, make the load idempotent (delete-then-insert for the day in one transaction, or INSERT ... ON CONFLICT DO NOTHING), so re-running a job is always safe. See dataeng-incident-001 for the same bug in a warehouse."
+}

@@ -1260,11 +1260,14 @@ database content.
 
 ## Still missing
 
-- **A real database.** Outputs are pre-written. Typing a query against
-  canned output isn't the same as exploring real data, and SQL steps
-  must match the expected statement closely. A database sandbox (the
-  game could drive an in-memory SQLite database, which needs no
-  install) is the most valuable follow-up.
+- **PostgreSQL itself.** The tutorials and incidents match pre-written
+  PostgreSQL output. The database sandbox and its four mysteries now run
+  real SQL against a real engine (SQLite, in memory), so queries,
+  anti-joins, deduplication, constraints, query plans, transactions, and
+  restores from a backup table are practised for real. What SQLite
+  can't show is PostgreSQL's operational side: pg_stat_activity, lock
+  waits between sessions, vacuum, and replication still need a real
+  PostgreSQL (a container is enough).
 - **SQL depth:** subqueries and CTEs, set operations, NULL semantics,
   upserts, schema design and normalization, constraints, JSON columns.
 - **PostgreSQL depth:** partitioning, logical replication, major-version
@@ -2032,7 +2035,7 @@ If content is added in the order that helps most people soonest:
 | SRE | 14 | 6 | 2 Writing Labs (postmortem, catalog entry) |
 | Git | 11 | 6 | |
 | System Design | 18 | 8 | 4 Writing Labs (design documents) |
-| Databases | 12 | 6 | |
+| Databases | 12 | 6 | real-SQL Sandbox, 4 Mysteries |
 | Web Servers & Proxies | 11 | 6 | 2 Writing Labs (nginx configuration) |
 | Identity & Secrets | 9 | 5 | 2 Writing Labs (Vault policy, cert-manager) |
 | Scripting | 8 | 4 | 2 Writing Labs (Python) |
@@ -2042,7 +2045,7 @@ If content is added in the order that helps most people soonest:
 | FinOps | 6 | 3 | |
 | Data Engineering | 5 | 2 | 1 Writing Lab (Airflow DAG) |
 | The Wider Landscape | 13 | 0 | tutorials only (recognition level) |
-| **Total** | **343** | **158** | 51 Writing Labs, 18 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
+| **Total** | **343** | **158** | 51 Writing Labs, 18 career paths, 8 sandboxes, 27 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -2093,10 +2096,10 @@ that more scenario content can narrow but not close:
    here was written in advance. **Partly addressed** by Mystery
    Incidents: only a symptom and a live sandbox, any path you like,
    fixes that really change the state, collateral damage that costs
-   points, and a root cause you must name. But 23 mysteries on seven
-   sandboxes are a start, not real on-call, and the database and Git
-   categories still match pre-written output rather than running a
-   real engine. Pair this game with a homelab (kind or minikube, a
+   points, and a root cause you must name. The database sandbox runs
+   real SQL on a real engine. But 27 mysteries on eight sandboxes are a
+   start, not real on-call, and the Git category still matches
+   pre-written output rather than running real git. Pair this game with a homelab (kind or minikube, a
    free-tier cloud account) where things break for real.
 3. **Scale and money.** Cloud networking, IAM, serverless, and cost
    are taught in all three clouds, with sandboxes for the networking.

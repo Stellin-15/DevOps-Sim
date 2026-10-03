@@ -1,0 +1,38 @@
+{
+  "id": "mystery-db-001",
+  "type": "mystery",
+  "category": "databases",
+  "sandbox": "db",
+  "title": "The 'My Orders' Page Takes Four Seconds",
+  "difficulty": "intermediate",
+  "tags": ["databases", "indexes", "query-plans", "migrations"],
+  "setup": {"seed": 21, "problems": ["missing_index"]},
+  "symptom": "Since yesterday's release, customers say the 'My orders' page takes about four seconds to load. Every other page is fast, the orders table hasn't grown unusually, and the release notes only say 'database housekeeping'. You have a SQL session on a copy of the production database.",
+  "goals": [
+    {"check": "query_uses_index", "description": "The 'My orders' query (orders by customer_id, newest first) looks up rows through an index instead of scanning"},
+    {"check": "committed", "description": "No transaction left open"}
+  ],
+  "evidence": [
+    {"description": "the query's plan", "seen_any": ["SCAN orders"]},
+    {"description": "what the release changed", "seen_any": ["drop_unused_indexes", "DROP INDEX idx_orders_customer_id"]}
+  ],
+  "question": {
+    "prompt": "What was the root cause?",
+    "options": [
+      "The orders table simply grew too large for the query",
+      "The release's housekeeping migration dropped the index on orders.customer_id, so each page load reads through every order",
+      "The index on orders.created_at is corrupt",
+      "The database ran out of connections"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 5,
+  "solution_commands": [
+    "SELECT * FROM query_stats ORDER BY mean_ms DESC",
+    "EXPLAIN QUERY PLAN SELECT * FROM orders WHERE customer_id = 42 ORDER BY created_at DESC LIMIT 20",
+    "SELECT * FROM schema_migrations ORDER BY applied_at DESC",
+    "CREATE INDEX idx_orders_customer_created ON orders(customer_id, created_at)",
+    "EXPLAIN QUERY PLAN SELECT * FROM orders WHERE customer_id = 42 ORDER BY created_at DESC LIMIT 20"
+  ],
+  "debrief": "The query statistics pointed at one query, and its plan said SCAN orders. Note the trap: the plan also said USING INDEX idx_orders_created_at, which sounds healthy, but SCAN means it walked that whole index in date order, checking every order's customer until it had found 20. The migration list explained why: an 'unused indexes' cleanup dropped idx_orders_customer_id, which was only unused on the staging data it was judged against. An index on (customer_id, created_at) turns the scan into a SEARCH and also hands the rows back already sorted. In PostgreSQL the same check is EXPLAIN (ANALYZE, BUFFERS), and CREATE INDEX CONCURRENTLY builds the index without blocking writes. The lasting lesson: decide an index is unused from production's own statistics (pg_stat_user_indexes), never from a copy."
+}

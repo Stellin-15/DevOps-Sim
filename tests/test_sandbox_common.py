@@ -17,6 +17,10 @@ class TestSplitPipes:
     def test_ignores_pipes_inside_quotes(self):
         assert sc.split_pipes("grep 'a|b' file") == ["grep 'a|b' file"]
 
+    def test_double_bar_is_not_a_pipe(self):
+        # SQL concatenation (db sandbox) and shell OR are both one segment
+        assert sc.split_pipes("SELECT a || b FROM t | grep x") == ["SELECT a || b FROM t", "grep x"]
+
 
 class TestApplyPipe:
     def test_grep(self):
