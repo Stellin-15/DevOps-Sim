@@ -1036,11 +1036,9 @@ that descend from or implement them:
   comms, and escalation are explained in the tutorials, and the Writing Labs
   include a postmortem, but running an incident with other people can only
   be practised in real game days or drills.
-- Multi-region architecture work (active-active data, failover drills, DNS
-  and global load balancing) and disaster-recovery exercises.
-- Distributed systems theory behind it all: consensus (Raft/Paxos),
-  consistency models, queues and backpressure.
-- The SRE hiring-interview style of 'design a system for N users' (NALSD).
+- Multi-region architecture, consensus, and consistency models are
+  taught in System Design, not here; this part only links them to
+  operations through the disaster-recovery drill (sre-tutorial-011).
 
 ## Readiness verdict
 
@@ -2044,11 +2042,29 @@ If content is added in the order that helps most people soonest:
 | FinOps | 6 | 3 | |
 | Data Engineering | 5 | 2 | 1 Writing Lab (Airflow DAG) |
 | The Wider Landscape | 13 | 0 | tutorials only (recognition level) |
-| **Total** | **343** | **158** | 51 Writing Labs, 14 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
+| **Total** | **343** | **158** | 51 Writing Labs, 18 career paths, 7 sandboxes, 23 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
 command beats the alternatives — not just what it does.
+
+## What the game now covers
+
+The game started as a Kubernetes trainer. It now spans the whole DevOps
+job, in four layers:
+- **The core every role needs:** Linux, networking, Git, scripting,
+  Docker, Kubernetes, Terraform, CI/CD, and monitoring.
+- **Where it runs:** AWS, Azure, and Google Cloud, plus serverless,
+  databases, web servers and proxies, and messaging.
+- **Running it well:** security, identity and secrets, SRE, server fleet
+  operations, performance, FinOps, and system design.
+- **Specialisms and recognition:** MLOps and LLM operations, data
+  engineering, and The Wider Landscape (the less common tools you'll
+  meet at some employers).
+
+Every topic in the Backlog part's three tiers now has content. What's
+left in each category is listed in that category's 'Still missing'
+section, and is depth, not breadth.
 
 ## Honest verdict
 
@@ -2056,75 +2072,70 @@ command beats the alternatives — not just what it does.
 will know the commands, the failure modes, and — most importantly — the
 debugging method** (check the layer before guessing the fix; refused vs
 timeout; verify after every change; revoke before cleaning up; revert
-don't force-push). The 158 incidents are modeled on the kinds of problems
-that genuinely trip up working engineers, and working through them
-builds judgment that command references alone never will.
+don't force-push; measure before tuning). The 158 incidents are modeled
+on the kinds of problems that genuinely trip up working engineers, and
+working through them builds judgment that command references alone
+never will.
 
 **It will not, on its own, make you fully proficient**, for four reasons
-that no amount of additional scenario content can fully close:
+that more scenario content can narrow but not close:
 
 1. **Authoring vs. operating.** Largely addressed: 51 Writing Labs now
-   have you write real Kubernetes manifests, GitHub Actions workflows,
-   Prometheus alert rules, Compose files, Dockerfiles, Terraform (AWS
-   VPCs and security groups, GCP firewalls), IAM policies, Ansible
-   playbooks, bash scripts, a Terraform module, a blameless postmortem,
-   two system design documents, and nginx configuration, in your own editor. What remains is **depth and
-   realism**: the checkers are structural, not the real tools
+   have you write Kubernetes manifests, CI workflows, alert rules and
+   dashboards, Dockerfiles, Terraform, IAM and Vault policies, Ansible
+   playbooks, bash and Python, nginx configuration, Airflow DAGs,
+   admission and detection rules, postmortems, and design documents,
+   in your own editor. The checkers are structural, not the real tools
    (`docker build`, `terraform validate`, shellcheck), so they confirm
    you wrote the right shape, not that it would actually run. Building
    the same files for a real project is still the final test.
 2. **Real systems misbehave in unscripted ways.** Every simulated output
-   here was written in advance. A real cluster, a real cloud account, and
-   real traffic produce errors nobody predicted. **Partly addressed**:
-   Mystery Incidents give you only a symptom and a live sandbox. There is
-   no prompt telling you what to check next, you can take any path, your
-   fixes change the state, and careless fixes cost points (killing sshd
-   or init counts as collateral damage). You have to fix it for real and
-   then name the root cause; where there's nothing to fix, you must have
-   seen the evidence, so you can't win by guessing. The outputs are still
-   simulated, though: 23 mysteries (Kubernetes, Linux, Docker, AWS, Azure,
-   Google Cloud, and hacked servers) are a start, not real on-call. Pair this game with a homelab
-   (kind/minikube, a free-tier cloud account) where things break for real.
-3. **Cloud-provider fundamentals** (IAM, VPCs, managed services).
-   **Partly addressed.** The AWS category (Part 9) and its VPC sandbox
-   teach networking layers, IAM, and incident response. Azure (Part 10)
-   and Google Cloud (Part 11) cover the same ground on each platform,
-   with a cross-cloud map. Serverless, multi-account networking, and
-   managed databases beyond the RDS basics still need a real account.
-4. **The human side of operations.** Incident command, communication
-   during an outage, blameless postmortems, and knowing when to escalate.
-   **Partly addressed** by the SRE category (Part 14), which covers
-   incident roles, mitigate-first, timelines, and postmortem structure.
-   Doing it with real people under pressure still needs game days and
-   on-call shadowing.
+   here was written in advance. **Partly addressed** by Mystery
+   Incidents: only a symptom and a live sandbox, any path you like,
+   fixes that really change the state, collateral damage that costs
+   points, and a root cause you must name. But 23 mysteries on seven
+   sandboxes are a start, not real on-call, and the database and Git
+   categories still match pre-written output rather than running a
+   real engine. Pair this game with a homelab (kind or minikube, a
+   free-tier cloud account) where things break for real.
+3. **Scale and money.** Cloud networking, IAM, serverless, and cost
+   are taught in all three clouds, with sandboxes for the networking.
+   What a game can't give you is the weight of a real account: a bill
+   you pay, quotas you hit, and an organisation with hundreds of
+   accounts and teams. That comes from a free-tier account first and
+   a job second.
+4. **The human side of operations.** Incident roles, communication,
+   blameless postmortems, game days, and escalation are taught in the
+   SRE category and practised in its labs. Doing them with real people
+   under pressure still needs game days and on-call shadowing.
 
 ## Recommended path to real proficiency
 
-1. Play every tutorial in each category in order (the `why` notes are
-   the point, not the syntax).
-2. Play every incident without hints first; read every resolution even
-   when you solved it.
-3. Take an Exam for each category until you pass (66%) consistently —
-   then retake it a week later. Spaced recall is what makes commands
-   stick; a single pass right after the tutorials proves little. The
-   Stats screen shows which categories you've passed, your best score
-   in each, and what to do next.
-4. Complete the Writing Labs for each category.
-5. Play all 14 Career Paths to practice switching layers mid-problem —
+1. Start with the core, in this order: Linux, Networking, Git,
+   Scripting, Docker, Kubernetes, Terraform, CI/CD, Monitoring. Play
+   every tutorial; the `why` notes are the point, not the syntax.
+2. Play every incident without hints first, and read every resolution
+   even when you solved it.
+3. Take an Exam for each category until you pass (66%) consistently,
+   then retake it a week later: a single pass right after the
+   tutorials proves little. The Stats screen shows which categories
+   you've passed and what to do next.
+4. Complete the Writing Labs for each category you've finished.
+5. Pick one cloud (whichever employers near you use most) and do its
+   category, then Serverless, Databases, and Web Servers.
+6. Play all 18 Career Paths to practise switching layers mid-problem,
    especially "The Worst On-Call Night".
-6. Play every Mystery Incident, then replay it to aim for 100. Scoring
+7. Play every Mystery Incident, then replay it to aim for 100. Scoring
    near the expert's command count means you went straight to the right
    layer instead of wandering.
-7. Rebuild each incident for real on a local cluster/VM — break it on
-   purpose, then fix it with the same commands.
-8. Write the artifacts yourself for one small real project, end to end:
-   a Dockerfile, a Terraform module, a GitHub Actions workflow, alert
-   rules, and a bash deploy script — the Writing Labs are practice for
-   this, not a replacement.
-9. For certification goals, see Part 1 (CKA); similar exam-specific gap
-   passes haven't been done for other certs (e.g. Terraform Associate,
-   AWS) yet.
-10. Then widen. The Backlog part lists everything this game doesn't teach yet,
-    in three tiers. Start with tier A (identity and secrets, a
-    scripting language, messaging): those come up in almost every
-    role.
+8. Move to running it well: Security, Identity & Secrets, SRE,
+   Performance, FinOps, and System Design. These are what separate a
+   senior engineer from someone who knows the commands.
+9. Rebuild incidents for real on a local cluster or VM, and write the
+   artifacts yourself for one small real project end to end: a
+   Dockerfile, a Terraform module, a pipeline, alert rules, and a
+   deploy script.
+10. Take the specialisms (MLOps, Data Engineering, Messaging) and The
+    Wider Landscape when a job calls for them. For certifications, see
+    Part 1 (CKA); exam-specific gap passes for other certifications
+    (Terraform Associate, AWS, CKAD) haven't been done yet.

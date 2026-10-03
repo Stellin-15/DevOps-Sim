@@ -386,7 +386,7 @@ vs NSG vs firewall rule; CloudTrail vs Activity Log vs Audit Logs). The
 cross-cloud map at the end of GAPS.md Part 11 lines them up side by
 side.
 
-Plus **14 Career Paths** chaining scenarios across categories:
+Plus **18 Career Paths** chaining scenarios across categories:
 - ship a feature end to end;
 - a production incident chain;
 - an ML model from laptop to production;

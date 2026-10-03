@@ -1,0 +1,20 @@
+{
+  "id": "path-018",
+  "type": "career_path",
+  "title": "From Database to Dashboard: Running a Data Platform",
+  "difficulty": "advanced",
+  "tags": ["databases", "messaging", "dataeng"],
+  "intro": "The numbers on an executive's dashboard began as rows in a production database. Between the two sit change capture, a stream, a scheduler, transformations, and a warehouse, and a mistake at any stage arrives as a wrong number, not an error. Follow the data from the database it starts in to the warehouse where it's reported, then handle the incidents where the pipeline 'worked' and the answer was wrong.",
+  "steps": [
+    "databases-tutorial-002",
+    "databases-tutorial-006",
+    "dataeng-tutorial-005",
+    "messaging-tutorial-004",
+    "dataeng-tutorial-001",
+    "dataeng-tutorial-002",
+    "dataeng-tutorial-003",
+    "dataeng-incident-001",
+    "dataeng-incident-002"
+  ],
+  "resolution": "Data pipelines fail quietly: the job succeeds, the table fills, and the number is wrong. The defences are the ones this path built: change capture that reads the database's own log instead of polling it, topics whose retention is long enough to replay, DAGs that can be re-run without doubling the data, dbt tests that assert what the data must look like, and warehouse queries that are partitioned and dry-run before they're paid for. Revenue doubling overnight with no customer noticing is a test that should have failed. Next, write a DAG yourself in the Airflow Writing Lab."
+}

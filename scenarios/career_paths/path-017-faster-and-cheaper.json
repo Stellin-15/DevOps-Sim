@@ -1,0 +1,21 @@
+{
+  "id": "path-017",
+  "type": "career_path",
+  "title": "Faster and Cheaper: Measure Before You Tune",
+  "difficulty": "advanced",
+  "tags": ["performance", "finops", "kubernetes"],
+  "intro": "'Make it faster' and 'make it cheaper' are the same job more often than people expect: wasted CPU is wasted money, and over-provisioning is usually a guess made because nobody measured. This path starts with measurement, moves to finding where time actually goes, and ends with turning what you learned into right-sized resources and a smaller bill.",
+  "steps": [
+    "performance-tutorial-007",
+    "performance-tutorial-001",
+    "performance-tutorial-002",
+    "performance-tutorial-005",
+    "performance-incident-002",
+    "finops-tutorial-001",
+    "finops-tutorial-003",
+    "tutorial-033",
+    "finops-tutorial-005",
+    "finops-incident-002"
+  ],
+  "resolution": "Every improvement here started with a number, not a hunch: a percentile instead of an average, a profile instead of a guess about which function is slow, a utilisation graph instead of the size someone picked two years ago. The afternoon slowdown was a burstable instance running out of CPU credits, which the application's own CPU graph could never show; the CloudWatch bill was a log level, not a launch. Rightsizing and autoscaling only save money once requests reflect real use, and the cluster's cost only gets owners once it's split by team. Measure, change one thing, measure again."
+}

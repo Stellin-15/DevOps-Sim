@@ -1,0 +1,22 @@
+{
+  "id": "path-016",
+  "type": "career_path",
+  "title": "The Event-Driven Backend: Functions, Queues, and What Breaks Between Them",
+  "difficulty": "advanced",
+  "tags": ["serverless", "messaging", "finops"],
+  "intro": "A modern backend is often no servers at all: an API Gateway in front of functions, which hand work to queues and streams, which other functions and consumers drain. Each piece scales on its own, so the failures live in the joins: retries, timeouts, lag, and bills. Build the picture piece by piece, then handle the incidents that only happen when the pieces meet.",
+  "steps": [
+    "serverless-tutorial-005",
+    "serverless-tutorial-001",
+    "serverless-tutorial-002",
+    "serverless-tutorial-004",
+    "messaging-tutorial-007",
+    "messaging-tutorial-001",
+    "messaging-tutorial-003",
+    "serverless-incident-001",
+    "messaging-incident-002",
+    "serverless-incident-003",
+    "finops-tutorial-002"
+  ],
+  "resolution": "Every asynchronous hop is a place where work can be retried, delayed, or duplicated, so the questions are always the same: what happens on failure, where does the failed message go, and how would you know? A visibility timeout shorter than the work causes duplicates; a function with no reserved concurrency can starve its neighbours; a consumer that takes longer per batch than its poll deadline is declared dead and the group rebalances for ever; and a recursive trigger runs up a bill in hours. The last step is the guard rail: budgets and anomaly alerts, because in a pay-per-call system a bug and a cost spike are often the same event."
+}

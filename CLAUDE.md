@@ -442,7 +442,7 @@ Current per-category content depth (tutorials / incidents):
 - finops: 6 / 3 (cost allocation, rightsizing, commitments and spot, Kubernetes cost, quiet costs)
 - dataeng: 5 / 2 (+1 Writing Lab): Airflow authoring, dbt, warehouses, Spark on Kubernetes, CDC
 - landscape: 13 / 0 (tutorials only, no incidents: recognition-level introductions to less common tools, one per tool family)
-- **total: 343 tutorials, 158 incidents, 51 Writing Labs, 14 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
+- **total: 343 tutorials, 158 incidents, 51 Writing Labs, 18 career paths, 23 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with
@@ -464,7 +464,7 @@ existing tutorial/incident ids by id — no new scenario authoring, purely
 composition of what already exists. `test_career_path_content.py` enforces
 every step id resolves to a real scenario (self-consistency, same pattern
 as the other content tests) and that a path spans at least 2 categories
-(the whole point is combining categories, not padding one). Currently 14 paths: `path-001`
+(the whole point is combining categories, not padding one). Currently 18 paths: `path-001`
 build→ship (terraform → docker → kubernetes → cicd → monitoring),
 `path-002` incident chain (linux → networking → kubernetes → monitoring),
 `path-003` ML model laptop→production (mlops + docker), `path-004`
@@ -479,8 +479,12 @@ response (security → aws → sre), `path-010` Patch Tuesday (security →
 servers → sre), `path-011` SRE at scale (sre → monitoring →
 kubernetes), `path-012` whiteboard to production (systemdesign →
 git → terraform → cicd → security), `path-013` own the database
-(databases → systemdesign → cicd → aws), and `path-014` the front door
-(networking → webservers → systemdesign). More paths need
+(databases → systemdesign → cicd → aws), `path-014` the front door
+(networking → webservers → systemdesign), `path-015` secrets done
+right (security → kubernetes → identity), `path-016` the event-driven
+backend (serverless → messaging → finops), `path-017` faster and
+cheaper (performance → finops → kubernetes), and `path-018` database
+to dashboard (databases → dataeng → messaging). More paths need
 no new scenario content — just new orderings of existing ids.
 
 ## Build status vs. SPEC.md's v1–v6 order
@@ -717,9 +721,8 @@ See GAPS.md's final 'Overall' part for the reasoning. In priority order:
    engineering, compliance, data engineering, LLM operations, system
    design depth, and every named authoring lab).
    ✓ **Tier C is done** (the `landscape` category, tutorials 001-013,
-   plus sre-tutorial-014 for Litmus and game days). Consider a career
-   path or two over the newer categories (none were added after
-   path-014).
+   plus sre-tutorial-014 for Litmus and game days), followed by career
+   paths 015-018 over the newer categories.
    A **database sandbox** driving an in-memory SQLite database
    (standard library, no install) would let players run real SQL
    instead of matching pre-written statements.
