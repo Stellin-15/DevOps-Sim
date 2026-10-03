@@ -265,6 +265,10 @@ def main_menu_loop() -> None:
 
 
 def main() -> None:
+    if sys.argv[1:2] == ["add-scenario"]:
+        import scaffold
+        scaffold.main(sys.argv[2:])
+        return
     try:
         main_menu_loop()
     except (KeyboardInterrupt, EOFError):

@@ -297,10 +297,21 @@ CLAUDE.md            working notes for AI-assisted development on this repo
 
 ## Adding a new scenario
 
+The quickest start is the scaffold, which picks the next free id, writes
+the file in the right folder, and marks every field you still have to
+write with `TODO(scaffold)` (the tests fail until none are left):
+
+```
+python game.py add-scenario          # asks what you're adding
+python game.py add-scenario --type tutorial --category git --title "Sparse checkout" --steps 4
+python game.py add-scenario --type mystery --sandbox db --title "..."
+```
+
+The details of each kind of file follow.
+
 **Tutorial or incident**: drop a new JSON file into
 `scenarios/<category>/tutorials/` or `scenarios/<category>/incidents/`
-(category = kubernetes, docker, linux, terraform, networking, cicd,
-monitoring, or mlops) following the schema in SPEC.md (id, type,
+(category = any folder under `scenarios/`) following the schema in SPEC.md (id, type,
 category, title, difficulty, steps with
 `prompt`/`expected_commands`/`fake_output`, etc — plus `why` per step,
 which every tutorial in this repo carries). Pull real command syntax from
@@ -502,16 +513,17 @@ webhooks, Multi-Attach, SELinux, IPv6, database migrations, SLSA
 provenance, OpenTelemetry instrumentation, distributed training, Airflow,
 RDS, Route 53, Kyverno/Falco, Terraform modules, getopts) → Databases
 category (PostgreSQL operations, SQL, recovery, MySQL, Redis) → Web
-Servers & Proxies category (nginx, HAProxy, and an nginx lab format).
+Servers & Proxies category (nginx, HAProxy, and an nginx lab format) →
+the rest of the backlog (identity and secrets, scripting, messaging,
+serverless, performance, FinOps, data engineering, and The Wider
+Landscape, plus depth in the existing categories) → career paths over
+the new categories → a database sandbox running real SQL and a Git
+sandbox running real git, each with mysteries → the `add-scenario`
+scaffold.
 
 Next, in priority order (details in CLAUDE.md and GAPS.md):
-- The topic backlog in GAPS.md's Backlog part: identity and secrets next
-  (Vault, OIDC, mTLS), then the Kubernetes ecosystem, then Jenkins and
-  GitLab CI
 - Exam-specific gap passes for other certifications (CKAD, Terraform
   Associate, AWS/Azure/GCP associate exams)
-- More sandboxes (Kubernetes, Docker, Linux, and AWS exist; Terraform
-  state would be next)
-- A CLI scaffold for authoring new scenario JSON
+- More sandboxes (a Terraform state explorer, a networking lab)
 
 See CLAUDE.md for architecture and notes for continuing development.

@@ -391,6 +391,15 @@ Don't duplicate content from these files elsewhere — link to them.
   you're furthest into, take the exam for a category whose tutorials are
   done, then incidents and mysteries. `render_stats()` turns the data
   into text. Completed ids that no longer exist in content are ignored.
+- **scaffold.py** — `python game.py add-scenario` (game.main checks
+  argv before the menu). Flags or prompts for type, category, title,
+  steps, and a mystery's sandbox; `next_id` continues the folder's
+  numbering in the naming scheme (`id_prefix`: Kubernetes unprefixed);
+  writes a skeleton whose every to-do field holds `TODO(scaffold)`.
+  `test_scaffold.py::test_no_scaffold_markers_left_in_real_content`
+  fails while any content file still contains the marker, so an
+  unfinished scaffold can't be committed by accident. Mystery skeletons
+  list the chosen sandbox's real problem names and goal checks.
 - **progress.py** — reads/writes `progress.json` (completed scenarios per
   type — tutorial/incident/yaml_lab/career_path — attempt counts per
   scenario id). Deliberately **flat, not nested per category** — every
@@ -557,7 +566,7 @@ no new scenario content — just new orderings of existing ids.
 - [x] v5 — sandbox/freeform mode (built ahead of order, at the user's
       request — includes random cluster generation and a keep/discard
       choice on exit, saved sessions live in `sandbox_data/saved/`)
-- [ ] v6 (optional) — `python game.py add-scenario` CLI scaffold
+- [x] v6 — `python game.py add-scenario` CLI scaffold (scaffold.py)
 - [x] (beyond SPEC.md) — YAML Labs mode: real file editing + structural
       validation (`yaml_lab.py`, `scenarios/yaml_labs/`), added to close
       the "no real YAML editing" gap GAPS.md named
@@ -722,6 +731,8 @@ python -m pytest
 - `test_career_path.py` — the run loop: completes all steps, records each
   sub-scenario into `progress` as it goes, stops cleanly on quit, skips
   (doesn't crash on) a missing scenario id
+- `test_scaffold.py` — ids, folders, skeleton fields per type, the
+  CLI and interactive flows (in a temp dir), and the TODO tripwire
 - `test_career_path_content.py` — every career_path file's schema, plus
   the self-consistency check that every step id resolves to a real
   scenario, and that a path spans 2+ categories
@@ -775,8 +786,7 @@ See GAPS.md's final 'Overall' part for the reasoning. In priority order:
 4. More sandboxes (Terraform state explorer, networking) — Kubernetes,
    Docker, and Linux exist; new ones only need generate_state() and
    handle_command() plus a SANDBOXES entry in game.py.
-5. v6 scenario-scaffolding CLI — more valuable now that content volume
-   is large.
+5. ✓ v6 scenario-scaffolding CLI (scaffold.py).
 6. ✓ **Named topic gaps closed** (the batch after Git and System
    Design): admission webhooks and Multi-Attach (incident-014/015),
    SELinux, IPv6, DB migrations in CD, SLSA provenance, OpenTelemetry
