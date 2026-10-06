@@ -62,7 +62,7 @@ MACS = {GOOD_GW: "52:54:00:1a:2b:01", GOOD_DNS: "52:54:00:1a:2b:02", "10.0.1.20"
 
 HELP_TEXT = """Supported commands (a modelled network; no real packets are sent):
   ip addr | ip route | ip route get <ip> | ip link | ip neigh
-  cat /etc/resolv.conf | /etc/hosts | /etc/nsswitch.conf
+  cat /etc/resolv.conf | /etc/hosts | /etc/nsswitch.conf | /etc/netplan/50-cloud-init.yaml
   getent hosts <name>   dig <name> [@server] [+short]   nslookup <name>
   ping [-c N] [-s SIZE] [-M do] <host>   traceroute <host>   tracepath <host>
   curl [-v] <url>   nc -zv [-w N] <host> <port>   pg_isready -h <host>
@@ -111,6 +111,12 @@ def generate_state(seed=None, problems=None) -> dict:
             "/etc/hosts": _hosts_file("stale_hosts" in problems),
             "/etc/nsswitch.conf": ["passwd:         files", "group:          files",
                                    "hosts:          files dns", "networks:       files"],
+            # The persisted configuration: what the host gets at boot. Runtime
+            # changes (ip route, a hand-edited resolv.conf) drift away from it.
+            "/etc/netplan/50-cloud-init.yaml": [
+                "network:", "  version: 2", "  ethernets:", "    eth0:", "      addresses: [10.0.1.10/24]",
+                "      mtu: 1500", "      routes:", "        - to: default", f"          via: {GOOD_GW}",
+                "      nameservers:", f"        addresses: [{GOOD_DNS}]", "        search: [shop.internal]"],
         },
         "firewall": firewall,
     }

@@ -271,3 +271,9 @@ def test_registered_with_the_game_and_mysteries():
     import mystery
     assert mystery.SANDBOXES["net"] is net
     assert any(fn is net.run_sandbox for _, fn in game.SANDBOXES)
+
+
+def test_netplan_records_the_intended_settings():
+    s = fresh("wrong_gateway", "dead_dns")
+    plan = run(s, "cat /etc/netplan/50-cloud-init.yaml")
+    assert "via: 10.0.1.1" in plan and "addresses: [10.0.1.2]" in plan and "mtu: 1500" in plan
