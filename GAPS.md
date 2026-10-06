@@ -375,6 +375,13 @@ state file.
 
 ## Still missing
 
+- ~~Hands-on state work~~: **closed** by the Terraform sandbox: plan
+  really diffs the code, the state, and a modelled AWS account, and five
+  mysteries make you fix drift, a stale lock, a rename (`state mv`), an
+  unmanaged bucket (`import`), and a hand-over (`state rm`) for real, where
+  the wrong move (applying the plan) really destroys things. It's a model,
+  not real Terraform: providers, modules, and `moved`/`import`/`removed`
+  blocks aren't executed, so those stay in the tutorials.
 - ~~Writing HCL~~ — **closed** for core authoring: Writing Labs yaml-018
   (pinned provider, variable, interpolated resource, output) and yaml-019
   (harden a production database: prevent_destroy, deletion_protection,
@@ -2145,7 +2152,7 @@ If content is added in the order that helps most people soonest:
 | Kubernetes | 44 | 18 | 11 Writing Labs, 2 Sandboxes (explore, and fixable), 5 Mysteries |
 | Docker | 11 | 5 | 3 Writing Labs (Dockerfile, Compose), Sandbox, 2 Mysteries |
 | Linux | 15 | 6 | 4 Writing Labs (bash), interactive Sandbox, 4 Mysteries |
-| Terraform | 19 | 7 | 5 Writing Labs (HCL, including a module) |
+| Terraform | 19 | 7 | 5 Writing Labs (HCL, including a module), Sandbox, 5 Mysteries |
 | Networking | 17 | 8 | |
 | CI/CD | 20 | 8 | 4 Writing Labs (Actions, GitLab CI) |
 | Monitoring | 17 | 8 | 5 Writing Labs (alert rules, SLO burn alerts, a dashboard, manual spans) |
@@ -2168,7 +2175,7 @@ If content is added in the order that helps most people soonest:
 | FinOps | 6 | 3 | |
 | Data Engineering | 5 | 2 | 1 Writing Lab (Airflow DAG) |
 | The Wider Landscape | 13 | 0 | tutorials only (recognition level) |
-| **Total** | **361** | **158** | 51 Writing Labs, 18 career paths, 9 sandboxes, 32 Mystery Incidents, Exam Mode, Stats |
+| **Total** | **361** | **158** | 51 Writing Labs, 18 career paths, 10 sandboxes, 37 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -2221,7 +2228,7 @@ that more scenario content can narrow but not close:
    fixes that really change the state, collateral damage that costs
    points, and a root cause you must name. The database and Git
    sandboxes go further and run the real engine and the real git. But
-   32 mysteries on nine sandboxes are a start, not real on-call. Pair
+   37 mysteries on ten sandboxes are a start, not real on-call. Pair
    this game with a homelab (kind or minikube, a free-tier cloud
    account) where things break for real.
 3. **Scale and money.** Cloud networking, IAM, serverless, and cost
