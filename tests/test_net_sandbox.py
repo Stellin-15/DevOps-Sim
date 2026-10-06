@@ -143,3 +143,73 @@ def test_pg_isready_and_verbose_curl():
     assert "accepting connections" in run(fresh(), "pg_isready -h db-1.shop.internal")
     assert "no response" in run(fresh("firewall_blocks_db"), "pg_isready -h db-1.shop.internal")
     assert "Connected to api.shop.example (10.0.2.15) port 443" in run(fresh(), "curl -v https://api.shop.example/")
+
+
+# --------------------------------------------------------------------- fixes
+
+def test_replacing_the_default_route():
+    s = fresh("wrong_gateway")
+    assert run(s, "ip route add default via 10.0.1.1") == "RTNETLINK answers: File exists"
+    assert "invalid gateway" in run(s, "ip route replace default via 10.9.9.9")
+    run(s, "ip route replace default via 10.0.1.1")
+    assert "succeeded" in run(s, "nc -zv api.shop.example 443")
+
+
+def test_deleting_then_adding_the_route():
+    s = fresh("wrong_gateway")
+    run(s, "ip route del default")
+    assert "Network is unreachable" in run(s, "ping api.shop.example")
+    assert "No such process" in run(s, "ip route del default")
+    run(s, "ip route add default via 10.0.1.1 dev eth0")
+    assert "0% packet loss" in run(s, "ping -c 1 api.shop.example")
+
+
+def test_fixing_resolv_conf():
+    s = fresh("dead_dns")
+    run(s, "sed -i 's/10.0.0.53/10.0.1.2/' /etc/resolv.conf")
+    assert run(s, "getent hosts api.shop.example").startswith("10.0.2.15")
+    s = fresh("dead_dns")
+    run(s, 'echo "nameserver 10.0.1.2" > /etc/resolv.conf')
+    assert run(s, "cat /etc/resolv.conf") == "nameserver 10.0.1.2"
+
+
+def test_removing_the_stale_hosts_entry():
+    s = fresh("stale_hosts")
+    assert "10.0.2.40" not in run(s, "sed '/api.shop.example/d' /etc/hosts")
+    run(s, "sed -i '/api.shop.example/d' /etc/hosts")
+    assert '{"status":"ok"}' in run(s, "curl https://api.shop.example/healthz")
+    assert "localhost" in run(s, "cat /etc/hosts")
+
+
+def test_deleting_the_firewall_rule():
+    s = fresh("firewall_blocks_db")
+    listing = run(s, "iptables -L OUTPUT -n --line-numbers")
+    assert "2    DROP" in listing and "dpt:5432" in listing
+    assert "Index of deletion too big" in run(s, "iptables -D OUTPUT 9")
+    run(s, "iptables -D OUTPUT 2")
+    assert "succeeded" in run(s, "nc -zv db-1 5432")
+    assert "-A OUTPUT" in run(s, "iptables -S") and "5432" not in run(s, "iptables -S")
+
+
+def test_lowering_the_mtu():
+    s = fresh("jumbo_mtu")
+    assert "Invalid" in run(s, "ip link set dev eth0 mtu 99999")
+    run(s, "ip link set dev eth0 mtu 1500")
+    assert "1843200 bytes" in run(s, "curl https://packages.example.org/pool/main/big.deb")
+
+
+def test_cutting_off_your_own_ssh():
+    s = fresh()
+    out = run(s, "iptables -F")
+    assert "Broken pipe" in out and s["console"]
+    s = fresh()
+    assert "Broken pipe" in run(s, "ip link set eth0 down")
+    assert "Network is unreachable" in run(s, "ping 10.0.1.20")
+    run(s, "ip link set eth0 up")
+    assert "0% packet loss" in run(s, "ping -c 1 db-1")
+
+
+def test_appending_a_rule():
+    s = fresh()
+    run(s, "iptables -I OUTPUT -p tcp --dport 443 -d 10.0.2.0/24 -j REJECT")
+    assert "Connection refused" in run(s, "nc -zv api.shop.example 443")

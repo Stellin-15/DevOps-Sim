@@ -66,6 +66,10 @@ HELP_TEXT = """Supported commands (a modelled network; no real packets are sent)
   getent hosts <name>   dig <name> [@server] [+short]   nslookup <name>
   ping [-c N] [-s SIZE] [-M do] <host>   traceroute <host>   tracepath <host>
   curl [-v] <url>   nc -zv [-w N] <host> <port>   pg_isready -h <host>
+Changes:
+  ip route replace|add|del default [via <ip>]   ip link set eth0 mtu <n> | up | down
+  sed -i 's/old/new/' <file>   sed -i '/pattern/d' <file>   echo "text" >|>> <file>
+  iptables -L [CHAIN] -n [--line-numbers] | -S | -D <CHAIN> <n> | -A/-I ... | -F | -P
   help | exit          (pipes work: ip route | grep default)"""
 
 
@@ -109,7 +113,8 @@ def generate_state(seed=None, problems=None) -> dict:
         },
         "firewall": firewall,
     }
-    state["baseline"] = {"addr": state["link"]["addr"], "input_rules": len(firewall["INPUT"])}
+    state["policy"] = {"INPUT": "DROP", "FORWARD": "DROP", "OUTPUT": "ACCEPT"}
+    state["console"] = False
     return state
 
 
@@ -458,7 +463,181 @@ def _nslookup(state: dict, args: list) -> str:
     return head + f"Name:\t{args[0]}\nAddress: {ip}"
 
 
+# --------------------------------------------------------------------- fixes
+
+def ssh_alive(state: dict) -> bool:
+    """You're connected over eth0 on port 22: both must keep working."""
+    if not state["link"]["up"]:
+        return False
+    for rule in state["firewall"]["INPUT"]:
+        if rule["proto"] == "tcp" and rule["dport"] == 22:
+            return rule["target"] == "ACCEPT"
+    return state["policy"]["INPUT"] == "ACCEPT"
+
+
+def _ip_change(state: dict, obj: str, args: list):
+    """None if this isn't a change command; otherwise the result."""
+    if obj in ("r", "route", "ro") and args and args[0] in ("add", "replace", "del", "delete", "change"):
+        verb, rest = args[0], args[1:]
+        if not rest or rest[0] != "default":
+            return "ip route: the sandbox only manages the default route (ip route replace default via <ip>)."
+        if verb in ("del", "delete"):
+            if state["default_gw"] is None:
+                return "RTNETLINK answers: No such process"
+            state["default_gw"] = None
+            return ""
+        if "via" not in rest or rest.index("via") + 1 >= len(rest):
+            return 'Error: either "to" is duplicate, or "via" is a garbage.'
+        gw = rest[rest.index("via") + 1]
+        if not _is_ip(gw) or not _local(gw):
+            return "Error: Nexthop has invalid gateway."
+        if verb == "add" and state["default_gw"] is not None:
+            return "RTNETLINK answers: File exists"
+        state["default_gw"] = gw
+        return ""
+    if obj in ("l", "link") and args and args[0] == "set":
+        rest = [a for a in args[1:] if a != "dev"]
+        if not rest or rest[0] != "eth0":
+            return 'Cannot find device "' + (rest[0] if rest else "") + '"'
+        if "mtu" in rest:
+            value = rest[rest.index("mtu") + 1] if rest.index("mtu") + 1 < len(rest) else ""
+            if not value.isdigit() or not 68 <= int(value) <= 9000:
+                return f'Error: argument "{value}" is wrong: Invalid "mtu" value'
+            state["link"]["mtu"] = int(value)
+        if "down" in rest:
+            state["link"]["up"] = False
+        if "up" in rest:
+            state["link"]["up"] = True
+        return ""
+    return None
+
+
+def _sed(state: dict, args: list) -> str:
+    import re
+    in_place = "-i" in args
+    rest = [a for a in args if a != "-i"]
+    if len(rest) != 2 or rest[1] not in state["files"]:
+        return "sed: the sandbox supports: sed [-i] 's/old/new/[g]' <file> or sed [-i] '/pattern/d' <file>"
+    script, path = rest
+    lines = state["files"][path]
+    try:
+        if script.startswith("/") and script.endswith("/d"):
+            rx = re.compile(script[1:-2])
+            new = [l for l in lines if not rx.search(l)]
+        elif script.startswith("s/") and script.count("/") >= 3:
+            _, old, repl, opts = script.split("/", 3)
+            rx = re.compile(old)
+            new = [rx.sub(repl, l, count=0 if "g" in opts else 1) for l in lines]
+        else:
+            return "sed: the sandbox supports 's/old/new/[g]' and '/pattern/d'"
+    except re.error as e:
+        return f"sed: -e expression #1: {e}"
+    if not in_place:
+        return "\n".join(new)
+    state["files"][path] = new
+    return ""
+
+
+def _echo(state: dict, args: list) -> str:
+    for op in (">>", ">"):
+        if op in args:
+            i = args.index(op)
+            text, target = " ".join(args[:i]), (args[i + 1] if i + 1 < len(args) else "")
+            if target not in state["files"]:
+                return f"bash: {target}: Permission denied" if target else "bash: syntax error"
+            if op == ">":
+                state["files"][target] = [text]
+            else:
+                state["files"][target].append(text)
+            return ""
+    return " ".join(args)
+
+
+def _rule_line(n, rule, numbered):
+    match = f"tcp dpt:{rule['dport']}"
+    comment = f" /* {rule['comment']} */" if rule.get("comment") else ""
+    num = f"{n:<5}" if numbered else ""
+    return f"{num}{rule['target']:<10} tcp  --  0.0.0.0/0            {rule['dest']:<20} {match}{comment}"
+
+
+def _iptables(state: dict, args: list) -> str:
+    fw, policy = state["firewall"], state["policy"]
+    chains = ["INPUT", "FORWARD", "OUTPUT"]
+    if "-L" in args or "--list" in args:
+        flag = "-L" if "-L" in args else "--list"
+        i = args.index(flag)
+        only = args[i + 1] if i + 1 < len(args) and not args[i + 1].startswith("-") else None
+        numbered = "--line-numbers" in args
+        out = []
+        for chain in ([only] if only else chains):
+            if chain not in policy:
+                return f"iptables: No chain/target/match by that name."
+            out.append(f"Chain {chain} (policy {policy[chain]})")
+            out.append(("num  " if numbered else "") + "target     prot opt source               destination")
+            out += [_rule_line(n, r, numbered) for n, r in enumerate(fw.get(chain, []), start=1)]
+            out.append("")
+        return "\n".join(out).rstrip()
+    if "-S" in args:
+        out = [f"-P {c} {policy[c]}" for c in chains]
+        for c in ("INPUT", "OUTPUT"):
+            for r in fw[c]:
+                comment = f' -m comment --comment "{r["comment"]}"' if r.get("comment") else ""
+                out.append(f"-A {c} -d {r['dest']} -p tcp -m tcp --dport {r['dport']}{comment} -j {r['target']}")
+        return "\n".join(out)
+    if "-D" in args:
+        i = args.index("-D")
+        chain = args[i + 1] if i + 1 < len(args) else ""
+        num = args[i + 2] if i + 2 < len(args) else ""
+        if chain not in fw:
+            return "iptables: No chain/target/match by that name."
+        if not num.isdigit() or not 1 <= int(num) <= len(fw[chain]):
+            return "iptables: Index of deletion too big." if num.isdigit() else \
+                "iptables: the sandbox deletes by number: iptables -D <CHAIN> <n> (see --line-numbers)"
+        fw[chain].pop(int(num) - 1)
+        return ""
+    if "-F" in args or "--flush" in args:
+        i = args.index("-F" if "-F" in args else "--flush")
+        chain = args[i + 1] if i + 1 < len(args) and not args[i + 1].startswith("-") else None
+        for c in ([chain] if chain else ["INPUT", "OUTPUT"]):
+            if c in fw:
+                fw[c] = []
+        return ""
+    if "-P" in args:
+        i = args.index("-P")
+        chain, target = (args[i + 1:i + 3] + ["", ""])[:2]
+        if chain not in policy or target not in ("ACCEPT", "DROP"):
+            return "iptables: Bad policy name."
+        policy[chain] = target
+        return ""
+    for flag in ("-A", "-I"):
+        if flag in args:
+            i = args.index(flag)
+            chain = args[i + 1] if i + 1 < len(args) else ""
+            if chain not in fw or "--dport" not in args or "-j" not in args:
+                return f"iptables: the sandbox supports: iptables {flag} <CHAIN> -p tcp --dport <port> [-d <cidr>] -j <TARGET>"
+            rule = {"target": args[args.index("-j") + 1], "proto": "tcp", "dport": int(args[args.index("--dport") + 1]),
+                    "dest": args[args.index("-d") + 1] if "-d" in args else "0.0.0.0/0", "comment": ""}
+            if flag == "-I":
+                fw[chain].insert(0, rule)
+            else:
+                fw[chain].append(rule)
+            return ""
+    return "iptables: the sandbox supports -L, -S, -D, -A, -I, -F, and -P."
+
+
 def handle_command(state: dict, raw: str) -> str:
+    alive_before = ssh_alive(state)
+    out = _dispatch(state, raw)
+    if alive_before and not ssh_alive(state):
+        state["console"] = True
+        return (out + "\n" if out else "") + ("client_loop: send disconnect: Broken pipe\n"
+                                              "(Your SSH session to app-1 just died: you cut off your own access. "
+                                              "You're now on the cloud provider's serial console, which is slow and "
+                                              "audited, to put it back.)")
+    return out
+
+
+def _dispatch(state: dict, raw: str) -> str:
     try:
         tokens = shlex.split(raw)
     except ValueError as e:
@@ -471,7 +650,14 @@ def handle_command(state: dict, raw: str) -> str:
     if cmd in ("help", "?"):
         return HELP_TEXT
     if cmd == "ip":
-        return _ip(state, args)
+        changed = _ip_change(state, args[0] if args else "", args[1:])
+        return changed if changed is not None else _ip(state, args)
+    if cmd == "sed":
+        return _sed(state, args)
+    if cmd == "echo":
+        return _echo(state, args)
+    if cmd == "iptables":
+        return _iptables(state, args)
     if cmd == "cat":
         missing = [f for f in args if f not in state["files"]]
         if missing:
