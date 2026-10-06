@@ -350,9 +350,34 @@ Don't duplicate content from these files elsewhere — link to them.
   - Goals: `problem_fixed`, `plan_clean`, `no_destroy`; placeholder
     `{lock_id}`; collateral for destroyed baseline ids, duplicate
     instances, two addresses on one object, and lock bypass.
+- **net_sandbox.py** — the networking sandbox (kind `net`), fully
+  simulated: the player is SSH'd into app-1 (10.0.1.10/24) with a
+  gateway, DNS server, db-1, an API on 10.0.2.0/24, and an outside
+  mirror (`HOSTS`, `DNS_RECORDS`).
+  - `connect()` walks the layers in order and returns which one failed:
+    `resolve` (nsswitch 'files dns': /etc/hosts first, then the
+    resolv.conf server, which must itself be routable and alive), then
+    `next_hop` (local subnet or default gateway), ARP for that hop
+    (`no_route`: 'No route to host', ping's 'Destination Host
+    Unreachable', traceroute's !H), an address nobody owns beyond the
+    gateway (timeout), the OUTPUT chain (DROP is a timeout, REJECT is
+    refused), the listener (refused), and the MTU (a large response
+    `stall`s when eth0's MTU exceeds the 1500-byte path).
+  - Problems, 2 of 5: wrong_gateway, dead_dns, stale_hosts,
+    firewall_blocks_db, jumbo_mtu. The persisted
+    `/etc/netplan/50-cloud-init.yaml` holds the right values, so
+    runtime drift is discoverable.
+  - Fixes: `ip route replace|add|del default`, `ip link set eth0
+    mtu|up|down`, `sed -i` and `echo >`/`>>` on the config files,
+    `iptables -L/-S/-D/-A/-I/-F/-P`. INPUT's policy is DROP, so
+    `iptables -F` or eth0 down kills the player's own SSH session
+    (`ssh_alive`); `handle_command` reports it and sets `console`.
+  - Goals: `problem_fixed`, `reachable` (target, port, large).
+    Collateral: losing SSH, INPUT policy ACCEPT, deleting localhost from
+    /etc/hosts, resolv.conf with no nameserver.
 - **mystery.py** — Mystery Incidents: a symptom and a seeded sandbox
   state (`scenarios/mysteries/*.json`). `sandbox` picks linux, docker,
-  aws, azure, gcp, kube, db, git or terraform, and `mystery.build_state` calls that module's
+  aws, azure, gcp, kube, db, git, terraform or net, and `mystery.build_state` calls that module's
   `generate_state(**setup)`.
 
   Mysteries are **sandbox-agnostic**: each sandbox module supplies three
@@ -492,7 +517,7 @@ Current per-category content depth (tutorials / incidents):
 - docker: 11 / 5 (+3 Writing Labs: 2 Dockerfile, 1 Compose)
 - linux: 15 / 6 (+4 Writing Labs: bash)
 - terraform: 19 / 7 (+5 Writing Labs: HCL, including a three-file module; Terraform sandbox, 5 mysteries)
-- networking: 17 / 8
+- networking: 17 / 8 (+ Networking sandbox, 6 mysteries)
 - cicd: 20 / 8 (+4 Writing Labs: GitHub Actions, GitLab CI)
 - monitoring: 17 / 8 (+5 Writing Labs: alert rules, burn-rate alerts, a Grafana dashboard, manual OTel spans)
 - mlops: 18 / 8
@@ -532,7 +557,7 @@ Current per-category content depth (tutorials / incidents):
 - finops: 6 / 3 (cost allocation, rightsizing, commitments and spot, Kubernetes cost, quiet costs)
 - dataeng: 5 / 2 (+1 Writing Lab): Airflow authoring, dbt, warehouses, Spark on Kubernetes, CDC
 - landscape: 13 / 0 (tutorials only, no incidents: recognition-level introductions to less common tools, one per tool family)
-- **total: 361 tutorials, 158 incidents, 51 Writing Labs, 18 career paths, 37 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security, 4 databases, 5 git, 5 terraform)**
+- **total: 361 tutorials, 158 incidents, 51 Writing Labs, 18 career paths, 43 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security, 4 databases, 5 git, 5 terraform, 6 networking)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with
@@ -729,6 +754,9 @@ python -m pytest
   the AWS tests, plus each cloud's own rules: NSG priority order and
   NIC-level NSGs; target tags, deny-beats-allow, regional NAT, and IAP
   SSH sessions
+- `test_net_sandbox.py` — each layer's own symptom (dns, no route,
+  timeout, refused, stall), hosts-before-DNS, every fix, every pair of
+  problems fixable together, losing your own SSH session, and collateral
 - `test_tf_sandbox.py` — plan diffs (create, update, replace,
   destroy, drift, refresh-only), each state command and its Terraform
   errors, apply's consequences (a rename replaces the instance, a
@@ -775,7 +803,7 @@ exercise something the generic checks don't cover.
 
 - No real kubectl/cluster connection and no network anywhere. Scenario
   output is always a pre-written string, and sandboxes (including
-  Terraform) are simulated models. The two exceptions run
+  Terraform and networking) are simulated models. The two exceptions run
   locally and are contained: the database sandbox (SQLite in memory,
   in-process) and the Git sandbox (the real git on a throwaway repo,
   with every command that could leave it refused).
@@ -818,9 +846,10 @@ See GAPS.md's final 'Overall' part for the reasoning. In priority order:
    More mysteries on any sandbox need only JSON: a seed, problems,
    goals, evidence, a question, and a stored solution.
 4. More sandboxes: ✓ Terraform (tf_sandbox.py, mysteries terraform-001
-   to 005). Still to build: a networking lab. A new one only needs
-   generate_state() and handle_command() plus a SANDBOXES entry in
-   game.py, and the three mystery hooks to host mysteries.
+   to 005) and ✓ Networking (net_sandbox.py, mysteries net-001 to 006).
+   A new one only needs generate_state() and handle_command() plus a
+   SANDBOXES entry in game.py, and the three mystery hooks to host
+   mysteries.
 5. ✓ v6 scenario-scaffolding CLI (scaffold.py).
 6. ✓ **Named topic gaps closed** (the batch after Git and System
    Design): admission webhooks and Multi-Attach (incident-014/015),
