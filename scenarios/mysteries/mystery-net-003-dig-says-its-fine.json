@@ -1,0 +1,36 @@
+{
+  "id": "mystery-net-003",
+  "type": "mystery",
+  "category": "networking",
+  "sandbox": "net",
+  "title": "DNS Is Correct, and app-1 Still Calls the Wrong Server",
+  "difficulty": "intermediate",
+  "tags": ["networking", "dns", "etc-hosts", "nsswitch"],
+  "setup": {"seed": 53, "problems": ["stale_hosts"]},
+  "symptom": "The app on app-1 times out calling api.shop.example. The API team's dashboards are green and other servers call it fine. Someone already ran dig on app-1, and it returns the API's correct address, so they've ruled out DNS.",
+  "goals": [
+    {"check": "problem_fixed", "problem": "stale_hosts", "description": "app-1 resolves api.shop.example to the real API"},
+    {"check": "reachable", "target": "api.shop.example", "port": 443, "description": "app-1 reaches the API on 443"}
+  ],
+  "evidence": [
+    {"description": "the address app-1 actually uses", "seen_any": ["10.0.2.40"]}
+  ],
+  "question": {
+    "prompt": "Why did dig give the right answer while the app used the wrong one?",
+    "options": [
+      "dig is broken",
+      "dig asks the DNS server directly, but programs resolve through nsswitch ('files dns'), which reads /etc/hosts first, and a leftover entry there pinned the API to its old address",
+      "The DNS cache was stale",
+      "The API has two addresses"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 4,
+  "solution_commands": [
+    "getent hosts api.shop.example",
+    "cat /etc/hosts",
+    "sed -i '/api.shop.example/d' /etc/hosts",
+    "curl https://api.shop.example/healthz"
+  ],
+  "debrief": "dig was telling the truth about DNS, and DNS wasn't what the app used first. Programs resolve names through the C library, which follows /etc/nsswitch.conf: 'hosts: files dns' means /etc/hosts wins whenever it has an entry. 'getent hosts' resolves the same way the app does and returned 10.0.2.40, the API's old address from a migration in March, pinned 'temporarily' with a comment. Deleting the line fixes it. Two lessons: test name resolution with getent (or the app's own tooling), not only dig, when the question is 'what does this program connect to?'; and a temporary /etc/hosts pin needs an owner and an expiry, or it becomes an outage months later when the old address is reused or retired."
+}
