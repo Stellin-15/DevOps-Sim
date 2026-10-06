@@ -1,0 +1,54 @@
+{
+  "id": "gcp-tutorial-013",
+  "type": "tutorial",
+  "category": "gcp",
+  "title": "ACE: Cloud SQL, Storage Lifecycle, Pub/Sub, Snapshots, and Choosing a Database",
+  "difficulty": "intermediate",
+  "tags": ["gcp", "ace", "cloud-sql", "cloud-storage", "pubsub", "snapshots"],
+  "intro": "The data side of the Associate Cloud Engineer: a managed relational database, storage that gets cheaper as it ages, messaging between services, disk backups, and choosing among Google Cloud's many databases. The project is shop-prod and the region europe-west1.",
+  "steps": [
+    {
+      "prompt": "Create a highly available PostgreSQL 16 Cloud SQL instance orders-db in europe-west1, with 2 vCPUs and 8 GB of memory, failing over across zones.",
+      "expected_commands": ["gcloud sql instances create orders-db --database-version=POSTGRES_16 --region=europe-west1 --cpu=2 --memory=8GB --availability-type=REGIONAL", "gcloud sql instances create orders-db --database-version POSTGRES_16 --region europe-west1 --cpu 2 --memory 8GB --availability-type REGIONAL"],
+      "fake_output": "Creating Cloud SQL instance for POSTGRES_16...done.\nCreated [https://sqladmin.googleapis.com/sql/v1beta4/projects/shop-prod/instances/orders-db].\nNAME       DATABASE_VERSION  LOCATION        TIER              PRIMARY_ADDRESS  STATUS\norders-db  POSTGRES_16       europe-west1-b  db-custom-2-8192  34.76.12.41      RUNNABLE",
+      "explanation": "A primary with a standby in another zone of the region.",
+      "why": "REGIONAL availability is Cloud SQL's high availability: synchronous replication to a standby and automatic failover, like RDS Multi-AZ. Read replicas are separate and serve reads. In production, use private IP and connect through the Cloud SQL Auth Proxy or connectors, rather than a public address."
+    },
+    {
+      "prompt": "Apply the lifecycle rules in lifecycle.json (Nearline after 30 days, Coldline after 90, delete after 365) to the bucket gs://shop-prod-logs.",
+      "expected_commands": ["gcloud storage buckets update gs://shop-prod-logs --lifecycle-file=lifecycle.json", "gcloud storage buckets update gs://shop-prod-logs --lifecycle-file lifecycle.json"],
+      "fake_output": "Updating gs://shop-prod-logs/...\n  Completed 1",
+      "explanation": "Objects now move to cheaper classes and expire by themselves.",
+      "why": "Storage classes differ in minimum storage duration and retrieval cost: Standard (none), Nearline (30 days, about monthly access), Coldline (90, quarterly), Archive (365, yearly). Location type matters too: regional, dual-region, or multi-region, chosen for latency and availability."
+    },
+    {
+      "prompt": "Orders need to notify several downstream services without the checkout service knowing about them. Create a Pub/Sub topic orders.",
+      "expected_commands": ["gcloud pubsub topics create orders"],
+      "fake_output": "Created topic [projects/shop-prod/topics/orders].",
+      "explanation": "Publishers send to the topic; each subscriber gets its own copy through a subscription.",
+      "why": "Pub/Sub decouples producers from consumers: add a new consumer by adding a subscription, with no change to checkout. It delivers at least once, so consumers must handle duplicates, the same lesson as SQS and Kafka in the Messaging category."
+    },
+    {
+      "prompt": "Create a pull subscription orders-email on the topic orders, with a 60-second acknowledgement deadline.",
+      "expected_commands": ["gcloud pubsub subscriptions create orders-email --topic=orders --ack-deadline=60", "gcloud pubsub subscriptions create orders-email --topic orders --ack-deadline 60"],
+      "fake_output": "Created subscription [projects/shop-prod/subscriptions/orders-email].",
+      "explanation": "The email service pulls order messages and has 60 seconds to acknowledge each.",
+      "why": "An unacknowledged message is redelivered after the deadline, so the deadline must cover the processing time (the same trap as SQS visibility timeouts). Push subscriptions deliver to an HTTPS endpoint instead, a common pairing with Cloud Run. A dead-letter topic catches messages that keep failing."
+    },
+    {
+      "prompt": "Take a snapshot of the persistent disk worker-1 in zone europe-west1-b before patching, named worker-1-prepatch.",
+      "expected_commands": ["gcloud compute disks snapshot worker-1 --zone=europe-west1-b --snapshot-names=worker-1-prepatch", "gcloud compute disks snapshot worker-1 --zone europe-west1-b --snapshot-names worker-1-prepatch"],
+      "fake_output": "Creating snapshot(s) worker-1-prepatch...done.",
+      "explanation": "A point-in-time copy of the disk, stored outside the zone.",
+      "why": "Snapshots are incremental and global, so a disk can be restored in another zone or region. Snapshot schedules (resource policies) make them automatic; a machine image captures the whole VM, configuration and all disks, which is what you want before a risky change to the whole instance."
+    },
+    {
+      "prompt": "Which database fits a global inventory system that needs relational schemas, strong consistency, and horizontal scale across regions?\n  a) Cloud SQL\n  b) Spanner\n  c) Bigtable\n  d) Firestore\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "Cloud SQL : managed MySQL/PostgreSQL/SQL Server, one region, vertical scale\nAlloyDB   : PostgreSQL-compatible, faster, still regional\nSpanner   : relational, strongly consistent, scales horizontally and globally\nBigtable  : wide-column NoSQL, huge throughput, time series and IoT\nFirestore : document database for mobile and web apps\nBigQuery  : analytics warehouse, not for transactions\nMemorystore: managed Redis/Valkey/Memcached",
+      "hint": "Relational and global at once.",
+      "explanation": "Spanner is the only one that is relational, strongly consistent, and global.",
+      "why": "The ACE asks this mapping in many forms, and the deciding words are usually in the question: 'relational' rules out Bigtable and Firestore, 'global scale' rules out Cloud SQL, 'analytics' points to BigQuery, and 'sub-10 ms reads of time series' points to Bigtable."
+    }
+  ]
+}

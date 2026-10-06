@@ -1,0 +1,55 @@
+{
+  "id": "tutorial-042",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "CKS: Audit Logging, Encryption at Rest, and Trusted Binaries",
+  "difficulty": "advanced",
+  "tags": ["kubernetes", "cks", "audit", "encryption", "etcd", "security"],
+  "intro": "Three control-plane hardening tasks from the CKS: recording who did what to the API, making sure Secrets aren't stored as plain text in etcd, and checking that the Kubernetes binaries on a node are the ones that were released. You're root on the control-plane node of a kubeadm cluster; the API server runs as a static pod defined in /etc/kubernetes/manifests/kube-apiserver.yaml.",
+  "steps": [
+    {
+      "prompt": "An audit policy has been written to /etc/kubernetes/audit/policy.yaml. Read it before wiring it into the API server.",
+      "expected_commands": ["cat /etc/kubernetes/audit/policy.yaml"],
+      "fake_output": "apiVersion: audit.k8s.io/v1\nkind: Policy\nomitStages: [\"RequestReceived\"]\nrules:\n- level: Metadata\n  resources:\n  - group: \"\"\n    resources: [\"secrets\", \"configmaps\"]\n- level: RequestResponse\n  verbs: [\"create\", \"update\", \"patch\", \"delete\"]\n  resources:\n  - group: \"rbac.authorization.k8s.io\"\n- level: None\n  users: [\"system:kube-proxy\"]\n  verbs: [\"watch\"]\n- level: Metadata",
+      "explanation": "Secrets get Metadata only, RBAC changes get full bodies, kube-proxy's watches are ignored, and everything else gets Metadata.",
+      "why": "Rules are evaluated in order and the first match wins, so specific rules go before the catch-all. Logging Secrets at Request or RequestResponse would write their values into the audit log, which turns the log into a store of secrets; Metadata records who touched which Secret without the content."
+    },
+    {
+      "prompt": "You've added --audit-policy-file, --audit-log-path=/var/log/kubernetes/audit/audit.log and --audit-log-maxage=30 to the API server manifest, with hostPath mounts for both. The kubelet restarts the static pod by itself. Check the API server container came back, using the container runtime directly.",
+      "expected_commands": ["crictl ps | grep kube-apiserver", "sudo crictl ps | grep kube-apiserver", "crictl ps --name kube-apiserver"],
+      "fake_output": "f3a1c0d9e8b7a   5f7c2b...   12 seconds ago   Running   kube-apiserver   0   1b2c3d4e5f6a7   kube-apiserver-cp-1",
+      "explanation": "A new API server container has been running for 12 seconds.",
+      "why": "While the API server restarts, kubectl has nothing to talk to, so crictl is how you watch it. If it never comes back, a typo in a flag or a missing volume mount is the usual cause, and 'crictl logs <id>' or /var/log/pods shows why. Back up the manifest before editing it, outside the manifests directory, or the kubelet will try to run the backup too."
+    },
+    {
+      "prompt": "Check whether Secrets are encrypted in etcd: read the raw key for the Secret db-password in namespace shop with etcdctl (CA /etc/kubernetes/pki/etcd/ca.crt, cert /etc/kubernetes/pki/etcd/server.crt, key /etc/kubernetes/pki/etcd/server.key) and look at the first lines of a hex dump.",
+      "expected_commands": ["ETCDCTL_API=3 etcdctl --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --key=/etc/kubernetes/pki/etcd/server.key get /registry/secrets/shop/db-password | hexdump -C | head", "etcdctl --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --key=/etc/kubernetes/pki/etcd/server.key get /registry/secrets/shop/db-password | hexdump -C | head"],
+      "fake_output": "00000000  2f 72 65 67 69 73 74 72  79 2f 73 65 63 72 65 74  |/registry/secret|\n00000010  73 2f 73 68 6f 70 2f 64  62 2d 70 61 73 73 77 6f  |s/shop/db-passwo|\n00000020  72 64 0a 6b 38 73 00 0a  0c 0a 02 76 31 12 06 53  |rd.k8s.....v1..S|\n00000030  65 63 72 65 74 12 c4 01  0a 2b 0a 0b 64 62 2d 70  |ecret....+..db-p|\n...\n00000090  70 61 73 73 77 6f 72 64  12 0f 53 33 63 72 33 74  |password..S3cr3t|",
+      "hint": "etcdctl ... get /registry/secrets/shop/db-password | hexdump -C | head",
+      "explanation": "The password is readable in the raw etcd data: Secrets are only base64-encoded in the API, and stored as plain protobuf.",
+      "why": "Anyone with a copy of etcd's data or a backup can read every Secret. Encryption at rest fixes that: an EncryptionConfiguration lists providers (aescbc, aesgcm, secretbox, or kms for an external key service) and the API server's --encryption-provider-config points at it. The first provider encrypts new writes; 'identity' at the top would mean no encryption."
+    },
+    {
+      "prompt": "With the encryption config in place, existing Secrets are still stored the old way until they're written again. Rewrite every Secret in the cluster so they're stored encrypted.",
+      "expected_commands": ["kubectl get secrets -A -o json | kubectl replace -f -", "kubectl get secrets --all-namespaces -o json | kubectl replace -f -"],
+      "fake_output": "secret/db-password replaced\nsecret/app-secrets replaced\nsecret/bootstrap-token-abcdef replaced\n...\n(etcd now shows the value as k8s:enc:aescbc:v1:key1:<ciphertext>)",
+      "explanation": "Each Secret was read and written back, which encrypts it under the first provider.",
+      "why": "Encryption applies on write, so without this step only Secrets created afterwards are protected, which is the trap the exam sets. Repeat the etcdctl check afterwards: the stored value should start with k8s:enc:aescbc:v1: followed by unreadable bytes."
+    },
+    {
+      "prompt": "You suspect the kubelet binary on a worker was swapped. Compute its SHA-512 hash to compare with the published checksum for v1.31.2.",
+      "expected_commands": ["sha512sum /usr/bin/kubelet", "sha512sum $(which kubelet)"],
+      "fake_output": "8b1a9953c4611296a827abf8c47804d7f6c2b0d3e1a5f4e7c9d8b2a1f0e3c6d5b4a7980f1e2d3c4b5a69788f7e6d5c4b3a291807f6e5d4c3b2a1908f7e6d5c4  /usr/bin/kubelet",
+      "explanation": "The hash to compare with the .sha512 file published next to the release binary.",
+      "why": "A tampered kubelet or kubectl gives an attacker everything the node can do, and a matching version string proves nothing. The CKS asks you to verify binaries against the release checksums (dl.k8s.io publishes one for every binary) and to replace any that don't match, from the official release."
+    },
+    {
+      "prompt": "Which audit level would record the full body of a request to create a Secret, including its data?\n  a) None\n  b) Metadata\n  c) Request or RequestResponse, which is exactly why Secrets should be logged at Metadata\n  d) Only RequestReceived\nType the letter.",
+      "expected_commands": ["c"],
+      "fake_output": "None            : nothing\nMetadata        : user, verb, resource, timestamp, response code\nRequest         : + the request body\nRequestResponse : + the response body",
+      "hint": "Only the levels that record bodies would capture the data.",
+      "explanation": "Request and RequestResponse record bodies; Metadata never does.",
+      "why": "RequestReceived is a stage, not a level. In an investigation, Metadata is usually enough to answer 'who read this Secret, and when', which is the question that matters after a credential leak."
+    }
+  ]
+}

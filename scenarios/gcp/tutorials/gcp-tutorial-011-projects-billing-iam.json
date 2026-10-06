@@ -1,0 +1,55 @@
+{
+  "id": "gcp-tutorial-011",
+  "type": "tutorial",
+  "category": "gcp",
+  "title": "ACE: Setting Up a Project: Billing, APIs, Custom Roles, and Budgets",
+  "difficulty": "intermediate",
+  "tags": ["gcp", "ace", "projects", "billing", "iam", "budgets"],
+  "intro": "The Associate Cloud Engineer starts where every Google Cloud workload starts: a project, linked to billing, with the right APIs on, the right people given the right roles, and a budget that warns before money runs away. You're setting up shop-analytics-prod in the folder for production (folder id 418204117735) under the organisation.",
+  "steps": [
+    {
+      "prompt": "Create the project shop-analytics-prod inside folder 418204117735.",
+      "expected_commands": ["gcloud projects create shop-analytics-prod --folder=418204117735", "gcloud projects create shop-analytics-prod --folder 418204117735"],
+      "fake_output": "Create in progress for [https://cloudresourcemanager.googleapis.com/v1/projects/shop-analytics-prod].\nWaiting for [operations/cp.7412...] to finish...done.",
+      "explanation": "The project exists and inherits the folder's IAM policies and organisation policies.",
+      "why": "Project ids are global and permanent, so pick them carefully; the display name can change. The resource hierarchy (organisation, folders, projects) is how policies are inherited, the same idea as Azure management groups."
+    },
+    {
+      "prompt": "Link the project to the billing account 01A2B3-C4D5E6-F7A8B9.",
+      "expected_commands": ["gcloud billing projects link shop-analytics-prod --billing-account=01A2B3-C4D5E6-F7A8B9", "gcloud billing projects link shop-analytics-prod --billing-account 01A2B3-C4D5E6-F7A8B9"],
+      "fake_output": "billingAccountName: billingAccounts/01A2B3-C4D5E6-F7A8B9\nbillingEnabled: true\nname: projects/shop-analytics-prod/billingInfo\nprojectId: shop-analytics-prod",
+      "explanation": "Billing is enabled; paid services can now be used.",
+      "why": "Linking needs Billing Account User on the billing account and permission on the project, which is how finance controls who can spend. Without billing, most APIs refuse to work, which is a common 'why does nothing work in my new project' answer."
+    },
+    {
+      "prompt": "Enable the Compute Engine and BigQuery APIs for the project in one command.",
+      "expected_commands": ["gcloud services enable compute.googleapis.com bigquery.googleapis.com --project=shop-analytics-prod", "gcloud services enable compute.googleapis.com bigquery.googleapis.com --project shop-analytics-prod", "gcloud services enable bigquery.googleapis.com compute.googleapis.com --project=shop-analytics-prod"],
+      "fake_output": "Operation \"operations/acf.p2-412...\" finished successfully.",
+      "explanation": "Both APIs are on for this project.",
+      "why": "Every Google Cloud service is an API that's off in a new project, and 'API has not been used in project ... or it is disabled' is the error you get (gcp-incident-003). 'gcloud services list --enabled' shows what's on."
+    },
+    {
+      "prompt": "Analysts need to run BigQuery jobs and read data, but not delete datasets. Which kind of role should you grant?\n  a) The basic role Editor on the project\n  b) Predefined roles such as BigQuery Job User and BigQuery Data Viewer, granted to the analysts' group; a custom role only if no predefined combination fits\n  c) Owner, to avoid tickets\n  d) A service account key for each analyst\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "basic      : Owner / Editor / Viewer   - broad, across every service (avoid in production)\npredefined : roles/bigquery.jobUser, roles/bigquery.dataViewer   - per service, maintained by Google\ncustom     : your own list of permissions   - you maintain it as services change",
+      "hint": "Least privilege, maintained by someone else.",
+      "explanation": "Predefined roles give the needed permissions without the rest.",
+      "why": "Basic roles are the exam's usual wrong answer for production. Grant to groups, not individuals, so access follows team membership. Custom roles can be created at the project or organisation level, never on a folder."
+    },
+    {
+      "prompt": "Grant the group analysts@shop.example the role roles/bigquery.jobUser on the project.",
+      "expected_commands": ["gcloud projects add-iam-policy-binding shop-analytics-prod --member=group:analysts@shop.example --role=roles/bigquery.jobUser", "gcloud projects add-iam-policy-binding shop-analytics-prod --member group:analysts@shop.example --role roles/bigquery.jobUser"],
+      "fake_output": "Updated IAM policy for project [shop-analytics-prod].\nbindings:\n- members:\n  - group:analysts@shop.example\n  role: roles/bigquery.jobUser\n...",
+      "explanation": "Everyone in the group can now run query jobs in this project.",
+      "why": "The member prefix says what kind of principal it is: user:, group:, serviceAccount:, or domain:. add-iam-policy-binding changes one binding; set-iam-policy replaces the whole policy from a file, which can remove everyone else's access by accident."
+    },
+    {
+      "prompt": "Create a budget of 2,000 USD a month on the billing account 01A2B3-C4D5E6-F7A8B9, called analytics-prod, alerting at 50%, 90%, and 100%.",
+      "expected_commands": ["gcloud billing budgets create --billing-account=01A2B3-C4D5E6-F7A8B9 --display-name=analytics-prod --budget-amount=2000USD --threshold-rule=percent=0.5 --threshold-rule=percent=0.9 --threshold-rule=percent=1.0"],
+      "fake_output": "Created budget [billingAccounts/01A2B3-C4D5E6-F7A8B9/budgets/7c1d...].\ndisplayName: analytics-prod\namount:\n  specifiedAmount:\n    currencyCode: USD\n    units: '2000'\nthresholdRules:\n- thresholdPercent: 0.5\n- thresholdPercent: 0.9\n- thresholdPercent: 1.0",
+      "hint": "gcloud billing budgets create --billing-account=... --display-name=analytics-prod --budget-amount=2000USD --threshold-rule=percent=0.5 ...",
+      "explanation": "Billing admins get emails at each threshold.",
+      "why": "A budget alerts; it doesn't stop spending. To act automatically, connect it to a Pub/Sub topic and have a function respond (for example by disabling billing on a sandbox project). Budgets can be scoped to projects, services, or labels."
+    }
+  ]
+}

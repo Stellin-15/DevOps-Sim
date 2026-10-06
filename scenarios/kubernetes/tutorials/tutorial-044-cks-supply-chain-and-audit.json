@@ -1,0 +1,48 @@
+{
+  "id": "tutorial-044",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "CKS: Static Analysis, Image Scanning, Admission, and Reading Audit Logs",
+  "difficulty": "advanced",
+  "tags": ["kubernetes", "cks", "supply-chain", "kubesec", "trivy", "audit"],
+  "intro": "The last CKS domains: catch insecure manifests and vulnerable images before they run, refuse images from untrusted registries at admission, and use the audit log to answer 'who did this?'. You're on the control-plane node with kubesec, trivy, and jq installed.",
+  "steps": [
+    {
+      "prompt": "Scan the manifest pod.yaml for insecure settings with kubesec.",
+      "expected_commands": ["kubesec scan pod.yaml"],
+      "fake_output": "[\n  {\n    \"object\": \"Pod/web.default\",\n    \"valid\": true,\n    \"message\": \"Failed with a score of -30 points\",\n    \"score\": -30,\n    \"scoring\": {\n      \"critical\": [\n        {\"id\": \"Privileged\", \"selector\": \"containers[] .securityContext .privileged == true\", \"reason\": \"Privileged containers can allow almost completely unrestricted host access\", \"points\": -30}\n      ],\n      \"advise\": [\n        {\"id\": \"ReadOnlyRootFilesystem\", \"points\": 1},\n        {\"id\": \"RunAsNonRoot\", \"points\": 1}\n      ]\n    }\n  }\n]",
+      "explanation": "A critical finding (privileged: true) and advice to add a read-only root filesystem and non-root user.",
+      "why": "Static analysis reads the YAML without running anything, so it belongs in CI before the manifest is applied. In the exam you fix the manifest until the critical findings are gone; admission policies (Pod Security Admission, Kyverno) then enforce the same rules in the cluster."
+    },
+    {
+      "prompt": "Scan the image nginx:1.19 for vulnerabilities, showing only HIGH and CRITICAL ones.",
+      "expected_commands": ["trivy image --severity HIGH,CRITICAL nginx:1.19", "trivy image -s HIGH,CRITICAL nginx:1.19", "trivy image nginx:1.19 --severity HIGH,CRITICAL"],
+      "fake_output": "nginx:1.19 (debian 10.10)\n\nTotal: 97 (HIGH: 71, CRITICAL: 26)\n\n│ Library      │ Vulnerability  │ Severity │ Installed Version │ Fixed Version  │\n│ libssl1.1    │ CVE-2022-0778  │ HIGH     │ 1.1.1d-0+deb10u6  │ 1.1.1d-0+deb10u8 │\n│ zlib1g       │ CVE-2018-25032 │ HIGH     │ 1:1.2.11.dfsg-1   │ 1:1.2.11.dfsg-1+deb10u1 │\n...",
+      "explanation": "An old image with 97 serious vulnerabilities, most fixed in newer versions.",
+      "why": "A common CKS task: find which of several pods runs an image with a given CVE or severity, and delete or update it. Scanning is a snapshot, so scan again in CI and the registry as new CVEs are published, and prefer small base images (distroless, alpine) that have less to be vulnerable."
+    },
+    {
+      "prompt": "Only images from registry.shop.example may run in the cluster. Which built-in admission plugin can delegate that decision to an external service, with a configuration file passed via --admission-control-config-file?\n  a) NodeRestriction\n  b) ImagePolicyWebhook, with defaultAllow: false so the cluster fails closed if the service is down\n  c) AlwaysPullImages\n  d) LimitRanger\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "--enable-admission-plugins=NodeRestriction,ImagePolicyWebhook\n--admission-control-config-file=/etc/kubernetes/admission/config.yaml\n\nimagePolicy:\n  kubeConfigFile: /etc/kubernetes/admission/imagepolicy.kubeconfig\n  allowTTL: 50\n  denyTTL: 50\n  retryBackoff: 500\n  defaultAllow: false",
+      "hint": "Its name says what it decides about.",
+      "explanation": "ImagePolicyWebhook asks a backend whether each image may run.",
+      "why": "defaultAllow decides what happens when the backend can't be reached: true fails open (insecure), false fails closed (safe, but an outage of the backend blocks deployments, the trade-off in incident-014). Kyverno or Gatekeeper policies that check the image prefix, and signature verification with cosign, are the more common ways to do this today."
+    },
+    {
+      "prompt": "Someone deleted the Secret payment-key in namespace shop. Find the audit entries for deletes of Secrets in /var/log/kubernetes/audit/audit.log with jq.",
+      "expected_commands": ["jq 'select(.verb==\"delete\" and .objectRef.resource==\"secrets\")' /var/log/kubernetes/audit/audit.log", "jq 'select(.objectRef.resource==\"secrets\" and .verb==\"delete\")' /var/log/kubernetes/audit/audit.log", "cat /var/log/kubernetes/audit/audit.log | jq 'select(.verb==\"delete\" and .objectRef.resource==\"secrets\")'"],
+      "fake_output": "{\n  \"level\": \"Metadata\",\n  \"verb\": \"delete\",\n  \"user\": {\"username\": \"system:serviceaccount:ci:deployer\", \"groups\": [\"system:serviceaccounts\"]},\n  \"sourceIPs\": [\"10.244.3.17\"],\n  \"objectRef\": {\"resource\": \"secrets\", \"namespace\": \"shop\", \"name\": \"payment-key\"},\n  \"responseStatus\": {\"code\": 200},\n  \"requestReceivedTimestamp\": \"2026-10-06T02:14:09.411Z\"\n}",
+      "explanation": "The CI deployer service account deleted it at 02:14, from a pod's IP.",
+      "why": "Each audit line is one JSON event, so jq filters it precisely. The next questions follow from the answer: why can a CI account delete Secrets in shop (tighten its Role), and was the pod at 10.244.3.17 the CI runner or something using its token?"
+    },
+    {
+      "prompt": "Which change makes a running container harder to tamper with, as the CKS's 'immutability' objective means it?\n  a) A bigger memory limit\n  b) readOnlyRootFilesystem: true (with emptyDir mounts only where the app must write), no privileged mode, and no shell tools in the image\n  c) Running as root so nothing fails\n  d) Mounting the host's /etc\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "securityContext:\n  readOnlyRootFilesystem: true\n  privileged: false\n  runAsNonRoot: true\nvolumeMounts:\n- name: tmp\n  mountPath: /tmp      # emptyDir, the only writable path",
+      "hint": "If nothing can be written, nothing can be planted.",
+      "explanation": "A read-only root filesystem stops an attacker writing tools or changing binaries in the container.",
+      "why": "Immutable containers mean any change is a new image through the pipeline, never an edit in a running pod. Falco (security-tutorial-011) is the runtime side: it alerts when something still manages to write, spawn a shell, or read sensitive files."
+    }
+  ]
+}

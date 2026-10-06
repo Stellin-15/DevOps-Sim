@@ -1,0 +1,54 @@
+{
+  "id": "azure-tutorial-013",
+  "type": "tutorial",
+  "category": "azure",
+  "title": "AZ-104: Scale Sets, App Service Slots, VNet Peering, Backup, and Alerts",
+  "difficulty": "intermediate",
+  "tags": ["azure", "az-104", "vmss", "app-service", "peering", "backup", "monitor"],
+  "intro": "The rest of the AZ-104 in one pass: compute that scales, web apps deployed without downtime, networks connected to each other, VMs that can be restored, and alerts that reach a person. Everything is in resource group rg-shop-prod.",
+  "steps": [
+    {
+      "prompt": "The VM Scale Set vmss-web is running 2 instances before a sale. Scale it to 4.",
+      "expected_commands": ["az vmss scale --resource-group rg-shop-prod --name vmss-web --new-capacity 4", "az vmss scale -g rg-shop-prod -n vmss-web --new-capacity 4"],
+      "fake_output": "{\n  \"name\": \"vmss-web\",\n  \"sku\": {\"capacity\": 4, \"name\": \"Standard_D2s_v5\"},\n  \"zones\": [\"1\", \"2\", \"3\"],\n  \"provisioningState\": \"Succeeded\"\n}",
+      "explanation": "Two more identical instances, spread across three zones.",
+      "why": "A scale set is a group of identical VMs from one model, with autoscale rules ('az monitor autoscale create', for example on CPU) doing this automatically. Availability zones protect against a datacenter failing; availability sets (fault and update domains in one datacenter) are the older, single-zone answer the exam still asks about."
+    },
+    {
+      "prompt": "The web app app-shop has a staging slot with the new release, already tested. Swap staging into production.",
+      "expected_commands": ["az webapp deployment slot swap --resource-group rg-shop-prod --name app-shop --slot staging --target-slot production", "az webapp deployment slot swap -g rg-shop-prod -n app-shop --slot staging --target-slot production"],
+      "fake_output": "(no output: the swap completed; production now runs the release that was in staging)",
+      "explanation": "The slots exchanged places after staging was warmed up.",
+      "why": "Swapping warms the staging instances first, so users never hit a cold start, and swapping back is the rollback. Settings marked 'deployment slot setting' stay with their slot (a staging database connection string shouldn't follow the code into production). Slots need the Standard App Service plan or higher."
+    },
+    {
+      "prompt": "Connect the hub network vnet-hub to the spoke vnet-spoke: create the peering from the hub side, called hub-to-spoke, allowing traffic between them.",
+      "expected_commands": ["az network vnet peering create --resource-group rg-shop-prod --name hub-to-spoke --vnet-name vnet-hub --remote-vnet vnet-spoke --allow-vnet-access", "az network vnet peering create -g rg-shop-prod -n hub-to-spoke --vnet-name vnet-hub --remote-vnet vnet-spoke --allow-vnet-access"],
+      "fake_output": "{\n  \"name\": \"hub-to-spoke\",\n  \"peeringState\": \"Initiated\",\n  \"allowVirtualNetworkAccess\": true\n}",
+      "explanation": "Initiated, not Connected: the spoke-to-hub peering doesn't exist yet.",
+      "why": "Peering is created from both sides; only when both exist does the state become Connected. It isn't transitive: two spokes peered to the same hub can't reach each other unless traffic is routed through a firewall or gateway in the hub (user-defined routes plus 'allow forwarded traffic'), a classic exam question. Address spaces must not overlap."
+    },
+    {
+      "prompt": "Protect vm-app-01 with Azure Backup in the Recovery Services vault rsv-shop, using the policy DefaultPolicy.",
+      "expected_commands": ["az backup protection enable-for-vm --resource-group rg-shop-prod --vault-name rsv-shop --vm vm-app-01 --policy-name DefaultPolicy", "az backup protection enable-for-vm -g rg-shop-prod -v rsv-shop --vm vm-app-01 --policy-name DefaultPolicy"],
+      "fake_output": "{\n  \"properties\": {\n    \"entityFriendlyName\": \"vm-app-01\",\n    \"operation\": \"ConfigureBackup\",\n    \"status\": \"Completed\"\n  }\n}",
+      "explanation": "vm-app-01 will be backed up daily and kept according to the policy.",
+      "why": "The vault must be in the same region as the VM. Backups support restoring the whole VM, its disks, or individual files, and soft delete keeps deleted backups for 14 days, which protects against a compromised admin deleting them. Azure Site Recovery is the different answer for replicating to another region to fail over, rather than restoring."
+    },
+    {
+      "prompt": "Create an action group ag-oncall (short name oncall) that emails oncall@shop.example, for alerts to use.",
+      "expected_commands": ["az monitor action-group create --resource-group rg-shop-prod --name ag-oncall --short-name oncall --action email oncall oncall@shop.example", "az monitor action-group create -g rg-shop-prod -n ag-oncall --short-name oncall --action email oncall oncall@shop.example"],
+      "fake_output": "{\n  \"name\": \"ag-oncall\",\n  \"groupShortName\": \"oncall\",\n  \"emailReceivers\": [{\"name\": \"oncall\", \"emailAddress\": \"oncall@shop.example\", \"status\": \"Enabled\"}],\n  \"enabled\": true\n}",
+      "explanation": "Any alert rule can now notify on-call by pointing at this group.",
+      "why": "Alert rules decide when (a metric threshold, a log query, an Activity Log event); action groups decide who and how (email, SMS, push, webhook, ITSM, an automation runbook). Keeping them separate means one change to the on-call list updates every alert."
+    },
+    {
+      "prompt": "The VM vm-app-01 needs a bigger size, and the size you want isn't available on its current hardware cluster. What happens?\n  a) Resizing always works without a restart\n  b) The VM must be deallocated (stopped, releasing its host) before it can be resized to a size on different hardware, so plan the downtime\n  c) You must delete and recreate it\n  d) Resizing is not possible in Azure\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "az vm list-vm-resize-options -g rg-shop-prod -n vm-app-01 -o table   # sizes available without deallocating\naz vm deallocate -g rg-shop-prod -n vm-app-01\naz vm resize -g rg-shop-prod -n vm-app-01 --size Standard_E8s_v5\naz vm start -g rg-shop-prod -n vm-app-01",
+      "hint": "Stop versus deallocate came up in azure-tutorial-003.",
+      "explanation": "Sizes outside the current cluster need a deallocation first.",
+      "why": "Any resize restarts the VM; one to a size on other hardware also needs it deallocated. A scale set or a load-balanced pair lets you resize one instance at a time without an outage, which is the design answer the exam wants when downtime isn't allowed."
+    }
+  ]
+}

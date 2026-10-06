@@ -301,7 +301,7 @@ events section.
 
 | Category | Tutorials | Incidents | Topics |
 |---|---|---|---|
-| Kubernetes | 41 | 18 | pods → operators, full CKA coverage incl. etcd, kubeadm, certs, security, RBAC/PDB/storage/admission-webhook/Multi-Attach incidents, and the ecosystem (Kustomize, Helm chart authoring, Gateway API, VPA/KEDA/Karpenter, Flux, Linkerd), Velero backups, Cluster API and ApplicationSets, multi-tenancy, and CKAD speed (generated manifests, blue/green and canary, `kubectl debug`, API deprecations); plus 11 Writing Labs and 2 Sandboxes |
+| Kubernetes | 44 | 18 | pods → operators, full CKA coverage incl. etcd, kubeadm, certs, security, RBAC/PDB/storage/admission-webhook/Multi-Attach incidents, and the ecosystem (Kustomize, Helm chart authoring, Gateway API, VPA/KEDA/Karpenter, Flux, Linkerd), Velero backups, Cluster API and ApplicationSets, multi-tenancy, CKAD speed (generated manifests, blue/green and canary, `kubectl debug`, API deprecations), and CKS hardening (audit logs, encryption at rest, AppArmor/seccomp, kubesec, ImagePolicyWebhook); plus 11 Writing Labs and 2 Sandboxes |
 | Docker | 11 | 5 | images/layers, volumes, networking, Compose, cleanup, Dockerfiles, runtime limits, container security, BuildKit/buildx multi-platform; plus 3 Writing Labs (2 Dockerfile, Compose) |
 | Linux | 15 | 6 | find, text pipelines, processes/signals, systemd, networking, users/permissions, SSH, cron, disks, performance, strace/lsof, packages/firewalls, SELinux; plus 4 bash-script Writing Labs |
 | Terraform | 19 | 7 | safe CI workflow, modules/for_each/moved blocks, writing modules (validation, dynamic blocks, terraform test), variables/outputs, state inspection & refactoring, import, workspaces, remote state/locking, providers, debugging, OpenTofu/Terragrunt/Atlantis, policy as code (Checkov, Conftest), Packer, and the other IaC tools (CloudFormation, Bicep, Pulumi, Crossplane), and Terraform Associate topics (drift, lifecycle and conditions, functions, HCP Terraform); plus 5 HCL Writing Labs |
@@ -310,8 +310,8 @@ events section.
 | Monitoring | 17 | 8 | PromQL, golden signals, tracing (OTel/Jaeger), OpenTelemetry instrumentation, SLOs and burn-rate alerts, Prometheus ops, alerting/Alertmanager, journald, Elasticsearch, Loki, Grafana API, log pipelines (Fluent Bit, Vector), log volume and cardinality, Datadog and Sentry; plus 5 Writing Labs (alert rules, burn-rate alerts, a dashboard, manual spans) |
 | MLOps | 18 | 8 | environments, GPUs, MLflow, DVC, serving, KServe/Kubeflow, profiling, model monitoring, model canaries, LLM serving (vLLM), feature stores (Feast), distributed training, Airflow pipelines, LLM evaluation, vector search (pgvector), token cost and guardrails, quantization |
 | AWS | 17 | 7 | profiles/identity, EC2, SSM vs SSH, VPC anatomy, security groups vs NACLs, IAM, S3, CloudWatch/CloudTrail, ALB/ASG, EKS/ECR, cost, RDS, Route 53, peering/Transit Gateway/PrivateLink, and Solutions Architect design choices (storage classes and EFS, Multi-AZ vs replicas, Aurora, DynamoDB, caching, KMS, CloudFront, scaling policies); plus a VPC Sandbox |
-| Azure | 10 | 6 | subscriptions, resource groups/locks, VMs (stop vs deallocate), Run Command/Bastion/az ssh, VNets/NSGs, UDRs/Network Watcher, RBAC/managed identity, Key Vault/storage, Monitor/KQL, AKS |
-| Google Cloud | 10 | 6 | configurations/projects/APIs, Compute Engine filters, IAP SSH/serial console, global VPCs, tag-based firewalls, Cloud NAT, IAM without keys/impersonation, Cloud Storage, logging/quotas, GKE/Workload Identity |
+| Azure | 13 | 6 | subscriptions, resource groups/locks, VMs (stop vs deallocate), Run Command/Bastion/az ssh, VNets/NSGs, UDRs/Network Watcher, RBAC/managed identity, Key Vault/storage, Monitor/KQL, AKS, and AZ-104 topics (Entra users and groups, Azure Policy, storage redundancy/SAS/AzCopy/lifecycle, scale sets, App Service slots, peering, Backup, action groups) |
+| Google Cloud | 13 | 6 | configurations/projects/APIs, Compute Engine filters, IAP SSH/serial console, global VPCs, tag-based firewalls, Cloud NAT, IAM without keys/impersonation, Cloud Storage, logging/quotas, GKE/Workload Identity, and ACE topics (projects and billing, custom roles, budgets, instance templates and MIGs, Cloud Run, Cloud SQL, Pub/Sub, snapshots, choosing a database) |
 | Security | 16 | 7 | nmap discovery/TLS checks, Trivy/kube-bench, Lynis/OpenSCAP CIS audits, SSH hardening, fail2ban, auditd, osquery/AIDE, secrets scanning, compromise triage, Kubernetes admission policy (Kyverno) and runtime detection (Falco), cloud posture scanning (Prowler), compliance evidence, threat modelling (STRIDE), Sigma detection rules, zero-trust access; plus 3 Writing Labs and 2 hacked-server mysteries |
 | Server Fleet Ops | 13 | 7 | Ansible (inventories, safe playbook runs, rolling serial updates, Vault/lint), Debian and RHEL patching with rollback, kernels and reboots, SSM Patch Manager, chrony, LVM growth, backups with real restore tests, NFS, Ceph health |
 | SRE | 14 | 6 | incident first ten minutes, Argo Rollouts canaries, Istio resilience, capacity planning, load testing (k6/vegeta), chaos engineering, feature flags/kill switches, postmortem timelines, graceful degradation, production readiness reviews, disaster recovery drills, service catalogs and golden paths, DORA metrics, LitmusChaos and game days |
@@ -327,7 +327,7 @@ events section.
 | FinOps | 6 | 3 | reading the bill by service and team, tags/budgets/anomaly alerts, rightsizing, Savings Plans and spot, Kubernetes cost (OpenCost), storage classes, log retention, and data transfer |
 | Data Engineering | 5 | 2 | writing and testing Airflow DAGs, dbt (models, tests, state-based builds, freshness), warehouse cost and partitions (BigQuery, Snowflake), Spark on Kubernetes, change data capture with Debezium; plus 1 Writing Lab |
 | The Wider Landscape | 13 | 0 | recognising the less common tools: Nomad and Consul, Puppet/Chef/Salt, Podman/Buildah/Skopeo, crictl and sandboxed runtimes, OpenShift/k3s/MetalLB, Bazel and Nix, Gerrit/Perforce/Mercurial, Windows and PowerShell, OpenStack/Proxmox/IPMI, Nagios/Zabbix/SNMP/StatsD, Slurm, SPF/DKIM/DMARC/DNSSEC, Fastlane |
-| **Total** | **352** | **158** | + 51 Writing Labs |
+| **Total** | **361** | **158** | + 51 Writing Labs |
 
 > 🌐 The three clouds use different names for the same ideas (security
 > group vs NSG vs firewall rule; CloudTrail vs Activity Log vs Audit
@@ -400,9 +400,10 @@ overall verdict in its final part.
   infrastructure where things break in unscripted ways, and
   cloud-provider fundamentals. GAPS.md's final part lays out a concrete
   path.
-- **For certifications:** GAPS.md maps the CKA and CKAD (Part 1), the
-  Terraform Associate (Terraform part), and the AWS Solutions Architect
-  Associate (AWS part) onto the content.
+- **For certifications:** GAPS.md maps the CKA, CKAD, and CKS (Part 1),
+  the Terraform Associate (Terraform part), and the associate exams of
+  all three clouds (AWS Solutions Architect Associate, AZ-104, and
+  Google Cloud ACE, each in its cloud's part) onto the content.
 
 ---
 
@@ -650,13 +651,12 @@ CLAUDE.md           working notes for AI-assisted development on this repo
 12. A database sandbox running real SQL and a Git sandbox running real
     git, each with mysteries → the `add-scenario` scaffold → exam passes
     for the CKAD, Terraform Associate, and AWS Solutions Architect
-    Associate.
+    Associate → exam passes for the CKS, AZ-104, and Google Cloud ACE.
 
 </details>
 
 **Next**, in priority order (details in CLAUDE.md and GAPS.md):
-- exam passes for the CKS and the Azure (AZ-104) and Google Cloud (ACE)
-  associate exams;
+- exam passes for the professional-level cloud exams;
 - more sandboxes (a Terraform state explorer, a networking lab).
 
 See [CLAUDE.md](CLAUDE.md) for architecture and notes for continuing

@@ -1,0 +1,55 @@
+{
+  "id": "azure-tutorial-011",
+  "type": "tutorial",
+  "category": "azure",
+  "title": "AZ-104: Entra ID Users and Groups, RBAC Scope, and Azure Policy",
+  "difficulty": "intermediate",
+  "tags": ["azure", "az-104", "entra-id", "rbac", "azure-policy", "governance"],
+  "intro": "The AZ-104's largest domain is identity and governance: users and groups in Microsoft Entra ID, who can do what at which scope, and rules that stop resources being created the wrong way. A new support engineer, Sam, joins today and needs read access to the production resource group rg-shop-prod. Your tenant's domain is shop.example.",
+  "steps": [
+    {
+      "prompt": "Create the Entra ID user sam@shop.example with display name \"Sam Quist\" and the initial password in $TEMP_PASS, forcing a change at first sign-in.",
+      "expected_commands": ["az ad user create --display-name \"Sam Quist\" --user-principal-name sam@shop.example --password $TEMP_PASS --force-change-password-next-sign-in true", "az ad user create --display-name \"Sam Quist\" --user-principal-name sam@shop.example --password \"$TEMP_PASS\" --force-change-password-next-sign-in true"],
+      "fake_output": "{\n  \"displayName\": \"Sam Quist\",\n  \"id\": \"<object-id>\",\n  \"userPrincipalName\": \"sam@shop.example\"\n}",
+      "explanation": "The user exists in the tenant, with no access to any Azure resource yet.",
+      "why": "An Entra ID user is an identity; access to resources comes only from role assignments. Entra roles (like User Administrator, which manages users) and Azure RBAC roles (like Reader, which acts on resources) are separate systems, a distinction the exam tests often."
+    },
+    {
+      "prompt": "Add Sam to the existing group support-engineers, rather than granting access to Sam directly.",
+      "expected_commands": ["az ad group member add --group support-engineers --member-id $(az ad user show --id sam@shop.example --query id -o tsv)", "az ad group member add --group support-engineers --member-id $(az ad user show --id sam@shop.example --query id --output tsv)"],
+      "fake_output": "(no output: Sam is now a member)",
+      "explanation": "Sam inherits whatever the group has been granted.",
+      "why": "Assigning roles to groups means joiners and leavers are handled by group membership, and an access review is one list per group, not one per person. Dynamic groups (membership by rule, such as department) and group-based licensing need Entra ID P1 or P2."
+    },
+    {
+      "prompt": "Give the support-engineers group the Reader role on the resource group rg-shop-prod only.",
+      "expected_commands": ["az role assignment create --assignee $(az ad group show --group support-engineers --query id -o tsv) --role Reader --resource-group rg-shop-prod", "az role assignment create --assignee $(az ad group show -g support-engineers --query id -o tsv) --role Reader --resource-group rg-shop-prod"],
+      "fake_output": "{\n  \"principalType\": \"Group\",\n  \"roleDefinitionName\": \"Reader\",\n  \"scope\": \"/subscriptions/<subscription>/resourceGroups/rg-shop-prod\"\n}",
+      "explanation": "Members can see everything in rg-shop-prod and change nothing.",
+      "why": "Scope is the other half of every assignment: management group, subscription, resource group, or resource, and assignments are inherited downwards. The narrowest scope that does the job is the right one. Owner and User Access Administrator can grant access to others; Contributor can change resources but not access."
+    },
+    {
+      "prompt": "Production resources must only be created in West Europe or North Europe. Which feature enforces that?\n  a) An RBAC role\n  b) An Azure Policy assignment of the built-in 'Allowed locations' definition at the subscription (or management group) scope, with effect deny\n  c) A resource lock\n  d) A tag\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "az policy assignment create --name allowed-locations --scope /subscriptions/<subscription> \\\n  --policy <Allowed locations definition id> --params '{\"listOfAllowedLocations\":{\"value\":[\"westeurope\",\"northeurope\"]}}'\n\n(creating a VM in eastus now fails with RequestDisallowedByPolicy)",
+      "hint": "RBAC says who; this says what is allowed.",
+      "explanation": "Policy governs what can be created, regardless of who asks.",
+      "why": "RBAC answers 'who may act', Policy answers 'what is allowed to exist', and locks (CanNotDelete, ReadOnly) stop changes even by owners. Policy effects other than deny are tested too: audit reports, append and modify change the request (for example adding a tag), and deployIfNotExists adds missing configuration."
+    },
+    {
+      "prompt": "Check how compliant rg-shop-prod is with the policies assigned to it.",
+      "expected_commands": ["az policy state summarize --resource-group rg-shop-prod", "az policy state summarize -g rg-shop-prod"],
+      "fake_output": "{\n  \"results\": {\n    \"nonCompliantResources\": 3,\n    \"nonCompliantPolicies\": 1\n  },\n  \"policyAssignments\": [\n    {\"policyAssignmentId\": \".../require-costcenter-tag\", \"results\": {\"nonCompliantResources\": 3}}\n  ]\n}",
+      "explanation": "Three existing resources break the tagging policy.",
+      "why": "A deny policy blocks new violations but leaves existing ones in place, so compliance results are how you find them. A remediation task applies modify or deployIfNotExists effects to existing resources."
+    },
+    {
+      "prompt": "The company has 40 subscriptions and wants the same policies and access on all production ones. Where should they be assigned?\n  a) On each subscription, one by one\n  b) On a management group containing the production subscriptions, so every subscription under it inherits them\n  c) On each resource group\n  d) In each user's profile\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "Tenant Root Group\n└── mg-shop\n    ├── mg-prod      (policies: allowed locations, required tags; RBAC: platform team)\n    │   ├── sub-shop-prod\n    │   └── sub-data-prod\n    └── mg-nonprod\n        └── sub-shop-dev",
+      "hint": "Assign once, inherit everywhere.",
+      "explanation": "Management groups organise subscriptions so governance is set once.",
+      "why": "Management groups can be nested up to six levels below the root. A subscription belongs to exactly one, and moving it moves its inherited policies and access with it. Landing-zone designs are built on this hierarchy."
+    }
+  ]
+}

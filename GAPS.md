@@ -172,7 +172,7 @@ plane being the actual outage).
   Writing Labs yaml-037 (a Kustomize overlay) and yaml-038 (an
   HTTPRoute with a canary split). Not covered: external-dns, writing
   chart templates in depth (helpers, hooks, library charts), Cluster
-  API, and a CKS-specific pass (the CKAD pass is below).
+  API (the CKAD and CKS passes are below).
 - ~~Backup, fleets, and tenancy~~: **done** in tutorial-036 (Velero and
   CSI snapshots, with a restore test), tutorial-037 (Cluster API and
   ApplicationSets), tutorial-038 (quotas, limit ranges, network and API
@@ -198,8 +198,27 @@ Speed is the CKAD's real test, and tutorial-039 drills the habit that
 gives it (`--dry-run=client -o yaml`, `kubectl explain`, `set env`).
 Still missing for the CKAD: timed practice in a real cluster (the
 Writing Labs give real YAML editing, but not two hours against the
-clock), and Helm chart *consumption* under exam constraints. The CKS
-has not had a pass.
+clock), and Helm chart *consumption* under exam constraints.
+
+## Exam pass: CKS
+
+The CKS's domains mapped to the content, after a pass that added
+tutorial-042 to 044:
+
+| CKS domain (approx. weight) | Covered by |
+|---|---|
+| Cluster Setup (~15%) | tutorial-010 (NetworkPolicies, default deny), security-tutorial-003 (kube-bench CIS checks), tutorial-026 (certificates); **verifying binaries with sha512sum in tutorial-042; blocking the metadata endpoint in tutorial-043** |
+| Cluster Hardening (~15%) | tutorial-012 (RBAC, ServiceAccounts), tutorial-025 (upgrades); **disabling token automount in tutorial-043** |
+| System Hardening (~10%) | Linux hardening in security-tutorial-004 (CIS audits) and 005 (SSH); **AppArmor and seccomp in tutorial-043** |
+| Minimize Microservice Vulnerabilities (~20%) | tutorial-027 (SecurityContext, Pod Security Admission), Identity & Secrets (mTLS, Vault); **encryption at rest in tutorial-042; RuntimeClass and gVisor in tutorial-043** |
+| Supply Chain Security (~20%) | cicd SBOM, scanning, and signing tutorials, security-tutorial-011 (Kyverno); **kubesec, trivy severity filters, and ImagePolicyWebhook in tutorial-044** |
+| Monitoring, Logging and Runtime Security (~20%) | security-tutorial-011 (Falco); **audit policy and audit logs with jq in tutorial-042 and 044; immutability in tutorial-044** |
+
+Still missing for the CKS: editing the API server's static-pod manifest
+for real (the tutorials describe the flags and mounts; a mistake there
+is the exam's most common time sink, and only a real cluster teaches
+recovering from it), and writing AppArmor and seccomp profiles rather
+than loading them.
 
 ---
 
@@ -791,7 +810,7 @@ Terraform, then break it on purpose.
 
 # Part 10 — Azure
 
-**Content:** 10 tutorials, 6 incidents, an interactive Azure Sandbox, and
+**Content:** 13 tutorials, 6 incidents, an interactive Azure Sandbox, and
 3 Mystery Incidents on it.
 
 ## Covered
@@ -826,8 +845,26 @@ Terraform, then break it on purpose.
 - Bicep and ARM templates (Terraform is the IaC representative).
 - App Service, Functions, Azure SQL, Cosmos DB, and Front Door/Application
   Gateway operations.
-- Entra ID administration (conditional access, PIM), and Azure Policy authoring.
-- AZ-104 / AZ-400 exam breadth.
+- Entra ID conditional access and PIM, and Azure Policy authoring
+  (assigning and reading compliance is covered in azure-tutorial-011).
+- AZ-400 exam breadth (the AZ-104 pass is below).
+
+## Exam pass: AZ-104 (Azure Administrator)
+
+The AZ-104's domains mapped to the content, after a pass that added
+azure-tutorial-011 to 013:
+
+| AZ-104 domain (approx. weight) | Covered by |
+|---|---|
+| Manage Azure identities and governance (~20-25%) | azure-tutorial-001, 002, 007 (subscriptions, resource groups and locks, RBAC, managed identity); **Entra users and groups, role scope, Azure Policy and compliance, management groups in tutorial-011** |
+| Implement and manage storage (~15-20%) | azure-tutorial-008 (Key Vault and storage); **redundancy options, SAS, AzCopy, access tiers and lifecycle rules, private endpoints in tutorial-012** |
+| Deploy and manage compute resources (~20-25%) | azure-tutorial-003, 004, 010 (VMs, Run Command and Bastion, AKS); **scale sets, App Service slots, resizing in tutorial-013** |
+| Implement and manage virtual networking (~15-20%) | azure-tutorial-005, 006 (VNets and NSGs, routes and Network Watcher), the Azure sandbox; **VNet peering in tutorial-013** |
+| Monitor and maintain resources (~10-15%) | azure-tutorial-009 (Monitor and KQL); **Azure Backup and action groups in tutorial-013** |
+
+Still missing for the AZ-104: Azure Container Instances, Azure Files and
+File Sync, load balancer and Application Gateway configuration in
+depth, DNS zones, and Site Recovery beyond a mention.
 
 ## Readiness verdict
 
@@ -842,7 +879,7 @@ delays).
 
 # Part 11 — Google Cloud
 
-**Content:** 10 tutorials, 6 incidents, an interactive Google Cloud Sandbox,
+**Content:** 13 tutorials, 6 incidents, an interactive Google Cloud Sandbox,
 and 3 Mystery Incidents on it.
 
 ## Covered
@@ -875,9 +912,28 @@ and 3 Mystery Incidents on it.
 - ~~A GCP sandbox~~: **closed**. The Google Cloud sandbox evaluates
   tag-targeted firewall rules (priority, deny beats allow, implied deny),
   IAP SSH, and regional Cloud NAT. Three mysteries run on it.
-- Cloud Run, Cloud SQL, BigQuery, Pub/Sub, and Cloud Load Balancing internals.
+- BigQuery administration, and Cloud Load Balancing configuration in depth
+  (Cloud Run, Cloud SQL, and Pub/Sub basics are in gcp-tutorial-012 and 013).
 - Shared VPC and VPC Service Controls, and organisation policy authoring.
-- Professional Cloud Architect / DevOps Engineer exam breadth.
+- Professional Cloud Architect / DevOps Engineer exam breadth (the
+  Associate Cloud Engineer pass is below).
+
+## Exam pass: Associate Cloud Engineer
+
+The ACE's domains mapped to the content, after a pass that added
+gcp-tutorial-011 to 013:
+
+| ACE domain (approx. weight) | Covered by |
+|---|---|
+| Setting up a cloud solution environment (~23%) | gcp-tutorial-001 (configurations, projects, APIs); **projects in folders, billing links, enabling APIs, budgets in tutorial-011** |
+| Planning and implementing a cloud solution (~30%) | gcp-tutorial-002, 004, 005, 006, 010 (Compute Engine, VPCs, firewalls, Cloud NAT, GKE), the Google Cloud sandbox; **instance templates, managed instance groups, autoscaling, rolling updates, Cloud Run, Spot VMs in tutorial-012; Cloud SQL, Pub/Sub, database choice in tutorial-013** |
+| Ensuring successful operation (~27%) | gcp-tutorial-003, 008, 009 (IAP SSH and serial console, Cloud Storage, logging and quotas); **storage lifecycle and snapshots in tutorial-013** |
+| Configuring access and security (~20%) | gcp-tutorial-007 (IAM, service accounts, impersonation); **basic vs predefined vs custom roles and group bindings in tutorial-011** |
+
+Still missing for the ACE: Cloud Monitoring alerting policies and
+uptime checks, Infrastructure Manager or Deployment Manager, App Engine
+and Cloud Run functions beyond a mention, and BigQuery and Bigtable
+hands-on.
 
 ## Readiness verdict
 
@@ -1979,8 +2035,8 @@ employer uses it.
 7. ~~**The Kubernetes ecosystem**~~: **done** inside the Kubernetes
    category (tutorial-030 to 035, two incidents, two labs): Kustomize,
    Helm chart authoring, Gateway API, VPA/KEDA/Karpenter, Flux, and
-   Linkerd; cert-manager is in Identity and Secrets. The CKAD pass is
-   done (Part 1). Still open: external-dns, and a CKS pass.
+   Linkerd; cert-manager is in Identity and Secrets. The CKAD and CKS
+   passes are done (Part 1). Still open: external-dns.
 8. ~~**Serverless and managed compute**~~: **now a category**
    (Serverless): Lambda, API Gateway, ECS on Fargate, Cloud Run, and
    Azure Functions. Step Functions, DynamoDB, and serverless
@@ -2086,7 +2142,7 @@ If content is added in the order that helps most people soonest:
 
 | Category | Tutorials | Incidents | Extra |
 |---|---|---|---|
-| Kubernetes | 41 | 18 | 11 Writing Labs, 2 Sandboxes (explore, and fixable), 5 Mysteries |
+| Kubernetes | 44 | 18 | 11 Writing Labs, 2 Sandboxes (explore, and fixable), 5 Mysteries |
 | Docker | 11 | 5 | 3 Writing Labs (Dockerfile, Compose), Sandbox, 2 Mysteries |
 | Linux | 15 | 6 | 4 Writing Labs (bash), interactive Sandbox, 4 Mysteries |
 | Terraform | 19 | 7 | 5 Writing Labs (HCL, including a module) |
@@ -2095,8 +2151,8 @@ If content is added in the order that helps most people soonest:
 | Monitoring | 17 | 8 | 5 Writing Labs (alert rules, SLO burn alerts, a dashboard, manual spans) |
 | MLOps | 18 | 8 | |
 | AWS | 17 | 7 | 1 Writing Lab (IAM policy), Sandbox (VPC), 4 Mysteries |
-| Azure | 10 | 6 | Sandbox, 3 Mysteries |
-| Google Cloud | 10 | 6 | 1 Writing Lab (firewall), Sandbox, 3 Mysteries |
+| Azure | 13 | 6 | Sandbox, 3 Mysteries |
+| Google Cloud | 13 | 6 | 1 Writing Lab (firewall), Sandbox, 3 Mysteries |
 | Security | 16 | 7 | 3 Writing Labs (Sigma, Kyverno, Falco), 2 hacked-server Mysteries (Linux sandbox) |
 | Server Fleet Ops | 13 | 7 | 1 Writing Lab (Ansible) |
 | SRE | 14 | 6 | 2 Writing Labs (postmortem, catalog entry) |
@@ -2112,7 +2168,7 @@ If content is added in the order that helps most people soonest:
 | FinOps | 6 | 3 | |
 | Data Engineering | 5 | 2 | 1 Writing Lab (Airflow DAG) |
 | The Wider Landscape | 13 | 0 | tutorials only (recognition level) |
-| **Total** | **352** | **158** | 51 Writing Labs, 18 career paths, 9 sandboxes, 32 Mystery Incidents, Exam Mode, Stats |
+| **Total** | **361** | **158** | 51 Writing Labs, 18 career paths, 9 sandboxes, 32 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -2207,7 +2263,8 @@ that more scenario content can narrow but not close:
    deploy script.
 10. Take the specialisms (MLOps, Data Engineering, Messaging) and The
     Wider Landscape when a job calls for them. For certifications, each
-    exam with a pass has a mapping of its domains to content: the CKA
-    and CKAD (Part 1), the Terraform Associate (Terraform part), and the
-    AWS Solutions Architect Associate (AWS part). The CKS, Azure and
-    Google Cloud exams, and the professional levels haven't had one.
+    exam with a pass has a mapping of its domains to content: the CKA,
+    CKAD, and CKS (Part 1), the Terraform Associate (Terraform part),
+    and the associate exams of all three clouds: AWS Solutions Architect
+    Associate, AZ-104, and Associate Cloud Engineer (each cloud's part).
+    The professional-level exams haven't had one.

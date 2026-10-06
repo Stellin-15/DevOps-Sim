@@ -1,0 +1,54 @@
+{
+  "id": "gcp-tutorial-012",
+  "type": "tutorial",
+  "category": "gcp",
+  "title": "ACE: Instance Templates, Managed Instance Groups, Load Balancing, and Cloud Run",
+  "difficulty": "intermediate",
+  "tags": ["gcp", "ace", "compute-engine", "mig", "load-balancing", "cloud-run"],
+  "intro": "Running a service on Google Cloud at the ACE's level means groups of identical VMs that heal and scale themselves, a load balancer in front, and knowing when a container platform like Cloud Run removes the VMs entirely. The service is the shop's web tier in region europe-west1.",
+  "steps": [
+    {
+      "prompt": "Create an instance template web-template-v2 with machine type e2-medium, the debian-12 image family from project debian-cloud, the network tag web, and the startup script in startup.sh.",
+      "expected_commands": ["gcloud compute instance-templates create web-template-v2 --machine-type=e2-medium --image-family=debian-12 --image-project=debian-cloud --tags=web --metadata-from-file=startup-script=startup.sh", "gcloud compute instance-templates create web-template-v2 --machine-type e2-medium --image-family debian-12 --image-project debian-cloud --tags web --metadata-from-file startup-script=startup.sh"],
+      "fake_output": "Created [https://www.googleapis.com/compute/v1/projects/shop-prod/global/instanceTemplates/web-template-v2].\nNAME             MACHINE_TYPE  PREEMPTIBLE  CREATION_TIMESTAMP\nweb-template-v2  e2-medium                  2026-10-06T09:12:40.118-07:00",
+      "explanation": "A recipe for identical web VMs; templates can't be edited, only replaced.",
+      "why": "Templates being immutable is the point: a new version is a new template, rolled out deliberately. Using an image family (instead of one image) picks up the latest patched image each time an instance is created."
+    },
+    {
+      "prompt": "Create a regional managed instance group web-mig in europe-west1 with 3 instances from web-template-v2.",
+      "expected_commands": ["gcloud compute instance-groups managed create web-mig --region=europe-west1 --template=web-template-v2 --size=3", "gcloud compute instance-groups managed create web-mig --region europe-west1 --template web-template-v2 --size 3"],
+      "fake_output": "Created [https://www.googleapis.com/compute/v1/projects/shop-prod/regions/europe-west1/instanceGroupManagers/web-mig].\nNAME     LOCATION      SCOPE   BASE_INSTANCE_NAME  SIZE  TARGET_SIZE  INSTANCE_TEMPLATE  AUTOSCALED\nweb-mig  europe-west1  region  web-mig             0     3            web-template-v2    no",
+      "explanation": "Three instances spread across the region's zones.",
+      "why": "A regional MIG survives the loss of a zone; a zonal one doesn't. With a health check attached (autohealing), the group recreates instances whose application stops answering, not just ones whose VM dies."
+    },
+    {
+      "prompt": "Turn on autoscaling for web-mig: between 3 and 10 instances, targeting 60% CPU.",
+      "expected_commands": ["gcloud compute instance-groups managed set-autoscaling web-mig --region=europe-west1 --min-num-replicas=3 --max-num-replicas=10 --target-cpu-utilization=0.6", "gcloud compute instance-groups managed set-autoscaling web-mig --region europe-west1 --min-num-replicas 3 --max-num-replicas 10 --target-cpu-utilization 0.6"],
+      "fake_output": "Created [https://www.googleapis.com/compute/v1/projects/shop-prod/regions/europe-west1/autoscalers/web-mig-x7qk].\nautoscalingPolicy:\n  coolDownPeriodSec: 60\n  cpuUtilization:\n    utilizationTarget: 0.6\n  maxNumReplicas: 10\n  minNumReplicas: 3\n  mode: ON",
+      "explanation": "The group now grows and shrinks to hold CPU near 60%.",
+      "why": "Autoscaling can also follow load-balancer utilisation, Cloud Monitoring metrics, or schedules. The cool-down period should cover how long a new instance takes to start serving, or the autoscaler over-reacts to instances that are still booting."
+    },
+    {
+      "prompt": "Roll the group onto a newer template, web-template-v3, gradually, with a rolling update.",
+      "expected_commands": ["gcloud compute instance-groups managed rolling-action start-update web-mig --region=europe-west1 --version=template=web-template-v3", "gcloud compute instance-groups managed rolling-action start-update web-mig --region europe-west1 --version template=web-template-v3"],
+      "fake_output": "Updated [https://www.googleapis.com/compute/v1/projects/shop-prod/regions/europe-west1/instanceGroupManagers/web-mig].\nupdatePolicy:\n  maxSurge: {fixed: 3}\n  maxUnavailable: {fixed: 0}\n  type: PROACTIVE\nversions:\n- instanceTemplate: .../web-template-v3",
+      "explanation": "Instances are replaced a few at a time, never dropping below the target size.",
+      "why": "A canary is the same command with two versions (one with a target size such as 1 instance or 10%). The ACE also expects the load balancer choice: a global external Application Load Balancer for HTTP(S) with one anycast IP, a proxy Network Load Balancer for TCP, and a passthrough Network Load Balancer when the backend must see the client's IP."
+    },
+    {
+      "prompt": "The shop's image-resize service is a stateless container that gets bursts of traffic and is idle most of the night. Deploy the image europe-docker.pkg.dev/shop-prod/apps/resize:1.4 to Cloud Run as the service resize in europe-west1, open to unauthenticated requests.",
+      "expected_commands": ["gcloud run deploy resize --image=europe-docker.pkg.dev/shop-prod/apps/resize:1.4 --region=europe-west1 --allow-unauthenticated", "gcloud run deploy resize --image europe-docker.pkg.dev/shop-prod/apps/resize:1.4 --region europe-west1 --allow-unauthenticated"],
+      "fake_output": "Deploying container to Cloud Run service [resize] in project [shop-prod] region [europe-west1]\n✓ Deploying new service... Done.\n  ✓ Creating Revision...\n  ✓ Routing traffic...\n  ✓ Setting IAM Policy...\nService [resize] revision [resize-00001-kog] has been deployed and is serving 100 percent of traffic.\nService URL: https://resize-x7qk2mb9-ew.a.run.app",
+      "explanation": "A URL serving the container, scaling to zero when idle.",
+      "why": "Cloud Run fits stateless HTTP containers with uneven traffic: you pay per request time, and nothing runs at night. Choosing among compute options is a staple question: Compute Engine for full control, GKE for many containers with Kubernetes features, Cloud Run for stateless containers, Cloud Run functions for small event handlers, and App Engine for older platform-style apps."
+    },
+    {
+      "prompt": "A batch job runs every night for two hours, can be interrupted and restarted, and costs too much. What's the cheapest Compute Engine option?\n  a) Larger standard VMs\n  b) Spot VMs, much cheaper but reclaimable at any time, which suits interruptible batch work\n  c) Sole-tenant nodes\n  d) Committed use for a VM that runs two hours a day\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "Spot VMs           : steep discount, can be preempted with 30 seconds' notice\nCommitted use      : 1 or 3 years, for steady always-on load\nSustained use      : automatic discount for VMs that run most of the month\nSole-tenant nodes  : dedicated hardware for licensing or compliance",
+      "hint": "Interruptible is the key word.",
+      "explanation": "Spot VMs fit work that tolerates being stopped.",
+      "why": "Committed use discounts reward steady usage, which a two-hour job isn't. A MIG of Spot VMs recreates preempted instances when capacity returns; the job itself must checkpoint so a restart doesn't begin from zero."
+    }
+  ]
+}

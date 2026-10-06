@@ -466,7 +466,7 @@ unique). The Kubernetes-only `kubernetes.md` command reference is
 identical to (and replaces) the old root `COMMANDS.md`.
 
 Current per-category content depth (tutorials / incidents):
-- kubernetes: 41 / 18 (also has 11 Writing Labs, 2 sandboxes, 5 mysteries) — CKA-gap-filled
+- kubernetes: 44 / 18 (also has 11 Writing Labs, 2 sandboxes, 5 mysteries) — CKA-gap-filled
 - docker: 11 / 5 (+3 Writing Labs: 2 Dockerfile, 1 Compose)
 - linux: 15 / 6 (+4 Writing Labs: bash)
 - terraform: 19 / 7 (+5 Writing Labs: HCL, including a three-file module)
@@ -475,8 +475,8 @@ Current per-category content depth (tutorials / incidents):
 - monitoring: 17 / 8 (+5 Writing Labs: alert rules, burn-rate alerts, a Grafana dashboard, manual OTel spans)
 - mlops: 18 / 8
 - aws: 17 / 7 (+1 Writing Lab, AWS VPC sandbox, 4 mysteries)
-- azure: 10 / 6 (+ Azure sandbox, 3 mysteries)
-- gcp: 10 / 6 (+ Google Cloud sandbox, 3 mysteries)
+- azure: 13 / 6 (+ Azure sandbox, 3 mysteries)
+- gcp: 13 / 6 (+ Google Cloud sandbox, 3 mysteries)
 - security: 16 / 7 (+3 Writing Labs, 2 hacked-server mysteries on the Linux sandbox)
 - servers: 13 / 7 (fleet ops: Ansible, patching, time, LVM, backups)
 - sre: 14 / 6 (big-tech practices, via public tools; +2 Writing Labs)
@@ -510,7 +510,7 @@ Current per-category content depth (tutorials / incidents):
 - finops: 6 / 3 (cost allocation, rightsizing, commitments and spot, Kubernetes cost, quiet costs)
 - dataeng: 5 / 2 (+1 Writing Lab): Airflow authoring, dbt, warehouses, Spark on Kubernetes, CDC
 - landscape: 13 / 0 (tutorials only, no incidents: recognition-level introductions to less common tools, one per tool family)
-- **total: 352 tutorials, 158 incidents, 51 Writing Labs, 18 career paths, 32 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security, 4 databases, 5 git)**
+- **total: 361 tutorials, 158 incidents, 51 Writing Labs, 18 career paths, 32 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security, 4 databases, 5 git)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with
@@ -781,8 +781,11 @@ See GAPS.md's final 'Overall' part for the reasoning. In priority order:
 2. Exam gap passes: ✓ CKAD (tutorial-039 to 041), ✓ Terraform
    Associate (terraform-tutorial-017 to 019), ✓ AWS Solutions Architect
    Associate (aws-tutorial-015 to 017); each part of GAPS.md has an
-   'Exam pass' section mapping domains to content. Not yet: CKS, the
-   Azure (AZ-104) and Google Cloud (ACE) associate exams.
+   'Exam pass' section mapping domains to content. Then ✓ CKS
+   (tutorial-042 to 044), ✓ AZ-104 (azure-tutorial-011 to 013), and ✓
+   Google Cloud ACE (gcp-tutorial-011 to 013). Not yet: professional-
+   level exams (AWS SAP/DOP, AZ-400, Google Professional Cloud
+   Architect/DevOps).
 3. ✓ Kubernetes mysteries (5), on the new fixable `kube_sandbox.py`.
    More mysteries on any sandbox need only JSON: a seed, problems,
    goals, evidence, a question, and a stored solution.

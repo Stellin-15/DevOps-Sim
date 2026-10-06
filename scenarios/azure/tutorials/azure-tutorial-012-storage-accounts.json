@@ -1,0 +1,55 @@
+{
+  "id": "azure-tutorial-012",
+  "type": "tutorial",
+  "category": "azure",
+  "title": "AZ-104: Storage Accounts, Redundancy, SAS, AzCopy, and Lifecycle Rules",
+  "difficulty": "intermediate",
+  "tags": ["azure", "az-104", "storage", "sas", "azcopy", "lifecycle"],
+  "intro": "Storage is a full AZ-104 domain: which redundancy to pick, how to give time-limited access, how to move data in bulk, and how to stop paying hot-tier prices for data nobody reads. The shop needs a storage account, shopexports, in resource group rg-shop-prod for nightly report exports.",
+  "steps": [
+    {
+      "prompt": "Exports must survive the loss of a whole region and of a single datacenter. Which redundancy option fits?\n  a) LRS: three copies in one datacenter\n  b) GZRS: three copies across availability zones in the primary region, plus asynchronous copies in a paired secondary region\n  c) ZRS only\n  d) No redundancy\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "LRS   : 3 copies, 1 datacenter                         (cheapest)\nZRS   : 3 copies across 3 zones in one region          (survives a zone)\nGRS   : LRS + LRS in the paired region                  (survives a region)\nGZRS  : ZRS + LRS in the paired region                  (survives both)\nRA-   : read access to the secondary copy (RA-GRS, RA-GZRS)",
+      "hint": "Zone and region both.",
+      "explanation": "GZRS combines zone redundancy with geo-replication.",
+      "why": "The secondary region of GRS and GZRS can't be read until a failover, unless you choose the RA- variant. Failover is something you (or Microsoft) trigger, and replication is asynchronous, so the last few minutes of writes can be lost."
+    },
+    {
+      "prompt": "Create the StorageV2 account shopexports in rg-shop-prod, in westeurope, with Standard_GZRS redundancy.",
+      "expected_commands": ["az storage account create --name shopexports --resource-group rg-shop-prod --location westeurope --sku Standard_GZRS --kind StorageV2", "az storage account create -n shopexports -g rg-shop-prod -l westeurope --sku Standard_GZRS --kind StorageV2"],
+      "fake_output": "{\n  \"name\": \"shopexports\",\n  \"kind\": \"StorageV2\",\n  \"sku\": {\"name\": \"Standard_GZRS\", \"tier\": \"Standard\"},\n  \"primaryEndpoints\": {\"blob\": \"https://shopexports.blob.core.windows.net/\"},\n  \"allowBlobPublicAccess\": false,\n  \"minimumTlsVersion\": \"TLS1_2\"\n}",
+      "explanation": "A general-purpose v2 account; anonymous public access is off by default.",
+      "why": "Account names are globally unique, 3 to 24 lowercase letters and digits, because they become DNS names. StorageV2 is the default kind and the one that supports access tiers and lifecycle management."
+    },
+    {
+      "prompt": "Copy the local folder ./exports into the container exports of shopexports with AzCopy, recursively. You've already run 'azcopy login'.",
+      "expected_commands": ["azcopy copy ./exports https://shopexports.blob.core.windows.net/exports --recursive", "azcopy copy \"./exports\" \"https://shopexports.blob.core.windows.net/exports\" --recursive", "azcopy copy ./exports https://shopexports.blob.core.windows.net/exports --recursive=true"],
+      "fake_output": "Job 7d2c... has started\n\n100.0 %, 412 Done, 0 Failed, 0 Pending, 0 Skipped, 412 Total, 2-sec Throughput (Mb/s): 184.2\n\nFinal Job Status: Completed",
+      "explanation": "412 files uploaded in parallel.",
+      "why": "AzCopy is the exam's answer for bulk copies, including server-side copies between accounts. 'azcopy sync' copies only what changed. For very large offline transfers the answer becomes Azure Data Box."
+    },
+    {
+      "prompt": "The finance team needs to download exports for one day without an Azure account. Generate a user-delegation SAS for the container exports, read and list only, expiring at 2026-10-07T00:00Z, signed with your Entra credentials rather than the account key.",
+      "expected_commands": ["az storage container generate-sas --account-name shopexports --name exports --permissions rl --expiry 2026-10-07T00:00Z --auth-mode login --as-user", "az storage container generate-sas --account-name shopexports -n exports --permissions rl --expiry 2026-10-07T00:00Z --auth-mode login --as-user"],
+      "fake_output": "\"se=2026-10-07T00%3A00Z&sp=rl&sv=2022-11-02&sr=c&skoid=<id>&sktid=<tenant>&skt=...&ske=...&sks=b&skv=2022-11-02&sig=<signature>\"",
+      "explanation": "A token that grants read and list on one container for a day.",
+      "why": "A user-delegation SAS is signed by an Entra identity and can be revoked by revoking that delegation key; an account-key SAS can only be revoked by rotating the key, which breaks everything else that uses it. Stored access policies on a container are the other way to make a SAS revocable."
+    },
+    {
+      "prompt": "Exports are read in the first week and kept for a year for audit. Apply the lifecycle policy in policy.json (cool after 7 days, archive after 30, delete after 365) to shopexports.",
+      "expected_commands": ["az storage account management-policy create --account-name shopexports --resource-group rg-shop-prod --policy @policy.json", "az storage account management-policy create --account-name shopexports -g rg-shop-prod --policy @policy.json"],
+      "fake_output": "{\n  \"policy\": {\n    \"rules\": [\n      {\"name\": \"exports-tiering\", \"enabled\": true, \"type\": \"Lifecycle\",\n       \"definition\": {\"actions\": {\"baseBlob\": {\n         \"tierToCool\": {\"daysAfterModificationGreaterThan\": 7},\n         \"tierToArchive\": {\"daysAfterModificationGreaterThan\": 30},\n         \"delete\": {\"daysAfterModificationGreaterThan\": 365}}}}}\n    ]\n  }\n}",
+      "explanation": "Azure moves and deletes blobs on that schedule by itself.",
+      "why": "Access tiers trade storage price for access price: hot, cool (30-day minimum), cold (90), and archive (180, offline). An archived blob must be rehydrated, which takes hours, before it can be read, so archive suits data you'd only read for an audit."
+    },
+    {
+      "prompt": "The app on vm-app-01 must reach shopexports without the traffic or the account being exposed to the internet. What do you configure?\n  a) Make the container public\n  b) A private endpoint for the blob service in the app's VNet (with its private DNS zone), and disable public network access on the account\n  c) A bigger VM\n  d) A SAS with no expiry\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "shopexports.blob.core.windows.net -> shopexports.privatelink.blob.core.windows.net -> 10.20.2.5 (private endpoint in snet-app)\npublicNetworkAccess: Disabled",
+      "hint": "A private IP for the storage account inside your network.",
+      "explanation": "The account gets an address in the VNet; the public endpoint is closed.",
+      "why": "Service endpoints are the older, cheaper alternative: traffic stays on the Azure backbone and the account firewall can allow the subnet, but the account keeps a public IP. Private endpoints give it a private IP, which is what 'no internet exposure' requires; the private DNS zone is what makes the normal name resolve to it."
+    }
+  ]
+}

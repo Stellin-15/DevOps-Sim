@@ -1,0 +1,55 @@
+{
+  "id": "tutorial-043",
+  "type": "tutorial",
+  "category": "kubernetes",
+  "title": "CKS: AppArmor, seccomp, Service Account Tokens, and Sandboxed Runtimes",
+  "difficulty": "advanced",
+  "tags": ["kubernetes", "cks", "apparmor", "seccomp", "service-accounts", "gvisor"],
+  "intro": "The CKS's system-hardening and microservice domains ask you to shrink what a compromised container can do: which system calls it may make, which files it may write, whether it gets an API token it never needed, and whether it shares the host's kernel at all. The workload is the web Deployment in namespace shop, and you're on its node, worker-2.",
+  "steps": [
+    {
+      "prompt": "An AppArmor profile that denies all file writes is at /etc/apparmor.d/k8s-deny-write. Load it into the kernel on this node.",
+      "expected_commands": ["apparmor_parser -q /etc/apparmor.d/k8s-deny-write", "sudo apparmor_parser -q /etc/apparmor.d/k8s-deny-write", "apparmor_parser /etc/apparmor.d/k8s-deny-write"],
+      "fake_output": "(no output: the profile was loaded)",
+      "explanation": "The profile is now available to containers on worker-2.",
+      "why": "AppArmor profiles live in each node's kernel, not in the cluster, so a pod that references a profile its node doesn't have fails to start. In the exam the profile is loaded on one named node, and the pod must be scheduled there (nodeName or a node selector)."
+    },
+    {
+      "prompt": "Confirm the profile k8s-deny-write is loaded and in enforce mode.",
+      "expected_commands": ["aa-status | grep k8s-deny-write", "sudo aa-status | grep k8s-deny-write", "apparmor_status | grep k8s-deny-write"],
+      "fake_output": "   k8s-deny-write",
+      "explanation": "It's listed under the enforce-mode profiles.",
+      "why": "Complain mode only logs violations, which is useful while writing a profile but protects nothing. The pod then references it in securityContext.appArmorProfile (type: Localhost, localhostProfile: k8s-deny-write); before Kubernetes 1.30 this was an annotation, which older exam tasks still show."
+    },
+    {
+      "prompt": "Which seccomp setting should be the baseline for almost every pod?\n  a) Unconfined, for compatibility\n  b) securityContext.seccompProfile.type: RuntimeDefault, the container runtime's default filter that blocks rarely needed, dangerous system calls\n  c) A custom Localhost profile for every image\n  d) seccomp only works on privileged pods\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "securityContext:\n  seccompProfile:\n    type: RuntimeDefault        # or Localhost with localhostProfile: profiles/audit.json\n  allowPrivilegeEscalation: false\n  readOnlyRootFilesystem: true\n  capabilities:\n    drop: [\"ALL\"]",
+      "hint": "The safe default that almost every app tolerates.",
+      "explanation": "RuntimeDefault costs nothing for normal applications and removes a large kernel attack surface.",
+      "why": "Kubernetes runs pods Unconfined by default unless the kubelet's seccomp default is turned on, which is why the Restricted Pod Security Standard requires it explicitly. Localhost profiles live under the kubelet's seccomp directory (/var/lib/kubelet/seccomp) and are for tightening further."
+    },
+    {
+      "prompt": "The web app never talks to the Kubernetes API, yet every pod gets a token mounted. Stop the service account web in namespace shop from automounting its token.",
+      "expected_commands": ["kubectl patch serviceaccount web -n shop -p '{\"automountServiceAccountToken\": false}'", "kubectl patch sa web -n shop -p '{\"automountServiceAccountToken\": false}'", "kubectl patch serviceaccount web -n shop -p '{\"automountServiceAccountToken\":false}'"],
+      "fake_output": "serviceaccount/web patched",
+      "explanation": "New pods using this service account won't get a token mounted.",
+      "why": "A token in a compromised container is a ready-made credential for the API server; if the pod doesn't need one, don't mount one. The pod spec's own automountServiceAccountToken overrides the service account's, and existing pods keep their token until they're recreated."
+    },
+    {
+      "prompt": "Untrusted user code will run in the sandbox Deployment, and you want it isolated from the host kernel. Check which RuntimeClasses the cluster offers.",
+      "expected_commands": ["kubectl get runtimeclass", "kubectl get runtimeclasses"],
+      "fake_output": "NAME     HANDLER   AGE\ngvisor   runsc     30d\nkata     kata      30d",
+      "explanation": "gVisor (handler runsc) and Kata Containers are available.",
+      "why": "Setting spec.runtimeClassName: gvisor in the pod template runs the pod in gVisor, which intercepts system calls in a user-space kernel, so a kernel exploit inside the container doesn't reach the host's kernel. The price is some performance and compatibility, which is why it's reserved for untrusted workloads."
+    },
+    {
+      "prompt": "A pod in a cloud cluster can reach the instance metadata endpoint 169.254.169.254 and read the node's cloud credentials. Which is the Kubernetes-level fix the CKS expects?\n  a) Delete the endpoint\n  b) A NetworkPolicy whose egress allows 0.0.0.0/0 except 169.254.169.254/32 (with workload identity or IMDSv2 hop limits as the cloud-side fix)\n  c) Run the pod as root\n  d) Turn off DNS\nType the letter.",
+      "expected_commands": ["b"],
+      "fake_output": "egress:\n- to:\n  - ipBlock:\n      cidr: 0.0.0.0/0\n      except:\n      - 169.254.169.254/32",
+      "hint": "Block one address, allow the rest.",
+      "explanation": "An egress rule with an except block cuts pods off from metadata.",
+      "why": "Node credentials from the metadata service are a common step from 'one compromised pod' to 'the whole cloud account'. Blocking it with a NetworkPolicy needs a CNI that enforces policies (Calico, Cilium); on AWS, an IMDSv2 hop limit of 1 also stops containers reaching it."
+    }
+  ]
+}
