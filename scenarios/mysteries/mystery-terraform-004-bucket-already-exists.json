@@ -3,7 +3,7 @@
   "type": "mystery",
   "category": "terraform",
   "sandbox": "terraform",
-  "title": "The Apply That Fails on a Bucket Nobody Can Find in the Code's History",
+  "title": "The Apply That Fails Every Time, on a Brand-New Bucket",
   "difficulty": "intermediate",
   "tags": ["terraform", "import", "unmanaged-resources"],
   "setup": {"seed": 44, "problems": ["unmanaged_bucket"]},
