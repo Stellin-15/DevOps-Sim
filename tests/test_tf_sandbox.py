@@ -115,3 +115,39 @@ def test_config_shows_the_code():
 def test_pipes_and_unknown_commands():
     assert run(fresh(), "terraform state list | grep aws_instance") == "aws_instance.web"
     assert "not simulated" in run(fresh(), "terraform destroy")
+
+
+# ------------------------------------------------------------- state surgery
+
+def test_state_mv_fixes_a_rename_without_touching_the_instance():
+    s = fresh("renamed")
+    web_id = s["tfstate"]["aws_instance.web"]["id"]
+    out = run(s, "terraform state mv aws_instance.web aws_instance.app")
+    assert "Successfully moved 1 object(s)" in out
+    assert actions(s) == [] and s["tfstate"]["aws_instance.app"]["id"] == web_id
+
+
+def test_state_mv_errors():
+    s = fresh()
+    assert "does not match anything" in run(s, "terraform state mv aws_instance.nope aws_instance.app")
+    assert "already a resource" in run(s, "terraform state mv aws_vpc.main aws_vpc.main")
+    assert "types don't match" in run(s, "terraform state mv aws_vpc.main aws_instance.vpc")
+
+
+def test_state_rm_forgets_without_destroying():
+    s = fresh("handed_over")
+    out = run(s, "terraform state rm aws_db_instance.reports")
+    assert "Successfully removed 1 resource instance(s)" in out
+    assert actions(s) == [] and "shop-reports" in s["real"]
+
+
+def test_state_rm_of_unknown_address():
+    assert "No matching objects" in run(fresh(), "terraform state rm aws_db_instance.nope")
+
+
+def test_state_surgery_respects_the_lock():
+    s = fresh("stale_lock", "renamed")
+    assert "Error acquiring the state lock" in run(s, "terraform state mv aws_instance.web aws_instance.app")
+    assert "aws_instance.web" in s["tfstate"]
+    run(s, "terraform state mv -lock=false aws_instance.web aws_instance.app")
+    assert "aws_instance.app" in s["tfstate"] and s["lock_bypassed"]

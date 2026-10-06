@@ -52,6 +52,7 @@ LOCK_PATH = "shop-tfstate/prod/terraform.tfstate"
 HELP_TEXT = """Supported commands (a simulated Terraform working directory; nothing real is changed):
   terraform init | validate | plan [-refresh-only] [-lock=false]
   terraform state list | state show <addr> | state pull
+  terraform state mv <from> <to>   terraform state rm <addr>
   cat main.tf     ls
   help | exit          (pipes work: terraform state list | grep aws_instance)"""
 
@@ -267,6 +268,50 @@ def _state_show(state: dict, addr: str) -> str:
     return "\n".join([f"# {addr}:", f'resource "{rtype}" "{name}" {{', *body, "}"])
 
 
+# ------------------------------------------------------------- state surgery
+
+def _take_lock(state: dict, no_lock: bool):
+    """None if the command may write the state; otherwise the lock error.
+    -lock=false gets past a lock, which is recorded: if the run holding it
+    were still alive, two writers would corrupt the state."""
+    if not state["lock"]:
+        return None
+    if no_lock:
+        state["lock_bypassed"] = True
+        return None
+    return _lock_error(state)
+
+
+def _state_mv(state: dict, args: list) -> str:
+    if len(args) != 2:
+        return "Error: Exactly two arguments expected: the source and destination addresses."
+    src, dst = args
+    tfstate = state["tfstate"]
+    if src not in tfstate:
+        return (f"╷\n│ Error: Invalid source address\n│\n│ Cannot move {src}: does not match anything in the "
+                "current state.\n╵")
+    if dst in tfstate:
+        return (f"╷\n│ Error: Invalid target address\n│\n│ Cannot move to {dst}: there is already a resource "
+                "instance at that address in the current state.\n╵")
+    if src.split(".")[0] != dst.split(".")[0]:
+        return (f"╷\n│ Error: Invalid state move request\n│\n│ Cannot move {src} to {dst}: resource types "
+                "don't match.\n╵")
+    tfstate[dst] = tfstate.pop(src)
+    return f'Move "{src}" to "{dst}"\nSuccessfully moved 1 object(s).'
+
+
+def _state_rm(state: dict, args: list) -> str:
+    if not args:
+        return "Error: At least one address is required."
+    missing = [a for a in args if a not in state["tfstate"]]
+    if missing:
+        return f"╷\n│ Error: Invalid target address\n│\n│ No matching objects found for {missing[0]}.\n╵"
+    for addr in args:
+        del state["tfstate"][addr]
+    lines = [f"Removed {a}" for a in args]
+    return "\n".join(lines + [f"Successfully removed {len(args)} resource instance(s)."])
+
+
 # ------------------------------------------------------------------ commands
 
 def _terraform(state: dict, args: list) -> str:
@@ -292,6 +337,11 @@ def _terraform(state: dict, args: list) -> str:
             return "\n".join(sorted(state["tfstate"]))
         if action == "show":
             return _state_show(state, words[2]) if len(words) > 2 else "Error: Exactly one argument expected."
+        if action in ("mv", "rm"):
+            blocked = _take_lock(state, no_lock)
+            if blocked:
+                return blocked
+            return _state_mv(state, words[2:]) if action == "mv" else _state_rm(state, words[2:])
         if action == "pull":
             import json
             return json.dumps({"version": 4, "terraform_version": "1.9.5", "resources": [
