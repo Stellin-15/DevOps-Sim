@@ -18,6 +18,7 @@ import kube_sandbox
 import linux_sandbox
 import sandbox
 import stats
+import tf_sandbox
 import yaml_lab
 from engine import read_input, run_scenario
 from scenario_loader import (
@@ -203,6 +204,7 @@ SANDBOXES = [
     ("Google Cloud — tag-based firewall rules, IAP SSH, and Cloud NAT", gcp_sandbox.run_sandbox),
     ("Database — a real SQL database with bad data, a lost index, and a backup to restore from", db_sandbox.run_sandbox),
     ("Git — a real repository: wrong branch, a leaked key, a stuck merge, lost commits, a bad release", git_sandbox.run_sandbox),
+    ("Terraform — code, state, and the real account out of step: drift, a stale lock, a rename, an import, a hand-over", tf_sandbox.run_sandbox),
 ]
 
 
@@ -235,7 +237,7 @@ def main_menu_loop() -> None:
         print("  3. Writing Labs (write real config files and scripts in your own editor)")
         print("  4. Exam Mode (timed, no hints, scored)")
         print("  5. Mystery Incidents (just a symptom — find and fix it your way)")
-        print("  6. Sandbox (Kubernetes, Docker, Linux, AWS, Azure, Google Cloud, a real SQL database, or a real Git repository — explore freely)")
+        print("  6. Sandbox (Kubernetes, Docker, Linux, AWS, Azure, Google Cloud, Terraform, a real SQL database, or a real Git repository — explore freely)")
         print("  7. Stats (your progress, exam scores, and what to do next)")
         print("  q. Quit")
 

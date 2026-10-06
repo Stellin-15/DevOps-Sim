@@ -273,3 +273,53 @@ def test_the_tempting_wrong_fixes_dont_count():
     s = fresh("handed_over")
     run(s, "terraform apply -auto-approve")
     assert "[open ]" in run(s, "check")  # destroyed the other team's database
+
+
+# ------------------------------------------------------- mystery/sandbox hooks
+
+def test_goal_checks():
+    s = fresh("renamed")
+    assert not tf.GOAL_CHECKS["no_destroy"](s, {}) and not tf.GOAL_CHECKS["plan_clean"](s, {})
+    run(s, "terraform state mv aws_instance.web aws_instance.app")
+    assert tf.GOAL_CHECKS["no_destroy"](s, {}) and tf.GOAL_CHECKS["plan_clean"](s, {})
+    assert tf.GOAL_CHECKS["problem_fixed"](s, {"problem": "renamed"})
+
+
+def test_a_lock_keeps_the_plan_from_being_clean():
+    s = fresh("stale_lock")
+    assert not tf.GOAL_CHECKS["plan_clean"](s, {})
+    assert tf.placeholders(s)["lock_id"] == s["lock"]["id"]
+
+
+def test_no_collateral_at_the_start():
+    for p in tf.PROBLEMS:
+        assert tf.collateral_issues(fresh(p)) == set()
+
+
+def test_collateral_for_destroying_duplicating_and_bypassing():
+    s = fresh("renamed")
+    run(s, "terraform apply -auto-approve")
+    assert any("destroyed a real resource" in i for i in tf.collateral_issues(s))
+
+    s = fresh()
+    run(s, "terraform state rm aws_instance.web")
+    run(s, "terraform apply -auto-approve")
+    assert "created a second instance named shop-web" in tf.collateral_issues(s)
+
+    s = fresh("stale_lock", "handed_over")
+    run(s, "terraform state rm -lock=false aws_db_instance.reports")
+    assert any("-lock=false" in i for i in tf.collateral_issues(s))
+
+
+def test_two_addresses_for_one_object_is_collateral():
+    s = fresh("unmanaged_bucket")
+    s["config"]["aws_s3_bucket.logs2"] = {"type": "aws_s3_bucket", "attrs": {"bucket": "shop-logs-prod"}}
+    run(s, "terraform import aws_s3_bucket.logs2 shop-logs-prod")
+    assert any("two addresses" in i for i in tf.collateral_issues(s))
+
+
+def test_registered_with_the_game_and_mysteries():
+    import game
+    import mystery
+    assert mystery.SANDBOXES["terraform"] is tf
+    assert any(fn is tf.run_sandbox for _, fn in game.SANDBOXES)
