@@ -1,0 +1,37 @@
+{
+  "id": "mystery-terraform-004",
+  "type": "mystery",
+  "category": "terraform",
+  "sandbox": "terraform",
+  "title": "The Apply That Fails on a Bucket Nobody Can Find in the Code's History",
+  "difficulty": "intermediate",
+  "tags": ["terraform", "import", "unmanaged-resources"],
+  "setup": {"seed": 44, "problems": ["unmanaged_bucket"]},
+  "symptom": "A change that adds an assets bucket to the production stack fails on every apply. Re-running doesn't help, the bucket name isn't used anywhere else in the code, and the team insists the bucket has never been created by Terraform. The site's images are already served from it.",
+  "goals": [
+    {"check": "problem_fixed", "problem": "unmanaged_bucket", "description": "Terraform manages the existing assets bucket"},
+    {"check": "plan_clean", "description": "terraform plan shows no changes"}
+  ],
+  "evidence": [
+    {"description": "that the bucket already exists outside Terraform", "seen_any": ["BucketAlreadyOwnedByYou", "CreateBucket"]}
+  ],
+  "question": {
+    "prompt": "What was the root cause?",
+    "options": [
+      "S3 is having an outage",
+      "The bucket was created by hand before the code was written, so it exists but isn't in state; Terraform tried to create it again and AWS refused, until it was imported",
+      "The bucket name is invalid",
+      "Another account owns the bucket"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 5,
+  "solution_commands": [
+    "terraform plan",
+    "aws s3 ls",
+    "aws cloudtrail lookup-events",
+    "terraform import aws_s3_bucket.assets shop-assets-prod",
+    "terraform plan"
+  ],
+  "debrief": "The plan wanted to create a bucket that 'aws s3 ls' already listed, and CloudTrail showed it was created by hand on October 1st, before the code existed. AWS's BucketAlreadyOwnedByYou error is the same message: it's yours, and it's already there. 'terraform import' writes the existing bucket into state at the code's address, so the next plan compares instead of creating; any difference between the hand-made bucket and the code then shows as an update, which you should read before applying. In a team, prefer an 'import { to = aws_s3_bucket.assets  id = \"shop-assets-prod\" }' block in the pull request, so the import is planned and reviewed like any other change. Deleting the bucket to let Terraform create it was never an option: it holds the site's images."
+}
