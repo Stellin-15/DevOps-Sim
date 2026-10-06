@@ -1,0 +1,37 @@
+{
+  "id": "mystery-terraform-002",
+  "type": "mystery",
+  "category": "terraform",
+  "sandbox": "terraform",
+  "title": "Every Terraform Pipeline Has Failed Since Last Night",
+  "difficulty": "intermediate",
+  "tags": ["terraform", "state-locking", "ci"],
+  "setup": {"seed": 42, "problems": ["stale_lock"]},
+  "symptom": "No production Terraform run has succeeded this morning: every plan fails within seconds, on every branch, including a pull request that only changes a comment. Nobody is applying anything right now.",
+  "goals": [
+    {"check": "problem_fixed", "problem": "stale_lock", "description": "The state is no longer locked"},
+    {"check": "plan_clean", "description": "terraform plan runs and shows no changes"}
+  ],
+  "evidence": [
+    {"description": "what's blocking every run", "seen_any": ["Error acquiring the state lock"]},
+    {"description": "that the run holding the lock is dead", "seen_any": ["cancelled"]}
+  ],
+  "question": {
+    "prompt": "What was the root cause, and why was force-unlock safe?",
+    "options": [
+      "The state file is corrupted and must be restored",
+      "An apply cancelled mid-run at 02:14 never released its lock; force-unlock was safe because CI showed that run had ended, so nothing else was writing",
+      "Someone is applying right now",
+      "The DynamoDB table is down"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 4,
+  "solution_commands": [
+    "terraform plan",
+    "gh run list --workflow=terraform.yml",
+    "terraform force-unlock -force {lock_id}",
+    "terraform plan"
+  ],
+  "debrief": "The lock error carries everything you need: the lock's id, who holds it (runner@ci-runner-7), what it was doing (an apply), and since when. CI history showed that apply was cancelled at 02:14, so the process that took the lock no longer exists and never released it. Only then is 'terraform force-unlock <id>' safe; unlocking while a real apply is running lets two writers corrupt the state. '-lock=false' would have worked too, and is worse: it skips the check for everyone after you. Two habits prevent the repeat: let CI cancellation send Terraform an interrupt rather than kill it, and check the plan after unlocking, because an apply cancelled mid-way can leave some resources half-changed."
+}
