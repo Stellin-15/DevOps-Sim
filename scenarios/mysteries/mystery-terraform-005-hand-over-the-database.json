@@ -1,0 +1,36 @@
+{
+  "id": "mystery-terraform-005",
+  "type": "mystery",
+  "category": "terraform",
+  "sandbox": "terraform",
+  "title": "Handing a Database to Another Team Without Deleting It",
+  "difficulty": "intermediate",
+  "tags": ["terraform", "state-rm", "ownership", "plan-review"],
+  "setup": {"seed": 45, "problems": ["handed_over"]},
+  "symptom": "The reports database has moved to the data team, who have already written it into their own Terraform stack. Your team deleted its block from this stack's code in a reviewed pull request. The next production apply is scheduled for 14:00. Make sure that apply is safe for everyone.",
+  "goals": [
+    {"check": "problem_fixed", "problem": "handed_over", "description": "This stack no longer manages the reports database, and the database still exists"},
+    {"check": "plan_clean", "description": "terraform plan shows no changes"}
+  ],
+  "evidence": [
+    {"description": "what the 14:00 apply would have done", "seen_any": ["aws_db_instance.reports will be destroyed"]}
+  ],
+  "question": {
+    "prompt": "Why would deleting the code have deleted the database?",
+    "options": [
+      "It wouldn't; Terraform ignores removed code",
+      "The database was still in this stack's state, so with its block gone the plan treated it as unwanted and would destroy it; removing it from state lets the stack forget it without touching it",
+      "The data team's stack would delete it",
+      "RDS deletes unused databases automatically"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 4,
+  "solution_commands": [
+    "terraform plan",
+    "terraform state show aws_db_instance.reports",
+    "terraform state rm aws_db_instance.reports",
+    "terraform plan"
+  ],
+  "debrief": "Deleting a resource block doesn't mean 'stop managing this'; it means 'this shouldn't exist', and the plan said so: aws_db_instance.reports 'will be destroyed (because it is not in configuration)'. The 14:00 apply would have deleted the data team's database. 'terraform state rm' makes this stack forget the object without touching it, and the plan becomes clean. Since Terraform 1.7, the reviewable way is a 'removed { from = aws_db_instance.reports  lifecycle { destroy = false } }' block in the same pull request that deletes the resource, so the forgetting is planned and applied with the change. For anything stateful, add deletion protection on the database itself as a second line of defence, so a wrong plan fails instead of deleting data."
+}
