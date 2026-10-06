@@ -213,3 +213,61 @@ def test_appending_a_rule():
     s = fresh()
     run(s, "iptables -I OUTPUT -p tcp --dport 443 -d 10.0.2.0/24 -j REJECT")
     assert "Connection refused" in run(s, "nc -zv api.shop.example 443")
+
+
+# ------------------------------------------------------- mystery/sandbox hooks
+
+FIXES = {
+    "wrong_gateway": "ip route replace default via 10.0.1.1",
+    "dead_dns": "sed -i 's/10.0.0.53/10.0.1.2/' /etc/resolv.conf",
+    "stale_hosts": "sed -i '/api.shop.example/d' /etc/hosts",
+    "firewall_blocks_db": "iptables -D OUTPUT 2",
+    "jumbo_mtu": "ip link set dev eth0 mtu 1500",
+}
+
+
+@pytest.mark.parametrize("problem", net.PROBLEMS)
+def test_each_fix_clears_its_problem(problem):
+    s = fresh(problem)
+    assert "[open ]" in run(s, "check") and not net.GOAL_CHECKS["problem_fixed"](s, {"problem": problem})
+    run(s, FIXES[problem])
+    assert "[fixed]" in run(s, "check") and net.GOAL_CHECKS["problem_fixed"](s, {"problem": problem})
+    assert net.collateral_issues(s) == set()
+
+
+def test_every_pair_of_problems_is_fixable():
+    import itertools
+    for a, b in itertools.combinations(net.PROBLEMS, 2):
+        s = fresh(a, b)
+        run(s, FIXES[a])
+        run(s, FIXES[b])
+        goal = {"target": "api.shop.example", "port": 443, "large": True}
+        assert net.GOAL_CHECKS["reachable"](s, goal), (a, b)
+        assert net.GOAL_CHECKS["reachable"](s, {"target": "db-1", "port": 5432}), (a, b)
+
+
+def test_no_collateral_at_the_start():
+    for p in net.PROBLEMS:
+        assert net.collateral_issues(fresh(p)) == set()
+
+
+def test_collateral():
+    s = fresh()
+    run(s, "iptables -P INPUT ACCEPT")
+    assert any("INPUT policy" in i for i in net.collateral_issues(s))
+    s = fresh()
+    run(s, "sed -i '/localhost/d' /etc/hosts")
+    assert "deleted the localhost line from /etc/hosts" in net.collateral_issues(s)
+    s = fresh()
+    run(s, "iptables -F INPUT")
+    assert any("SSH session" in i for i in net.collateral_issues(s))
+    s = fresh("dead_dns")
+    run(s, "sed -i '/nameserver/d' /etc/resolv.conf")
+    assert any("no nameserver" in i for i in net.collateral_issues(s))
+
+
+def test_registered_with_the_game_and_mysteries():
+    import game
+    import mystery
+    assert mystery.SANDBOXES["net"] is net
+    assert any(fn is net.run_sandbox for _, fn in game.SANDBOXES)

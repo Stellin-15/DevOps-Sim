@@ -18,6 +18,7 @@ import docker_sandbox
 import gcp_sandbox
 import kube_sandbox
 import linux_sandbox
+import net_sandbox
 import tf_sandbox
 from engine import normalize, read_input
 from sandbox_common import run_command
@@ -36,6 +37,7 @@ SANDBOXES = {
     "db": db_sandbox,
     "git": git_sandbox,
     "terraform": tf_sandbox,
+    "net": net_sandbox,
 }
 
 MAX_ANSWER_ATTEMPTS = 2

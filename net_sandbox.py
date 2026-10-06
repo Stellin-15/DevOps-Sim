@@ -33,8 +33,8 @@ REPORTS = {
     "stale_hosts": "The app on app-1 times out calling api.shop.example, but the API team says it's healthy "
                    "and DNS is correct.",
     "firewall_blocks_db": "The app on app-1 can't reach its database since last night's hardening work.",
-    "jumbo_mtu": "Health checks from app-1 pass, but big responses (the product catalogue, package downloads) "
-                 "hang forever.",
+    "jumbo_mtu": "Big downloads to app-1 (the product catalogue, packages) hang forever, even when small "
+                 "requests to the same server succeed.",
 }
 
 MY_IP, MY_NET = "10.0.1.10", "10.0.1.0/24"
@@ -70,6 +70,7 @@ Changes:
   ip route replace|add|del default [via <ip>]   ip link set eth0 mtu <n> | up | down
   sed -i 's/old/new/' <file>   sed -i '/pattern/d' <file>   echo "text" >|>> <file>
   iptables -L [CHAIN] -n [--line-numbers] | -S | -D <CHAIN> <n> | -A/-I ... | -F | -P
+  check     which of the reported problems are fixed (sandbox only)
   help | exit          (pipes work: ip route | grep default)"""
 
 
@@ -658,6 +659,8 @@ def _dispatch(state: dict, raw: str) -> str:
         return _echo(state, args)
     if cmd == "iptables":
         return _iptables(state, args)
+    if cmd == "check":
+        return _check_report(state)
     if cmd == "cat":
         missing = [f for f in args if f not in state["files"]]
         if missing:
@@ -682,10 +685,54 @@ def _dispatch(state: dict, raw: str) -> str:
     return f"{cmd}: not simulated in the sandbox. Type 'help' for supported commands."
 
 
+# ------------------------------------------------------- mystery/sandbox hooks
+
+def _fixed(state: dict, problem: str) -> bool:
+    if problem == "wrong_gateway":
+        return state["default_gw"] == GOOD_GW
+    if problem == "dead_dns":
+        return dns_query(state, "api.shop.example")[0] == API_IP
+    if problem == "stale_hosts":
+        return _hosts_lookup(state, "api.shop.example") in (None, API_IP)
+    if problem == "firewall_blocks_db":
+        return _firewall_verdict(state, "10.0.1.20", 5432) == "ACCEPT"
+    if problem == "jumbo_mtu":
+        return state["link"]["mtu"] <= PATH_MTU
+    raise ValueError(problem)
+
+
+def _check_report(state: dict) -> str:
+    return "\n".join(f"[{'fixed' if _fixed(state, p) else 'open '}] {REPORTS[p]}" for p in state["problems"])
+
+
+GOAL_CHECKS = {
+    "problem_fixed": lambda state, g: _fixed(state, g["problem"]),
+    "reachable": lambda state, g: connect(state, g["target"], g["port"], large=g.get("large", False))[0] == "ok",
+}
+
+
+def placeholders(state: dict) -> dict:
+    return {}
+
+
+def collateral_issues(state: dict) -> set:
+    issues = set()
+    if state["console"]:
+        issues.add("cut off your own SSH session (eth0 down, or port 22 no longer accepted) and needed the "
+                   "serial console")
+    if state["policy"]["INPUT"] == "ACCEPT":
+        issues.add("set the INPUT policy to ACCEPT, opening every port on app-1")
+    if _hosts_lookup(state, "localhost") != "127.0.0.1":
+        issues.add("deleted the localhost line from /etc/hosts")
+    if _nameserver(state) is None:
+        issues.add("left /etc/resolv.conf with no nameserver at all")
+    return issues
+
+
 def describe_state(state: dict) -> list:
     return ["You're SSH'd into app-1 (10.0.1.10), an application server. Reported:",
             *[f"  - {REPORTS[p]}" for p in state["problems"]],
-            "Find each cause and fix it from app-1. You're connected over eth0: careful with it."]
+            "Find each cause and fix it from app-1; 'check' shows what's fixed. You're connected over eth0: careful with it."]
 
 
 def run_sandbox() -> None:
