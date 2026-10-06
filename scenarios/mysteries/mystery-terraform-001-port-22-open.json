@@ -1,0 +1,37 @@
+{
+  "id": "mystery-terraform-001",
+  "type": "mystery",
+  "category": "terraform",
+  "sandbox": "terraform",
+  "title": "Port 22 Is Open, and the Code Says It Isn't",
+  "difficulty": "beginner",
+  "tags": ["terraform", "drift", "security-groups"],
+  "setup": {"seed": 41, "problems": ["drift"]},
+  "symptom": "The weekly security scan flags SSH open to the whole internet on the production web servers. The Terraform code for the web security group allows only 80 and 443, the last merged change was a week ago, and the scan was clean last Friday.",
+  "goals": [
+    {"check": "problem_fixed", "problem": "drift", "description": "The web security group allows only 80 and 443 again"},
+    {"check": "plan_clean", "description": "terraform plan shows no changes"}
+  ],
+  "evidence": [
+    {"description": "that the change was made outside Terraform", "seen_any": ["Objects have changed outside of Terraform", "[80, 443, 22]"]},
+    {"description": "who made it", "seen_any": ["AuthorizeSecurityGroupIngress"]}
+  ],
+  "question": {
+    "prompt": "What was the root cause?",
+    "options": [
+      "A Terraform bug added the rule",
+      "Someone added the rule by hand in the console, so the real security group drifted from the code; applying the code removed it",
+      "The scanner is wrong",
+      "The state file was corrupted"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 4,
+  "solution_commands": [
+    "terraform plan",
+    "aws cloudtrail lookup-events",
+    "terraform apply -auto-approve",
+    "terraform plan"
+  ],
+  "debrief": "The plan said it first: 'Objects have changed outside of Terraform', with port 22 added to the real security group and an in-place update to take it back out. CloudTrail named who did it and when, which matters for the conversation afterwards: was it a debugging shortcut someone forgot to undo? Applying the code is the fix when the code is right. If the change had been wanted, the answer would be to put it in the code (and accept it with 'apply -refresh-only' in the meantime), never to leave the two disagreeing. The lasting fixes are a scheduled 'terraform plan -detailed-exitcode' that alerts on drift, and console permissions that make production read-only for people, so changes go through code."
+}
