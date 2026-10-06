@@ -328,9 +328,31 @@ Don't duplicate content from these files elsewhere — link to them.
   - Goals: `problem_fixed` (with `problem`) and `history_kept`.
     Collateral: origin/main no longer in main, a deleted tag, or a
     deleted branch.
+- **tf_sandbox.py** — the Terraform sandbox (kind `terraform`), fully
+  simulated (no real Terraform or cloud). Three layers: `config` (the
+  code: address -> type and attrs), `tfstate` (address -> real id and
+  attrs), and `real` (the AWS account: id -> type and attrs).
+  - `compute_plan` diffs like Terraform: config vs the *refreshed* real
+    object, so drift shows as an update back to the code; `FORCE_NEW`
+    attributes make it a replacement; state entries missing from config
+    are destroys; state vs real gives the 'changed outside of
+    Terraform' notes. `IDENTITY` attributes (bucket name, DB
+    identifier, SG name) make a create fail like AWS when taken.
+  - Problems, 2 of 5: drift, stale_lock, renamed, unmanaged_bucket,
+    handed_over. The fixes are the real ones (apply, force-unlock with
+    the exact id, state mv, import, state rm); the tempting wrong ones
+    (applying a rename or a removed block) really destroy things.
+  - apply and force-unlock prompt like Terraform; the sandbox can't
+    answer, so it points to -auto-approve / -force after the plan.
+    Writes take the lock; -lock=false bypasses it and is collateral.
+  - Read-only evidence: `aws s3 ls`, `ec2 describe-*`, `rds
+    describe-db-instances`, `cloudtrail lookup-events`, `gh run list`.
+  - Goals: `problem_fixed`, `plan_clean`, `no_destroy`; placeholder
+    `{lock_id}`; collateral for destroyed baseline ids, duplicate
+    instances, two addresses on one object, and lock bypass.
 - **mystery.py** — Mystery Incidents: a symptom and a seeded sandbox
   state (`scenarios/mysteries/*.json`). `sandbox` picks linux, docker,
-  aws, azure, gcp, kube, db or git, and `mystery.build_state` calls that module's
+  aws, azure, gcp, kube, db, git or terraform, and `mystery.build_state` calls that module's
   `generate_state(**setup)`.
 
   Mysteries are **sandbox-agnostic**: each sandbox module supplies three
@@ -469,7 +491,7 @@ Current per-category content depth (tutorials / incidents):
 - kubernetes: 44 / 18 (also has 11 Writing Labs, 2 sandboxes, 5 mysteries) — CKA-gap-filled
 - docker: 11 / 5 (+3 Writing Labs: 2 Dockerfile, 1 Compose)
 - linux: 15 / 6 (+4 Writing Labs: bash)
-- terraform: 19 / 7 (+5 Writing Labs: HCL, including a three-file module)
+- terraform: 19 / 7 (+5 Writing Labs: HCL, including a three-file module; Terraform sandbox, 5 mysteries)
 - networking: 17 / 8
 - cicd: 20 / 8 (+4 Writing Labs: GitHub Actions, GitLab CI)
 - monitoring: 17 / 8 (+5 Writing Labs: alert rules, burn-rate alerts, a Grafana dashboard, manual OTel spans)
@@ -510,7 +532,7 @@ Current per-category content depth (tutorials / incidents):
 - finops: 6 / 3 (cost allocation, rightsizing, commitments and spot, Kubernetes cost, quiet costs)
 - dataeng: 5 / 2 (+1 Writing Lab): Airflow authoring, dbt, warehouses, Spark on Kubernetes, CDC
 - landscape: 13 / 0 (tutorials only, no incidents: recognition-level introductions to less common tools, one per tool family)
-- **total: 361 tutorials, 158 incidents, 51 Writing Labs, 18 career paths, 32 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security, 4 databases, 5 git)**
+- **total: 361 tutorials, 158 incidents, 51 Writing Labs, 18 career paths, 37 Mystery Incidents (5 kubernetes, 4 linux, 2 docker, 4 aws, 3 azure, 3 gcp, 2 security, 4 databases, 5 git, 5 terraform)**
 
 Every category was expanded from its `commands/*.md` reference until
 every command section there is covered by at least one tutorial, with
@@ -707,6 +729,11 @@ python -m pytest
   the AWS tests, plus each cloud's own rules: NSG priority order and
   NIC-level NSGs; target tags, deny-beats-allow, regional NAT, and IAP
   SSH sessions
+- `test_tf_sandbox.py` — plan diffs (create, update, replace,
+  destroy, drift, refresh-only), each state command and its Terraform
+  errors, apply's consequences (a rename replaces the instance, a
+  removed block destroys the database, a taken name fails), import,
+  force-unlock, the lock, check, and every collateral rule
 - `test_git_sandbox.py` — with the real git: each problem starts
   unfixed, the real fix clears it, the tempting wrong fixes (a new
   commit deleting the key, `checkout --ours`, committing the markers,
@@ -747,7 +774,8 @@ exercise something the generic checks don't cover.
 ## Conventions / constraints to keep honoring
 
 - No real kubectl/cluster connection and no network anywhere. Scenario
-  output is always a pre-written string. The two exceptions run
+  output is always a pre-written string, and sandboxes (including
+  Terraform) are simulated models. The two exceptions run
   locally and are contained: the database sandbox (SQLite in memory,
   in-process) and the Git sandbox (the real git on a throwaway repo,
   with every command that could leave it refused).
@@ -789,9 +817,10 @@ See GAPS.md's final 'Overall' part for the reasoning. In priority order:
 3. ✓ Kubernetes mysteries (5), on the new fixable `kube_sandbox.py`.
    More mysteries on any sandbox need only JSON: a seed, problems,
    goals, evidence, a question, and a stored solution.
-4. More sandboxes (Terraform state explorer, networking) — Kubernetes,
-   Docker, and Linux exist; new ones only need generate_state() and
-   handle_command() plus a SANDBOXES entry in game.py.
+4. More sandboxes: ✓ Terraform (tf_sandbox.py, mysteries terraform-001
+   to 005). Still to build: a networking lab. A new one only needs
+   generate_state() and handle_command() plus a SANDBOXES entry in
+   game.py, and the three mystery hooks to host mysteries.
 5. ✓ v6 scenario-scaffolding CLI (scaffold.py).
 6. ✓ **Named topic gaps closed** (the batch after Git and System
    Design): admission webhooks and Multi-Attach (incident-014/015),
