@@ -1,0 +1,38 @@
+{
+  "id": "mystery-net-001",
+  "type": "mystery",
+  "category": "networking",
+  "sandbox": "net",
+  "title": "app-1 Can Reach Its Database and Nothing Else",
+  "difficulty": "beginner",
+  "tags": ["networking", "routing", "arp", "default-gateway"],
+  "setup": {"seed": 51, "problems": ["wrong_gateway"]},
+  "symptom": "app-1 was moved to a new rack last night and someone redid its network settings by hand to get it back online quickly. It talks to db-1 fine, but calls to the API and package downloads all fail.",
+  "goals": [
+    {"check": "problem_fixed", "problem": "wrong_gateway", "description": "app-1's default route uses the real gateway"},
+    {"check": "reachable", "target": "api.shop.example", "port": 443, "description": "app-1 reaches the API on 443"}
+  ],
+  "evidence": [
+    {"description": "that the next hop doesn't answer", "seen_any": ["FAILED", "Destination Host Unreachable", "!H", "No route to host"]},
+    {"description": "what the gateway should be", "seen_any": ["via: 10.0.1.1", "gw-1.shop.internal"]}
+  ],
+  "question": {
+    "prompt": "What was the root cause?",
+    "options": [
+      "The API and the mirror are both down",
+      "The default route pointed at 10.0.1.254, an address with nothing behind it, so ARP for the next hop failed for everything off the local subnet",
+      "DNS was broken",
+      "A firewall rule blocked outbound traffic"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 5,
+  "solution_commands": [
+    "ip route",
+    "ip neigh",
+    "cat /etc/netplan/50-cloud-init.yaml",
+    "ip route replace default via 10.0.1.1",
+    "curl https://api.shop.example/healthz"
+  ],
+  "debrief": "Reaching db-1 but nothing beyond the subnet points straight at the default route, because only off-subnet traffic uses it. 'ip route' showed the gateway as 10.0.1.254, and 'ip neigh' showed ARP for it FAILED: nothing on the wire owns that address. That's also why the errors said 'No route to host' and ping said 'Destination Host Unreachable' from app-1's own address, rather than timing out somewhere far away. The persisted netplan file had the right gateway all along; the by-hand fix just mistyped it. 'ip route replace' fixes it now; the lasting fix is making sure the runtime matches the persisted config (netplan apply), so the next reboot doesn't bring back either version of the mistake."
+}
