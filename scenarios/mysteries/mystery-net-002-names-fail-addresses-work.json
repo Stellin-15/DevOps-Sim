@@ -1,0 +1,39 @@
+{
+  "id": "mystery-net-002",
+  "type": "mystery",
+  "category": "networking",
+  "sandbox": "net",
+  "title": "Names Fail, Addresses Work",
+  "difficulty": "beginner",
+  "tags": ["networking", "dns", "resolv-conf"],
+  "setup": {"seed": 52, "problems": ["dead_dns"]},
+  "symptom": "This morning every deploy on app-1 fails, and the app's own logs are full of errors about its API. An engineer reports that a check using the API's IP address worked fine. The infrastructure team retired some old servers over the weekend.",
+  "goals": [
+    {"check": "problem_fixed", "problem": "dead_dns", "description": "app-1 resolves names through a working DNS server"},
+    {"check": "reachable", "target": "api.shop.example", "port": 443, "description": "app-1 reaches api.shop.example by name"}
+  ],
+  "evidence": [
+    {"description": "that name resolution itself is failing", "seen_any": ["Could not resolve host", "Temporary failure in name resolution", "no servers could be reached"]},
+    {"description": "which server app-1 was asking", "seen_any": ["nameserver 10.0.0.53"]}
+  ],
+  "question": {
+    "prompt": "What was the root cause?",
+    "options": [
+      "The API is down",
+      "app-1's resolv.conf still named 10.0.0.53, a DNS server retired at the weekend, so every lookup timed out while connections by IP were fine",
+      "The default gateway is wrong",
+      "The API's DNS record was deleted"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 6,
+  "solution_commands": [
+    "curl https://api.shop.example/healthz",
+    "cat /etc/resolv.conf",
+    "dig api.shop.example",
+    "cat /etc/netplan/50-cloud-init.yaml",
+    "sed -i 's/10.0.0.53/10.0.1.2/' /etc/resolv.conf",
+    "curl https://api.shop.example/healthz"
+  ],
+  "debrief": "'Works by IP, fails by name' is the signature of a name-resolution problem, and curl's error said it outright: 'Could not resolve host'. resolv.conf pointed at 10.0.0.53, dig against it timed out, and 'dig @10.0.1.2' (the server netplan lists) answered at once, which proves the records are fine and only the server is wrong. Pointing resolv.conf at 10.0.1.2 fixes it now. The reason it happened is the real lesson: resolv.conf was written once by a provisioning script and never updated, so retiring a server broke every host that still named it. Managing DNS settings centrally (DHCP, netplan, or systemd-resolved) and checking which hosts still query a server before retiring it prevents the repeat."
+}
