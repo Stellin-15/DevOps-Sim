@@ -1,0 +1,38 @@
+{
+  "id": "mystery-net-005",
+  "type": "mystery",
+  "category": "networking",
+  "sandbox": "net",
+  "title": "Small Requests Work, Big Downloads Hang Forever",
+  "difficulty": "advanced",
+  "tags": ["networking", "mtu", "jumbo-frames", "pmtud"],
+  "setup": {"seed": 55, "problems": ["jumbo_mtu"]},
+  "symptom": "After a network-card driver update and some performance tuning on app-1, package installs sit at 0% and the product catalogue never finishes loading. Health checks pass, logins work, and pings are fine.",
+  "goals": [
+    {"check": "problem_fixed", "problem": "jumbo_mtu", "description": "app-1's MTU fits the network"},
+    {"check": "reachable", "target": "api.shop.example", "port": 443, "large": true, "description": "a full-size response from the API arrives"}
+  ],
+  "evidence": [
+    {"description": "app-1's interface MTU", "seen_any": ["mtu 9000", "pmtu 9000"]},
+    {"description": "where big packets stop", "seen_any": ["100% packet loss"]}
+  ],
+  "question": {
+    "prompt": "What was the root cause?",
+    "options": [
+      "The API is slow under load",
+      "The tuning set eth0 to MTU 9000 (jumbo frames) on a network that carries 1500 bytes, so full-size packets were silently dropped: small exchanges fit, large transfers never completed",
+      "DNS is intermittently failing",
+      "The firewall drops large packets on purpose"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 5,
+  "solution_commands": [
+    "curl https://api.shop.example/catalog",
+    "ip link",
+    "ping -c 2 -M do -s 1472 api.shop.example",
+    "ping -c 2 -M do -s 2000 api.shop.example",
+    "ip link set dev eth0 mtu 1500"
+  ],
+  "debrief": "'Small things work, big things hang' is the classic MTU black hole. The connection opens (small packets), the request goes out, and then the first full-size packets vanish. 'ip link' showed eth0 at MTU 9000: jumbo frames, set by the tuning, on switches that carry 1500. Pings with the Don't Fragment flag proved it: 1472 bytes of payload (1500 with headers) got through, 2000 vanished without an error, because nothing on the path reported the drop back. Setting the MTU back to 1500 (and in netplan, so it survives a reboot) fixes it. Jumbo frames are a real optimisation, but only when every hop on the path supports them; 'ping -M do -s <size>' is how you find a path's real limit, and the same symptom appears on VPNs and tunnels whose overhead shrinks it (networking-incident-007)."
+}
