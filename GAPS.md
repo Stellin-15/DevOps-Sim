@@ -467,6 +467,13 @@ terminating load balancers.
 
 ## Still missing
 
+- ~~Hands-on troubleshooting~~: **closed** by the Networking sandbox: on a
+  modelled host and network, every connection is worked out layer by layer
+  (/etc/hosts and DNS, the route, ARP, the firewall, the listener, the MTU),
+  so each fault shows its real symptom, and six mysteries make you find and
+  fix a wrong gateway, a dead DNS server, a stale hosts entry, a firewall
+  rule, a jumbo MTU, and two of them at once. It's a model: no real packets,
+  and no tcpdump inside it.
 - ~~Packet capture~~: **closed** for tcpdump by networking-tutorial-011
   (choosing the interface, `-nn`, BPF filters on TCP flags, capturing
   at both ends to split the path, `-w` to a pcap). Actually reading a
@@ -2153,7 +2160,7 @@ If content is added in the order that helps most people soonest:
 | Docker | 11 | 5 | 3 Writing Labs (Dockerfile, Compose), Sandbox, 2 Mysteries |
 | Linux | 15 | 6 | 4 Writing Labs (bash), interactive Sandbox, 4 Mysteries |
 | Terraform | 19 | 7 | 5 Writing Labs (HCL, including a module), Sandbox, 5 Mysteries |
-| Networking | 17 | 8 | |
+| Networking | 17 | 8 | Sandbox, 6 Mysteries |
 | CI/CD | 20 | 8 | 4 Writing Labs (Actions, GitLab CI) |
 | Monitoring | 17 | 8 | 5 Writing Labs (alert rules, SLO burn alerts, a dashboard, manual spans) |
 | MLOps | 18 | 8 | |
@@ -2175,7 +2182,7 @@ If content is added in the order that helps most people soonest:
 | FinOps | 6 | 3 | |
 | Data Engineering | 5 | 2 | 1 Writing Lab (Airflow DAG) |
 | The Wider Landscape | 13 | 0 | tutorials only (recognition level) |
-| **Total** | **361** | **158** | 51 Writing Labs, 18 career paths, 10 sandboxes, 37 Mystery Incidents, Exam Mode, Stats |
+| **Total** | **361** | **158** | 51 Writing Labs, 18 career paths, 11 sandboxes, 43 Mystery Incidents, Exam Mode, Stats |
 
 Every command section of every `commands/*.md` reference is now covered
 by at least one tutorial, and every tutorial step explains *why* that
@@ -2228,7 +2235,7 @@ that more scenario content can narrow but not close:
    fixes that really change the state, collateral damage that costs
    points, and a root cause you must name. The database and Git
    sandboxes go further and run the real engine and the real git. But
-   37 mysteries on ten sandboxes are a start, not real on-call. Pair
+   43 mysteries on eleven sandboxes are a start, not real on-call. Pair
    this game with a homelab (kind or minikube, a free-tier cloud
    account) where things break for real.
 3. **Scale and money.** Cloud networking, IAM, serverless, and cost
