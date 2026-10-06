@@ -1,0 +1,37 @@
+{
+  "id": "mystery-net-004",
+  "type": "mystery",
+  "category": "networking",
+  "sandbox": "net",
+  "title": "After the Hardening Run, the App Lost Its Database",
+  "difficulty": "intermediate",
+  "tags": ["networking", "iptables", "firewall", "postgresql"],
+  "setup": {"seed": 54, "problems": ["firewall_blocks_db"]},
+  "symptom": "A security hardening script ran on app-1 last night. Since then the app can't reach its PostgreSQL database on db-1. The database is up, and two other app servers that weren't hardened yet connect to it fine. Fix app-1 without undoing the rest of the hardening.",
+  "goals": [
+    {"check": "problem_fixed", "problem": "firewall_blocks_db", "description": "app-1's firewall lets it reach PostgreSQL"},
+    {"check": "reachable", "target": "db-1", "port": 5432, "description": "app-1 reaches db-1 on 5432"}
+  ],
+  "evidence": [
+    {"description": "how the connection fails", "seen_any": ["Connection timed out", "no response"]},
+    {"description": "the rule responsible", "seen_any": ["dpt:5432", "--dport 5432"]}
+  ],
+  "question": {
+    "prompt": "What was the root cause?",
+    "options": [
+      "PostgreSQL stopped listening",
+      "A test rule from the hardening run, left in app-1's OUTPUT chain, dropped outgoing traffic to port 5432 on the local subnet, so connections timed out instead of being refused",
+      "db-1's firewall blocks app-1",
+      "The default route is wrong"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 4,
+  "solution_commands": [
+    "nc -zv db-1 5432",
+    "iptables -L OUTPUT -n --line-numbers",
+    "iptables -D OUTPUT 2",
+    "pg_isready -h db-1.shop.internal"
+  ],
+  "debrief": "A timeout rather than 'connection refused' means packets are being dropped, not answered: something between app-1 and PostgreSQL silently discards them. Since other servers reach db-1, the place to look was app-1's own firewall, and its OUTPUT chain had a DROP for tcp/5432 to 10.0.1.0/24, commented 'CIS 3.5 test - remove after review'. Deleting that one rule by its line number fixes it without touching anything else. The tempting shortcut, 'iptables -F', would also have wiped the INPUT rules, and with INPUT's policy at DROP that cuts off SSH, including your own session. Firewall changes deserve the same review as code: rules in version control, applied by configuration management, and tested against the connections the host actually needs."
+}
