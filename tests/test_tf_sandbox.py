@@ -114,7 +114,8 @@ def test_config_shows_the_code():
 
 def test_pipes_and_unknown_commands():
     assert run(fresh(), "terraform state list | grep aws_instance") == "aws_instance.web"
-    assert "not simulated" in run(fresh(), "terraform destroy")
+    assert "not simulated" in run(fresh(), "terraform taint aws_vpc.main")
+    assert "isn't available" in run(fresh(), "terraform destroy")
 
 
 # ------------------------------------------------------------- state surgery
@@ -151,3 +152,83 @@ def test_state_surgery_respects_the_lock():
     assert "aws_instance.web" in s["tfstate"]
     run(s, "terraform state mv -lock=false aws_instance.web aws_instance.app")
     assert "aws_instance.app" in s["tfstate"] and s["lock_bypassed"]
+
+
+# ------------------------------------------------------------------ apply
+
+def test_apply_asks_first_and_changes_nothing():
+    s = fresh("drift")
+    out = run(s, "terraform apply")
+    assert "Do you want to perform these actions?" in out and "-auto-approve" in out
+    assert 22 in s["real"][s["tfstate"]["aws_security_group.web"]["id"]]["attrs"]["ingress_ports"]
+
+
+def test_apply_reverts_drift():
+    s = fresh("drift")
+    out = run(s, "terraform apply -auto-approve")
+    assert "1 changed" in out
+    assert s["real"][s["tfstate"]["aws_security_group.web"]["id"]]["attrs"]["ingress_ports"] == [80, 443]
+    assert actions(s) == []
+
+
+def test_refresh_only_apply_accepts_drift_into_state():
+    s = fresh("drift")
+    run(s, "terraform apply -refresh-only -auto-approve")
+    assert s["tfstate"]["aws_security_group.web"]["attrs"]["ingress_ports"] == [80, 443, 22]
+    assert actions(s) == [("update", "aws_security_group.web")]  # the code still says otherwise
+
+
+def test_applying_a_rename_replaces_the_real_instance():
+    s = fresh("renamed")
+    old = s["tfstate"]["aws_instance.web"]["id"]
+    out = run(s, "terraform apply -auto-approve")
+    assert "1 added, 0 changed, 1 destroyed" in out
+    assert old not in s["real"] and s["tfstate"]["aws_instance.app"]["id"] != old
+
+
+def test_applying_an_existing_bucket_fails():
+    s = fresh("unmanaged_bucket")
+    out = run(s, "terraform apply -auto-approve")
+    assert "BucketAlreadyOwnedByYou" in out and "aws_s3_bucket.assets" not in s["tfstate"]
+
+
+def test_applying_a_handed_over_database_destroys_it():
+    s = fresh("handed_over")
+    run(s, "terraform apply -auto-approve")
+    assert "shop-reports" not in s["real"]
+
+
+def test_apply_respects_the_lock():
+    s = fresh("stale_lock", "drift")
+    assert "Error acquiring the state lock" in run(s, "terraform apply -auto-approve")
+
+
+# ----------------------------------------------------------------- import
+
+def test_import_adopts_an_existing_bucket():
+    s = fresh("unmanaged_bucket")
+    assert "Import successful!" in run(s, "terraform import aws_s3_bucket.assets shop-assets-prod")
+    assert actions(s) == []
+
+
+def test_import_errors():
+    s = fresh("unmanaged_bucket")
+    assert "does not exist in the configuration" in run(s, "terraform import aws_s3_bucket.nope shop-assets-prod")
+    assert "non-existent remote object" in run(s, "terraform import aws_s3_bucket.assets shop-assets-typo")
+    assert "already managed" in run(s, "terraform import aws_s3_bucket.logs shop-logs-prod")
+
+
+# ----------------------------------------------------------- force-unlock
+
+def test_force_unlock_needs_the_right_id_and_confirmation():
+    s = fresh("stale_lock")
+    lock = s["lock"]["id"]
+    assert "does not match" in run(s, "terraform force-unlock -force 00000000-0000-0000-0000-000000000000")
+    assert "Do you really want to force-unlock?" in run(s, f"terraform force-unlock {lock}")
+    assert s["lock"] is not None
+    assert "successfully unlocked" in run(s, f"terraform force-unlock -force {lock}")
+    assert s["lock"] is None and "No changes" in run(s, "terraform plan")
+
+
+def test_force_unlock_without_a_lock():
+    assert "no lock is held" in run(fresh(), "terraform force-unlock -force abc")

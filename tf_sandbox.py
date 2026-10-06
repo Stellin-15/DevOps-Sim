@@ -53,6 +53,8 @@ HELP_TEXT = """Supported commands (a simulated Terraform working directory; noth
   terraform init | validate | plan [-refresh-only] [-lock=false]
   terraform state list | state show <addr> | state pull
   terraform state mv <from> <to>   terraform state rm <addr>
+  terraform apply [-auto-approve] [-refresh-only]   terraform import <addr> <id>
+  terraform force-unlock [-force] <lock-id>
   cat main.tf     ls
   help | exit          (pipes work: terraform state list | grep aws_instance)"""
 
@@ -312,6 +314,142 @@ def _state_rm(state: dict, args: list) -> str:
     return "\n".join(lines + [f"Successfully removed {len(args)} resource instance(s)."])
 
 
+# --------------------------------------------------------- apply and friends
+
+PROMPT_NOTE = ("  Enter a value: (the sandbox can't answer prompts. Review the plan above; "
+               "to go ahead, run the command again with {flag}.)")
+
+ALREADY_EXISTS = {
+    "aws_s3_bucket": "creating S3 Bucket ({v}): BucketAlreadyOwnedByYou: Your previous request to create the "
+                     "named bucket succeeded and you already own it.",
+    "aws_db_instance": "creating RDS DB Instance ({v}): DBInstanceAlreadyExists: DB instance already exists",
+    "aws_security_group": "creating Security Group ({v}): InvalidGroup.Duplicate: The security group '{v}' "
+                          "already exists",
+}
+ID_PREFIX = {"aws_instance": "i-0", "aws_security_group": "sg-0", "aws_vpc": "vpc-0"}
+
+
+def _new_id(state: dict, rtype: str, attrs: dict) -> str:
+    if rtype in IDENTITY:
+        return attrs[IDENTITY[rtype]]
+    state["next_id"] += 7919
+    return f"{ID_PREFIX[rtype]}{state['next_id'] % (1 << 68):017x}"
+
+
+def _create(state: dict, addr: str, attrs: dict):
+    """Returns (id, None) or (None, error) when the unique name is taken."""
+    rtype = addr.split(".")[0]
+    key = IDENTITY.get(rtype)
+    if key and any(o["type"] == rtype and o["attrs"].get(key) == attrs[key] for o in state["real"].values()):
+        return None, ALREADY_EXISTS[rtype].format(v=attrs[key])
+    rid = _new_id(state, rtype, attrs)
+    state["real"][rid] = {"type": rtype, "attrs": dict(attrs)}
+    state["tfstate"][addr] = {"id": rid, "attrs": dict(attrs)}
+    return rid, None
+
+
+def _apply(state: dict, flags: set) -> str:
+    blocked = _take_lock(state, "-lock=false" in flags)
+    if blocked:
+        return blocked
+    plan = compute_plan(state)
+    if "-refresh-only" in flags:
+        out = render_plan(state, plan, refresh_only=True)
+        if not plan["drifted"]:
+            return out
+        if "-auto-approve" not in flags:
+            return out + "\n\nWould you like to update the Terraform state to reflect these detected changes?\n" \
+                + PROMPT_NOTE.format(flag="-auto-approve")
+        for addr in list(state["tfstate"]):
+            obj = state["real"].get(state["tfstate"][addr]["id"])
+            if obj is None:
+                del state["tfstate"][addr]
+            else:
+                state["tfstate"][addr]["attrs"] = dict(obj["attrs"])
+        return out + "\n\nApply complete! Resources: 0 added, 0 changed, 0 destroyed."
+    if not plan["changes"]:
+        return render_plan(state, plan) + "\n\nApply complete! Resources: 0 added, 0 changed, 0 destroyed."
+    if "-auto-approve" not in flags:
+        return (render_plan(state, plan) + "\n\nDo you want to perform these actions?\n"
+                "  Terraform will perform the actions described above.\n  Only 'yes' will be accepted to approve.\n\n"
+                + PROMPT_NOTE.format(flag="-auto-approve"))
+
+    lines, done = [], {"added": 0, "changed": 0, "destroyed": 0}
+    for action, addr, d in plan["changes"]:
+        res = state["config"].get(addr)
+        if action in ("destroy", "replace"):
+            lines.append(f"{addr}: Destroying... [id={d['id']}]")
+            state["real"].pop(d["id"], None)
+            state["tfstate"].pop(addr, None)
+            lines.append(f"{addr}: Destruction complete after 3s")
+            done["destroyed"] += 1
+        if action in ("create", "replace"):
+            lines.append(f"{addr}: Creating...")
+            rid, error = _create(state, addr, res["attrs"])
+            if error:
+                rtype, name = addr.split(".", 1)
+                lines += ["", "╷", f"│ Error: {error}", "│", f"│   with {addr},",
+                          f'│   on main.tf, in resource "{rtype}" "{name}":', "╵"]
+                return "\n".join(lines)
+            lines.append(f"{addr}: Creation complete after 4s [id={rid}]")
+            done["added"] += 1
+        if action == "update":
+            lines.append(f"{addr}: Modifying... [id={d['id']}]")
+            state["real"][d["id"]]["attrs"].update(res["attrs"])
+            state["tfstate"][addr]["attrs"] = dict(state["real"][d["id"]]["attrs"])
+            lines.append(f"{addr}: Modifications complete after 2s [id={d['id']}]")
+            done["changed"] += 1
+    lines += ["", f"Apply complete! Resources: {done['added']} added, {done['changed']} changed, "
+                  f"{done['destroyed']} destroyed."]
+    return "\n".join(lines)
+
+
+def _import(state: dict, words: list, flags: set) -> str:
+    if len(words) != 2:
+        return "Error: The import command expects two arguments: the resource address and the remote id."
+    blocked = _take_lock(state, "-lock=false" in flags)
+    if blocked:
+        return blocked
+    addr, rid = words
+    if addr not in state["config"]:
+        return (f"╷\n│ Error: resource address \"{addr}\" does not exist in the configuration.\n│\n"
+                f"│ Before importing this resource, please create its configuration in main.tf.\n╵")
+    if addr in state["tfstate"]:
+        return (f"╷\n│ Error: Resource already managed by Terraform\n│\n│ Terraform is already managing a remote "
+                f"object for {addr}. To import to this address you must first remove the existing object from "
+                "the state.\n╵")
+    obj = state["real"].get(rid)
+    rtype = addr.split(".")[0]
+    if obj is None or obj["type"] != rtype:
+        return (f"╷\n│ Error: Cannot import non-existent remote object\n│\n│ While attempting to import an "
+                f"existing object to \"{addr}\", the provider detected that no object exists with the given id. "
+                "Only pre-existing objects can be imported; check that the id is correct and that it is "
+                "associated with the provider's configured region or endpoint.\n╵")
+    state["tfstate"][addr] = {"id": rid, "attrs": dict(obj["attrs"])}
+    return (f"{addr}: Importing from ID \"{rid}\"...\n{addr}: Import prepared!\n  Prepared {rtype} for import\n"
+            f"{addr}: Refreshing state... [id={rid}]\n\nImport successful!\n\n"
+            "The resources that were imported are shown above. These resources are now in\n"
+            "your Terraform state and will henceforth be managed by Terraform.")
+
+
+def _force_unlock(state: dict, words: list, flags: set) -> str:
+    if not words:
+        return "Error: Expected a single argument: LOCK_ID"
+    lock = state["lock"]
+    if lock is None:
+        return "Failed to unlock state: no lock is held on this state."
+    if words[0] != lock["id"]:
+        return f'Failed to unlock state: lock ID "{words[0]}" does not match existing lock ID "{lock["id"]}"'
+    if "-force" not in flags:
+        return ("Do you really want to force-unlock?\n  Terraform will remove the lock on the remote state.\n"
+                "  This will allow local Terraform commands to modify this state, even though it\n"
+                "  may still be in use. Only 'yes' will be accepted to confirm.\n\n"
+                + PROMPT_NOTE.format(flag="-force"))
+    state["lock"] = None
+    return ("Terraform state has been successfully unlocked!\n\nThe state has been unlocked, and Terraform commands "
+            "should now be able to\nobtain a new lock on the remote state.")
+
+
 # ------------------------------------------------------------------ commands
 
 def _terraform(state: dict, args: list) -> str:
@@ -331,6 +469,14 @@ def _terraform(state: dict, args: list) -> str:
         if state["lock"] and not no_lock:
             return _lock_error(state)
         return render_plan(state, compute_plan(state), refresh_only="-refresh-only" in flags)
+    if sub == "apply":
+        return _apply(state, flags)
+    if sub == "import":
+        return _import(state, words[1:], flags)
+    if sub == "force-unlock":
+        return _force_unlock(state, words[1:], flags)
+    if sub == "destroy":
+        return "terraform destroy isn't available here: it would delete the whole production stack."
     if sub == "state":
         action = words[1] if len(words) > 1 else ""
         if action == "list":
