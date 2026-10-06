@@ -64,6 +64,8 @@ HELP_TEXT = """Supported commands (a modelled network; no real packets are sent)
   ip addr | ip route | ip route get <ip> | ip link | ip neigh
   cat /etc/resolv.conf | /etc/hosts | /etc/nsswitch.conf
   getent hosts <name>   dig <name> [@server] [+short]   nslookup <name>
+  ping [-c N] [-s SIZE] [-M do] <host>   traceroute <host>   tracepath <host>
+  curl [-v] <url>   nc -zv [-w N] <host> <port>   pg_isready -h <host>
   help | exit          (pipes work: ip route | grep default)"""
 
 
@@ -183,6 +185,187 @@ def resolve(state: dict, name: str):
     return None, "Temporary failure in name resolution" if err == "timed out" else "Name or service not known"
 
 
+def _firewall_verdict(state: dict, ip: str, port: int) -> str:
+    for rule in state["firewall"]["OUTPUT"]:
+        if rule["proto"] == "tcp" and rule["dport"] == port and \
+                ipaddress.ip_address(ip) in ipaddress.ip_network(rule["dest"]):
+            return rule["target"]
+    return "ACCEPT"
+
+
+def connect(state: dict, target: str, port: int, large=False):
+    """(outcome, ip). Outcomes, each a different layer:
+    dns, unreachable (no route at all), no_route (ARP for the next hop
+    failed), timeout (dropped somewhere), refused (nothing listening, or a
+    REJECT), stall (connected, but big packets vanish), ok."""
+    ip, err = resolve(state, target)
+    if err:
+        return "dns", None
+    hop, err = next_hop(state, ip)
+    if err:
+        return "unreachable", ip
+    if not arp_ok(hop):
+        return "no_route", ip
+    if ip not in HOSTS:
+        return "timeout", ip
+    verdict = _firewall_verdict(state, ip, port)
+    if verdict == "DROP":
+        return "timeout", ip
+    if verdict == "REJECT" or port not in HOSTS[ip]["ports"]:
+        return "refused", ip
+    if large and state["link"]["mtu"] > PATH_MTU:
+        return "stall", ip
+    return "ok", ip
+
+
+# ------------------------------------------------------------ connectivity
+
+SMALL_PATHS = {"", "/", "/healthz", "/health", "/status"}
+
+
+def _ping(state: dict, args: list) -> str:
+    count, size, df, target, i = 4, 56, False, None, 0
+    while i < len(args):
+        a = args[i]
+        if a == "-c" and i + 1 < len(args):
+            count, i = int(args[i + 1]), i + 2
+            continue
+        if a == "-s" and i + 1 < len(args):
+            size, i = int(args[i + 1]), i + 2
+            continue
+        if a == "-M" and i + 1 < len(args):
+            df, i = args[i + 1] == "do", i + 2
+            continue
+        if not a.startswith("-"):
+            target = a
+        i += 1
+    if not target:
+        return "ping: usage error: Destination address required"
+    ip, err = resolve(state, target)
+    if err:
+        return f"ping: {target}: {err}"
+    hop, err = next_hop(state, ip)
+    if err:
+        return f"ping: connect: {err}"
+    packet = size + 28
+    head = f"PING {target} ({ip}) {size}({packet}) bytes of data."
+    tail = f"\n--- {target} ping statistics ---\n{count} packets transmitted, "
+    if df and packet > state["link"]["mtu"]:
+        return f"{head}\nping: local error: message too long, mtu={state['link']['mtu']}" \
+               f"{tail}0 received, +{count} errors, 100% packet loss, time {count - 1}000ms"
+    if not arp_ok(hop):
+        lines = [f"From {MY_IP} icmp_seq={n} Destination Host Unreachable" for n in range(1, count + 1)]
+        return "\n".join([head, *lines]) + f"{tail}0 received, +{count} errors, 100% packet loss, " \
+                                           f"time {count - 1}000ms"
+    lost = ip not in HOSTS or (packet > PATH_MTU and packet <= state["link"]["mtu"])
+    if lost:
+        return f"{head}{tail}0 received, 100% packet loss, time {count - 1}000ms"
+    ttl = 64 if _local(ip) else (63 if ip.startswith("10.") else 54)
+    ms = 0.4 if _local(ip) else (0.7 if ip.startswith("10.") else 11.8)
+    lines = [f"{size + 8} bytes from {ip}: icmp_seq={n} ttl={ttl} time={ms + n * 0.02:.2f} ms"
+             for n in range(1, count + 1)]
+    return "\n".join([head, *lines]) + f"{tail}{count} received, 0% packet loss, time {count - 1}000ms\n" \
+                                       f"rtt min/avg/max/mdev = {ms:.3f}/{ms + 0.05:.3f}/{ms + 0.1:.3f}/0.031 ms"
+
+
+def _parse_url(url: str):
+    scheme = "https" if url.startswith("https://") else "http"
+    rest = url.split("://", 1)[-1]
+    hostport, _, path = rest.partition("/")
+    host, _, port = hostport.partition(":")
+    return host, int(port) if port else (443 if scheme == "https" else 80), "/" + path if path else ""
+
+
+def _curl(state: dict, args: list) -> str:
+    urls = [a for a in args if "." in a and not a.startswith("-") and a not in ("/dev/null",)]
+    if not urls:
+        return "curl: try 'curl --help' or 'curl --manual' for more information"
+    host, port, path = _parse_url(urls[0])
+    verbose = "-v" in args or "--verbose" in args
+    outcome, ip = connect(state, host, port, large=path not in SMALL_PATHS)
+    pre = []
+    if verbose and ip:
+        pre.append(f"*   Trying {ip}:{port}...")
+    if outcome == "dns":
+        return f"curl: (6) Could not resolve host: {host}"
+    if outcome == "unreachable":
+        return "\n".join(pre + [f"curl: (7) Failed to connect to {host} port {port} after 0 ms: "
+                                f"Couldn't connect to server"])
+    if outcome == "no_route":
+        return "\n".join(pre + [f"curl: (7) Failed to connect to {host} port {port} after 3071 ms: No route to host"])
+    if outcome == "timeout":
+        return "\n".join(pre + [f"curl: (28) Failed to connect to {host} port {port} after 10002 ms: "
+                                "Timeout was reached"])
+    if outcome == "refused":
+        return "\n".join(pre + [f"curl: (7) Failed to connect to {host} port {port} after 1 ms: Connection refused"])
+    if verbose:
+        pre.append(f"* Connected to {host} ({ip}) port {port}")
+    if outcome == "stall":
+        return "\n".join(pre + ["curl: (28) Operation timed out after 30001 milliseconds with 2896 out of "
+                                "1843200 bytes received"])
+    if path in SMALL_PATHS:
+        body = '{"status":"ok"}'
+    else:
+        body = "(1843200 bytes received: 1.8 MB, complete)"
+    return "\n".join(pre + ([f"< HTTP/1.1 200 OK"] if verbose else []) + [body])
+
+
+def _nc(state: dict, args: list) -> str:
+    words = [a for a in args if not a.startswith("-")]
+    if "-w" in args:
+        w = args.index("-w")
+        if w + 1 < len(args) and args[w + 1] in words:
+            words.remove(args[w + 1])
+    if len(words) < 2 or not words[1].isdigit():
+        return "usage: nc -zv <host> <port>"
+    host, port = words[0], int(words[1])
+    outcome, ip = connect(state, host, port)
+    if outcome == "dns":
+        return f'nc: getaddrinfo for host "{host}" port {port}: Temporary failure in name resolution'
+    reasons = {"unreachable": "Network is unreachable", "no_route": "No route to host",
+               "timeout": "Connection timed out", "refused": "Connection refused"}
+    if outcome in reasons:
+        return f"nc: connect to {host} ({ip}) port {port} (tcp) failed: {reasons[outcome]}"
+    return f"Connection to {host} ({ip}) {port} port [tcp/*] succeeded!"
+
+
+def _pg_isready(state: dict, args: list) -> str:
+    host = args[args.index("-h") + 1] if "-h" in args and args.index("-h") + 1 < len(args) else "localhost"
+    port = int(args[args.index("-p") + 1]) if "-p" in args and args.index("-p") + 1 < len(args) else 5432
+    if host == "localhost":
+        return f"{host}:{port} - no response"
+    outcome, _ = connect(state, host, port)
+    if outcome == "dns":
+        return f'pg_isready: could not translate host name "{host}" to address'
+    return f"{host}:{port} - " + ("accepting connections" if outcome == "ok" else "no response")
+
+
+def _trace(state: dict, args: list, tracepath=False) -> str:
+    targets = [a for a in args if not a.startswith("-")]
+    if not targets:
+        return "usage: traceroute <host>"
+    target = targets[0]
+    ip, err = resolve(state, target)
+    if err:
+        return f"{target}: {err}"
+    lines = [f"traceroute to {target} ({ip}), 30 hops max, 60 byte packets"] if not tracepath else \
+        [f" 1?: [LOCALHOST]                      pmtu {state['link']['mtu']}"]
+    hop, err = next_hop(state, ip)
+    if err:
+        return f"connect: {err}"
+    if not arp_ok(hop):
+        return "\n".join(lines + [f" 1  app-1 ({MY_IP})  3006.193 ms !H  3006.155 ms !H  3006.140 ms !H"])
+    n = 1
+    if hop != ip:
+        lines.append(f" {n}  gw-1 ({hop})  0.312 ms  0.288 ms  0.270 ms")
+        n += 1
+    if ip in HOSTS:
+        lines.append(f" {n}  {HOSTS[ip]['name']} ({ip})  0.701 ms  0.689 ms  0.655 ms")
+    else:
+        lines += [f" {k}  * * *" for k in range(n, n + 4)]
+    return "\n".join(lines)
+
+
 # -------------------------------------------------------------------- views
 
 def _ip(state: dict, args: list) -> str:
@@ -300,6 +483,16 @@ def handle_command(state: dict, raw: str) -> str:
         return _dig(state, args)
     if cmd == "nslookup":
         return _nslookup(state, args)
+    if cmd == "ping":
+        return _ping(state, args)
+    if cmd == "curl":
+        return _curl(state, args)
+    if cmd in ("nc", "ncat", "netcat"):
+        return _nc(state, args)
+    if cmd == "pg_isready":
+        return _pg_isready(state, args)
+    if cmd in ("traceroute", "tracepath", "mtr"):
+        return _trace(state, args, tracepath=cmd == "tracepath")
     return f"{cmd}: not simulated in the sandbox. Type 'help' for supported commands."
 
 

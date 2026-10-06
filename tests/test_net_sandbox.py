@@ -83,3 +83,63 @@ def test_sudo_and_unknown_commands():
     s = fresh()
     assert "default via 10.0.1.1" in run(s, "sudo ip route")
     assert "not simulated" in run(s, "telnet db-1 5432")
+
+
+
+# ------------------------------------------------------------ connectivity
+
+def test_healthy_network_connects_everywhere():
+    s = fresh()
+    for target, port in [("api.shop.example", 443), ("db-1", 5432), ("packages.example.org", 443)]:
+        assert net.connect(s, target, port, large=True)[0] == "ok"
+    assert "0% packet loss" in run(s, "ping -c 2 api.shop.example")
+    assert "1843200 bytes" in run(s, "curl https://api.shop.example/catalog")
+
+
+def test_each_layer_has_its_own_symptom():
+    assert "Could not resolve host" in run(fresh("dead_dns"), "curl https://api.shop.example/healthz")
+    assert "No route to host" in run(fresh("wrong_gateway"), "curl https://api.shop.example/healthz")
+    assert "Timeout was reached" in run(fresh("stale_hosts"), "curl https://api.shop.example/healthz")
+    assert "Connection timed out" in run(fresh("firewall_blocks_db"), "nc -zv db-1 5432")
+    assert "Connection refused" in run(fresh(), "nc -zv db-1 80")
+    out = run(fresh("jumbo_mtu"), "curl https://api.shop.example/catalog")
+    assert "Operation timed out" in out and "2896 out of" in out
+
+
+def test_ip_addresses_bypass_broken_dns():
+    s = fresh("dead_dns")
+    assert "succeeded" in run(s, "nc -zv 10.0.2.15 443")
+    assert "Temporary failure in name resolution" in run(s, "ping api.shop.example")
+
+
+def test_wrong_gateway_spares_the_local_subnet():
+    s = fresh("wrong_gateway")
+    assert "succeeded" in run(s, "nc -zv db-1 5432")
+    out = run(s, "ping -c 2 api.shop.example")
+    assert "Destination Host Unreachable" in out and "100% packet loss" in out
+    assert "!H" in run(s, "traceroute api.shop.example")
+
+
+def test_jumbo_mtu_small_works_large_fails():
+    s = fresh("jumbo_mtu")
+    assert '{"status":"ok"}' in run(s, "curl https://api.shop.example/healthz")
+    assert "0% packet loss" in run(s, "ping -c 2 -M do -s 1472 api.shop.example")
+    assert "100% packet loss" in run(s, "ping -c 2 -M do -s 2000 api.shop.example")
+    assert "pmtu 9000" in run(s, "tracepath api.shop.example")
+
+
+def test_df_ping_larger_than_the_interface():
+    out = run(fresh(), "ping -c 1 -M do -s 2000 db-1")
+    assert "message too long, mtu=1500" in out
+
+
+def test_stale_hosts_times_out_beyond_the_gateway():
+    s = fresh("stale_hosts")
+    out = run(s, "traceroute api.shop.example")
+    assert "10.0.2.40" in out and "* * *" in out
+
+
+def test_pg_isready_and_verbose_curl():
+    assert "accepting connections" in run(fresh(), "pg_isready -h db-1.shop.internal")
+    assert "no response" in run(fresh("firewall_blocks_db"), "pg_isready -h db-1.shop.internal")
+    assert "Connected to api.shop.example (10.0.2.15) port 443" in run(fresh(), "curl -v https://api.shop.example/")
