@@ -7,7 +7,7 @@
   "difficulty": "advanced",
   "tags": ["networking", "routing", "dns", "layered-failures"],
   "setup": {"seed": 56, "problems": ["wrong_gateway", "dead_dns"]},
-  "symptom": "app-1's disk failed, so it was rebuilt overnight from an old golden image, and its network was patched up by hand at 4am until SSH worked. Now apt can't download anything and the app can't reach its API. You have about twenty minutes before the morning traffic arrives.",
+  "symptom": "app-1's disk died, so it was rebuilt overnight from an old golden image, and its network was patched up by hand at 4am until SSH worked. Now apt can't download anything and the app can't reach its API. You have about twenty minutes before the morning traffic arrives.",
   "goals": [
     {"check": "problem_fixed", "problem": "wrong_gateway", "description": "app-1's default route uses the real gateway"},
     {"check": "problem_fixed", "problem": "dead_dns", "description": "app-1 resolves names through a working DNS server"},
