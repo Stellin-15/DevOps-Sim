@@ -1,0 +1,41 @@
+{
+  "id": "mystery-net-006",
+  "type": "mystery",
+  "category": "networking",
+  "sandbox": "net",
+  "title": "Rebuilt From an Old Image, and Nothing Gets Out",
+  "difficulty": "advanced",
+  "tags": ["networking", "routing", "dns", "layered-failures"],
+  "setup": {"seed": 56, "problems": ["wrong_gateway", "dead_dns"]},
+  "symptom": "app-1's disk failed, so it was rebuilt overnight from an old golden image, and its network was patched up by hand at 4am until SSH worked. Now apt can't download anything and the app can't reach its API. You have about twenty minutes before the morning traffic arrives.",
+  "goals": [
+    {"check": "problem_fixed", "problem": "wrong_gateway", "description": "app-1's default route uses the real gateway"},
+    {"check": "problem_fixed", "problem": "dead_dns", "description": "app-1 resolves names through a working DNS server"},
+    {"check": "reachable", "target": "packages.example.org", "port": 443, "large": true, "description": "app-1 downloads from the package mirror by name"}
+  ],
+  "evidence": [
+    {"description": "the routing failure", "seen_any": ["FAILED", "Destination Host Unreachable", "No route to host", "!H"]},
+    {"description": "the stale DNS setting", "seen_any": ["nameserver 10.0.0.53"]}
+  ],
+  "question": {
+    "prompt": "Why did the problem seem to change halfway through?",
+    "options": [
+      "The network was flapping",
+      "Two layers were broken. The wrong gateway hid the DNS problem, because the old DNS server is off-subnet; once routing worked, lookups still failed, because the old image still pointed at a DNS server that was retired long ago",
+      "Fixing the route broke DNS",
+      "The mirror went down at the same time"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 7,
+  "solution_commands": [
+    "ip route",
+    "ip neigh",
+    "cat /etc/netplan/50-cloud-init.yaml",
+    "ip route replace default via 10.0.1.1",
+    "curl https://packages.example.org/",
+    "cat /etc/resolv.conf",
+    "sed -i 's/10.0.0.53/10.0.1.2/' /etc/resolv.conf"
+  ],
+  "debrief": "Failures stack, and the outer one hides the inner. With a gateway nobody answers for, everything off the subnet failed with 'No route to host', including the DNS server at 10.0.0.53, so it looked like one problem. Fixing the route changed the symptom to 'Could not resolve host': that's progress, not a new fault. The old image carried a resolv.conf from before the DNS migration. The netplan file had both right answers, which is the lesson: the persisted configuration is the source of truth, and hand-patching at 4am drifts from it. After an emergency, compare runtime state with it ('ip route', resolv.conf, 'ip link') and re-apply it, and retire golden images that predate infrastructure changes."
+}
