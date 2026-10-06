@@ -128,7 +128,7 @@ you whether it stuck.
 
 Real on-call conditions. You get only a symptom ("postgres just dies,
 nothing in its logs") and a live Linux, Docker, Kubernetes, AWS, Azure,
-Google Cloud, Terraform, database, or Git sandbox. There are no steps and no hints,
+Google Cloud, Terraform, networking, database, or Git sandbox. There are no steps and no hints,
 and any command works in any order.
 
 - **Solving it.** When you think you've fixed it, type `solve`. The game
@@ -147,7 +147,7 @@ and any command works in any order.
 ### 🧪 Sandbox
 
 No scoring and no steps: a randomly generated broken environment to
-explore with real commands. There are ten to pick from (see
+explore with real commands. There are eleven to pick from (see
 [Sandboxes](#sandboxes)). Pipes work everywhere (`ps aux | grep python`,
 `docker ps -a | grep Exited`). On exit you can keep the state for next
 time or throw it away.
@@ -233,6 +233,7 @@ supports pipes: `| grep [-i -v -c]`, `| head -N`, `| tail -N`, `| wc -l`,
 | ☁️ **Google Cloud** | Firewall rules that apply only to VMs with the right network tag, SSH through IAP, and Cloud NAT that exists per region | Yes |
 | 🗄️ **Database** | Real SQL (SQLite in memory). Two of four data problems: a dropped index, a double-loaded day, orphaned rows, and deleted rows with a backup table that's older than the live data | Yes, with real SQL; `check` shows which reports are fixed |
 | 🏗️ **Terraform** | A production working directory whose code, state, and real account are out of step. Two of five problems: drift from a console change, a stale state lock, a rename that would replace a server, a bucket that exists but isn't in state, and a database handed to another team | Yes: `plan` really diffs the three layers; `apply`, `state mv`/`rm`, `import`, and `force-unlock` really fix it, and the wrong move (applying the rename) really destroys the server |
+| 🔌 **Networking** | A Linux host you're SSH'd into, on a small modelled network. Two of five problems: a wrong default gateway, a retired DNS server, a stale `/etc/hosts` pin, a leftover firewall rule, and a jumbo-frame MTU. Each layer fails with its own real symptom (can't resolve, no route to host, timeout, refused, or a big download that hangs) | Yes: `ip route`, `ip link`, `sed -i` on the config files, and `iptables` really fix it; flushing the firewall or downing eth0 cuts off your own SSH session |
 | 🌿 **Git** | A real repository and your real `git`. One of five problems: commits on the wrong branch, a key in unpushed history, a merge stopped on a conflict, commits lost to `reset --hard`, or a pushed commit to undo | Yes, with real git; `check` shows whether it's fixed |
 
 <details>
@@ -263,6 +264,13 @@ reach a remote or run other programs (push, fetch, `bisect run`,
 repository's path is shown), or with `sed -i`; `ls`, `cat`, and `check`
 also work. The repositories live in `workspace/git-sandbox/` and are
 cleaned up after six hours.
+
+**Networking:** `ip addr|route|route get|link|neigh`, `cat` of `/etc/resolv.conf`,
+`/etc/hosts`, `/etc/nsswitch.conf`, and the netplan file, `getent hosts`, `dig`,
+`nslookup`, `ping [-s SIZE] [-M do]`, `traceroute`, `tracepath`, `curl [-v]`,
+`nc -zv`, `pg_isready`; fixes with `ip route replace default via ...`,
+`ip link set eth0 mtu ...`, `sed -i`, `echo >`, and `iptables -L/-S/-D/-A/-I/-F/-P`.
+Fully simulated: no real packets are sent.
 
 **Terraform:** `terraform init|validate|plan [-refresh-only] [-lock=false]`,
 `apply [-auto-approve] [-refresh-only]`, `state list|show|mv|rm|pull`,
@@ -314,7 +322,7 @@ events section.
 | Docker | 11 | 5 | images/layers, volumes, networking, Compose, cleanup, Dockerfiles, runtime limits, container security, BuildKit/buildx multi-platform; plus 3 Writing Labs (2 Dockerfile, Compose) |
 | Linux | 15 | 6 | find, text pipelines, processes/signals, systemd, networking, users/permissions, SSH, cron, disks, performance, strace/lsof, packages/firewalls, SELinux; plus 4 bash-script Writing Labs |
 | Terraform | 19 | 7 | safe CI workflow, modules/for_each/moved blocks, writing modules (validation, dynamic blocks, terraform test), variables/outputs, state inspection & refactoring, import, workspaces, remote state/locking, providers, debugging, OpenTofu/Terragrunt/Atlantis, policy as code (Checkov, Conftest), Packer, and the other IaC tools (CloudFormation, Bicep, Pulumi, Crossplane), and Terraform Associate topics (drift, lifecycle and conditions, functions, HCP Terraform); plus 5 HCL Writing Labs, a Sandbox, and 5 Mysteries |
-| Networking | 17 | 8 | DNS, refused vs timeout, ports/nmap, routing/ARP, firewalls, TLS/openssl, HTTP/curl, in-cluster networking, CIDR, tcpdump, MTU black holes, IPv6, WireGuard, BGP, DNS delegation, HTTP/2 and gRPC, Cilium/Hubble |
+| Networking | 17 | 8 | DNS, refused vs timeout, ports/nmap, routing/ARP, firewalls, TLS/openssl, HTTP/curl, in-cluster networking, CIDR, tcpdump, MTU black holes, IPv6, WireGuard, BGP, DNS delegation, HTTP/2 and gRPC, Cilium/Hubble; plus a Sandbox and 6 Mysteries |
 | CI/CD | 20 | 8 | git workflows, revert vs reset, git bisect, tags/releases, GitHub Actions CLI, secrets/OIDC, local CI repro, rolling/blue-green/canary, GitOps (Argo CD), SBOMs/scanning/signing, SLSA provenance, zero-downtime database migrations, GitLab CI, Jenkins, artifact registries and promotion, release automation (semver, Renovate), flaky and contract tests; plus 4 pipeline Writing Labs |
 | Monitoring | 17 | 8 | PromQL, golden signals, tracing (OTel/Jaeger), OpenTelemetry instrumentation, SLOs and burn-rate alerts, Prometheus ops, alerting/Alertmanager, journald, Elasticsearch, Loki, Grafana API, log pipelines (Fluent Bit, Vector), log volume and cardinality, Datadog and Sentry; plus 5 Writing Labs (alert rules, burn-rate alerts, a dashboard, manual spans) |
 | MLOps | 18 | 8 | environments, GPUs, MLflow, DVC, serving, KServe/Kubeflow, profiling, model monitoring, model canaries, LLM serving (vLLM), feature stores (Feast), distributed training, Airflow pipelines, LLM evaluation, vector search (pgvector), token cost and guardrails, quantization |
@@ -374,7 +382,7 @@ Plus **18 Career Paths** chaining scenarios across categories:
 <details>
 <summary><b>Mystery Incidents</b>: symptom only</summary>
 
-Plus **37 Mystery Incidents**, symptom only:
+Plus **43 Mystery Incidents**, symptom only:
 
 | Area | Mysteries |
 |---|---|
@@ -386,6 +394,7 @@ Plus **37 Mystery Incidents**, symptom only:
 | ☁️ Google Cloud | a rebuilt web VM nobody can reach, workers that can't install packages, and the morning after a firewall cleanup |
 | 🛡️ Security | a pegged CPU and a doubled cloud bill (a crypto-miner that comes back until you find its cron job), and a 3am login (a brute-forced root password, a hidden UID-0 account, and a planted SSH key) |
 | 🗄️ Databases, in real SQL | a 'My orders' page that got slow after a migration, a revenue day that doubled, saved addresses to restore from a backup that's older than the live data, and an export that can't find its orders |
+| 🔌 Networking | a server that reaches its database and nothing else, names that fail while addresses work, dig being right while the app is wrong, a database lost after a hardening run, small requests working while big downloads hang, and a rebuild where one broken layer hides another |
 | 🏗️ Terraform | port 22 open while the code says it isn't, every pipeline failing on a lock, a tidy-up that would replace production, an apply that fails on a brand-new bucket, and handing a database to another team without deleting it |
 | 🌿 Git, with the real git | two commits on the wrong branch, a payment key in unpushed history, a merge stopped halfway, work lost to a reset, and a pushed release that broke every timeout |
 
@@ -514,7 +523,7 @@ least two categories.
 
 Drop a JSON file into `scenarios/mysteries/` with `type: "mystery"`, a
 `sandbox` (`linux`, `docker`, `kube`, `aws`, `azure`, `gcp`, `db`,
-`git`, or `terraform`), and `setup` (a `seed` plus forced `problems`, or `assignments`
+`git`, `terraform`, or `net`), and `setup` (a `seed` plus forced `problems`, or `assignments`
 for docker). It also needs:
 - a `symptom`;
 - `goals` (state checks such as `service_active`, `disk_below`, and
@@ -591,6 +600,7 @@ gcp_sandbox.py      Google Cloud sandbox (tag-based firewalls, IAP SSH, Cloud NA
 db_sandbox.py       database sandbox (real SQL on an in-memory SQLite shop database)
 git_sandbox.py      Git sandbox (the real git on a throwaway repository)
 tf_sandbox.py       Terraform sandbox (code, state, and the real account, diffed by plan)
+net_sandbox.py      networking sandbox (names, routes, ARP, firewall, and MTU, layer by layer)
 sandbox_common.py   shared sandbox loop, pipes, tables, save/discard
 yaml_lab.py         Writing Labs runner: real file editing + validation
 lab_formats.py      parsers for YAML/JSON, Dockerfile, HCL, bash, Ansible,
@@ -663,13 +673,13 @@ CLAUDE.md           working notes for AI-assisted development on this repo
     git, each with mysteries → the `add-scenario` scaffold → exam passes
     for the CKAD, Terraform Associate, and AWS Solutions Architect
     Associate → exam passes for the CKS, AZ-104, and Google Cloud ACE →
-    a Terraform sandbox with five mysteries.
+    a Terraform sandbox with five mysteries → a networking sandbox with
+    six mysteries.
 
 </details>
 
 **Next**, in priority order (details in CLAUDE.md and GAPS.md):
-- exam passes for the professional-level cloud exams;
-- a networking sandbox.
+- exam passes for the professional-level cloud exams.
 
 See [CLAUDE.md](CLAUDE.md) for architecture and notes for continuing
 development.
