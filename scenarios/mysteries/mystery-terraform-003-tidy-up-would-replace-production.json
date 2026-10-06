@@ -1,0 +1,36 @@
+{
+  "id": "mystery-terraform-003",
+  "type": "mystery",
+  "category": "terraform",
+  "sandbox": "terraform",
+  "title": "A Tidy-Up Pull Request That Would Replace Production",
+  "difficulty": "intermediate",
+  "tags": ["terraform", "refactoring", "state-mv", "plan-review"],
+  "setup": {"seed": 43, "problems": ["renamed"]},
+  "symptom": "A pull request titled 'Rename resources to match our naming guide' is approved and waiting to be applied. It changes no settings, only names in the code. Before anyone applies it, make sure applying it would be harmless.",
+  "goals": [
+    {"check": "no_destroy", "description": "The plan destroys and replaces nothing"},
+    {"check": "problem_fixed", "problem": "renamed", "description": "The original web instance is still running and now managed at its new address"}
+  ],
+  "evidence": [
+    {"description": "what the plan would really do", "seen_any": ["aws_instance.web will be destroyed"]}
+  ],
+  "question": {
+    "prompt": "Why did a rename plan to destroy the server?",
+    "options": [
+      "Terraform renames resources by recreating them, always",
+      "Terraform tracks objects by address; with the old address gone from the code and the new one missing from state, it planned to destroy the old object and create a new one, until the state was moved to the new address",
+      "The instance type changed",
+      "The AMI was out of date"
+    ],
+    "answer": 1
+  },
+  "expert_commands": 4,
+  "solution_commands": [
+    "terraform plan",
+    "terraform state list",
+    "terraform state mv aws_instance.web aws_instance.app",
+    "terraform plan"
+  ],
+  "debrief": "The plan was the whole story: aws_instance.web 'will be destroyed (because it is not in configuration)' and aws_instance.app 'will be created', which is a replacement of the production web server hidden in a pull request that 'changes no settings'. Terraform links code to real objects by address, so renaming a block without telling it looks like deleting one resource and adding another. 'terraform state mv' moves the object to its new address, and the next plan shows no changes. In a team, the better fix goes in the same pull request: a 'moved { from = aws_instance.web  to = aws_instance.app }' block, so the move is reviewed and applied with the rename everywhere the code is used. The general rule: read the plan's summary line before approving any 'harmless' change; '1 to add, 1 to destroy' is never harmless on a server."
+}
