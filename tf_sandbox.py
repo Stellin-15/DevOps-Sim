@@ -55,6 +55,10 @@ HELP_TEXT = """Supported commands (a simulated Terraform working directory; noth
   terraform state mv <from> <to>   terraform state rm <addr>
   terraform apply [-auto-approve] [-refresh-only]   terraform import <addr> <id>
   terraform force-unlock [-force] <lock-id>
+What really exists (read-only):
+  aws s3 ls   aws ec2 describe-instances   aws ec2 describe-security-groups
+  aws rds describe-db-instances   aws cloudtrail lookup-events   gh run list
+  check     which of the reported problems are fixed (sandbox only)
   cat main.tf     ls
   help | exit          (pipes work: terraform state list | grep aws_instance)"""
 
@@ -114,6 +118,7 @@ def generate_state(seed=None, problems=None) -> dict:
         tfstate["aws_db_instance.reports"] = {"id": "shop-reports", "attrs": dict(attrs)}
         real["shop-reports"] = {"type": "aws_db_instance", "attrs": dict(attrs)}
 
+    state["web_id"] = tfstate["aws_instance.web"]["id"]
     state["baseline_ids"] = sorted(real)
     return state
 
@@ -450,6 +455,74 @@ def _force_unlock(state: dict, words: list, flags: set) -> str:
             "should now be able to\nobtain a new lock on the remote state.")
 
 
+# ------------------------------------------------- the real account, and CI
+
+def _real_of(state: dict, rtype: str) -> list:
+    return sorted((rid, o["attrs"]) for rid, o in state["real"].items() if o["type"] == rtype)
+
+
+def _aws(state: dict, args: list) -> str:
+    cmd = " ".join(a for a in args[:2] if not a.startswith("-"))
+    if cmd == "s3 ls":
+        return "\n".join(f"2026-03-14 09:12:40 {a['bucket']}" for _, a in _real_of(state, "aws_s3_bucket"))
+    if cmd == "ec2 describe-instances":
+        return render_table(["INSTANCE ID", "NAME", "TYPE", "AMI", "STATE"],
+                            [(rid, a["name"], a["instance_type"], a["ami"], "running")
+                             for rid, a in _real_of(state, "aws_instance")])
+    if cmd == "ec2 describe-security-groups":
+        return render_table(["GROUP ID", "NAME", "INBOUND FROM 0.0.0.0/0"],
+                            [(rid, a["name"], ", ".join(f"tcp/{p}" for p in a["ingress_ports"]))
+                             for rid, a in _real_of(state, "aws_security_group")])
+    if cmd == "rds describe-db-instances":
+        return render_table(["DB IDENTIFIER", "CLASS", "ENGINE", "STATUS"],
+                            [(rid, a["instance_class"], a["engine"], "available")
+                             for rid, a in _real_of(state, "aws_db_instance")])
+    if cmd == "cloudtrail lookup-events":
+        rows = [("2026-09-30 11:02:17", "ModifyInstanceAttribute", "dana", "i-0 (web)")]
+        if "drift" in state["problems"]:
+            rows.append(("2026-10-05 22:41:09", "AuthorizeSecurityGroupIngress", "omar",
+                         f"{state['tfstate']['aws_security_group.web']['id']} tcp/22 0.0.0.0/0"))
+        if "unmanaged_bucket" in state["problems"]:
+            rows.append(("2026-10-01 16:20:44", "CreateBucket", "priya", "shop-assets-prod"))
+        return render_table(["TIME", "EVENT", "USER", "RESOURCE"], sorted(rows))
+    return (f"aws {cmd}: not simulated in the sandbox. Try: aws s3 ls, aws ec2 describe-instances, "
+            "aws ec2 describe-security-groups, aws rds describe-db-instances, aws cloudtrail lookup-events")
+
+
+def _gh(state: dict, args: list) -> str:
+    if args[:2] != ["run", "list"]:
+        return "gh: only 'gh run list' is simulated in the sandbox."
+    rows = [("completed", "success", "terraform apply (prod)", "main", "2026-10-05 02:00")]
+    if "stale_lock" in state["problems"]:
+        rows = [("completed", "failure", "terraform plan (prod)", "main", "2026-10-06 09:30"),
+                ("completed", "failure", "terraform plan (prod)", "main", "2026-10-06 08:05"),
+                ("completed", "cancelled", "terraform apply (prod) on ci-runner-7", "main", "2026-10-06 02:14")] + rows
+    else:
+        rows.insert(0, ("completed", "success", "terraform plan (prod)", "main", "2026-10-06 08:05"))
+    return render_table(["STATUS", "CONCLUSION", "WORKFLOW RUN", "BRANCH", "STARTED"], rows)
+
+
+def _fixed(state: dict, problem: str) -> bool:
+    tfstate, real = state["tfstate"], state["real"]
+    if problem == "drift":
+        sg = tfstate.get("aws_security_group.web")
+        return bool(sg) and real.get(sg["id"], {}).get("attrs", {}).get("ingress_ports") == [80, 443]
+    if problem == "stale_lock":
+        return state["lock"] is None
+    if problem == "renamed":
+        app = tfstate.get("aws_instance.app")
+        return bool(app) and app["id"] == state["web_id"] and state["web_id"] in real
+    if problem == "unmanaged_bucket":
+        return tfstate.get("aws_s3_bucket.assets", {}).get("id") == "shop-assets-prod"
+    if problem == "handed_over":
+        return "aws_db_instance.reports" not in tfstate and "shop-reports" in real
+    raise ValueError(problem)
+
+
+def _check_report(state: dict) -> str:
+    return "\n".join(f"[{'fixed' if _fixed(state, p) else 'open '}] {REPORTS[p]}" for p in state["problems"])
+
+
 # ------------------------------------------------------------------ commands
 
 def _terraform(state: dict, args: list) -> str:
@@ -510,6 +583,12 @@ def handle_command(state: dict, raw: str) -> str:
         return HELP_TEXT
     if cmd == "terraform":
         return _terraform(state, args)
+    if cmd == "aws":
+        return _aws(state, args)
+    if cmd == "gh":
+        return _gh(state, args)
+    if cmd == "check":
+        return _check_report(state)
     if cmd == "cat" and args == ["main.tf"]:
         return render_config(state)
     if cmd == "ls":
@@ -520,7 +599,7 @@ def handle_command(state: dict, raw: str) -> str:
 def describe_state(state: dict) -> list:
     return ["You're in the shop's production Terraform directory (backend: S3, with DynamoDB locking).",
             "Reported:", *[f"  - {REPORTS[p]}" for p in state["problems"]],
-            "Investigate and fix with Terraform. Nothing real is changed."]
+            "Investigate and fix with Terraform; 'check' shows what's fixed. Nothing real is changed."]
 
 
 def run_sandbox() -> None:

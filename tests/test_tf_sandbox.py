@@ -232,3 +232,44 @@ def test_force_unlock_needs_the_right_id_and_confirmation():
 
 def test_force_unlock_without_a_lock():
     assert "no lock is held" in run(fresh(), "terraform force-unlock -force abc")
+
+
+# ------------------------------------------------- the real account, and CI
+
+def test_aws_views_show_what_really_exists():
+    s = fresh("unmanaged_bucket", "drift")
+    assert "shop-assets-prod" in run(s, "aws s3 ls")
+    assert "tcp/22" in run(s, "aws ec2 describe-security-groups")
+    assert "shop-db" in run(s, "aws rds describe-db-instances")
+    assert s["web_id"] in run(s, "aws ec2 describe-instances")
+    trail = run(s, "aws cloudtrail lookup-events")
+    assert "AuthorizeSecurityGroupIngress" in trail and "CreateBucket" in trail
+
+
+def test_ci_history_shows_the_cancelled_run_only_when_locked():
+    assert "cancelled" in run(fresh("stale_lock"), "gh run list --workflow=terraform.yml")
+    assert "cancelled" not in run(fresh("drift"), "gh run list")
+
+
+@pytest.mark.parametrize("problem, fix", [
+    ("drift", ["terraform apply -auto-approve"]),
+    ("stale_lock", ["terraform force-unlock -force {lock}"]),
+    ("renamed", ["terraform state mv aws_instance.web aws_instance.app"]),
+    ("unmanaged_bucket", ["terraform import aws_s3_bucket.assets shop-assets-prod"]),
+    ("handed_over", ["terraform state rm aws_db_instance.reports"]),
+])
+def test_check_reports_each_fix(problem, fix):
+    s = fresh(problem)
+    assert "[open ]" in run(s, "check")
+    for cmd in fix:
+        run(s, cmd.format(lock=(s["lock"] or {}).get("id")))
+    assert "[fixed]" in run(s, "check")
+
+
+def test_the_tempting_wrong_fixes_dont_count():
+    s = fresh("renamed")
+    run(s, "terraform apply -auto-approve")
+    assert "[open ]" in run(s, "check")  # replaced: a new instance, not the original
+    s = fresh("handed_over")
+    run(s, "terraform apply -auto-approve")
+    assert "[open ]" in run(s, "check")  # destroyed the other team's database
